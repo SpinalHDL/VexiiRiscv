@@ -41,13 +41,13 @@ class CachelessPlugin(var wordWidth : Int,
   lazy val pp = host[PipelinePlugin]
   during setup{
     pp.retain()
-    FETCH_WORD_WIDTH.set(wordWidth)
+    Fetch.WORD_WIDTH.set(wordWidth)
   }
   val logic = during build new Area{
     val idWidth = 0
-    val p = CachelessParam(MIXED_WIDTH, FETCH_WORD_WIDTH, idWidth)
+    val p = CachelessParam(MIXED_WIDTH, Fetch.WORD_WIDTH, idWidth)
     val bus = master(CachelessBus(p))
-    val x = CombInit(pp.ctrl(2)(Global.PC))
+    val x = CombInit(pp.ctrl(2)(Fetch.WORD_PC))
     bus.cmd.setIdle()
     pp.release()
   }
