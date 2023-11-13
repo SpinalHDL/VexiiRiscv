@@ -10,6 +10,7 @@ class Database{
   // User API
   def update[T](key: Element[T], value: T) = key.set(this, value)
   def apply[T](key: Element[T]): T = key.get(this)
+  def on[T](body: => T) = Database(this).on(body)
 
   // "private" API
   val storage = mutable.LinkedHashMap[Element[_ <: Any], Any]()

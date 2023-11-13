@@ -19,7 +19,7 @@ object Param {
     }
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.PipelinePlugin()
-    plugins += new fetch.CachelessPlugin()
+    plugins += new fetch.CachelessPlugin(wordWidth = 32)
 
     plugins
   }

@@ -8,11 +8,12 @@ import spinal.lib.misc.pipeline.SignalKey
  * Define global variables for plugin to share in very non-verbose ways
  */
 object Global extends AreaRoot{
-  val PHYSICAL_WIDTH = blocking[Int]
-  val MIXED_WIDTH    = blocking[Int]
-  val VIRTUAL_WIDTH  = blocking[Int]
-  val PC_WIDTH       = blocking[Int]
-  val HART_COUNT     = blocking[Int]
+  val PHYSICAL_WIDTH   = blocking[Int]
+  val MIXED_WIDTH      = blocking[Int]
+  val VIRTUAL_WIDTH    = blocking[Int]
+  val PC_WIDTH         = blocking[Int]
+  val FETCH_WORD_WIDTH = blocking[Int]
+  val HART_COUNT       = blocking[Int]
 
   val VIRTUAL_ADDRESS = SignalKey(UInt(VIRTUAL_WIDTH bits))
   val MIXED_ADDRESS = SignalKey(UInt(MIXED_WIDTH bits))
@@ -21,4 +22,6 @@ object Global extends AreaRoot{
 
   def HART_ID_WIDTH = log2Up(HART_COUNT)
   val HART_ID = SignalKey(UInt(HART_ID_WIDTH bits))
+
+  val FETCH_WORD = SignalKey(Bits(FETCH_WORD_WIDTH bits))
 }
