@@ -34,7 +34,10 @@ object Element{
   class ThingIntPimper(p: Element[Int]) {
     def bits = BitCount(p.get)
   }
-  implicit def thingIntPimperFunc(p: Element[Int]) : ThingIntPimper = new ThingIntPimper(p)
+
+  implicit def thingIntPimperFunc(p: Element[Int]): ThingIntPimper = new ThingIntPimper(p)
+//  implicit def thingIntBigInt(p: Element[Int]): BigInt = p.get()
+//  implicit def thingInt2Int(p: Element[Int]): Int = p.get()
 }
 
 // Represent a thing which can be in a data base (this is the key)
@@ -43,7 +46,6 @@ abstract class Element[T](sp: ScopeProperty[Database] = Database) extends Nameab
   def get(): T = get(sp.get)
   def apply(): T = get(sp.get)
   def set(value: T): Unit = set(sp.get, value)
-//  implicit def toValue() : T = get()
 
   // private API
   def get(db: Database) : T

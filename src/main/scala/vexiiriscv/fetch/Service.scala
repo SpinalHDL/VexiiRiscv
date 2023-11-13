@@ -8,7 +8,7 @@ import vexiiriscv.Global._
 import vexiiriscv.memory.AddressTranslationService
 
 
-object HartService{
+object PcService{
   object Priorities{
     def FETCH_WORD(stage : Int, prediction : Boolean) = stage*2 + (if(prediction) -1 else 0)
     val ALIGNER           = 90
@@ -23,6 +23,10 @@ case class JumpCmd() extends Bundle{
   val hartId = HART_ID()
 }
 
-trait HartService extends Area{
-  def createJumpInterface(priority : Int) : Flow[JumpCmd] //High priority win
+trait PcService extends Area{
+  def createJumpInterface(priority : Int, aggregationPriority : Int = 0) : Flow[JumpCmd] //High priority win
+}
+
+trait InitService{
+  def initHold() : Bool
 }
