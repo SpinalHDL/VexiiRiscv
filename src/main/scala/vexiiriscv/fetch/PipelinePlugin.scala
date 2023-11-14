@@ -15,5 +15,6 @@ class PipelinePlugin extends FiberPlugin{
     val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
     val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageConnector(from.down, to.up) //.withoutCollapse()
     pipeline.Builder((sc ++ ctrls).toSeq)
+    ctrls.last.down.ready := True //TODO remove
   }
 }

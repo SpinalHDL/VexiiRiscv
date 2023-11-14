@@ -2,6 +2,7 @@ package vexiiriscv
 
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
+import vexiiriscv.schedule.FlusherPlugin
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -17,6 +18,7 @@ object Param {
       case false => plugins += new memory.StaticTranslationPlugin(32)
       case true  =>
     }
+    plugins += new FlusherPlugin()
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.PipelinePlugin()
     plugins += new fetch.CachelessPlugin(wordWidth = 32)
