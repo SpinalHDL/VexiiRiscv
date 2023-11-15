@@ -9,7 +9,7 @@ import scala.collection.mutable
 class Database{
   // User API
   def update[T](key: Element[T], value: T) = key.set(this, value)
-  def apply[T](key: Element[T]): T = key.get(this)
+  def apply[T](key: Element[T]): T = key.getOn(this)
   def on[T](body: => T) = Database(this).on(body)
 
   // "private" API
@@ -43,18 +43,18 @@ object Element{
 // Represent a thing which can be in a data base (this is the key)
 abstract class Element[T](sp: ScopeProperty[Database] = Database) extends Nameable {
   // user API
-  def get(): T = get(sp.get)
-  def apply(): T = get(sp.get)
+  def get : T = getOn(sp.get)
+  def apply: T = getOn(sp.get)
   def set(value: T): Unit = set(sp.get, value)
 
   // private API
-  def get(db: Database) : T
+  def getOn(db: Database) : T
   def set(db: Database, value: T) : Unit
 }
 
 // Simple implementation
 class ElementValue[T](sp : ScopeProperty[Database] = Database) extends Element[T](sp) {
-  def get(db: Database): T = db.storageGet(this)
+  def getOn(db: Database): T = db.storageGet(this)
   def set(db: Database, value: T) = db.storageUpdate(this, value)
 }
 
@@ -62,7 +62,7 @@ class ElementValue[T](sp : ScopeProperty[Database] = Database) extends Element[T
 class ElementBlocking[T](sp : ScopeProperty[Database] = Database) extends Element[T](sp) with Area{
   val thing = new ElementValue[Handle[T]]()
   def getHandle(db : Database) : Handle[T] = db.storageGetElseUpdate(thing, new Handle[T].setCompositeName(this))
-  def get(db: Database) : T = getHandle(db).get
+  def getOn(db: Database) : T = getHandle(db).get
   def set(db: Database, value : T) = {
     assert(!getHandle(db).isLoaded)
     getHandle(db).load(value)
@@ -71,11 +71,11 @@ class ElementBlocking[T](sp : ScopeProperty[Database] = Database) extends Elemen
 
 // The body provide the processing to generate the value
 class ElementLanda[T](body : => T, sp : ScopeProperty[Database] = Database) extends ElementValue[T](sp){
-  override def get(db: Database) : T = {
+  override def getOn(db: Database) : T = {
     if(!db.storageExists(this)){
       db.storageUpdate(this, body)
     }
-    super.get(db)
+    super.getOn(db)
   }
 
   override def set(db: Database, value: T) = ???

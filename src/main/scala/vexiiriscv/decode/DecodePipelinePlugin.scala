@@ -1,0 +1,5 @@
+package vexiiriscv.decode
+
+import vexiiriscv.misc.CtrlPipelinePlugin
+
+class DecodePipelinePlugin extends CtrlPipelinePlugin

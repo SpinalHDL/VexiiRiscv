@@ -9,7 +9,7 @@ import Fetch._
 import scala.collection.mutable.ArrayBuffer
 
 class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with PcService{
-  lazy val pp = host[PipelinePlugin]
+  lazy val pp = host[FetchPipelinePlugin]
   during setup {
     pp.retain()
   }

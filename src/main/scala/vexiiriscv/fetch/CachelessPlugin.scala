@@ -43,7 +43,7 @@ class CachelessPlugin(var wordWidth : Int,
                       var forkAt : Int = 0,
                       var joinAt : Int = 1,
                       var cmdForkPersistence : Boolean = true) extends FiberPlugin{
-  lazy val pp = host[PipelinePlugin]
+  lazy val pp = host[FetchPipelinePlugin]
   during setup{
     pp.retain()
     Fetch.WORD_WIDTH.set(wordWidth)
@@ -62,18 +62,21 @@ class CachelessPlugin(var wordWidth : Int,
     val buffer = new Area{
       val reserveId = Counter(idCount)
       val reserved = Vec.fill(idCount)(RegInit(False))
-      val valids = Vec.fill(idCount)(RegInit(True))
+      val inflight = Vec.fill(idCount)(RegInit(False))
       val words = Mem.fill(idCount)(Fetch.WORD)
-      val full = CombInit(reserved.read(reserveId) || !valids.read(reserveId)) //TODO that's one cycle late, can use sort of ahead value
+      val full = CombInit(reserved.read(reserveId) || inflight.read(reserveId)) //TODO that's one cycle late, can use sort of ahead value
 
-      when(bus.cmd.fire) {
+      when(forkCtrl.up.isMoving){
         reserveId.increment()
         reserved(reserveId) := True
-        valids(reserveId) := False
+      }
+
+      when(bus.cmd.fire) {
+        inflight(reserveId) := True
       }
 
       when(bus.rsp.valid) {
-        valids(bus.rsp.id) := True
+        inflight(bus.rsp.id) := False
         words(bus.rsp.id) := bus.rsp.word
       }
 
@@ -81,7 +84,7 @@ class CachelessPlugin(var wordWidth : Int,
       val flushHarts = (0 until Global.HART_COUNT).map(hartId => flushes.map(f => f.valid && f.hartId === hartId).orR).asBits
       for(ctrlId <- forkAt to joinAt){
         val ctrl = pp.ctrl(ctrlId)
-        when(flushHarts(ctrl(BUFFER_ID))){
+        when(ctrl.isValid && flushHarts(ctrl(BUFFER_ID))){
           reserved(ctrl(BUFFER_ID)) := False
         }
       }
@@ -97,9 +100,10 @@ class CachelessPlugin(var wordWidth : Int,
     }
 
     val join = new joinCtrl.Area{
-      val haltIt = !buffer.valids(BUFFER_ID)
+      val haltIt = buffer.inflight(BUFFER_ID)
       Fetch.WORD := buffer.words.readAsync(BUFFER_ID)
       // Implement bus rsp bypass into the pipeline (without using the buffer)
+      // TODO this one can be optional
       when(bus.rsp.valid && bus.rsp.id === BUFFER_ID){
         haltIt := False
         Fetch.WORD := bus.rsp.word
