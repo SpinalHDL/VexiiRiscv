@@ -12,6 +12,8 @@ class RiscvPlugin(var xlen : Int,
   val logic = during build new Area{
     Riscv.XLEN.set(xlen)
     Riscv.RVC.set(rvc)
+    Riscv.RVF.set(false)
+    Riscv.RVD.set(false)
     Global.HART_COUNT.set(hartCount)
     Fetch.SLICE_WIDTH.set(if(Riscv.RVC) 16 else 32)
     Fetch.SLICE_BYTES.set(if(Riscv.RVC) 2 else 4)

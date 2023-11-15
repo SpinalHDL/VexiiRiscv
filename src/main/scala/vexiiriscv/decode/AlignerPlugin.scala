@@ -36,11 +36,10 @@ class AlignerPlugin(fetchAt : Int = 3,
     connectors += connector
 
     val feeder = new down.Area{
+      this (Decode.ALIGNED_MASK, 0) := True
       this (Decode.INSTRUCTION, 0) := Fetch.WORD
       this (Global.PC, 0) := Fetch.WORD_PC
     }
-
-
 
   }
 }

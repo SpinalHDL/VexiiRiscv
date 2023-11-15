@@ -10,5 +10,6 @@ object Decode extends AreaRoot{
   val INSTRUCTION_WIDTH = blocking[Int]
 
   val INSTRUCTION = SignalKey(Bits(INSTRUCTION_WIDTH bits))
-  val MASK_ALIGNED = SignalKey(Bool())
+  val MICRO_OP = SignalKey(Bits(INSTRUCTION_WIDTH bits))
+  val ALIGNED_MASK = SignalKey(Bool())
 }

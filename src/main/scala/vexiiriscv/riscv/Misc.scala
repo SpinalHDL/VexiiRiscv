@@ -6,5 +6,5 @@ import spinal.lib.misc.pipeline._
 
 object Riscv{
   val XLEN = blocking[Int]
-  val RVC = blocking[Boolean]
+  val RVC, RVD, RVF = blocking[Boolean]
 }

@@ -79,7 +79,7 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
       }
     }
 
-    assert(HART_COUNT.get() == 1)
+    assert(HART_COUNT.get == 1)
 
     val inject = new injectStage.Area {
       valid := True

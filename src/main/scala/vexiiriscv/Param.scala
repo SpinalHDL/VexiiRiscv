@@ -2,6 +2,7 @@ package vexiiriscv
 
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
+import vexiiriscv.execute.{IntAluPlugin, SrcPlugin}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -27,6 +28,10 @@ object Param {
     plugins += new decode.AlignerPlugin(lanes = 1)
     plugins += new decode.DecoderPlugin()
     plugins += new schedule.DispatchPlugin()
+
+    plugins += new execute.ExecuteUnitPlugin("lane0")
+    plugins += new SrcPlugin("lane0")
+    plugins += new IntAluPlugin("lane0")
 
     plugins
   }
