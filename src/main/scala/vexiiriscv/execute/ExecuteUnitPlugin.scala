@@ -6,11 +6,13 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.riscv.{MicroOp, RegfileSpec, RfAccess, RfResource}
+import vexiiriscv.schedule.DispatchPlugin
 
 import scala.collection.mutable
 
-class ExecuteUnitPlugin(val euId : String) extends FiberPlugin with PipelineService{
+class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlugin with PipelineService{
   withPrefix(euId)
+  addLockable(host[DispatchPlugin])
 
   def addMicroOp(op : MicroOp): Unit = {
 
