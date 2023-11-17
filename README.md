@@ -9,10 +9,24 @@ VexiiRiscv is a from scratch second iteration of VexRiscv. Here are the targets 
 - Cleaning implementation, especially the frontend
 - ...
 
-It's currently very very early, but you can run the generation via : 
+# Setup
 
 ```shell
 git clone --recursive https://github.com/SpinalHDL/VexiiRiscv.git
 cd VexiiRiscv
+```
+
+# Generate Verilog
+
+It's currently very very early, but you can run the generation via : 
+
+```shell
 sbt "test:runMain vexiiriscv.scratchpad.Play1"
+```
+
+# Run a simulation
+
+```shell
+(cd ext/NaxSoftware/baremetal/vexiiriscv && make rv32ima)
+sbt " test:runMain vexiiriscv.tester.TestBench --load-elf ext/NaxSoftware/baremetal/vexiiriscv/build/rv32ima/vexiiriscv.elf  --passAfter 1000 --no-rvls"
 ```

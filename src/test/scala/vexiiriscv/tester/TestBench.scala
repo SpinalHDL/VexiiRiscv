@@ -17,7 +17,7 @@ class TestOptions{
   var dualSim = false // Double simulation, one ahead of the other which will trigger wave capture of the second simulation when it fail
   var traceIt = false
   var withRvls = true
-  var timeout = Option.empty[Long]
+  var failAfter, passAfter = Option.empty[Long]
   val bins = ArrayBuffer[(Long, String)]()
   val elfs = ArrayBuffer[String]()
 
@@ -26,7 +26,8 @@ class TestOptions{
     opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
     opt[Unit]("trace") action { (v, c) => traceIt = true }
     opt[Unit]("no-rvls") action { (v, c) => withRvls = false }
-    opt[Long]("timeout") action { (v, c) => timeout = Some(v) }
+    opt[Long]("failAfter") action { (v, c) => failAfter = Some(v) }
+    opt[Long]("passAfter") action { (v, c) => passAfter = Some(v) }
     opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += (java.lang.Long.parseLong(v(0), 16) -> v(1)) }
     opt[String]("load-elf") unbounded() action { (v, c) => elfs += v }
   }
@@ -36,7 +37,8 @@ class TestOptions{
       val cd = dut.clockDomain
       cd.forkStimulus(10)
 
-      timeout.map(delayed(_)(simFailure("Reached Timeout")))
+      failAfter.map(delayed(_)(simFailure("Reached Timeout")))
+      passAfter.map(delayed(_)(simSuccess()))
 
       val xlen = dut.database(Riscv.XLEN)
 
