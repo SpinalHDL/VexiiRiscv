@@ -9,13 +9,22 @@ import vexiiriscv.riscv.{MicroOp, RegfileSpec, RfAccess, RfResource}
 import vexiiriscv.schedule.DispatchPlugin
 
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
-class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlugin with PipelineService{
+class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlugin with PipelineService with ExecuteUnitService {
   withPrefix(euId)
   addLockable(host[DispatchPlugin])
 
-  def addMicroOp(op : MicroOp): Unit = {
+  override def euName(): String = euId
 
+  override def getMicroOp(): Seq[MicroOp] = {
+    lock.await()
+    microOps
+  }
+
+  val microOps = ArrayBuffer[MicroOp]()
+  def addMicroOp(op : MicroOp): Unit = {
+    microOps += op
   }
 
   def setLatency(op : MicroOp, latency : Int): Unit = {

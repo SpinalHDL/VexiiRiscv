@@ -77,6 +77,8 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       val mux = candidates.reader(oh, true)
       ctrl.up.valid := oh.orR
       Global.HART_ID := mux(_.hartId)
+      val ressources = eu.microOps.flatMap(_.resources).distinctLinked.toArray
+      println(ressources.mkString(" "))
     }
 
     dispatchCtrl.down.ready := True //TODO remove

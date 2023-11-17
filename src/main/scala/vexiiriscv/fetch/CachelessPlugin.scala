@@ -49,7 +49,7 @@ class CachelessPlugin(var wordWidth : Int,
     Fetch.WORD_WIDTH.set(wordWidth)
   }
   val logic = during build new Area{
-    val idCount = joinAt - forkAt //TODO we need more of it
+    val idCount = joinAt - forkAt + 1 //TODO we need more of it
     val p = CachelessBusParam(MIXED_WIDTH, Fetch.WORD_WIDTH, idCount, false)
     val bus = master(CachelessBus(p))
     val x = CombInit(pp.ctrl(2)(Fetch.WORD_PC))
@@ -61,14 +61,15 @@ class CachelessPlugin(var wordWidth : Int,
 
     val buffer = new Area{
       val reserveId = Counter(idCount)
-      val reserved = Vec.fill(idCount)(RegInit(False))
       val inflight = Vec.fill(idCount)(RegInit(False))
       val words = Mem.fill(idCount)(Fetch.WORD)
-      val full = CombInit(reserved.read(reserveId) || inflight.read(reserveId)) //TODO that's one cycle late, can use sort of ahead value
+      val reservedHits = for (ctrlId <- forkAt+1 to joinAt; ctrl = pp.ctrl(ctrlId)) yield {
+        ctrl.isValid && ctrl(BUFFER_ID) === reserveId
+      }
+      val full = CombInit(reservedHits.orR || inflight.read(reserveId)) //TODO that's one cycle late, can use sort of ahead value
 
       when(forkCtrl.up.isMoving){
         reserveId.increment()
-        reserved(reserveId) := True
       }
 
       when(bus.cmd.fire) {
@@ -78,15 +79,6 @@ class CachelessPlugin(var wordWidth : Int,
       when(bus.rsp.valid) {
         inflight(bus.rsp.id) := False
         words(bus.rsp.id) := bus.rsp.word
-      }
-
-      val flushes = host[FlusherService].getFlushCmds().filter(_.priority >= PcService.Priorities.FETCH_WORD(forkAt, true))
-      val flushHarts = (0 until Global.HART_COUNT).map(hartId => flushes.map(f => f.valid && f.hartId === hartId).orR).asBits
-      for(ctrlId <- forkAt to joinAt){
-        val ctrl = pp.ctrl(ctrlId)
-        when(ctrl.isValid && flushHarts(ctrl(BUFFER_ID))){
-          reserved(ctrl(BUFFER_ID)) := False
-        }
       }
     }
 
@@ -100,7 +92,7 @@ class CachelessPlugin(var wordWidth : Int,
     }
 
     val join = new joinCtrl.Area{
-      val haltIt = buffer.inflight(BUFFER_ID)
+      val haltIt = buffer.inflight.read(BUFFER_ID)
       Fetch.WORD := buffer.words.readAsync(BUFFER_ID)
       // Implement bus rsp bypass into the pipeline (without using the buffer)
       // TODO this one can be optional
@@ -109,10 +101,6 @@ class CachelessPlugin(var wordWidth : Int,
         Fetch.WORD := bus.rsp.word
       }
       haltWhen(haltIt)
-
-      when(isValid && isReady){
-        buffer.reserved(BUFFER_ID) := False
-      }
     }
 
     pp.release()

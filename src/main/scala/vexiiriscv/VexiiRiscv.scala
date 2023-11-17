@@ -17,3 +17,12 @@ class VexiiRiscv extends Component{
   val database = new Database
   val host = database on (new PluginHost)
 }
+
+
+/*
+memo
+- late ALU
+- conditional flag
+- micro-op(s)
+- exception / interruption
+ */

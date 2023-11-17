@@ -19,6 +19,7 @@ lazy val root = (project in file(".")).
       "net.fornwall" % "jelf" % "0.7.0"
     ),
     Compile / unmanagedSourceDirectories += baseDirectory.value / "ext/rvls/bindings/jni",
+    Compile / unmanagedSourceDirectories += baseDirectory.value / "ext/rvls/bindings/spinal",
     name := "VexiiRiscv"
   ).dependsOn(spinalHdlIdslPlugin, spinalHdlSim,spinalHdlCore,spinalHdlLib)
 lazy val spinalHdlIdslPlugin = ProjectRef(file("ext/SpinalHDL"), "idslplugin")

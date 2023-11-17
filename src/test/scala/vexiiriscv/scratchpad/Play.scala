@@ -5,11 +5,8 @@ import vexiiriscv._
 import vexiiriscv.VexiiRiscv
 
 object Play1 extends App {
-  SpinalVerilog(
-    VexiiRiscv(
-      Param.simple(
-        xlen = 32
-      )
-    )
-  )
+  SpinalVerilog {
+    val param = new ParamSimple()
+    VexiiRiscv(param.plugins())
+  }
 }

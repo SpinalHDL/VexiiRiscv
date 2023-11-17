@@ -6,18 +6,20 @@ import vexiiriscv.execute.{IntAluPlugin, SrcPlugin}
 
 import scala.collection.mutable.ArrayBuffer
 
-object Param {
-  def simple(xlen : Int,
-             rvc : Boolean = false,
-             hartCount: Int = 1,
-             withMmu : Boolean = false,
-             resetVector : BigInt = 0x80000000l) = {
+class ParamSimple(){
+  val xlen = 32
+  val rvc = false
+  val hartCount = 1
+  val withMmu = false
+  val resetVector = 0x80000000l
+
+  def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
 
     plugins += new riscv.RiscvPlugin(xlen, rvc, hartCount)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32)
-      case true  =>
+      case true =>
     }
     plugins += new schedule.FlusherPlugin()
     plugins += new fetch.PcPlugin(resetVector)
@@ -36,3 +38,4 @@ object Param {
     plugins
   }
 }
+
