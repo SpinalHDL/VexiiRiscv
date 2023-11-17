@@ -5,15 +5,17 @@ import spinal.core.fiber.Lockable
 import spinal.lib._
 import spinal.lib.logic.Masked
 import spinal.lib.misc.pipeline._
-import vexiiriscv.riscv.{RegfileSpec, RfRead}
+import vexiiriscv.riscv.{MicroOp, RegfileSpec, RfRead}
 
 trait DecoderService extends Lockable {
 //  def addEuOp(fu: ExecuteUnitService, microOp : MicroOp) : Unit
 //  def addResourceDecoding(resource : Resource, stageable : Stageable[Bool])
 //  def covers() : Seq[Masked] //List of all instruction implemented
 //  def euGroups : Seq[EuGroup]
-//  def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType)
-//  def addMicroOpDecodingDefault(key : Stageable[_ <: BaseType], value : BaseType) : Unit
+
+  def addMicroOpDecoding[T <: BaseType](microOp: MicroOp, key : SignalKey[T], value: T) : Unit = addMicroOpDecoding(microOp, DecodeList(key -> value))
+  def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType)
+  def addMicroOpDecodingDefault(key : SignalKey[_ <: BaseType], value : BaseType) : Unit
 //  def addDecodingToRob(key : Stageable[_ <: BaseType])
 //
 //  def READ_RS(id : Int)  : SignalKey[Bool]

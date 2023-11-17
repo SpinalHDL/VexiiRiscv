@@ -31,9 +31,9 @@ class ParamSimple(){
     plugins += new decode.DecoderPlugin()
     plugins += new schedule.DispatchPlugin()
 
-    plugins += new execute.ExecuteUnitPlugin("lane0", priority = 0)
-    plugins += new SrcPlugin("lane0")
-    plugins += new IntAluPlugin("lane0")
+    plugins += new execute.ExecuteUnitPlugin("eu0", priority = 0)
+    plugins += new SrcPlugin("eu0")
+    plugins += new IntAluPlugin("eu0")
 
     plugins
   }

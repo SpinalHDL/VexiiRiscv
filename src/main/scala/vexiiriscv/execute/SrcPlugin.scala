@@ -48,7 +48,7 @@ object SrcKeys extends AreaObject {
 
 class SrcPlugin(val euId : String) extends FiberPlugin{
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
-  addLockable(eu)
+  addLockable(eu.pipelineLock)
   withPrefix(euId)
 
   val spec = mutable.LinkedHashMap[MicroOp, mutable.LinkedHashSet[SrcKeys]]()

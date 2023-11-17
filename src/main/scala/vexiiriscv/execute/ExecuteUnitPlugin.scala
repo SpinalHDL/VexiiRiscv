@@ -1,6 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
+import spinal.core.fiber.{Lock, Lockable}
 import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -13,7 +14,6 @@ import scala.collection.mutable.ArrayBuffer
 
 class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlugin with PipelineService with ExecuteUnitService {
   withPrefix(euId)
-  addLockable(host[DispatchPlugin])
 
   override def euName(): String = euId
 
@@ -57,13 +57,14 @@ class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlug
   }
 
 
-
+  val pipelineLock = new Lockable(){}
   override def getConnectors(): Seq[Connector] = logic.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, CtrlConnector]()
   def ctrl(id : Int) = idToCtrl.getOrElseUpdate(id, CtrlConnector())
   def up = ctrl(0).up
   val logic = during build new Area{
-    val idMax = idToCtrl.keys.max
+    pipelineLock.await()
+    val idMax = (0 +: idToCtrl.keys.toList).max
     for(i <- 0 to idMax) ctrl(i).unsetName() //To ensure the creation to all intermediate nodes
     val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
     val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new StageConnector(from.down, to.up) //.withoutCollapse()

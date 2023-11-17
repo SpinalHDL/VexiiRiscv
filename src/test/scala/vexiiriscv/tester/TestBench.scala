@@ -1,9 +1,10 @@
 package vexiiriscv.tester
 
-import rvls.spinal.RvlsBackend
+import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib.misc.Elf
+import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamMonitor, StreamReadyRandomizer}
 import vexiiriscv._
 import vexiiriscv.riscv.Riscv
@@ -33,39 +34,60 @@ class TestOptions{
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
-    compiled.doSimUntilVoid { dut =>
-      val cd = dut.clockDomain
-      cd.forkStimulus(10)
+    dualSim match {
+      case true => DualSimTracer.withCb(compiled, window = 50000 * 10, seed = 2)(test)
+      case false => compiled.doSimUntilVoid(name = s"test", seed = 2) { dut => disableSimWave(); test(dut, f => if (traceIt) f) }
+    }
+  }
 
-      failAfter.map(delayed(_)(simFailure("Reached Timeout")))
-      passAfter.map(delayed(_)(simSuccess()))
+  def test(dut : VexiiRiscv, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
+    val cd = dut.clockDomain
+    cd.forkStimulus(10)
 
-      val xlen = dut.database(Riscv.XLEN)
+    failAfter.map(delayed(_)(simFailure("Reached Timeout")))
+    passAfter.map(delayed(_)(simSuccess()))
 
-      // Rvls will check that the CPUs are doing things right
-      val rvls = withRvls generate new RvlsBackend(new File(compiled.compiledPath, currentTestName))
-      if (withRvls) {
-        rvls.spinalSimFlusher(10 * 10000)
-        rvls.spinalSimTime(10000)
-      }
+    val xlen = dut.database(Riscv.XLEN)
 
+    // Rvls will check that the CPUs are doing things right
+    val rvls = withRvls generate new RvlsBackend(new File(simCompiled.compiledPath, currentTestName))
+    if (withRvls) {
+      rvls.spinalSimFlusher(10 * 10000)
+      rvls.spinalSimTime(10000)
+    }
 
-      val mem = SparseMemory(seed = 0)
-      // Load the binaries
-      for ((offset, file) <- bins) {
-        mem.loadBin(offset - 0x80000000l, file)
-        if (withRvls) rvls.loadBin(offset, new File(file))
-      }
+    // Things to enable when we want to collect traces
+    onTrace {
+      enableSimWave()
+      if (withRvls) rvls.debug()
 
-      // load elfs
-      for (file <- elfs) {
-        val elf = new Elf(new File(file), xlen)
-        elf.load(mem, 0)
-        if (withRvls) rvls.loadElf(0, elf.f)
+      val tracerFile = new FileBackend(new File(new File(simCompiled.compiledPath, currentTestName), "tracer.log"))
+      tracerFile.spinalSimFlusher(10 * 10000)
+      tracerFile.spinalSimTime(10000)
+//      naxes.foreach { hart =>
+//        hart.add(tracerFile)
+//        val r = hart.backends.reverse
+//        hart.backends.clear()
+//        hart.backends ++= r
+//      }
+    }
 
-        if (elf.getELFSymbol("pass") != null && elf.getELFSymbol("fail") != null) {
-          val passSymbol = elf.getSymbolAddress("pass")
-          val failSymbol = elf.getSymbolAddress("fail")
+    val mem = SparseMemory(seed = 0)
+    // Load the binaries
+    for ((offset, file) <- bins) {
+      mem.loadBin(offset - 0x80000000l, file)
+      if (withRvls) rvls.loadBin(offset, new File(file))
+    }
+
+    // load elfs
+    for (file <- elfs) {
+      val elf = new Elf(new File(file), xlen)
+      elf.load(mem, 0)
+      if (withRvls) rvls.loadElf(0, elf.f)
+
+      if (elf.getELFSymbol("pass") != null && elf.getELFSymbol("fail") != null) {
+        val passSymbol = elf.getSymbolAddress("pass")
+        val failSymbol = elf.getSymbolAddress("fail")
 //          naxes.foreach { nax =>
 //            nax.commitsCallbacks += { (hartId, pc) =>
 //              if (pc == passSymbol) delayed(1) {
@@ -83,33 +105,32 @@ class TestOptions{
 //              if (pc == failSymbol) delayed(1)(simFailure("Software reach the fail symbole :("))
 //            }
 //          }
+      }
+    }
+
+    val fcp = dut.host.get[fetch.CachelessPlugin].map { p =>
+      val bus = p.logic.bus
+      val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
+
+      case class Cmd(address: Long, id: Int)
+      val pending = mutable.ArrayBuffer[Cmd]()
+
+      val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>
+        pending += Cmd(p.address.toLong, p.id.toInt)
+      }
+      val rspDriver = FlowDriver(bus.rsp, cd) { p =>
+        val doIt = pending.nonEmpty
+        if (doIt) {
+          val cmd = pending.randomPop()
+          p.word #= mem.readBytes(cmd.address, p.p.dataWidth / 8)
+          p.id #= cmd.id
+          p.error #= false
         }
+        doIt
       }
 
-      val fcp = dut.host.get[fetch.CachelessPlugin].map { p =>
-        val bus = p.logic.bus
-        val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
-
-        case class Cmd(address: Long, id: Int)
-        val pending = mutable.ArrayBuffer[Cmd]()
-
-        val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>
-          pending += Cmd(p.address.toLong, p.id.toInt)
-        }
-        val rspDriver = FlowDriver(bus.rsp, cd) { p =>
-          val doIt = pending.nonEmpty
-          if (doIt) {
-            val cmd = pending.randomPop()
-            p.word #= mem.readBytes(cmd.address, p.p.dataWidth / 8)
-            p.id #= cmd.id
-            p.error #= false
-          }
-          doIt
-        }
-
-        cmdReady.setFactor(2.0f)
-        rspDriver.setFactor(2.0f)
-      }
+      cmdReady.setFactor(2.0f)
+      rspDriver.setFactor(2.0f)
     }
   }
 }

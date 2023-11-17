@@ -2,7 +2,7 @@ package vexiiriscv.decode
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.misc.pipeline.{Connector, CtrlConnector}
+import spinal.lib.misc.pipeline.{Connector, CtrlConnector, SignalKey}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.execute.ExecuteUnitService
 import vexiiriscv.fetch.FetchPipelinePlugin
@@ -10,14 +10,33 @@ import vexiiriscv.misc.PipelineService
 import vexiiriscv.riscv
 import Decode._
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
-import vexiiriscv.riscv.{PC_READ, RD, RS1, RS2, RS3, Resource, RfAccess, RfResource, SingleDecoding}
+import vexiiriscv.riscv.{MicroOp, PC_READ, RD, RS1, RS2, RS3, Resource, RfAccess, RfResource, SingleDecoding}
+import vexiiriscv.schedule.Dispatch
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin {
+class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin with DecoderService{
   lazy val dpp = host[DecodePipelinePlugin]
   addLockable(dpp)
+
+  val decodingSpecs = mutable.LinkedHashMap[SignalKey[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
+  def getDecodingSpec(key: SignalKey[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
+  def setDecodingDefault(key: SignalKey[_ <: BaseType], value: BaseType): Unit = {
+    getDecodingSpec(key).setDefault(Masked(value))
+  }
+
+  override def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType) = {
+    val op = Masked(microOp.key)
+    for ((key, value) <- decoding) {
+      getDecodingSpec(key).addNeeds(op, Masked(value))
+    }
+  }
+
+  override def addMicroOpDecodingDefault(key: SignalKey[_ <: BaseType], value: BaseType) = {
+    getDecodingSpec(key).setDefault(Masked(value))
+  }
+
 
   val logic = during build new Area{
     Decode.INSTRUCTION_WIDTH.set(32)
@@ -54,7 +73,7 @@ class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin {
       class RfAccessDecoding(val rfa : RfAccess){
         val rfaKey = rfaKeys(rfa)
         val read = new DecodingSpec(Bool()).setDefault(zero)
-        val rfid = new DecodingSpec(UInt(rfaKey.rfIdWidth bits)).setDefault(Masked(0, (1 << rfaKey.rfIdWidth)-1))
+        val rfid = new DecodingSpec(UInt(rfaKey.rfIdWidth bits))
       }
       val rfAccessDec = rfAccesses.map(rfa => rfa -> new RfAccessDecoding(rfa)).toMapLinked()
 //      val readRs1, readRs2, readRs3, writeRd, fpSpec, rmSpec = new DecodingSpec(Bool()).setDefault(zero)
@@ -98,7 +117,13 @@ class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin {
           case RD  => riscv.Const.rdRange
         }).asUInt
       }
-    }
 
+      val microOpDecoding = new Area {
+        for ((key, spec) <- decodingSpecs) {
+          key.assignFromBits(spec.build(Decode.INSTRUCTION, encodings.all).asBits)
+        }
+      }
+      Dispatch.MASK := True
+    }
   }
 }

@@ -66,6 +66,8 @@ class IntAluPlugin(val euId : String,
       }
     }
 
+    eu.release()
+
     val processCtrl = eu.ctrl(aluStage)
     val process = new processCtrl.Area {
       val ss = SrcStageables

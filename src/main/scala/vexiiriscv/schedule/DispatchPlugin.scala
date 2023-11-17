@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.misc.pipeline.{CtrlApi, SignalKey}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
-import vexiiriscv.decode.{Decode, DecodePipelinePlugin}
+import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderService}
 import vexiiriscv.execute.ExecuteUnitPlugin
 
 /*
@@ -24,13 +24,23 @@ Schedule euristic :
 
 class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
   lazy val dpp = host[DecodePipelinePlugin]
+  lazy val dp = host[DecoderService]
   addLockable(dpp)
+  addRetain(dp)
 
   val logic = during build new Area{
     val dispatchCtrl = dpp.ctrl(dispatchAt)
 
     val eus = host.list[ExecuteUnitPlugin].sortBy(_.priority).reverse
-    val EU_COMPATIBILITY = SignalKey(Bits(eus.size bits))
+    val EU_COMPATIBILITY = eus.map(eu => eu -> SignalKey(Bool())).toMapLinked()
+    for(eu <- eus){
+      val key = EU_COMPATIBILITY(eu)
+      dp.addMicroOpDecodingDefault(key, False)
+      for(op <- eu.getMicroOp()){
+        dp.addMicroOpDecoding(op, key, True)
+      }
+    }
+    dp.release()
     val slotsCount = 0
 
 //    val slots = for(i <- 0 until slotsCount) yield new Area{
@@ -42,7 +52,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     case class MicroOpCtx() extends Bundle{
       val valid = Bool()
       val hazard = Bool()
-      val compatibility = EU_COMPATIBILITY()
+      val compatibility = Bits(eus.size bits)
       val hartId = Global.HART_ID()
     }
 
@@ -50,7 +60,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     for(lane <- 0 until Decode.LANES) new dispatchCtrl.Area(lane){
       val c = candidates(slotsCount + lane)
       c.valid := dispatchCtrl.isValid && Dispatch.MASK
-      c.compatibility := EU_COMPATIBILITY
+      c.compatibility := EU_COMPATIBILITY.values.map(this(_)).asBits()
       c.hartId := Global.HART_ID
     }
 
@@ -65,7 +75,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       val layer = for ((c, id) <- candidates.zipWithIndex) yield new Area {
         val eusHits = c.compatibility & eusFree(id)
         val eusOh = OHMasking.firstV2(eusHits)
-        val doIt = eusHits.orR && hartFree(id)(c.hartId)
+        val doIt = c.valid && eusHits.orR && hartFree(id)(c.hartId)
         eusFree(id + 1) := eusFree(id) & eusOh.orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.hartId)).orMask(doIt)
       }
@@ -77,7 +87,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       val mux = candidates.reader(oh, true)
       ctrl.up.valid := oh.orR
       Global.HART_ID := mux(_.hartId)
-      val ressources = eu.microOps.flatMap(_.resources).distinctLinked.toArray
+      val ressources = eu.getMicroOp().flatMap(_.resources).distinctLinked.toArray
       println(ressources.mkString(" "))
     }
 
