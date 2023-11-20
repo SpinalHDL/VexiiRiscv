@@ -108,7 +108,7 @@ class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin with DecoderService{
       for(rfa <- rfAccesses){
         val keys = rfaKeys(rfa)
         val dec = encodings.rfAccessDec(rfa)
-        keys.READ := dec.read.build(Decode.INSTRUCTION, encodings.all)
+        keys.ENABLE := dec.read.build(Decode.INSTRUCTION, encodings.all)
         keys.RFID := dec.rfid.build(Decode.INSTRUCTION, encodings.all)
         keys.PHYS := Decode.INSTRUCTION(rfa match {
           case RS1 => riscv.Const.rs1Range
@@ -124,6 +124,7 @@ class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin with DecoderService{
         }
       }
       Dispatch.MASK := True
+      Decode.MICRO_OP := Decode.INSTRUCTION
     }
   }
 }

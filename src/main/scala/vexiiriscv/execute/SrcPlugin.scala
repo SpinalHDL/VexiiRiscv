@@ -94,7 +94,7 @@ class SrcPlugin(val euId : String) extends FiberPlugin{
       )
     }
 
-    val onCtrl = eu.ctrl(0)
+    val onCtrl = eu.execute(0)
     val src = new onCtrl.Area{
       val imm = new IMM(Decode.MICRO_OP)
       if(src1Keys.nonEmpty) ss.SRC1 := SRC1_CTRL.muxListDc[SInt](src1Keys.map {

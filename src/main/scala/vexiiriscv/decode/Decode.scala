@@ -27,8 +27,7 @@ case class AccessKeys(physWidth : Int, rfMapping : Seq[RegfileSpec]) extends Are
   def is(rfs: RegfileSpec, that: UInt) = that === idOf(rfs)
   def idOf(rfs: RegfileSpec) = rfMapping.indexOf(rfs)
 
-  val READ = SignalKey(Bool())
+  val ENABLE = SignalKey(Bool())
   val PHYS = SignalKey(UInt(physWidth bits))
   val RFID = SignalKey(UInt(rfIdWidth bits))
-
 }

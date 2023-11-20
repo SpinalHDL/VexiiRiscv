@@ -12,6 +12,7 @@ abstract class ExecutionUnitElementSimple(euId : String, staticLatency : Boolean
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
   addLockable(eu.pipelineLock)
   addRetain(eu)
+  addLockable(host[SrcPlugin])
   withPrefix(euId)
 
   val SEL = SignalKey(Bool())

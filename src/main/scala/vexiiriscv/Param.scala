@@ -31,9 +31,15 @@ class ParamSimple(){
     plugins += new decode.DecoderPlugin()
     plugins += new schedule.DispatchPlugin()
 
-    plugins += new execute.ExecuteUnitPlugin("eu0", priority = 0)
-    plugins += new SrcPlugin("eu0")
-    plugins += new IntAluPlugin("eu0")
+    plugins += new regfile.RegFilePlugin(
+      spec = riscv.IntRegFile,
+      physicalDepth = 32,
+      preferedWritePortForInit = "EU0"
+    )
+
+    plugins += new execute.ExecuteUnitPlugin("EU0", priority = 0)
+    plugins += new SrcPlugin("EU0")
+    plugins += new IntAluPlugin("EU0")
 
     plugins
   }

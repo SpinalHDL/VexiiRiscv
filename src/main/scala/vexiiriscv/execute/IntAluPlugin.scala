@@ -31,7 +31,7 @@ class IntAluPlugin(val euId : String,
   import IntAluPlugin._
 
 
-  val logic = during build new Logic(0){
+  val logic = during build new Logic(2){
     import SrcKeys._
 
     val ace = AluCtrlEnum
@@ -68,7 +68,7 @@ class IntAluPlugin(val euId : String,
 
     eu.release()
 
-    val processCtrl = eu.ctrl(aluStage)
+    val processCtrl = eu.execute(aluStage)
     val process = new processCtrl.Area {
       val ss = SrcStageables
 

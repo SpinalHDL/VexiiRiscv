@@ -16,4 +16,6 @@ trait ExecuteUnitService extends Lockable {
 //  def addMicroOp(enc : MicroOp)
 
   def getMicroOp(): Seq[MicroOp]
+  def dispatchPriority : Int
+  def insertNode : Node
 }
