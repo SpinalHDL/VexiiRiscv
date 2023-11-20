@@ -79,6 +79,15 @@ class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlug
     val specs = microOps.values
     val resources = specs.flatMap(_.microOp.resources).distinctLinked
 
+    val decodeAt = -1
+    val decodeCtrl = ctrl(decodeAt)
+    val decoding = new decodeCtrl.Area {
+      val coverAll = getMicroOp().map(e => Masked(e.key))
+      for ((key, spec) <- decodingSpecs) {
+        key.assignFromBits(spec.build(Decode.MICRO_OP, coverAll).asBits)
+      }
+    }
+
     val rf = new Area{
       val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked
       val rfPlugins = rfSpecs.map(spec => host.find[RegfileService](_.rfSpec == spec))
@@ -96,12 +105,11 @@ class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlug
         ctrl(readAt + rfPlugin.readLatency)(payload) := port.data
       }
     }
-    println(rfStageables.mkString(" "))
 
     val idMax = (0 +: idToCtrl.keys.toList).max
     for(i <- 0 to idMax) ctrl(i) //To ensure the creation to all intermediate nodes
     val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
-    val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new StageConnector(from.down, to.up) //.withoutCollapse()
+    val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new StageConnector(from.down, to.up).withoutCollapse()
     ctrls.last.down.setAlwaysReady()
     val connectors = (sc ++ ctrls).toSeq
     host.list[RegfileService].foreach(_.release())

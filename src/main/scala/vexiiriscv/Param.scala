@@ -2,7 +2,8 @@ package vexiiriscv
 
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
-import vexiiriscv.execute.{IntAluPlugin, SrcPlugin}
+import vexiiriscv.execute.{IntAluPlugin, IntFormatPlugin, SrcPlugin, WriteBackPlugin}
+import vexiiriscv.riscv.IntRegFile
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -40,6 +41,8 @@ class ParamSimple(){
     plugins += new execute.ExecuteUnitPlugin("EU0", priority = 0)
     plugins += new SrcPlugin("EU0")
     plugins += new IntAluPlugin("EU0")
+    plugins += new IntFormatPlugin("EU0")
+    plugins += new WriteBackPlugin("EU0", IntRegFile)
 
     plugins
   }

@@ -29,13 +29,16 @@ class IntAluPlugin(val euId : String,
                    var aluStage : Int = 0,
                    var writebackAt : Int = 0) extends ExecutionUnitElementSimple(euId, staticLatency)  {
   import IntAluPlugin._
-
+  lazy val ifp = host.find[IntFormatPlugin](_.euId == euId)
+  addLockable(ifp)
 
   val logic = during build new Logic(2){
     import SrcKeys._
 
     val ace = AluCtrlEnum
     val abce = AluBitwiseCtrlEnum
+
+    val wb = ifp.access(aluStage)
 
     add(Rvi.ADD , List(Op.ADD   , SRC1.RF, SRC2.RF), DecodeList(ALU_CTRL -> ace.ADD_SUB ))
     add(Rvi.SUB , List(Op.SUB   , SRC1.RF, SRC2.RF), DecodeList(ALU_CTRL -> ace.ADD_SUB ))
@@ -61,8 +64,7 @@ class IntAluPlugin(val euId : String,
       add(Rvi.ADDIW , List(Op.ADD   , SRC1.RF, SRC2.I), DecodeList(ALU_CTRL -> ace.ADD_SUB ))
 
       for(op <- List(Rvi.ADDW, Rvi.SUBW, Rvi.ADDIW)){
-        //signExtend(op, 31)
-        ???
+        ifp.signExtend(wb, op, 31)
       }
     }
 
@@ -85,11 +87,8 @@ class IntAluPlugin(val euId : String,
       )
 
       ALU_RESULT := result.asBits
+      wb.valid := SEL
+      wb.payload := ALU_RESULT
     }
-
-//    val writeback = new ExecuteArea(writebackAt) {
-//      import stage._
-//      wb.payload := ALU_RESULT
-//    }
   }
 }
