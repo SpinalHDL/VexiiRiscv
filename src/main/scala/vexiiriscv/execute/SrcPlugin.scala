@@ -52,7 +52,7 @@ class SrcPlugin(val euId : String) extends FiberPlugin{
   withPrefix(euId)
 
   val spec = mutable.LinkedHashMap[MicroOp, mutable.LinkedHashSet[SrcKeys]]()
-  def specify(microOp: MicroOp, keys: List[SrcKeys]) = {
+  def specify(microOp: MicroOp, keys: Seq[SrcKeys]) = {
     val e = spec.getOrElseUpdate(microOp, mutable.LinkedHashSet[SrcKeys]())
     for(k <- keys){
       assert(!e.contains(k))

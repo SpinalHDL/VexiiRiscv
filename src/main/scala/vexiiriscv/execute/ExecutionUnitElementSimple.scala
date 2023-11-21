@@ -17,18 +17,35 @@ abstract class ExecutionUnitElementSimple(euId : String, staticLatency : Boolean
 
   val SEL = SignalKey(Bool())
 
-  class Logic(latency : Int) extends Area {
-    def add(microOp: MicroOp, srcKeys: List[SrcKeys] = Nil, decoding: DecodeListType = Nil) = {
+  class Logic(latency: Int) extends Area {
+    def add(microOp: MicroOp) = new {
       eu.addMicroOp(microOp)
       eu.setLatency(microOp, latency)
-      if (staticLatency && microOp.resources.exists{
-        case RfResource(_, RD) => true
-        case _ => false
-      })
-//      eu.setStaticWake(microOp, euWritebackAt)
-      eu.addDecoding(microOp, decoding :+ (SEL -> True))
-      if (srcKeys.nonEmpty) {
-        host.find[SrcPlugin](_.euId == euId).specify(microOp, srcKeys)
+      decode(SEL -> True)
+//      if (staticLatency && microOp.resources.exists {
+//        case RfResource(_, RD) => true
+//        case _ => false
+//      })
+
+      def decode(decoding: DecodeListType = Nil): this.type = {
+        eu.addDecoding(microOp, decoding :+ (SEL -> True))
+        this
+      }
+
+      def decode(head: (SignalKey[_ <: BaseType], Any), tail : (SignalKey[_ <: BaseType], Any)*): this.type = {
+        eu.addDecoding(microOp, head +:tail)
+        this
+      }
+
+
+      def srcs(srcKeys: Seq[SrcKeys]): this.type = {
+        if (srcKeys.nonEmpty) host.find[SrcPlugin](_.euId == euId).specify(microOp, srcKeys)
+        this
+      }
+
+      def srcs(head: SrcKeys, tail : SrcKeys*): this.type = {
+        this.srcs(head +: tail)
+        this
       }
     }
   }
