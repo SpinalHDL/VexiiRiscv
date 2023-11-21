@@ -1,7 +1,7 @@
 package vexiiriscv.fetch
 
 import spinal.core._
-import spinal.lib.misc.pipeline.SignalKey
+import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.database.Database._
 import vexiiriscv.Global
 import vexiiriscv.riscv
@@ -15,6 +15,6 @@ object Fetch extends AreaRoot{
   val SLICE_RANGE_LOW = blocking[Int]
   val SLICE_RANGE = blocking[Range]
 
-  val WORD = SignalKey(Bits(WORD_WIDTH bits))
-  val WORD_PC = SignalKey(Global.PC)
+  val WORD = Payload(Bits(WORD_WIDTH bits))
+  val WORD_PC = Payload(Global.PC)
 }

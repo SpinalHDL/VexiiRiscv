@@ -2,7 +2,7 @@ package vexiiriscv
 
 import spinal.core._
 import spinal.lib.misc.database.Database.blocking
-import spinal.lib.misc.pipeline.SignalKey
+import spinal.lib.misc.pipeline.Payload
 
 /**
  * Define global variables for plugin to share in very non-verbose ways
@@ -14,12 +14,12 @@ object Global extends AreaRoot{
   val PC_WIDTH         = blocking[Int]
   val HART_COUNT       = blocking[Int]
 
-  val VIRTUAL_ADDRESS = SignalKey(UInt(VIRTUAL_WIDTH bits))
-  val MIXED_ADDRESS = SignalKey(UInt(MIXED_WIDTH bits))
-  val PHYSICAL_ADDRESS = SignalKey(UInt(PHYSICAL_WIDTH bits))
-  val PC = SignalKey(UInt(PC_WIDTH bits))
+  val VIRTUAL_ADDRESS = Payload(UInt(VIRTUAL_WIDTH bits))
+  val MIXED_ADDRESS = Payload(UInt(MIXED_WIDTH bits))
+  val PHYSICAL_ADDRESS = Payload(UInt(PHYSICAL_WIDTH bits))
+  val PC = Payload(UInt(PC_WIDTH bits))
 
   def HART_ID_WIDTH = log2Up(HART_COUNT)
-  val HART_ID = SignalKey(UInt(HART_ID_WIDTH bits))
+  val HART_ID = Payload(UInt(HART_ID_WIDTH bits))
 
 }

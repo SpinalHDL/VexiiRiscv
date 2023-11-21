@@ -2,7 +2,7 @@ package vexiiriscv.schedule
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.misc.pipeline.{CtrlApi, CtrlConnector, NodeApi, SignalKey}
+import spinal.lib.misc.pipeline.{CtrlApi, CtrlLink, NodeApi, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
@@ -34,7 +34,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     val dispatchCtrl = dpp.ctrl(dispatchAt)
 
     val eus = host.list[ExecuteUnitService].sortBy(_.dispatchPriority).reverse
-    val EU_COMPATIBILITY = eus.map(eu => eu -> SignalKey(Bool())).toMapLinked()
+    val EU_COMPATIBILITY = eus.map(eu => eu -> Payload(Bool())).toMapLinked()
     for(eu <- eus){
       val key = EU_COMPATIBILITY(eu)
       dp.addMicroOpDecodingDefault(key, False)
@@ -60,8 +60,8 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     }
 
     val latencyMax = 2 //TODO
-    val hazardCtrls: List[CtrlConnector] = Nil //TODO
-    val RD_HAZARD = SignalKey(Bool())
+    val hazardCtrls: List[CtrlLink] = Nil //TODO
+    val RD_HAZARD = Payload(Bool())
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
 //      val hazards = for((k, ac) <- Decode.rfaKeys) yield

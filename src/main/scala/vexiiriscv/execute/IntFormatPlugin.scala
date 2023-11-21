@@ -51,7 +51,7 @@ class IntFormatPlugin(val euId : String) extends FiberPlugin{
 
       val signExtend = for(seg <- signExtendsGroups) yield new Area{
         val bitId = seg.head.bitId
-        val DO_IT = SignalKey(Bool())
+        val DO_IT = Payload(Bool())
         eu.setDecodingDefault(DO_IT, False)
         for(e <- seg){
           eu.addDecoding(e.op, decode.DecodeList(DO_IT -> True))

@@ -13,9 +13,9 @@ trait DecoderService extends Lockable {
 //  def covers() : Seq[Masked] //List of all instruction implemented
 //  def euGroups : Seq[EuGroup]
 
-  def addMicroOpDecoding[T <: BaseType](microOp: MicroOp, key : SignalKey[T], value: T) : Unit = addMicroOpDecoding(microOp, DecodeList(key -> value))
+  def addMicroOpDecoding[T <: BaseType](microOp: MicroOp, key : Payload[T], value: T) : Unit = addMicroOpDecoding(microOp, DecodeList(key -> value))
   def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType)
-  def addMicroOpDecodingDefault(key : SignalKey[_ <: BaseType], value : BaseType) : Unit
+  def addMicroOpDecodingDefault(key : Payload[_ <: BaseType], value : BaseType) : Unit
 //  def addDecodingToRob(key : Stageable[_ <: BaseType])
 //
 //  def READ_RS(id : Int)  : SignalKey[Bool]

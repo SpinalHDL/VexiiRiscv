@@ -2,7 +2,7 @@ package vexiiriscv.decode
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.misc.pipeline.{Connector, CtrlConnector, SignalKey}
+import spinal.lib.misc.pipeline.{Link, CtrlLink, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.execute.ExecuteUnitService
 import vexiiriscv.fetch.FetchPipelinePlugin
@@ -20,9 +20,9 @@ class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin with DecoderService{
   lazy val dpp = host[DecodePipelinePlugin]
   addLockable(dpp)
 
-  val decodingSpecs = mutable.LinkedHashMap[SignalKey[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
-  def getDecodingSpec(key: SignalKey[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
-  def setDecodingDefault(key: SignalKey[_ <: BaseType], value: BaseType): Unit = {
+  val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
+  def getDecodingSpec(key: Payload[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
+  def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType): Unit = {
     getDecodingSpec(key).setDefault(Masked(value))
   }
 
@@ -33,7 +33,7 @@ class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin with DecoderService{
     }
   }
 
-  override def addMicroOpDecodingDefault(key: SignalKey[_ <: BaseType], value: BaseType) = {
+  override def addMicroOpDecodingDefault(key: Payload[_ <: BaseType], value: BaseType) = {
     getDecodingSpec(key).setDefault(Masked(value))
   }
 

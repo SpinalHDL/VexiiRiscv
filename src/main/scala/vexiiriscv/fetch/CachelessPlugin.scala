@@ -57,7 +57,7 @@ class CachelessPlugin(var wordWidth : Int,
     val forkCtrl = pp.ctrl(forkAt)
     val joinCtrl = pp.ctrl(joinAt)
 
-    val BUFFER_ID = SignalKey(UInt(log2Up(idCount) bits))
+    val BUFFER_ID = Payload(UInt(log2Up(idCount) bits))
 
     val buffer = new Area{
       val reserveId = Counter(idCount)

@@ -16,10 +16,10 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 object SrcStageables extends AreaObject {
-  val SRC1, SRC2 = SignalKey(SInt(Riscv.XLEN bits))
-  val ADD_SUB = SignalKey(SInt(Riscv.XLEN bits))
-  val LESS = SignalKey(Bool())
-  val REVERT, ZERO, UNSIGNED = SignalKey(Bool())
+  val SRC1, SRC2 = Payload(SInt(Riscv.XLEN bits))
+  val ADD_SUB = Payload(SInt(Riscv.XLEN bits))
+  val LESS = Payload(Bool())
+  val REVERT, ZERO, UNSIGNED = Payload(Bool())
 }
 
 class SrcKeys
@@ -69,8 +69,8 @@ class SrcPlugin(val euId : String) extends FiberPlugin{
     val src1Keys = keys.filter(_.isInstanceOf[Src1Keys]).toSeq
     val src2Keys = keys.filter(_.isInstanceOf[Src2Keys]).toSeq
 
-    val SRC1_CTRL = SignalKey(Bits(log2Up(src1Keys.size) bits))
-    val SRC2_CTRL = SignalKey(Bits(log2Up(src2Keys.size) bits))
+    val SRC1_CTRL = Payload(Bits(log2Up(src1Keys.size) bits))
+    val SRC2_CTRL = Payload(Bits(log2Up(src2Keys.size) bits))
 
     val src1ToEnum = src1Keys.zipWithIndex.map{case(k,i) => k -> B(i, widthOf(SRC1_CTRL) bits)}.toMap
     val src2ToEnum = src2Keys.zipWithIndex.map{case(k,i) => k -> B(i, widthOf(SRC2_CTRL) bits)}.toMap
@@ -79,7 +79,7 @@ class SrcPlugin(val euId : String) extends FiberPlugin{
 
     for((op, keys) <- spec){
 
-      val REVERT, ZERO = SignalKey(Bool())
+      val REVERT, ZERO = Payload(Bool())
       eu.addDecoding(
         op,
         keys.toSeq.flatMap{

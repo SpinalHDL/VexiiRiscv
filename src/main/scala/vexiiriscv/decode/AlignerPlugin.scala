@@ -1,7 +1,7 @@
 package vexiiriscv.decode
 
 import spinal.core._
-import spinal.lib.misc.pipeline.{Connector, CtrlConnector}
+import spinal.lib.misc.pipeline.{Link, CtrlLink}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
@@ -18,10 +18,10 @@ class AlignerPlugin(fetchAt : Int = 3,
   addLockable(fpp)
   addLockable(dpp)
 
-  override def getConnectors(): Seq[Connector] = logic.connectors
+  override def getConnectors(): Seq[Link] = logic.connectors
 
   val logic = during build new Area{
-    val connectors = ArrayBuffer[Connector]()
+    val connectors = ArrayBuffer[Link]()
     Decode.LANES.set(lanes)
     Decode.INSTRUCTION_WIDTH.get
 
@@ -32,7 +32,7 @@ class AlignerPlugin(fetchAt : Int = 3,
 
     val up = fpp.ctrl(fetchAt).down
     val down = dpp.up
-    val connector = CtrlConnector(up, down)
+    val connector = CtrlLink(up, down)
     connectors += connector
 
     val feeder = new down.Area{

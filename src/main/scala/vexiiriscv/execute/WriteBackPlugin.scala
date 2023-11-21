@@ -35,7 +35,7 @@ class WriteBackPlugin(val euId : String, rf : RegfileSpec) extends FiberPlugin{
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
 
-    var DATA : SignalKey[Bits] = null
+    var DATA : Payload[Bits] = null
     val stages = for (group <- sorted) yield new Area {
       val ctrlId = group.head.ctrlAt
       val ctrl = eu.execute(ctrlId)

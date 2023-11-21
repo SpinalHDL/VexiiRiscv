@@ -15,7 +15,7 @@ abstract class ExecutionUnitElementSimple(euId : String, staticLatency : Boolean
   addLockable(host[SrcPlugin])
   withPrefix(euId)
 
-  val SEL = SignalKey(Bool())
+  val SEL = Payload(Bool())
 
   class Logic(latency: Int) extends Area {
     def add(microOp: MicroOp) = new {
@@ -32,7 +32,7 @@ abstract class ExecutionUnitElementSimple(euId : String, staticLatency : Boolean
         this
       }
 
-      def decode(head: (SignalKey[_ <: BaseType], Any), tail : (SignalKey[_ <: BaseType], Any)*): this.type = {
+      def decode(head: (Payload[_ <: BaseType], Any), tail : (Payload[_ <: BaseType], Any)*): this.type = {
         eu.addDecoding(microOp, head +:tail)
         this
       }

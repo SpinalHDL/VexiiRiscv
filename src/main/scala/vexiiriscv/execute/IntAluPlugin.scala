@@ -19,9 +19,9 @@ object IntAluPlugin extends AreaObject {
     val ADD_SUB, SLT_SLTU, BITWISE = newElement()
   }
 
-  val ALU_BITWISE_CTRL = SignalKey(AluBitwiseCtrlEnum())
-  val ALU_CTRL = SignalKey(AluCtrlEnum())
-  val ALU_RESULT = SignalKey(Bits(Riscv.XLEN bits))
+  val ALU_BITWISE_CTRL = Payload(AluBitwiseCtrlEnum())
+  val ALU_CTRL = Payload(AluCtrlEnum())
+  val ALU_RESULT = Payload(Bits(Riscv.XLEN bits))
 }
 
 class IntAluPlugin(val euId : String,
