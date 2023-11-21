@@ -39,6 +39,7 @@ class IntAluPlugin(val euId : String,
     val abce = AluBitwiseCtrlEnum
 
     val wb = ifp.access(aluStage)
+    implicit val _ = ImplicitIntFormatPluginPort(ifp, wb)
 
     add(Rvi.ADD ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
     add(Rvi.SUB ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
@@ -56,7 +57,7 @@ class IntAluPlugin(val euId : String,
     add(Rvi.ANDI ).srcs(           SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.AND )
 
     add(Rvi.LUI  ).srcs(Op.SRC1  , SRC1.U)         .decode(ALU_CTRL -> ace.ADD_SUB)
-    add(Rvi.AUIPC).srcs(Op.ADD   , SRC1.U, SRC2.PC).decode(ALU_CTRL -> ace.ADD_SUB)
+    add(Rvi.AUIPC).srcs(Op.ADD, SRC1.U, SRC2.PC).decode(ALU_CTRL -> ace.ADD_SUB)
 
     if(Riscv.XLEN.get == 64){
       add(Rvi.ADDW ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB)

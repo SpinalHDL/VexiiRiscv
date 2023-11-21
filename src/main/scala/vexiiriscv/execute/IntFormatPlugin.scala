@@ -20,6 +20,7 @@ class IntFormatPlugin(val euId : String) extends FiberPlugin{
   case class SignExtend(op : MicroOp, bitId : Int)
   case class Spec(port : Flow[Bits],
                   ctrlId : Int){
+    val microOps = mutable.LinkedHashSet[MicroOp]()
     val signExtends = ArrayBuffer[SignExtend]()
   }
   val portToSpec = mutable.LinkedHashMap[Flow[Bits],Spec]()
@@ -30,8 +31,15 @@ class IntFormatPlugin(val euId : String) extends FiberPlugin{
     port
   }
 
-  def signExtend(port : Flow[Bits], microOp: MicroOp, bitId : Int) = {
-    portToSpec(port).signExtends += SignExtend(microOp, bitId)
+  def signExtend(port: Flow[Bits], microOp: MicroOp, bitId: Int) = {
+    val spec = portToSpec(port)
+    spec.signExtends += SignExtend(microOp, bitId)
+    spec.microOps += microOp
+  }
+
+  def addMicroOp(port: Flow[Bits], microOp: MicroOp) : Unit = {
+    val spec = portToSpec(port)
+    spec.microOps += microOp
   }
 
   val logic = during build new Area{
@@ -42,6 +50,8 @@ class IntFormatPlugin(val euId : String) extends FiberPlugin{
       val stage = eu.execute(stageId)
 
       val wb = wbp.createPort(stageId)
+      for(spec <- group) wbp.addMicroOp(wb, spec.microOps.toSeq)
+
       val hits = B(group.map(_.port.valid))
       wb.valid := stage.isValid && hits.orR
 

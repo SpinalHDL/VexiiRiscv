@@ -22,25 +22,28 @@ class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlug
     host.list[RegfileService].foreach(_.retain())
   }
 
+  override def readRfAt = logic.rf.readAt
+  override def insertAt = logic.idMin
   override def euName(): String = euId
-  override def insertNode: Node = logic.ctrls.head.up
+  override def insertNode: Node = ctrl(logic.idMin).up
+  override def nodeAt(id : Int): Node = ctrl(id).down
   override def dispatchPriority: Int = priority
   override def getMicroOp(): Seq[MicroOp] = {
     lock.await()
     microOps.keys.toSeq
   }
 
-  class MicroOpSpec(val microOp : MicroOp){
-    var latency = Option.empty[Int]
-  }
   val microOps = mutable.LinkedHashMap[MicroOp, MicroOpSpec]()
   def addMicroOp(op : MicroOp): Unit = {
     microOps.getOrElseUpdate(op, new MicroOpSpec(op))
   }
 
-  def setLatency(op : MicroOp, latency : Int): Unit = {
-    microOps(op).latency = Some(latency)
+  def setRdSpec(op : MicroOp, data : Payload[Bits], insertAt : Int, rfReadableAt : Int): Unit = {
+    assert(microOps(op).rd.isEmpty)
+    microOps(op).rd = Some(RdSpec(data, insertAt, rfReadableAt))
   }
+
+  override def getSpec(op: MicroOp): MicroOpSpec = microOps(op)
 
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType): Unit = {
     getDecodingSpec(key).setDefault(Masked(value))
@@ -66,7 +69,7 @@ class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlug
 
 
   val pipelineLock = new Lockable(){}
-  override def getConnectors(): Seq[Link] = logic.connectors
+  override def getConnectors(): Seq[Link] = pipeline.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, CtrlLink]()
   def ctrl(id : Int) = idToCtrl.getOrElseUpdate(id, CtrlLink().setCompositeName(this, if(id >= 0) "exe" + id else "dis" + -(id + 1)))
   def execute(id: Int) = {
@@ -77,7 +80,7 @@ class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlug
     pipelineLock.await()
 
     val specs = microOps.values
-    val resources = specs.flatMap(_.microOp.resources).distinctLinked
+    val resources = specs.flatMap(_.op.resources).distinctLinked
 
     val decodeAt = -1
     val decodeCtrl = ctrl(decodeAt)
@@ -106,12 +109,17 @@ class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlug
       }
     }
 
-    val idMax = (0 +: idToCtrl.keys.toList).max
-    for(i <- 0 to idMax) ctrl(i) //To ensure the creation to all intermediate nodes
-    val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
-    val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new StageLink(from.down, to.up).withoutCollapse()
-    ctrls.last.down.setAlwaysReady()
-    val connectors = (sc ++ ctrls).toSeq
+    val idMin = (0 +: idToCtrl.keys.toList).min
     host.list[RegfileService].foreach(_.release())
+  }
+
+  val pipeline = during build new Area {
+    linkLock.await()
+    val idMax = (0 +: idToCtrl.keys.toList).max
+    for (i <- 0 to idMax) ctrl(i)  //To ensure the creation to all intermediate nodes
+    val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
+    ctrls.last.down.setAlwaysReady()
+    val sc = for ((from, to) <- (ctrls, ctrls.tail).zipped) yield new StageLink(from.down, to.up).withoutCollapse()
+    val connectors = (sc ++ ctrls).toSeq
   }
 }

@@ -7,8 +7,11 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
 import vexiiriscv.execute.ExecuteUnitService
+import vexiiriscv.misc.PipelineBuilderPlugin
 import vexiiriscv.regfile.RegfileService
-import vexiiriscv.riscv.{RD, RfRead}
+import vexiiriscv.riscv.{RD, RfRead, RfResource}
+
+import scala.collection.mutable.ArrayBuffer
 
 /*
 How to check if a instruction can schedule :
@@ -27,8 +30,13 @@ Schedule euristic :
 class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
   lazy val dpp = host[DecodePipelinePlugin]
   lazy val dp = host[DecoderService]
+  addLockable(host[PipelineBuilderPlugin])
   addLockable(dpp)
   addRetain(dp)
+
+  during setup{
+    host.list[ExecuteUnitService].foreach(_.linkLock.retain())
+  }
 
   val logic = during build new Area{
     val dispatchCtrl = dpp.ctrl(dispatchAt)
@@ -47,7 +55,6 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
 
     case class MicroOpCtx() extends Bundle{
       val valid = Bool()
-      val hazard = Bool()
       val compatibility = Bits(eus.size bits)
       val hartId = Global.HART_ID()
       val microOp = Decode.MICRO_OP()
@@ -59,14 +66,49 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       }
     }
 
-    val latencyMax = 2 //TODO
-    val hazardCtrls: List[CtrlLink] = Nil //TODO
+
+    val rdKeys = Decode.rfaKeys.get(RD)
     val RD_HAZARD = Payload(Bool())
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
-//      val hazards = for((k, ac) <- Decode.rfaKeys) yield
-//      val hazards = hazardCtrls.map(ctrl => ctrl(RD_HAZARD) && ctrl(rdKeys.PHYS) === ctx.rdPhys && ctrl(rdKeys.RFID) === ctx.rdId)
-      //TODO
+      val fire = Bool()
+      val eusReady = Bits(eus.size bits)
+      val euLogic = for((readEu, euId) <- eus.zipWithIndex) yield new Area{
+        val insertAt = readEu.insertAt
+        val readAt = readEu.readRfAt
+        val readTime = readAt - insertAt
+
+        //Identify which RS are used by the pipeline
+        val readEuRessources = readEu.getMicroOp().flatMap(_.resources).distinctLinked
+        val rfaReads = Decode.rfaKeys.filter(_._1.isInstanceOf[RfRead])
+        val rfaReadsFiltered = rfaReads.filter(e => readEuRessources.exists{
+          case RfResource(_, e) => true
+          case _ => false
+        }).values
+
+
+        val rsLogic = for (rs <- rfaReadsFiltered) yield new Area {
+          val hazards = ArrayBuffer[Bool]()
+          for(writeEu <- eus) {
+
+            val opSpecs = writeEu.getMicroOp().map(writeEu.getSpec)
+            val opWithRd = opSpecs.filter(spec => spec.op.resources.exists{
+              case RfResource(_, RD) => true
+              case _ => false
+            })
+            val readableAt = opWithRd.map(_.rd.get.rfReadableAt).max
+            val checkCount = readableAt - 1 - readAt
+            def checkFrom = insertAt + 1
+            val range = checkFrom until checkFrom + checkCount
+            for(id <- range) {
+              val node = writeEu.nodeAt(id)
+              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === ctx.rfa(rs.PHYS)
+            }
+          }
+          val hazard = ctx.rfa(rs.ENABLE) && hazards.orR
+        }
+        eusReady(euId) := !rsLogic.map(_.hazard).orR
+      }
     }
     for(lane <- 0 until Decode.LANES) new dispatchCtrl.Area(lane){
       val c = candidates(slotsCount + lane)
@@ -79,6 +121,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
         c.ctx.rfa(ac.RFID) := ac.RFID
         c.ctx.rfa(ac.PHYS) := ac.PHYS
       }
+      haltWhen(!c.fire)
     }
 
     val scheduler = new Area {
@@ -86,15 +129,16 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       eusFree(0).setAll()
       hartFree(0).setAll()
       val layer = for ((c, id) <- candidates.zipWithIndex) yield new Area {
-        val eusHits = c.ctx.compatibility & eusFree(id)
+        val eusHits = c.ctx.compatibility & eusFree(id) & c.eusReady
         val eusOh = OHMasking.firstV2(eusHits)
         val doIt = c.ctx.valid && eusHits.orR && hartFree(id)(c.ctx.hartId)
         eusFree(id + 1) := eusFree(id) & eusOh.orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(doIt)
+        c.fire := doIt
       }
     }
 
-    val dispatcher = for ((eu, id) <- eus.zipWithIndex; insertNode = eu.insertNode) yield new Area with NodeApi {
+    val inserter = for ((eu, id) <- eus.zipWithIndex; insertNode = eu.insertNode) yield new Area with NodeApi {
       override def getNode = insertNode
       val oh = B(scheduler.layer.map(l => l.doIt && l.eusOh(id)))
       val mux = candidates.reader(oh, true)
@@ -106,9 +150,18 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
         ac.RFID := mux(_.ctx.rfa(ac.RFID))
         ac.PHYS := mux(_.ctx.rfa(ac.PHYS))
       }
+      Decode.rfaKeys.get(RD).ENABLE clearWhen(!insertNode.valid) //Allow to avoid having to check the valid down the pipeline
       RD_HAZARD := False
     }
 
     dispatchCtrl.down.ready := True //TODO remove
+
+   eus.foreach(_.linkLock.release())
   }
 }
+
+/*
+//TODO
+- RFID hazard
+- no hazard on RD x0
+ */

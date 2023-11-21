@@ -30,10 +30,22 @@ class WriteBackPlugin(val euId : String, rf : RegfileSpec) extends FiberPlugin{
     port
   }
 
+  def addMicroOp(port: Flow[Bits], microOp: Seq[MicroOp]): Unit = {
+    val spec = portToSpec(port)
+    spec.microOps ++= microOp
+  }
+
+  def addMicroOp(port: Flow[Bits], head: MicroOp, tail : MicroOp*): Unit = {
+    addMicroOp(port, head +: tail)
+  }
+
   val logic = during build new Area {
     val specs = portToSpec.values
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
+
+    val writeAt = sorted.last.head.ctrlAt
+    val writeCtrl = eu.execute(writeAt)
 
     val DATA = Payload(Bits(rf.width bits))
     val stages = for (group <- sorted) yield new Area {
@@ -43,10 +55,13 @@ class WriteBackPlugin(val euId : String, rf : RegfileSpec) extends FiberPlugin{
       val muxed = OHMux.or(hits, group.map(_.port.payload), true)
       val merged = if(group == sorted.head) muxed else ctrl.up(DATA) | muxed
       ctrl.bypass(DATA) := merged
+      for (spec <- group) {
+        for(op <- spec.microOps) {
+          eu.setRdSpec(op, DATA, spec.ctrlAt, writeAt + rfp.writeLatency)
+        }
+      }
     }
 
-    val writeAt = sorted.last.head.ctrlAt
-    val writeCtrl = eu.execute(writeAt)
     val write = new writeCtrl.Area{
       val rfa = Decode.rfaKeys.get(RD)
       val port = rfp.newWrite(false)

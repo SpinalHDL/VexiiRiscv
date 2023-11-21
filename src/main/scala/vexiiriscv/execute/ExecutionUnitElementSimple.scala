@@ -3,6 +3,7 @@ package vexiiriscv.execute
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.core._
+import spinal.lib.Flow
 import vexiiriscv.decode.DecodeListType
 import vexiiriscv.riscv.{MicroOp, RD, RfResource}
 
@@ -18,14 +19,11 @@ abstract class ExecutionUnitElementSimple(euId : String, staticLatency : Boolean
   val SEL = Payload(Bool())
 
   class Logic(latency: Int) extends Area {
-    def add(microOp: MicroOp) = new {
+    case class ImplicitIntFormatPluginPort(ifp : IntFormatPlugin, port : Flow[Bits])
+    def add(microOp: MicroOp)(implicit wbp : ImplicitIntFormatPluginPort = null) = new {
       eu.addMicroOp(microOp)
-      eu.setLatency(microOp, latency)
       decode(SEL -> True)
-//      if (staticLatency && microOp.resources.exists {
-//        case RfResource(_, RD) => true
-//        case _ => false
-//      })
+      if(wbp != null) wbp.ifp.addMicroOp(wbp.port, microOp)
 
       def decode(decoding: DecodeListType = Nil): this.type = {
         eu.addDecoding(microOp, decoding :+ (SEL -> True))
