@@ -35,15 +35,14 @@ class WriteBackPlugin(val euId : String, rf : RegfileSpec) extends FiberPlugin{
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
 
-    var DATA : Payload[Bits] = null
+    val DATA = Payload(Bits(rf.width bits))
     val stages = for (group <- sorted) yield new Area {
       val ctrlId = group.head.ctrlAt
       val ctrl = eu.execute(ctrlId)
       val hits = B(group.map(_.port.valid))
       val muxed = OHMux.or(hits, group.map(_.port.payload), true)
-      val merged = if(DATA == null) muxed else ctrl(DATA) | muxed
-      DATA = ctrl.insert(merged)
-      DATA.setCompositeName(WriteBackPlugin.this, "DATA")
+      val merged = if(group == sorted.head) muxed else ctrl.up(DATA) | muxed
+      ctrl.bypass(DATA) := merged
     }
 
     val writeAt = sorted.last.head.ctrlAt
