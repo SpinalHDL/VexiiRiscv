@@ -17,7 +17,9 @@ import scala.collection.mutable.ArrayBuffer
 
 class ExecuteUnitPlugin(val euId : String,
                         val priority : Int,
-                        override val rfReadAt : Int) extends FiberPlugin with PipelineService with ExecuteUnitService {
+                        override val rfReadAt : Int,
+                        val decodeAt : Int,
+                        val executeAt : Int) extends FiberPlugin with PipelineService with ExecuteUnitService {
   withPrefix(euId)
 
   during setup {
@@ -41,7 +43,7 @@ class ExecuteUnitPlugin(val euId : String,
 
   def setRdSpec(op : MicroOp, data : Payload[Bits], insertAt : Int, rfReadableAt : Int, bypassesAt : Seq[Int]): Unit = {
     assert(microOps(op).rd.isEmpty)
-    microOps(op).rd = Some(RdSpec(data, insertAt, rfReadableAt, bypassesAt))
+    microOps(op).rd = Some(RdSpec(data, insertAt + executeAt, rfReadableAt + executeAt, bypassesAt.map(_ + executeAt)))
   }
 
   override def getSpec(op: MicroOp): MicroOpSpec = microOps(op)
@@ -72,10 +74,12 @@ class ExecuteUnitPlugin(val euId : String,
   val pipelineLock = new Lockable(){}
   override def getConnectors(): Seq[Link] = pipeline.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, CtrlLink]()
-  def ctrl(id : Int) = idToCtrl.getOrElseUpdate(id, CtrlLink().setCompositeName(this, if(id >= 0) "exe" + id else "dis" + -(id + 1)))
-  def execute(id: Int) = {
+  def ctrl(id : Int)  : CtrlLink = {
+    idToCtrl.getOrElseUpdate(id, CtrlLink().setCompositeName(this, if(id >= executeAt) "exe" + (id - executeAt) else "dis" + id))
+  }
+  def execute(id: Int) : CtrlLink = {
     assert(id >= 0)
-    ctrl(id)
+    ctrl(id + executeAt)
   }
   val logic = during build new Area{
     pipelineLock.await()
@@ -83,7 +87,6 @@ class ExecuteUnitPlugin(val euId : String,
     val specs = microOps.values
     val resources = specs.flatMap(_.op.resources).distinctLinked
 
-    val decodeAt = -1
     val decodeCtrl = ctrl(decodeAt)
     val decoding = new decodeCtrl.Area {
       val coverAll = getMicroOp().map(e => Masked(e.key))

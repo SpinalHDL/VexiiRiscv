@@ -39,7 +39,7 @@ class ParamSimple(){
       syncRead = true
     )
 
-    plugins += new execute.ExecuteUnitPlugin("EU0", priority = 0, rfReadAt = -2)
+    plugins += new execute.ExecuteUnitPlugin("EU0", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
     plugins += new SrcPlugin("EU0")
     plugins += new IntAluPlugin("EU0")
     plugins += new IntFormatPlugin("EU0")
