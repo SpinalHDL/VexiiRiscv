@@ -59,6 +59,10 @@ class ExecuteUnitPlugin(val euId : String,
     }
   }
 
+  def addDecoding(microOp: MicroOp, head : (Payload[_ <: BaseType], Any), tail : (Payload[_ <: BaseType], Any)*): Unit = {
+    addDecoding(microOp, head :: tail.toList)
+  }
+
   def getDecodingSpec(key: Payload[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
   val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
 
@@ -86,17 +90,6 @@ class ExecuteUnitPlugin(val euId : String,
 
     val specs = microOps.values
     val resources = specs.flatMap(_.op.resources).distinctLinked
-
-//    val opSpecs = getMicroOp().map(getSpec)
-//    val opWithRd = opSpecs.filter(spec => spec.op.resources.exists {
-//      case RfResource(_, RD) => true
-//      case _ => false
-//    })
-//    val readableAt = opWithRd.map(_.rd.get.rfReadableAt).max
-//    val checkCount = readableAt - 1 - rfReadAt
-//    val checkFrom = insertAt + 1
-//    val range = checkFrom until checkFrom + checkCount
-
 
     val rf = new Area{
       val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked

@@ -25,21 +25,20 @@ object IntAluPlugin extends AreaObject {
 }
 
 class IntAluPlugin(val euId : String,
-                   var staticLatency : Boolean = true,
-                   var aluStage : Int = 0,
-                   var writebackAt : Int = 0) extends ExecutionUnitElementSimple(euId, staticLatency)  {
+                   var aluAt : Int = 0,
+                   var formatAt : Int = 0) extends ExecutionUnitElementSimple(euId)  {
   import IntAluPlugin._
   lazy val ifp = host.find[IntFormatPlugin](_.euId == euId)
   addLockable(ifp)
 
-  val logic = during build new Logic(2){
+  val logic = during build new Logic{
     import SrcKeys._
 
     val ace = AluCtrlEnum
     val abce = AluBitwiseCtrlEnum
 
-    val wb = ifp.access(aluStage)
-    implicit val _ = ImplicitIntFormatPluginPort(ifp, wb)
+    val formatBus = ifp.access(formatAt)
+    implicit val _ = ImplicitIntFormatPluginPort(ifp, formatBus)
 
     add(Rvi.ADD ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
     add(Rvi.SUB ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
@@ -65,14 +64,14 @@ class IntAluPlugin(val euId : String,
       add(Rvi.ADDIW).srcs(Op.ADD   , SRC1.RF, SRC2.I ).decode(ALU_CTRL -> ace.ADD_SUB)
 
       for(op <- List(Rvi.ADDW, Rvi.SUBW, Rvi.ADDIW)){
-        ifp.signExtend(wb, op, 31)
+        ifp.signExtend(formatBus, op, 31)
       }
     }
 
     eu.release()
 
-    val processCtrl = eu.execute(aluStage)
-    val process = new processCtrl.Area {
+    val aluCtrl = eu.execute(aluAt)
+    val alu = new aluCtrl.Area {
       val ss = SrcStageables
 
       val bitwise = ALU_BITWISE_CTRL.mux(
@@ -88,8 +87,12 @@ class IntAluPlugin(val euId : String,
       )
 
       ALU_RESULT := result.asBits
-      wb.valid := SEL
-      wb.payload := ALU_RESULT
+    }
+
+    val formatCtrl = eu.execute(formatAt)
+    val format = new formatCtrl.Area {
+      formatBus.valid := SEL
+      formatBus.payload := ALU_RESULT
     }
   }
 }

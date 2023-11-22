@@ -54,7 +54,7 @@ class WriteBackPlugin(val euId : String,
       val ctrlId = group.head.ctrlAt
       val ctrl = eu.execute(ctrlId)
       val hits = B(group.map(_.port.valid))
-      val muxed = OHMux.or(hits, group.map(_.port.payload), true)
+      val muxed = OHMux.or(hits, group.map(_.port.payload), group == sorted.head && group.size == 1)
       val merged = if(group == sorted.head) muxed else ctrl.up(DATA) | muxed
       ctrl.bypass(DATA) := merged
       for (spec <- group) {
