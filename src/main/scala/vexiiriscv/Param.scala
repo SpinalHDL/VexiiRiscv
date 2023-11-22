@@ -43,7 +43,7 @@ class ParamSimple(){
     plugins += new SrcPlugin("EU0")
     plugins += new IntAluPlugin("EU0")
     plugins += new IntFormatPlugin("EU0")
-    plugins += new WriteBackPlugin("EU0", IntRegFile, writeAt = 2)
+    plugins += new WriteBackPlugin("EU0", IntRegFile, writeAt = 2, bypassOn = _ > 0)
 
     plugins
   }

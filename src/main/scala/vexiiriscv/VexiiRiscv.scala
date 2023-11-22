@@ -20,6 +20,9 @@ class VexiiRiscv extends Component{
 
 
 /*
+Assumptions :
+-
+
 memo
 - late ALU
 - conditional flag

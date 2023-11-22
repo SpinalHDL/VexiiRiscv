@@ -59,7 +59,7 @@ class WriteBackPlugin(val euId : String,
       ctrl.bypass(DATA) := merged
       for (spec <- group) {
         for(op <- spec.microOps) {
-          eu.setRdSpec(op, DATA, spec.ctrlAt, writeAt + rfp.writeLatency, (ctrlId to writeAt + rfp.writeLatency-1 + rfp.readLatency).filter(bypassOn))
+          eu.setRdSpec(op, DATA, writeAt + rfp.writeLatency, (ctrlId to writeAt + rfp.writeLatency-1 + rfp.readLatency).filter(bypassOn))
         }
       }
     }

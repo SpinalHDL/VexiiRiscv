@@ -26,7 +26,6 @@ class ExecuteUnitPlugin(val euId : String,
     host.list[RegfileService].foreach(_.retain())
   }
 
-  override def insertAt = logic.idMin
   override def euName(): String = euId
   override def insertNode: Node = ctrl(logic.idMin).up
   override def nodeAt(id : Int): Node = ctrl(id).down
@@ -35,15 +34,16 @@ class ExecuteUnitPlugin(val euId : String,
     lock.await()
     microOps.keys.toSeq
   }
+  override def getMicroOpSpecs(): Iterable[MicroOpSpec] = microOps.values
 
   val microOps = mutable.LinkedHashMap[MicroOp, MicroOpSpec]()
   def addMicroOp(op : MicroOp): Unit = {
     microOps.getOrElseUpdate(op, new MicroOpSpec(op))
   }
 
-  def setRdSpec(op : MicroOp, data : Payload[Bits], insertAt : Int, rfReadableAt : Int, bypassesAt : Seq[Int]): Unit = {
+  def setRdSpec(op : MicroOp, data : Payload[Bits], rfReadableAt : Int, bypassesAt : Seq[Int]): Unit = {
     assert(microOps(op).rd.isEmpty)
-    microOps(op).rd = Some(RdSpec(data, insertAt + executeAt, rfReadableAt + executeAt, bypassesAt.map(_ + executeAt)))
+    microOps(op).rd = Some(RdSpec(data, rfReadableAt + executeAt, bypassesAt.map(_ + executeAt)))
   }
 
   override def getSpec(op: MicroOp): MicroOpSpec = microOps(op)
@@ -87,13 +87,16 @@ class ExecuteUnitPlugin(val euId : String,
     val specs = microOps.values
     val resources = specs.flatMap(_.op.resources).distinctLinked
 
-    val decodeCtrl = ctrl(decodeAt)
-    val decoding = new decodeCtrl.Area {
-      val coverAll = getMicroOp().map(e => Masked(e.key))
-      for ((key, spec) <- decodingSpecs) {
-        key.assignFromBits(spec.build(Decode.MICRO_OP, coverAll).asBits)
-      }
-    }
+//    val opSpecs = getMicroOp().map(getSpec)
+//    val opWithRd = opSpecs.filter(spec => spec.op.resources.exists {
+//      case RfResource(_, RD) => true
+//      case _ => false
+//    })
+//    val readableAt = opWithRd.map(_.rd.get.rfReadableAt).max
+//    val checkCount = readableAt - 1 - rfReadAt
+//    val checkFrom = insertAt + 1
+//    val range = checkFrom until checkFrom + checkCount
+
 
     val rf = new Area{
       val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked
@@ -129,7 +132,6 @@ class ExecuteUnitPlugin(val euId : String,
           }
         }
 
-
         val dataCtrl = ctrl(rfReadAt + rfPlugin.readLatency)
         val rfaRd = Decode.rfaKeys.get(RD)
         val bypassSorted = bypassSpecs.toSeq.sortBy(_.nodeId)
@@ -141,6 +143,14 @@ class ExecuteUnitPlugin(val euId : String,
         bypassEnables.msb := True
         val sel = OHMasking.firstV2(bypassEnables)
         dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b =>  b.eu.nodeAt(b.nodeId)(b.payload)) :+ port.data, true)
+      }
+    }
+
+    val decodeCtrl = ctrl(decodeAt)
+    val decoding = new decodeCtrl.Area {
+      val coverAll = getMicroOp().map(e => Masked(e.key))
+      for ((key, spec) <- decodingSpecs) {
+        key.assignFromBits(spec.build(Decode.MICRO_OP, coverAll).asBits)
       }
     }
 

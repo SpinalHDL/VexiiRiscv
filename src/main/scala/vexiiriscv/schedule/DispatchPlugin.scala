@@ -2,11 +2,12 @@ package vexiiriscv.schedule
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline.{CtrlApi, CtrlLink, NodeApi, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
-import vexiiriscv.execute.ExecuteUnitService
+import vexiiriscv.execute.{Execute, ExecuteUnitService}
 import vexiiriscv.misc.PipelineBuilderPlugin
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{RD, RfRead, RfResource}
@@ -69,6 +70,41 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
 
 
     val rdKeys = Decode.rfaKeys.get(RD)
+    val euToCheckRange = eus.map{eu =>
+      val opSpecs = eu.getMicroOp().map(eu.getSpec)
+      val opWithRd = opSpecs.filter(spec => spec.op.resources.exists {
+        case RfResource(_, RD) => true
+        case _ => false
+      })
+      val readAt = eu.rfReadAt
+      val readableAt = opWithRd.map(_.rd.get.rfReadableAt).max
+      val checkCount = readableAt - 1
+      val range = 1 until 1 + checkCount
+      eu -> range
+    }.toMapLinked()
+
+    for(eu <- eus){
+      val all = ArrayBuffer[Masked]()
+      for(op <- eu.getMicroOp()){
+        all += Masked(op.key)
+      }
+      val checkRange = euToCheckRange(eu)
+      val decs = checkRange.map(_ -> new DecodingSpec(Bool()).setDefault(Masked.zero)).toMapLinked()
+      val node = eu.nodeAt(1)
+      for (spec <- eu.getMicroOpSpecs()) {
+        val key = Masked(spec.op.key)
+        spec.rd match {
+          case Some(rd) => rd.bypassesAt.foreach { id =>
+            decs(id-checkRange.low).addNeeds(key, Masked.one)
+          }
+          case None =>
+        }
+      }
+
+      for (id <- checkRange) {
+        node(Execute.BYPASSED, id) := decs(id).build(node(Decode.MICRO_OP), all)
+      }
+    }
 
     assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
     assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere")
@@ -77,12 +113,11 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       val ctx = MicroOpCtx()
       val fire = Bool()
       val eusReady = Bits(eus.size bits)
+      //TODO merge duplicated logic using signal cache
       val euLogic = for((readEu, euId) <- eus.zipWithIndex) yield new Area{
-        val insertAt = readEu.insertAt
         val readAt = readEu.rfReadAt
-        val readTime = readAt - insertAt
 
-        //Identify which RS are used by the pipeline
+        // Identify which RS are used by the pipeline
         val readEuRessources = readEu.getMicroOp().flatMap(_.resources).distinctLinked
         val rfaReads = Decode.rfaKeys.filter(_._1.isInstanceOf[RfRead])
         val rfaReadsFiltered = rfaReads.filter(e => readEuRessources.exists{
@@ -90,22 +125,14 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
           case _ => false
         }).values
 
+        // Check hazard for each rs in the whole cpu
         val rsLogic = for (rs <- rfaReadsFiltered) yield new Area {
           val hazards = ArrayBuffer[Bool]()
           for(writeEu <- eus) {
-
-            val opSpecs = writeEu.getMicroOp().map(writeEu.getSpec)
-            val opWithRd = opSpecs.filter(spec => spec.op.resources.exists{
-              case RfResource(_, RD) => true
-              case _ => false
-            })
-            val readableAt = opWithRd.map(_.rd.get.rfReadableAt).max
-            val checkCount = readableAt - 1 - readAt
-            def checkFrom = insertAt + 1
-            val range = checkFrom until checkFrom + checkCount
+            val range = euToCheckRange(writeEu).dropRight(readAt)
             for(id <- range) {
               val node = writeEu.nodeAt(id)
-              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === ctx.rfa(rs.PHYS)
+              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === ctx.rfa(rs.PHYS) && !node(Execute.BYPASSED, id)
             }
           }
           val hazard = ctx.rfa(rs.ENABLE) && hazards.orR

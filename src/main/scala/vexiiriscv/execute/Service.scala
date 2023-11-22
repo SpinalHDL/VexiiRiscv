@@ -11,7 +11,6 @@ import scala.collection.mutable.ArrayBuffer
 
 
 case class RdSpec(DATA: Payload[Bits],
-                  insertAt: Int,
                   rfReadableAt: Int,
                   bypassesAt : Seq[Int])
 
@@ -26,9 +25,9 @@ trait ExecuteUnitService extends Lockable {
 //  def addMicroOp(enc : MicroOp)
 
   def rfReadAt: Int
-  def insertAt: Int
   def nodeAt(id : Int): Node
   def getMicroOp(): Seq[MicroOp]
+  def getMicroOpSpecs(): Iterable[MicroOpSpec]
   def dispatchPriority : Int
   def insertNode : Node
   def getSpec(op : MicroOp) : MicroOpSpec
