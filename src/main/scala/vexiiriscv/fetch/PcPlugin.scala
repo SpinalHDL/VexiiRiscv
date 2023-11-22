@@ -33,6 +33,7 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
       // Self is a jump interface which store the hart PC
       val self = new Area {
+        val id = Reg(Fetch.ID) init(0)
         val flow = createJumpInterface(-1)
         val increment = RegInit(False)
         val state = Reg(PC) init (resetVector)
@@ -90,6 +91,14 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
       when(!init.booted){
         valid := False
         harts.foreach(_.output.ready := False)
+      }
+
+      Fetch.ID.assignDontCare()
+      harts.onSel(HART_ID) { hart =>
+        when(isFiring) {
+          hart.self.id := hart.self.id + 1
+        }
+        Fetch.ID := hart.self.id
       }
     }
     pp.release()

@@ -19,7 +19,7 @@ class ExecuteUnitPlugin(val euId : String,
                         val priority : Int,
                         override val rfReadAt : Int,
                         val decodeAt : Int,
-                        val executeAt : Int) extends FiberPlugin with PipelineService with ExecuteUnitService {
+                        override val executeAt : Int) extends FiberPlugin with PipelineService with ExecuteUnitService {
   withPrefix(euId)
 
   during setup {

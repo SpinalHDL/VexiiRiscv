@@ -30,14 +30,12 @@ class BarrelShifterPlugin(val euId : String,
     val wb = ifp.access(formatAt)
     implicit val _ = ImplicitIntFormatPluginPort(ifp, wb)
 
-
     add(Rvi.SLL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True, SIGNED -> False)
     add(Rvi.SRL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, SIGNED -> False)
     add(Rvi.SRA).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, SIGNED -> True)
     add(Rvi.SLLI).srcs(SRC1.RF, SRC2.I).decode(LEFT -> True, SIGNED -> False)
     add(Rvi.SRLI).srcs(SRC1.RF, SRC2.I).decode(LEFT -> False, SIGNED -> False)
     add(Rvi.SRAI).srcs(SRC1.RF, SRC2.I).decode(LEFT -> False, SIGNED -> True)
-
 
     if (Riscv.XLEN.get == 64) {
       for (op <- List(Rvi.SLL, Rvi.SRL, Rvi.SRA, Rvi.SLLI, Rvi.SRLI, Rvi.SRAI)) {
@@ -55,7 +53,6 @@ class BarrelShifterPlugin(val euId : String,
     }
 
     eu.release()
-
 
     val shiftCtrl = eu.execute(shiftAt)
     val shift = new shiftCtrl.Area {

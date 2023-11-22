@@ -57,6 +57,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
 
     val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
     hmKeys.add(Global.PC)
+    hmKeys.add(Decode.MICRO_OP_ID)
     for ((k, ac) <- Decode.rfaKeys) {
       hmKeys.add(ac.ENABLE)
       hmKeys.add(ac.RFID)

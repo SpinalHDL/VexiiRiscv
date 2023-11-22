@@ -1,6 +1,7 @@
 package vexiiriscv.decode
 
 import spinal.core._
+import spinal.lib._
 import spinal.lib.misc.pipeline.{Link, CtrlLink}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
@@ -35,11 +36,23 @@ class AlignerPlugin(fetchAt : Int = 3,
     val connector = CtrlLink(up, down)
     connectors += connector
 
+    val harts = for(hartId <- 0 until Global.HART_COUNT) yield new Area {
+      val id = Reg(Decode.ID) init (0)
+    }
+
     val feeder = new down.Area{
       this (Decode.ALIGNED_MASK, 0) := True
       this (Decode.INSTRUCTION, 0) := Fetch.WORD
       this (Global.PC, 0) := Fetch.WORD_PC
-    }
+      this (Fetch.ID, 0) := Fetch.ID
 
+      this (Decode.ID, 0).assignDontCare()
+      harts.onSel(Global.HART_ID) { hart =>
+        when(isFiring) {
+          hart.id := hart.id + 1
+        }
+        this (Decode.ID, 0) := hart.id
+      }
+    }
   }
 }

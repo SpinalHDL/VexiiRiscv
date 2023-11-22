@@ -9,9 +9,11 @@ import vexiiriscv.riscv.{RegfileSpec, RfAccess}
 import java.util
 import scala.collection.mutable
 
-object Decode extends AreaRoot{
+object Decode extends AreaObject {
   val LANES  = blocking[Int]
   val INSTRUCTION_WIDTH = blocking[Int]
+  val ID_WIDTH = blocking[Int]
+  val MICRO_OP_ID_WIDTH = blocking[Int]
 
   val INSTRUCTION = Payload(Bits(INSTRUCTION_WIDTH bits))
   val MICRO_OP = Payload(Bits(INSTRUCTION_WIDTH bits))
@@ -20,6 +22,8 @@ object Decode extends AreaRoot{
   val rfaKeys = blocking[mutable.LinkedHashMap[RfAccess, AccessKeys]]
 
   val LEGAL = Payload(Bool())
+  val ID = Payload(UInt(ID_WIDTH bits))
+  val MICRO_OP_ID = Payload(UInt(MICRO_OP_ID_WIDTH bits))
 }
 
 case class AccessKeys(physWidth : Int, rfMapping : Seq[RegfileSpec]) extends Area{

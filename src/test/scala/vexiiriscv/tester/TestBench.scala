@@ -7,6 +7,7 @@ import spinal.lib.misc.Elf
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamMonitor, StreamReadyRandomizer}
 import vexiiriscv._
+import vexiiriscv.misc.VexiiRiscvProbe
 import vexiiriscv.riscv.Riscv
 
 import java.io.File
@@ -56,6 +57,10 @@ class TestOptions{
       rvls.spinalSimTime(10000)
     }
 
+    // Collect traces from the CPUs behaviour
+    val probe = new VexiiRiscvProbe(dut, 0, Some(new File(simCompiled.compiledPath, "trace.gem5o3")), withRvls)
+    if (withRvls) probe.add(rvls)
+
     // Things to enable when we want to collect traces
     onTrace {
       enableSimWave()
@@ -64,12 +69,10 @@ class TestOptions{
       val tracerFile = new FileBackend(new File(new File(simCompiled.compiledPath, currentTestName), "tracer.log"))
       tracerFile.spinalSimFlusher(10 * 10000)
       tracerFile.spinalSimTime(10000)
-//      naxes.foreach { hart =>
-//        hart.add(tracerFile)
-//        val r = hart.backends.reverse
-//        hart.backends.clear()
-//        hart.backends ++= r
-//      }
+      probe.add(tracerFile)
+      val r = probe.backends.reverse
+      probe.backends.clear()
+      probe.backends ++= r
     }
 
     val mem = SparseMemory(seed = 0)
@@ -88,23 +91,12 @@ class TestOptions{
       if (elf.getELFSymbol("pass") != null && elf.getELFSymbol("fail") != null) {
         val passSymbol = elf.getSymbolAddress("pass")
         val failSymbol = elf.getSymbolAddress("fail")
-//          naxes.foreach { nax =>
-//            nax.commitsCallbacks += { (hartId, pc) =>
-//              if (pc == passSymbol) delayed(1) {
-//                dut.naxes.foreach { nax =>
-//                  println(s"Hart $hartId")
-//                  nax.plugins.foreach {
-//                    case p: FetchCachePlugin => println("- i$ refill = " + p.logic.refill.pushCounter.toLong)
-//                    case p: DataCachePlugin => println("- d$ refill = " + p.logic.cache.refill.pushCounter.toLong)
-//                    case _ =>
-//                  }
-//                }
-//
-//                simSuccess()
-//              }
-//              if (pc == failSymbol) delayed(1)(simFailure("Software reach the fail symbole :("))
-//            }
-//          }
+        probe.commitsCallbacks += { (hartId, pc) =>
+          if (pc == passSymbol) delayed(1) {
+            simSuccess()
+          }
+          if (pc == failSymbol) delayed(1)(simFailure("Software reach the fail symbole :("))
+        }
       }
     }
 

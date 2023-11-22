@@ -3,6 +3,7 @@ package vexiiriscv.riscv
 import spinal.core._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
+import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
 
 class RiscvPlugin(var xlen : Int,
@@ -20,5 +21,8 @@ class RiscvPlugin(var xlen : Int,
     Fetch.SLICE_COUNT.set(Fetch.WORD_WIDTH/Fetch.SLICE_WIDTH)
     Fetch.SLICE_RANGE_LOW.set(if (Riscv.RVC) 1 else 2)
     Fetch.SLICE_RANGE.set((Fetch.SLICE_RANGE_LOW.get + log2Up(Fetch.SLICE_COUNT.get) - 1) downto Fetch.SLICE_RANGE_LOW.get)
+    Fetch.ID_WIDTH.set(16)
+    Decode.ID_WIDTH.set(16)
+    Decode.MICRO_OP_ID_WIDTH.set(16)
   }
 }

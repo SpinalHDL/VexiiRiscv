@@ -6,7 +6,7 @@ import spinal.lib.misc.database.Database._
 import vexiiriscv.Global
 import vexiiriscv.riscv
 
-object Fetch extends AreaRoot{
+object Fetch extends AreaObject {
   val WORD_WIDTH  = blocking[Int]
   def WORD_BYTES = WORD_WIDTH/8
   val SLICE_WIDTH = blocking[Int]
@@ -14,7 +14,10 @@ object Fetch extends AreaRoot{
   val SLICE_COUNT = blocking[Int]
   val SLICE_RANGE_LOW = blocking[Int]
   val SLICE_RANGE = blocking[Range]
+  val ID_WIDTH = blocking[Int]
 
   val WORD = Payload(Bits(WORD_WIDTH bits))
   val WORD_PC = Payload(Global.PC)
+
+  val ID = Payload(UInt(ID_WIDTH bits))
 }

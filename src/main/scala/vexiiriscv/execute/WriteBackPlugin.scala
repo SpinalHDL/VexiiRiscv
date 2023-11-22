@@ -15,7 +15,7 @@ import scala.collection.mutable.ArrayBuffer
 class WriteBackPlugin(val euId : String,
                       val rf : RegfileSpec,
                       var writeAt : Int,
-                      var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin{
+                      var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin with CompletionService{
   withPrefix(euId + "_" + rf.getName())
 
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
@@ -41,6 +41,9 @@ class WriteBackPlugin(val euId : String,
   def addMicroOp(port: Flow[Bits], head: MicroOp, tail : MicroOp*): Unit = {
     addMicroOp(port, head +: tail)
   }
+
+
+  override def getCompletions(): Seq[Flow[CompletionPayload]] = List(logic.write.completion)
 
   val logic = during build new Area {
     val specs = portToSpec.values
@@ -70,6 +73,11 @@ class WriteBackPlugin(val euId : String,
       port.valid := isValid && rfa.ENABLE
       port.address := Global.HART_ID @@ rfa.PHYS
       port.data := DATA
+
+      val completion = Flow(CompletionPayload())
+      completion.valid := port.fire
+      completion.hartId := Global.HART_ID
+      completion.microOpId := Decode.MICRO_OP_ID
     }
   }
 }

@@ -2,12 +2,12 @@ package vexiiriscv.decode
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.misc.pipeline.{Link, CtrlLink, Payload}
+import spinal.lib.misc.pipeline.{CtrlLink, Link, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.execute.ExecuteUnitService
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.misc.PipelineService
-import vexiiriscv.riscv
+import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
 import vexiiriscv.riscv.{MicroOp, PC_READ, RD, RS1, RS2, RS3, Resource, RfAccess, RfResource, SingleDecoding}
@@ -16,7 +16,7 @@ import vexiiriscv.schedule.Dispatch
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin with DecoderService{
+class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderService{
   lazy val dpp = host[DecodePipelinePlugin]
   addLockable(dpp)
 
@@ -131,6 +131,17 @@ class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin with DecoderService{
       }
       Dispatch.MASK := True
       Decode.MICRO_OP := Decode.INSTRUCTION
+
+      Decode.MICRO_OP_ID.assignDontCare()
+      val harts = for (hartId <- 0 until Global.HART_COUNT) yield new Area {
+        val id = Reg(Decode.ID) init (0)
+      }
+      harts.onSel(Global.HART_ID) { hart =>
+        when(getCtrl.down.isFiring) {
+          hart.id := hart.id + 1
+        }
+       Decode.MICRO_OP_ID := hart.id
+      }
     }
   }
 }
