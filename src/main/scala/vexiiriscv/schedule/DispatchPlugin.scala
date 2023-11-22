@@ -12,6 +12,7 @@ import vexiiriscv.misc.PipelineBuilderPlugin
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{RD, RfRead, RfResource}
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 /*
@@ -54,17 +55,21 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     dp.release()
     val slotsCount = 0
 
+    val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
+    hmKeys.add(Global.PC)
+    for ((k, ac) <- Decode.rfaKeys) {
+      hmKeys.add(ac.ENABLE)
+      hmKeys.add(ac.RFID)
+      hmKeys.add(ac.PHYS)
+    }
+
     case class MicroOpCtx() extends Bundle{
       val valid = Bool()
       val compatibility = Bits(eus.size bits)
       val hartId = Global.HART_ID()
       val microOp = Decode.MICRO_OP()
-      val rfa = new HardMap()
-      for((k, ac) <- Decode.rfaKeys){
-        rfa.add(ac.ENABLE)
-        rfa.add(ac.RFID)
-        rfa.add(ac.PHYS)
-      }
+      val hm = new HardMap()
+      hmKeys.foreach(e => hm.add(e))
     }
 
 
@@ -107,7 +112,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     }
 
     assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
-    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere")
+    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
 
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
@@ -132,10 +137,10 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
             val range = euToCheckRange(writeEu).dropRight(readAt)
             for(id <- range) {
               val node = writeEu.nodeAt(id)
-              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === ctx.rfa(rs.PHYS) && !node(Execute.BYPASSED, id)
+              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === ctx.hm(rs.PHYS) && !node(Execute.BYPASSED, id)
             }
           }
-          val hazard = ctx.rfa(rs.ENABLE) && hazards.orR
+          val hazard = ctx.hm(rs.ENABLE) && hazards.orR
         }
         eusReady(euId) :=  !rsLogic.map(_.hazard).orR //TODO handle bypasses
       }
@@ -147,11 +152,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       c.ctx.compatibility := EU_COMPATIBILITY.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
       c.ctx.microOp := Decode.MICRO_OP
-      for ((k, ac) <- Decode.rfaKeys) {
-        c.ctx.rfa(ac.ENABLE) := ac.ENABLE
-        c.ctx.rfa(ac.RFID) := ac.RFID
-        c.ctx.rfa(ac.PHYS) := ac.PHYS
-      }
+      for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
       haltWhen(!c.fire)
     }
 
@@ -176,13 +177,8 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       insertNode.valid := oh.orR
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.MICRO_OP := mux(_.ctx.microOp)
-      for ((k, ac) <- Decode.rfaKeys) {
-        ac.ENABLE := mux(_.ctx.rfa(ac.ENABLE))
-        ac.RFID := mux(_.ctx.rfa(ac.RFID))
-        ac.PHYS := mux(_.ctx.rfa(ac.PHYS))
-      }
+      for(k <- hmKeys) k.assignFrom(mux(_.ctx.hm(k)))
       Decode.rfaKeys.get(RD).ENABLE clearWhen(!insertNode.valid) //Allow to avoid having to check the valid down the pipeline
-//      RD_HAZARD := False
     }
 
     dispatchCtrl.down.ready := True //TODO remove
