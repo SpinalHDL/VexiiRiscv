@@ -9,20 +9,22 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.decode.Decode
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.regfile.RegfileService
-import vexiiriscv.riscv.{MicroOp, RegfileSpec, RfAccess, RfRead, RfResource}
+import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
 import vexiiriscv.schedule.DispatchPlugin
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlugin with PipelineService with ExecuteUnitService {
+class ExecuteUnitPlugin(val euId : String,
+                        val priority : Int,
+                        override val rfReadAt : Int,
+                        bypassOn : (String, Int, RegfileSpec) => Boolean = (eu : String, nodeId : Int, rf : RegfileSpec) => true) extends FiberPlugin with PipelineService with ExecuteUnitService {
   withPrefix(euId)
 
   during setup {
     host.list[RegfileService].foreach(_.retain())
   }
 
-  override def readRfAt = logic.rf.readAt
   override def insertAt = logic.idMin
   override def euName(): String = euId
   override def insertNode: Node = ctrl(logic.idMin).up
@@ -95,8 +97,7 @@ class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlug
       val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked
       val rfPlugins = rfSpecs.map(spec => host.find[RegfileService](_.rfSpec == spec))
       val readLatencyMax = rfPlugins.map(_.readLatency).max
-      val readAt = -(readLatencyMax+1)
-      val readCtrl = ctrl(readAt)
+      val readCtrl = ctrl(rfReadAt)
 
       val reads = for((spec, payload) <- rfStageables) yield new Area{
         val rfa = Decode.rfaKeys.get(spec.access)
@@ -105,7 +106,39 @@ class ExecuteUnitPlugin(val euId : String, val priority : Int) extends FiberPlug
         port.valid := readCtrl.isValid && readCtrl(rfa.ENABLE) && rfa.is(spec.rf, readCtrl(rfa.RFID))
         port.address := readCtrl(rfa.PHYS)
 
-        ctrl(readAt + rfPlugin.readLatency)(payload) := port.data
+        case class BypassSpec(eu : ExecuteUnitService, nodeId : Int, payload : Payload[Bits])
+        val bypassSpecs = mutable.LinkedHashSet[BypassSpec]()
+
+        // Fill the bypassSpecs from all the eu's microOp rd spec
+        val eus = host.list[ExecuteUnitService]
+        for(eu <- eus; ops = eu.getMicroOp();
+            op <- ops; opSpec = eu.getSpec(op)){
+          eu.lock.await() // Ensure that the eu specification is done
+          val sameRf = opSpec.op.resources.exists{
+            case RfResource(spec.rf, _) => true
+            case _ => false
+          }
+          if(sameRf){
+            val rd = opSpec.rd.get
+            for(nodeId <- rd.insertAt until rd.rfReadableAt + rfPlugin.readLatency){
+              val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
+              bypassSpecs += bypassSpec
+            }
+          }
+        }
+
+
+        val dataCtrl = ctrl(rfReadAt + rfPlugin.readLatency)
+        val rfaRd = Decode.rfaKeys.get(RD)
+        val bypassSorted = bypassSpecs.toSeq.sortBy(_.nodeId)
+        val bypassEnables = Bits(bypassSorted.size + 1 bits)
+        for((b, id) <- bypassSorted.zipWithIndex){
+          val node = b.eu.nodeAt(b.nodeId)
+          bypassEnables(id) := node(rfaRd.ENABLE) && node(rfaRd.PHYS) === dataCtrl(rfa.PHYS) && node(rfaRd.RFID) === dataCtrl(rfa.RFID)
+        }
+        bypassEnables.msb := True
+        val sel = OHMasking.firstV2(bypassEnables)
+        dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b =>  b.eu.nodeAt(b.nodeId)(b.payload)) :+ port.data, true)
       }
     }
 

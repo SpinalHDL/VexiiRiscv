@@ -35,14 +35,15 @@ class ParamSimple(){
     plugins += new regfile.RegFilePlugin(
       spec = riscv.IntRegFile,
       physicalDepth = 32,
-      preferedWritePortForInit = "EU0"
+      preferedWritePortForInit = "EU0",
+      syncRead = true
     )
 
-    plugins += new execute.ExecuteUnitPlugin("EU0", priority = 0)
+    plugins += new execute.ExecuteUnitPlugin("EU0", priority = 0, rfReadAt = -2)
     plugins += new SrcPlugin("EU0")
     plugins += new IntAluPlugin("EU0")
     plugins += new IntFormatPlugin("EU0")
-    plugins += new WriteBackPlugin("EU0", IntRegFile)
+    plugins += new WriteBackPlugin("EU0", IntRegFile, writeAt = 2)
 
     plugins
   }

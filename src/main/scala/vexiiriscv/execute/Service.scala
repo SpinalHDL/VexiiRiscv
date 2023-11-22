@@ -22,7 +22,7 @@ trait ExecuteUnitService extends Lockable {
 //  def staticLatencies() : ArrayBuffer[StaticLatency] = ArrayBuffer[StaticLatency]()
 //  def addMicroOp(enc : MicroOp)
 
-  def readRfAt: Int
+  def rfReadAt: Int
   def insertAt: Int
   def nodeAt(id : Int): Node
   def getMicroOp(): Seq[MicroOp]

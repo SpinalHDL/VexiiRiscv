@@ -75,7 +75,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       val eusReady = Bits(eus.size bits)
       val euLogic = for((readEu, euId) <- eus.zipWithIndex) yield new Area{
         val insertAt = readEu.insertAt
-        val readAt = readEu.readRfAt
+        val readAt = readEu.rfReadAt
         val readTime = readAt - insertAt
 
         //Identify which RS are used by the pipeline
@@ -107,9 +107,10 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
           }
           val hazard = ctx.rfa(rs.ENABLE) && hazards.orR
         }
-        eusReady(euId) := !rsLogic.map(_.hazard).orR
+        eusReady(euId) :=  !rsLogic.map(_.hazard).orR //TODO handle bypasses
       }
     }
+
     for(lane <- 0 until Decode.LANES) new dispatchCtrl.Area(lane){
       val c = candidates(slotsCount + lane)
       c.ctx.valid := dispatchCtrl.isValid && Dispatch.MASK
@@ -164,4 +165,5 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
 //TODO
 - RFID hazard
 - no hazard on RD x0
+- Check RD ordering for dual issue (2 instruction scheduled the same cycle)
  */

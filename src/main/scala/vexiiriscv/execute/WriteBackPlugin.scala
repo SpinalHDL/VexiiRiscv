@@ -12,7 +12,7 @@ import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class WriteBackPlugin(val euId : String, rf : RegfileSpec) extends FiberPlugin{
+class WriteBackPlugin(val euId : String, val rf : RegfileSpec, var writeAt : Int) extends FiberPlugin{
   withPrefix(euId + "_" + rf.getName())
 
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
@@ -44,7 +44,6 @@ class WriteBackPlugin(val euId : String, rf : RegfileSpec) extends FiberPlugin{
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
 
-    val writeAt = sorted.last.head.ctrlAt
     val writeCtrl = eu.execute(writeAt)
 
     val DATA = Payload(Bits(rf.width bits))

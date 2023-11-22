@@ -118,6 +118,12 @@ class DecoderPlugin(decodeAt : Int = 2) extends FiberPlugin with DecoderService{
         }).asUInt
       }
 
+      // Clear RD.ENABLE if it select a regfile which doesn't allow writing x0
+      val rfaRd = Decode.rfaKeys.get(RD)
+      val rdRfidZero = rfaRd.rfMapping.zipWithIndex.filter(_._1.x0AlwaysZero).map(_._2)
+      val rdZero = Decode.INSTRUCTION(riscv.Const.rdRange) === 0 && rdRfidZero.map(rfaRd.RFID === _).orR
+      rfaRd.ENABLE clearWhen(rdZero)
+
       val microOpDecoding = new Area {
         for ((key, spec) <- decodingSpecs) {
           key.assignFromBits(spec.build(Decode.INSTRUCTION, encodings.all).asBits)
