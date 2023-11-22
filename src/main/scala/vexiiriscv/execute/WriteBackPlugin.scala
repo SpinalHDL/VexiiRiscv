@@ -20,6 +20,7 @@ class WriteBackPlugin(val euId : String,
 
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
   lazy val rfp = host.find[RegfileService](_.rfSpec == rf)
+  addRetain(eu)
   addLockable(eu.pipelineLock)
   addLockable(rfp)
 
@@ -66,6 +67,8 @@ class WriteBackPlugin(val euId : String,
         }
       }
     }
+
+    eu.release()
 
     val write = new writeCtrl.Area{
       val rfa = Decode.rfaKeys.get(RD)

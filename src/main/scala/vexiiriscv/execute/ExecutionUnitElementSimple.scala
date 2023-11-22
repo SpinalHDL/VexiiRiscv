@@ -19,12 +19,16 @@ abstract class ExecutionUnitElementSimple(euId : String) extends FiberPlugin {
   val SEL = Payload(Bool())
 
   class Logic extends Area {
-    case class ImplicitIntFormatPluginPort(ifp : IntFormatPlugin, port : Flow[Bits])
+    case class ImplicitIntFormatPluginPort(ifp: IntFormatPlugin, port: Flow[Bits])
+    case class ImplicitWriteBackPluginPort(wbp: WriteBackPlugin, port: Flow[Bits])
+
     eu.setDecodingDefault(SEL, False)
-    def add(microOp: MicroOp)(implicit wbp : ImplicitIntFormatPluginPort = null) = new {
+    def add(microOp: MicroOp)(implicit iifpp : ImplicitIntFormatPluginPort = null,
+                                       iwbpp : ImplicitWriteBackPluginPort = null) = new {
       eu.addMicroOp(microOp)
       decode(SEL -> True)
-      if(wbp != null) wbp.ifp.addMicroOp(wbp.port, microOp)
+      if (iifpp != null) iifpp.ifp.addMicroOp(iifpp.port, microOp)
+      if (iwbpp != null) iwbpp.wbp.addMicroOp(iwbpp.port, microOp)
 
       def decode(decoding: DecodeListType = Nil): this.type = {
         eu.addDecoding(microOp, decoding)

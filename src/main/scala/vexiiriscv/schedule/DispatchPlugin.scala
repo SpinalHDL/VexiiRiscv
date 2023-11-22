@@ -73,8 +73,6 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       hmKeys.foreach(e => hm.add(e))
     }
 
-
-
     val rdKeys = Decode.rfaKeys.get(RD)
     val euToCheckRange = eus.map{eu =>
       val opSpecs = eu.getMicroOp().map(eu.getSpec)

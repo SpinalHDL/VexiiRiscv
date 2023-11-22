@@ -113,7 +113,7 @@ class ExecuteUnitPlugin(val euId : String,
             op <- ops; opSpec = eu.getSpec(op)){
           eu.lock.await() // Ensure that the eu specification is done
           val sameRf = opSpec.op.resources.exists{
-            case RfResource(spec.rf, _) => true
+            case RfResource(spec.rf, RD) => true
             case _ => false
           }
           if(sameRf){

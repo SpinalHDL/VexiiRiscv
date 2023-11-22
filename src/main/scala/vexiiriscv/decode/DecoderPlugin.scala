@@ -10,7 +10,7 @@ import vexiiriscv.misc.PipelineService
 import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
-import vexiiriscv.riscv.{MicroOp, PC_READ, RD, RS1, RS2, RS3, Resource, RfAccess, RfResource, SingleDecoding}
+import vexiiriscv.riscv.{INSTRUCTION_SIZE, MicroOp, PC_READ, RD, RS1, RS2, RS3, Resource, RfAccess, RfResource, SingleDecoding}
 import vexiiriscv.schedule.Dispatch
 
 import scala.collection.mutable
@@ -92,7 +92,7 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
             dec.rfid.addNeeds(key,  Masked(dec.rfaKey.idOf(r.rf), (1 << dec.rfaKey.rfIdWidth)-1))
           }
           case PC_READ =>
-//          case INSTRUCTION_SIZE =>
+          case INSTRUCTION_SIZE =>
 //          case FPU => fpSpec.addNeeds(key, one)
 //          case RM => rmSpec.addNeeds(key, one)
 //          case r if resourceToStageable.contains(r) => resourceToSpec(r).addNeeds(key, one)
