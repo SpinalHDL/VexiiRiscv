@@ -10,7 +10,10 @@ import vexiiriscv.riscv.{MicroOp, RegfileSpec, RfRead}
 import scala.collection.mutable.ArrayBuffer
 
 
-case class RdSpec(DATA: Payload[Bits], insertAt: Int, rfReadableAt: Int)
+case class RdSpec(DATA: Payload[Bits],
+                  insertAt: Int,
+                  rfReadableAt: Int,
+                  bypassesAt : Seq[Int])
 
 class MicroOpSpec(val op: MicroOp) {
   var rd = Option.empty[RdSpec]

@@ -67,8 +67,12 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     }
 
 
+
     val rdKeys = Decode.rfaKeys.get(RD)
-    val RD_HAZARD = Payload(Bool())
+
+    assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
+    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere")
+
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
@@ -85,7 +89,6 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
           case RfResource(_, e) => true
           case _ => false
         }).values
-
 
         val rsLogic = for (rs <- rfaReadsFiltered) yield new Area {
           val hazards = ArrayBuffer[Bool]()
@@ -152,7 +155,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
         ac.PHYS := mux(_.ctx.rfa(ac.PHYS))
       }
       Decode.rfaKeys.get(RD).ENABLE clearWhen(!insertNode.valid) //Allow to avoid having to check the valid down the pipeline
-      RD_HAZARD := False
+//      RD_HAZARD := False
     }
 
     dispatchCtrl.down.ready := True //TODO remove

@@ -17,8 +17,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class ExecuteUnitPlugin(val euId : String,
                         val priority : Int,
-                        override val rfReadAt : Int,
-                        bypassOn : (String, Int, RegfileSpec) => Boolean = (eu : String, nodeId : Int, rf : RegfileSpec) => true) extends FiberPlugin with PipelineService with ExecuteUnitService {
+                        override val rfReadAt : Int) extends FiberPlugin with PipelineService with ExecuteUnitService {
   withPrefix(euId)
 
   during setup {
@@ -40,9 +39,9 @@ class ExecuteUnitPlugin(val euId : String,
     microOps.getOrElseUpdate(op, new MicroOpSpec(op))
   }
 
-  def setRdSpec(op : MicroOp, data : Payload[Bits], insertAt : Int, rfReadableAt : Int): Unit = {
+  def setRdSpec(op : MicroOp, data : Payload[Bits], insertAt : Int, rfReadableAt : Int, bypassesAt : Seq[Int]): Unit = {
     assert(microOps(op).rd.isEmpty)
-    microOps(op).rd = Some(RdSpec(data, insertAt, rfReadableAt))
+    microOps(op).rd = Some(RdSpec(data, insertAt, rfReadableAt, bypassesAt))
   }
 
   override def getSpec(op: MicroOp): MicroOpSpec = microOps(op)
@@ -120,7 +119,7 @@ class ExecuteUnitPlugin(val euId : String,
           }
           if(sameRf){
             val rd = opSpec.rd.get
-            for(nodeId <- rd.insertAt until rd.rfReadableAt + rfPlugin.readLatency){
+            for(nodeId <- rd.bypassesAt){
               val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
               bypassSpecs += bypassSpec
             }
