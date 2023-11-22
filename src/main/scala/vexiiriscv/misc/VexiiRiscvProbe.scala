@@ -5,6 +5,7 @@ import rvls.spinal.TraceBackend
 import vexiiriscv._
 import vexiiriscv.riscv.Riscv
 import spinal.core.sim._
+import spinal.core._
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
 
@@ -28,6 +29,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
   val decodeIdWidth = cpu.database(Decode.ID_WIDTH)
   val microOpIdWidth = cpu.database(Decode.MICRO_OP_ID_WIDTH)
 
+  val disass = withRvls generate rvls.jni.Frontend.newDisassemble(xlen)
+
   def add(tracer: TraceBackend): this.type = {
     backends += tracer
     tracer.newCpuMemoryView(hartId, 1, 1) //TODO readIds writeIds
@@ -44,6 +47,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
 
   def close(): Unit = {
     gem5.foreach(_.close())
+    if(withRvls) rvls.jni.Frontend.deleteDisassemble(disass)
   }
 
   onSimEnd(close())
@@ -113,7 +117,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
         gem5.foreach{ f =>
           val fetch = hart.fetch(fetchId)
           val decode = hart.decode(decodeId)
-          val instruction = if(withRvls) rvls.jni.Frontend.disasm(xlen, this.instruction) else "? rvls disabled ?"
+          val instruction = if(withRvls) rvls.jni.Frontend.disassemble(disass, this.instruction) else "? rvls disabled ?"
           f.write(f"O3PipeView:fetch:${fetch.spawnAt}:0x${decode.pc}%08x:0:${opCounter}:$instruction\n")
           f.write(f"O3PipeView:decode:${traceT2s(decode.spawnAt)}\n")
           f.write(f"O3PipeView:dispatch:${traceT2s(spawnAt)}\n")

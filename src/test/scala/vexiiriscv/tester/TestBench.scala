@@ -18,10 +18,12 @@ import scala.collection.mutable.ArrayBuffer
 class TestOptions{
   var dualSim = false // Double simulation, one ahead of the other which will trigger wave capture of the second simulation when it fail
   var traceIt = false
-  var withRvls = true
+  var withRvls = new File("ext/rvls/build/apps/rvls.so").exists()
   var failAfter, passAfter = Option.empty[Long]
   val bins = ArrayBuffer[(Long, String)]()
   val elfs = ArrayBuffer[String]()
+
+  if(!withRvls) SpinalWarning("RVLS not detected")
 
   def addOptions(parser : scopt.OptionParser[Unit]): Unit = {
     import parser._
