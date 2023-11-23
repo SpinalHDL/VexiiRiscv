@@ -9,6 +9,8 @@ import spinal.core.fiber._
 import spinal.lib._
 import spinal.lib.eda.bench.{Bench, Rtl, XilinxStdTargets}
 import spinal.lib.misc.plugin.FiberPlugin
+import vexiiriscv.Global
+import vexiiriscv.decode.Decode
 import vexiiriscv.riscv.RegfileSpec
 
 import scala.collection.mutable.ArrayBuffer
@@ -21,6 +23,7 @@ class RegFilePlugin(var spec : RegfileSpec,
                     var syncRead : Boolean = true,
                     var latchBased : Boolean = false) extends FiberPlugin with RegfileService {
   withPrefix(spec.getName())
+  lazy val rfpp = RegFilePortParam(addressWidth, dataWidth, Global.HART_ID_WIDTH, Decode.MICRO_OP_ID_WIDTH)
 
   override def writeLatency: Int = 1
   override def readLatency: Int = syncRead.toInt
@@ -37,19 +40,21 @@ class RegFilePlugin(var spec : RegfileSpec,
   def dataWidth = spec.width
   val reads = ArrayBuffer[RegFileRead]()
   val writes = ArrayBuffer[WriteSpec]()
-//  val bypasses = ArrayBuffer[RegFileBypass]()
 
-  override def newRead(withReady : Boolean) = reads.addRet(RegFileRead(addressWidth, dataWidth, withReady))
+  override def newRead(withReady : Boolean) = reads.addRet(RegFileRead(rfpp, withReady))
   override def newWrite(withReady : Boolean, sharingKey : Any = new{}, priority : Int = 0) = writes.addRet(
     WriteSpec(
-      port       = RegFileWrite(addressWidth, dataWidth, withReady),
+      port       = RegFileWrite(rfpp, withReady),
       withReady  = withReady,
       sharingKey = sharingKey,
       priority   = priority
     )
   ).port
-//  override def newBypass(priority : Int) : RegFileBypass = bypasses.addRet(RegFileBypass(addressWidth, dataWidth, priority))
-  override def getWrites() = writes.map(_.port)
+
+  override def getWrites() = {
+    logic.await()
+    writes.map(_.port)
+  }
 
   override def retain() = lock.retain()
   override def release() = lock.release()
@@ -57,13 +62,15 @@ class RegFilePlugin(var spec : RegfileSpec,
   val logic = during build new Area{
     val writeGroups = writes.groupByLinked(_.sharingKey)
     val writeMerges = for((key, elements) <- writeGroups) yield new Area{
-      val bus = RegFileWrite(addressWidth, dataWidth, false)
+      val bus = RegFileWrite(rfpp , false)
       bus.valid   := elements.map(_.port.valid).orR
 
       val one = (elements.size == 1) generate new Area{
         val h = elements.head
         bus.address := h.port.address
         bus.data    := h.port.data
+        bus.hartId  := h.port.hartId
+        bus.uopId  := h.port.uopId
         if(h.withReady) h.port.ready := True
       }
 
@@ -76,6 +83,8 @@ class RegFilePlugin(var spec : RegfileSpec,
         val oh = OHMasking.firstV2(Vec(mask))
         bus.address := OhMux.or(oh, sorted.map(_.port.address))
         bus.data    := OhMux.or(oh, sorted.map(_.port.data))
+        bus.hartId  := OhMux.or(oh, sorted.map(_.port.hartId))
+        bus.uopId   := OhMux.or(oh, sorted.map(_.port.uopId))
         for((element, enable) <- (sorted, oh).zipped){
           if(element.withReady) element.port.ready := enable
         }
@@ -84,8 +93,7 @@ class RegFilePlugin(var spec : RegfileSpec,
 
     val regfile = new Area{
       val fpga = !latchBased generate new RegFileMem(
-        addressWidth = addressWidth,
-        dataWidth = dataWidth,
+        rfpp = rfpp,
         readsParameter = reads.map(e => RegFileReadParameter(withReady = e.withReady)),
         writesParameter = writeMerges.map(e => RegFileWriteParameter(withReady = false)).toList,
         headZero = spec.x0AlwaysZero,
@@ -107,7 +115,6 @@ class RegFilePlugin(var spec : RegfileSpec,
 
     (regfile.io.reads, reads).zipped.foreach(_ <> _)
     (regfile.io.writes, writeMerges.map(_.bus)).zipped.foreach(_ <> _)
-//    (regfile.io.bypasses, bypasses).zipped.foreach(_ <> _)
 
     //Used for tracing in verilator sim
     val writeEvents = Vec(writeMerges.map(e => CombInit(e.bus)))

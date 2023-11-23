@@ -13,13 +13,14 @@ import java.io.{BufferedWriter, File, FileWriter}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], withRvls : Boolean){
+class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Boolean){
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
   val gem5 = gem5File.map{f =>
     FileUtils.forceMkdir(f.getParentFile)
     new BufferedWriter(new FileWriter(f))
   }
+  val hartsIds = List(0)
 
   var gem5Enabled = gem5File.nonEmpty
 
@@ -30,14 +31,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
   val microOpIdWidth = cpu.database(Decode.MICRO_OP_ID_WIDTH)
 
   val disass = withRvls generate rvls.jni.Frontend.newDisassemble(xlen)
+  val harts = hartsIds.map(new HartCtx(_)).toArray
 
   def add(tracer: TraceBackend): this.type = {
     backends += tracer
-    tracer.newCpuMemoryView(hartId, 1, 1) //TODO readIds writeIds
-    tracer.newCpu(hartId, s"RV${xlen}IMA", "MSU", 32, hartId)
-    var pc = 0x80000000l
-    if (xlen == 32) pc = (pc << 32) >> 32
-    tracer.setPc(hartId, pc)
+    harts.foreach(_.add(tracer))
     this
   }
 
@@ -52,13 +50,29 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
 
   onSimEnd(close())
 
-  class HartCtx(){
+  def pcExtends(pc: Long) = if (xlen == 32) (pc << 32) >> 32 else pc
+  def xlenExtends(value: Long) = if (xlen == 32) (value << 32) >> 32 else value
+
+  class HartCtx(val hartId : Int) {
     val fetch = Array.fill(1 << fetchIdWidth)(new FetchCtx())
     val decode = Array.fill(1 << decodeIdWidth)(new DecodeCtx())
     val microOp = Array.fill(1 << microOpIdWidth)(new MicroOpCtx())
 
-    val microOpPtr = 0
-//    val microOpIdQueue = mutable.Queue[Int]()
+    var microOpPtr = 0
+    var lastCommitAt = 0l
+
+    //    val microOpIdQueue = mutable.Queue[Int]()
+
+
+    def add(tracer: TraceBackend): Unit = {
+      for (hartId <- hartsIds) {
+        tracer.newCpuMemoryView(hartId, 1, 1) //TODO readIds writeIds
+        tracer.newCpu(hartId, s"RV${xlen}IMA", "MSU", 32, hartId)
+        val pc = pcExtends(0x80000000l)
+        tracer.setPc(hartId, pc)
+        this
+      }
+    }
   }
 
   class FetchCtx() {
@@ -81,6 +95,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
     var executeAt = 0l
     var completionAt = 0l
     var instruction = 0l
+
+    def done = completionAt != 0
 
     var integerWriteValid = false
     var integerWriteData = -1l
@@ -159,7 +175,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
   };
 
 
-  val harts = Array.fill(hartsCount)(new HartCtx)
+
 
   val wbp = cpu.host[WhiteboxerPlugin].logic.get
 
@@ -177,7 +193,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
       val fetchId = decode.fetchId.toInt
       val decodeId = decode.decodeId.toInt
       val ctx = hart.decode(decodeId)
-      ctx.pc = decode.pc.toLong
+      ctx.pc = pcExtends(decode.pc.toLong)
       ctx.fetchId = fetchId
       ctx.spawnAt = cycle
     }
@@ -207,6 +223,13 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
       ctx.executeAt = cycle
     }
 
+    for (intWrite <- rfWrites.ints) if (intWrite.valid.toBoolean) {
+      val hart = harts(intWrite.hartId.toInt)
+      val ctx = hart.microOp(intWrite.uopId.toInt)
+      assert(!ctx.integerWriteValid)
+      ctx.integerWriteValid = true
+      ctx.integerWriteData = xlenExtends(intWrite.data.toLong)
+    }
 
     for(port <- completions.ports) if(port.valid.toBoolean){
       val hart = harts(port.hartId.toInt)
@@ -217,8 +240,39 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, hartId : Int, gem5File : Option[File], w
     }
   }
 
-  def checkCommits(): Unit = {
 
+  def checkCommits(): Unit = {
+    for(hart <- harts){
+      if(hart.lastCommitAt + 100l < cycle){
+        simFailure("Vexii didn't commited anything since too long")
+      }
+
+      while(hart.microOp(hart.microOpPtr).done){
+        import hart._
+        val uop = hart.microOp(hart.microOpPtr)
+        val decode = hart.decode(uop.decodeId)
+        lastCommitAt = cycle
+        if (uop.loadValid) {
+          backends.foreach(_.loadCommit(hartId, uop.loadLqId))
+        }
+        if (uop.isSc) {
+          backends.foreach(_.storeConditional(hartId, uop.scFailure))
+        }
+        if (uop.storeValid) {
+          backends.foreach(_.storeCommit(hartId, uop.storeSqId, uop.lsuAddress, uop.lsuLen, uop.storeData))
+        }
+        if (uop.integerWriteValid) {
+          backends.foreach(_.writeRf(hartId, 0, 32, uop.integerWriteData))
+        }
+        if (uop.csrValid) {
+          if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))
+          if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
+        }
+        backends.foreach(_.commit(hartId, decode.pc))
+        commitsCallbacks.foreach(_(hartId, decode.pc))
+        hart.microOpPtr += 1
+      }
+    }
   }
 
   var cycle = 1l

@@ -76,6 +76,8 @@ class WriteBackPlugin(val euId : String,
       port.valid := isValid && rfa.ENABLE
       port.address := Global.HART_ID @@ rfa.PHYS
       port.data := DATA
+      port.hartId := Global.HART_ID
+      port.uopId := Decode.MICRO_OP_ID
 
       val completion = Flow(CompletionPayload())
       completion.valid := port.fire

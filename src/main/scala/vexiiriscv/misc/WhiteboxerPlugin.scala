@@ -8,6 +8,8 @@ import vexiiriscv.Global
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute.{CompletionService, ExecuteUnitService, WriteBackPlugin}
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
+import vexiiriscv.regfile.RegfileService
+import vexiiriscv.riscv.IntRegFile
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -52,11 +54,16 @@ class WhiteboxerPlugin extends FiberPlugin{
       val microOpId = wrap(c(Decode.MICRO_OP_ID))
     }
 
+
     val executes = for (eu <- host.list[ExecuteUnitService]) yield new Area {
-      val c = eu.nodeAt(eu.executeAt-1)
+      val c = eu.nodeAt(eu.executeAt - 1)
       val fire = wrap(c.isFiring)
       val hartId = wrap(c(Global.HART_ID))
       val microOpId = wrap(c(Decode.MICRO_OP_ID))
+    }
+
+    val rfWrites = new Area{
+      val ints = host.find[RegfileService](_.rfSpec == IntRegFile).getWrites().map(b => wrap(b.asWithoutReady()))
     }
 
     val completions = new Area{

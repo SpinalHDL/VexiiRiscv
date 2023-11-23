@@ -5,39 +5,49 @@ import spinal.core.fiber.Lockable
 import spinal.lib._
 import vexiiriscv.riscv.RegfileSpec
 
-case class RegFileIo( addressWidth: Int,
-                      dataWidth: Int,
+case class RegFilePortParam(addressWidth: Int,
+                            dataWidth: Int,
+                            hartIdWidth : Int,
+                            uopIdWidth : Int)
+
+case class RegFileIo( rfpp : RegFilePortParam,
                       readsParameter: Seq[RegFileReadParameter],
                       writesParameter: Seq[RegFileWriteParameter]
                     ) extends Bundle{
-  val writes = Vec(writesParameter.map(p => slave(RegFileWrite(addressWidth, dataWidth, p.withReady))))
-  val reads = Vec(readsParameter.map(p => slave(RegFileRead(addressWidth, dataWidth, p.withReady))))
+  val writes = Vec(writesParameter.map(p => slave(RegFileWrite(rfpp, p.withReady))))
+  val reads = Vec(readsParameter.map(p => slave(RegFileRead(rfpp, p.withReady))))
 //  val bypasses = Vec.fill(bypasseCount)(slave(RegFileBypass(addressWidth, dataWidth)))
 }
 
-case class RegFileWrite(addressWidth : Int, dataWidth : Int, withReady : Boolean) extends Bundle with IMasterSlave {
+case class RegFileWrite(rfpp : RegFilePortParam, withReady : Boolean) extends Bundle with IMasterSlave {
+  import rfpp._
   val valid = Bool()
   val ready = withReady generate Bool()
   val address = UInt(addressWidth bits)
   val data = Bits(dataWidth bits)
+  val hartId = UInt(hartIdWidth bits)
+  val uopId = UInt(uopIdWidth bits)
 
   def fire = if(withReady) valid && ready else valid
 
   def asWithoutReady() = {
-    val ret = RegFileWrite(addressWidth, dataWidth, false)
+    val ret = RegFileWrite(rfpp, false)
     ret.valid := this.fire
     ret.address := this.address
     ret.data := this.data
+    ret.hartId := this.hartId
+    ret.uopId := this.uopId
     ret
   }
 
   override def asMaster() = {
-    out(valid, address, data)
+    out(valid, address, data, hartId, uopId)
     in(ready)
   }
 }
 
-case class RegFileRead(addressWidth : Int, dataWidth : Int, withReady : Boolean) extends Bundle with IMasterSlave{
+case class RegFileRead(rfpp : RegFilePortParam, withReady : Boolean) extends Bundle with IMasterSlave{
+  import rfpp._
   val valid = Bool()
   val ready = withReady generate Bool()
   val address = UInt(addressWidth bits)

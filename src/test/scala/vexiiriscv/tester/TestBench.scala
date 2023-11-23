@@ -60,15 +60,16 @@ class TestOptions{
     }
 
     // Collect traces from the CPUs behaviour
-    val probe = new VexiiRiscvProbe(dut, 0, Some(new File(simCompiled.compiledPath, "trace.gem5o3")), withRvls)
+    val probe = new VexiiRiscvProbe(dut, Some(new File(simCompiled.compiledPath, "trace.gem5o3")), withRvls)
     if (withRvls) probe.add(rvls)
 
     // Things to enable when we want to collect traces
+    val tracerFile = new FileBackend(new File(new File(simCompiled.compiledPath, currentTestName), "tracer.log"))
     onTrace {
       enableSimWave()
       if (withRvls) rvls.debug()
 
-      val tracerFile = new FileBackend(new File(new File(simCompiled.compiledPath, currentTestName), "tracer.log"))
+
       tracerFile.spinalSimFlusher(10 * 10000)
       tracerFile.spinalSimTime(10000)
       probe.add(tracerFile)
@@ -77,11 +78,17 @@ class TestOptions{
       probe.backends ++= r
     }
 
+    probe.backends.foreach { b =>
+      b.addRegion(0, 0, 0x20000000l, 0xE0000000l) // mem
+      b.addRegion(0, 1, 0x10000000l, 0x10000000l) // io
+    }
+
     val mem = SparseMemory(seed = 0)
     // Load the binaries
     for ((offset, file) <- bins) {
       mem.loadBin(offset - 0x80000000l, file)
       if (withRvls) rvls.loadBin(offset, new File(file))
+      tracerFile.loadBin(0, new File(file))
     }
 
     // load elfs
@@ -89,6 +96,7 @@ class TestOptions{
       val elf = new Elf(new File(file), xlen)
       elf.load(mem, 0)
       if (withRvls) rvls.loadElf(0, elf.f)
+      tracerFile.loadElf(0, elf.f)
 
       if (elf.getELFSymbol("pass") != null && elf.getELFSymbol("fail") != null) {
         val passSymbol = elf.getSymbolAddress("pass")
@@ -143,4 +151,5 @@ object TestBench extends App{
 
   val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
   testOpt.test(compiled)
+  Thread.sleep(100)
 }

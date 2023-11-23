@@ -14,8 +14,7 @@ case class RegFileWriteParameter(withReady : Boolean)
 
 
 //The bankCount is currently useless, but maybe useful in the future with execution units which can stall
-class RegFileMem(addressWidth    : Int,
-                 dataWidth       : Int,
+class RegFileMem(rfpp : RegFilePortParam,
                  readsParameter  : Seq[RegFileReadParameter],
                  writesParameter : Seq[RegFileWriteParameter],
 //                 bypassCount     : Int,
@@ -24,9 +23,10 @@ class RegFileMem(addressWidth    : Int,
                  allOne          : Boolean,
                  syncRead        : Boolean,
                  asyncReadBySyncReadRevertedClk : Boolean = false) extends Component {
+  import rfpp._
   assert(!(allOne && headZero))
 
-  val io = RegFileIo(addressWidth, dataWidth, readsParameter, writesParameter)
+  val io = RegFileIo(rfpp, readsParameter, writesParameter)
   io.reads.foreach(e => assert(!e.withReady))
   io.writes.foreach(e => assert(!e.withReady))
   val ram = Mem.fill((1 << addressWidth))(Bits(dataWidth bits))
