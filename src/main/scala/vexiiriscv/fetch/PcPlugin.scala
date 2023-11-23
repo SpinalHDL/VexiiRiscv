@@ -16,8 +16,8 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
 
   case class JumpSpec(bus : Flow[JumpCmd], priority : Int, aggregationPriority : Int)
   val jumps = ArrayBuffer[JumpSpec]()
-  override def createJumpInterface(priority: Int, aggregationPriority : Int = 0): Flow[JumpCmd] = {
-    jumps.addRet(JumpSpec(Flow(JumpCmd()), priority, aggregationPriority)).bus
+  override def createJumpInterface(age: Int, aggregationPriority : Int = 0): Flow[JumpCmd] = {
+    jumps.addRet(JumpSpec(Flow(JumpCmd()), age, aggregationPriority)).bus
   }
 
   val logic = during build new Area{

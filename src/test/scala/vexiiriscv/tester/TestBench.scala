@@ -19,6 +19,7 @@ class TestOptions{
   var dualSim = false // Double simulation, one ahead of the other which will trigger wave capture of the second simulation when it fail
   var traceIt = false
   var withRvls = new File("ext/rvls/build/apps/rvls.so").exists()
+  var withRvlsCheck = withRvls
   var failAfter, passAfter = Option.empty[Long]
   val bins = ArrayBuffer[(Long, String)]()
   val elfs = ArrayBuffer[String]()
@@ -29,7 +30,7 @@ class TestOptions{
     import parser._
     opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
     opt[Unit]("trace") action { (v, c) => traceIt = true }
-    opt[Unit]("no-rvls") action { (v, c) => withRvls = false }
+    opt[Unit]("no-rvls-check") action { (v, c) => withRvlsCheck = false;  }
     opt[Long]("failAfter") action { (v, c) => failAfter = Some(v) }
     opt[Long]("passAfter") action { (v, c) => passAfter = Some(v) }
     opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += (java.lang.Long.parseLong(v(0), 16) -> v(1)) }
@@ -53,21 +54,21 @@ class TestOptions{
     val xlen = dut.database(Riscv.XLEN)
 
     // Rvls will check that the CPUs are doing things right
-    val rvls = withRvls generate new RvlsBackend(new File(simCompiled.compiledPath, currentTestName))
-    if (withRvls) {
+    val rvls = withRvlsCheck generate new RvlsBackend(new File(simCompiled.compiledPath, currentTestName))
+    if (withRvlsCheck) {
       rvls.spinalSimFlusher(10 * 10000)
       rvls.spinalSimTime(10000)
     }
 
     // Collect traces from the CPUs behaviour
     val probe = new VexiiRiscvProbe(dut, Some(new File(simCompiled.compiledPath, "trace.gem5o3")), withRvls)
-    if (withRvls) probe.add(rvls)
+    if (withRvlsCheck) probe.add(rvls)
 
     // Things to enable when we want to collect traces
     val tracerFile = new FileBackend(new File(new File(simCompiled.compiledPath, currentTestName), "tracer.log"))
     onTrace {
       enableSimWave()
-      if (withRvls) rvls.debug()
+      if (withRvlsCheck) rvls.debug()
 
 
       tracerFile.spinalSimFlusher(10 * 10000)
@@ -87,7 +88,7 @@ class TestOptions{
     // Load the binaries
     for ((offset, file) <- bins) {
       mem.loadBin(offset - 0x80000000l, file)
-      if (withRvls) rvls.loadBin(offset, new File(file))
+      if (withRvlsCheck) rvls.loadBin(offset, new File(file))
       tracerFile.loadBin(0, new File(file))
     }
 
@@ -95,7 +96,7 @@ class TestOptions{
     for (file <- elfs) {
       val elf = new Elf(new File(file), xlen)
       elf.load(mem, 0)
-      if (withRvls) rvls.loadElf(0, elf.f)
+      if (withRvlsCheck) rvls.loadElf(0, elf.f)
       tracerFile.loadElf(0, elf.f)
 
       if (elf.getELFSymbol("pass") != null && elf.getELFSymbol("fail") != null) {

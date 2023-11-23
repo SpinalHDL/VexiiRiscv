@@ -15,6 +15,7 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
     VIRTUAL_WIDTH.set(physicalWidth)
     MIXED_WIDTH.set(physicalWidth)
     PC_WIDTH.set(physicalWidth)
+    TVAL_WIDTH.set(physicalWidth)
   }
 
   override def createTranslationPort(): Unit = ???

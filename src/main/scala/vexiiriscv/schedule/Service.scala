@@ -1,15 +1,30 @@
 package vexiiriscv.schedule
 
 import spinal.core._
-import spinal.lib._
 import spinal.core.fiber.Lockable
-import vexiiriscv.Global._
+import spinal.lib.Flow
+import spinal.lib.misc.pipeline.CtrlLink
+import vexiiriscv.fetch.JumpCmd
 
-case class FlushCmd(priority : Int) extends Bundle{
-  val hartId = HART_ID()
+case class FlushCmd(subAgeWidth : Int) extends Bundle{
+  val subAge = UInt(subAgeWidth bits)
 }
 
-trait FlusherService extends Lockable{
-  def createFlushCmd(priority : Int) : Flow[FlushCmd]
-  def getFlushCmds(): Seq[Flow[FlushCmd]]
+trait FlusherService extends Lockable {
+
 }
+
+case class TrapCmd(age : Int, pcWidth : Int, tvalWidth : Int, causeWidth : Int) extends Bundle {
+  val cause      = UInt(causeWidth bits)
+  val tval       = Bits(tvalWidth bits)
+  val skipCommit = Bool() //Want to skip commit for exceptions, but not for [jump, ebreak, redo]
+}
+
+trait ScheduleService extends Lockable {
+  def newFlushPort(age: Int): Flow[FlushCmd]
+  def newPcPort(age : Int, aggregationPriority : Int = 0) : Flow[JumpCmd]
+  def newTrapPort(age : Int, causeWidth : Int = 4) : Flow[TrapCmd]
+  def addCtrl(age : Int, ctrl : CtrlLink) : Unit
+}
+
+

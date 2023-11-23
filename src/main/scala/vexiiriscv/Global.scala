@@ -12,7 +12,9 @@ object Global extends AreaRoot{
   val MIXED_WIDTH      = blocking[Int]
   val VIRTUAL_WIDTH    = blocking[Int]
   val PC_WIDTH         = blocking[Int]
+  val TVAL_WIDTH       = blocking[Int]
   val HART_COUNT       = blocking[Int]
+
 
   val VIRTUAL_ADDRESS = Payload(UInt(VIRTUAL_WIDTH bits))
   val MIXED_ADDRESS = Payload(UInt(MIXED_WIDTH bits))

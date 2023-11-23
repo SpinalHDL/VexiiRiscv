@@ -11,6 +11,7 @@ import vexiiriscv._
 import decode.Decode._
 import Global._
 import vexiiriscv.fetch.Fetch
+import vexiiriscv.schedule.SchedulePlugin
 
 object BranchPlugin extends AreaObject {
   val BranchCtrlEnum = new SpinalEnum(binarySequential) {
@@ -25,7 +26,9 @@ class BranchPlugin(val euId : String,
                    var wbAt: Int = 0) extends ExecutionUnitElementSimple(euId)  {
   import BranchPlugin._
   lazy val wbp = host.find[WriteBackPlugin](_.euId == euId)
+  lazy val sp = host[SchedulePlugin]
   addRetain(wbp)
+  addRetain(sp)
 
   val logic = during build new Logic{
     import SrcKeys._
@@ -42,8 +45,13 @@ class BranchPlugin(val euId : String,
     add(Rvi.BLTU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
     add(Rvi.BGEU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
 
+    val pcPort = sp.newPcPort(42)
+    val trapPort = sp.newTrapPort(42)
+    val flushPort = sp.newFlushPort(42)
+
     eu.release()
     wbp.release()
+    sp.release()
 
     val aluCtrl = eu.execute(aluAt)
     val alu = new aluCtrl.Area {
@@ -81,8 +89,12 @@ class BranchPlugin(val euId : String,
 
     val jumpCtrl = eu.execute(jumpAt)
     val jumpLogic = new jumpCtrl.Area {
-      alu.COND
-      alu.PC_TRUE
+      val doIt = isValid && SEL && alu.COND
+
+      pcPort.valid := doIt
+      pcPort.pc := alu.PC_TRUE
+
+      flushPort.valid := doIt
     }
 
     val wbCtrl = eu.execute(wbAt)
