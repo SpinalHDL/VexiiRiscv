@@ -1,7 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.Lockable
+import spinal.core.fiber.{Lock, Lockable}
 import spinal.lib._
 import spinal.lib.logic.Masked
 import spinal.lib.misc.pipeline._
@@ -20,7 +20,10 @@ class MicroOpSpec(val op: MicroOp) {
   var rd = Option.empty[RdSpec]
 }
 
-trait ExecuteUnitService extends Lockable {
+trait ExecuteUnitService {
+  val uopLock = Lock()
+  val pipelineLock = Lock()
+
   def euName() : String
 //  def pushPort() : ExecutionUnitPush
 //  def staticLatencies() : ArrayBuffer[StaticLatency] = ArrayBuffer[StaticLatency]()
@@ -34,8 +37,6 @@ trait ExecuteUnitService extends Lockable {
   def dispatchPriority : Int
   def insertNode : Node
   def getSpec(op : MicroOp) : MicroOpSpec
-
-  val linkLock = new Lockable {}
 }
 
 case class CompletionPayload() extends Bundle{

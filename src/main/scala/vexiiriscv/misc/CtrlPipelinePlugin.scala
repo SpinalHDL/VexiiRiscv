@@ -1,6 +1,7 @@
 package vexiiriscv.misc
 
 import spinal.core.Area
+import spinal.core.fiber.Lock
 import spinal.lib.misc.pipeline
 import spinal.lib.misc.pipeline.Link
 import spinal.lib.misc.plugin.FiberPlugin
@@ -13,11 +14,13 @@ trait PipelineService{
 }
 
 class CtrlPipelinePlugin extends FiberPlugin with PipelineService{
+  val elaborationLock = Lock()
   override def getConnectors(): Seq[Link] = logic.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, pipeline.CtrlLink]()
   def ctrl(id : Int) = idToCtrl.getOrElseUpdate(id, pipeline.CtrlLink())
   def up = ctrl(0).up
   val logic = during build new Area{
+    elaborationLock.await()
     val idMax = idToCtrl.keys.max
     for(i <- 0 to idMax) ctrl(i).unsetName() //To ensure the creation to all intermediate nodes
     val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)

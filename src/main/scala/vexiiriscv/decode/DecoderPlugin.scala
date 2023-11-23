@@ -18,7 +18,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderService{
   lazy val dpp = host[DecodePipelinePlugin]
-  addLockable(dpp)
+  buildBefore(dpp.elaborationLock)
 
   val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
   def getDecodingSpec(key: Payload[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
@@ -39,6 +39,8 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
 
 
   val logic = during build new Area{
+    elaborationLock.await()
+
     Decode.INSTRUCTION_WIDTH.set(32)
 
     val eus = host.list[ExecuteUnitService]
@@ -119,10 +121,12 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
       }
 
       // Clear RD.ENABLE if it select a regfile which doesn't allow writing x0
-      val rfaRd = Decode.rfaKeys.get(RD)
-      val rdRfidZero = rfaRd.rfMapping.zipWithIndex.filter(_._1.x0AlwaysZero).map(_._2)
-      val rdZero = Decode.INSTRUCTION(riscv.Const.rdRange) === 0 && rdRfidZero.map(rfaRd.RFID === _).orR
-      rfaRd.ENABLE clearWhen(rdZero)
+
+      val x0Logic = Decode.rfaKeys.get.get(RD) map { rfaRd =>
+        val rdRfidZero = rfaRd.rfMapping.zipWithIndex.filter(_._1.x0AlwaysZero).map(_._2)
+        val rdZero = Decode.INSTRUCTION(riscv.Const.rdRange) === 0 && rdRfidZero.map(rfaRd.RFID === _).orR
+        rfaRd.ENABLE clearWhen (rdZero)
+      }
 
       val microOpDecoding = new Area {
         for ((key, spec) <- decodingSpecs) {

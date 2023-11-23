@@ -56,10 +56,9 @@ class RegFilePlugin(var spec : RegfileSpec,
     writes.map(_.port)
   }
 
-  override def retain() = lock.retain()
-  override def release() = lock.release()
-
   val logic = during build new Area{
+    elaborationLock.await()
+
     val writeGroups = writes.groupByLinked(_.sharingKey)
     val writeMerges = for((key, elements) <- writeGroups) yield new Area{
       val bus = RegFileWrite(rfpp , false)

@@ -1,6 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
+import spinal.core.fiber.Lock
 import spinal.lib.misc.pipeline._
 import spinal.lib.{Flow, OHMux}
 import spinal.lib.misc.plugin.FiberPlugin
@@ -17,12 +18,12 @@ class WriteBackPlugin(val euId : String,
                       var writeAt : Int,
                       var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin with CompletionService{
   withPrefix(euId + "_" + rf.getName())
-
+  val elaborationLock = Lock()
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
   lazy val rfp = host.find[RegfileService](_.rfSpec == rf)
-  addRetain(eu)
-  addLockable(eu.pipelineLock)
-  addLockable(rfp)
+  setupRetain(eu.uopLock)
+  buildBefore(eu.pipelineLock)
+  buildBefore(rfp.elaborationLock)
 
   case class Spec(port : Flow[Bits], ctrlAt : Int){
     val microOps = ArrayBuffer[MicroOp]()
@@ -47,6 +48,8 @@ class WriteBackPlugin(val euId : String,
   override def getCompletions(): Seq[Flow[CompletionPayload]] = List(logic.write.completion)
 
   val logic = during build new Area {
+    elaborationLock.await()
+
     val specs = portToSpec.values
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
@@ -68,7 +71,7 @@ class WriteBackPlugin(val euId : String,
       }
     }
 
-    eu.release()
+    eu.uopLock.release()
 
     val write = new writeCtrl.Area{
       val rfa = Decode.rfaKeys.get(RD)

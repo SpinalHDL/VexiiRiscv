@@ -10,9 +10,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with PcService{
   lazy val pp = host[FetchPipelinePlugin]
-  during setup {
-    pp.retain()
-  }
+  setupRetain(pp.elaborationLock)
 
   case class JumpSpec(bus : Flow[JumpCmd], priority : Int, aggregationPriority : Int)
   val jumps = ArrayBuffer[JumpSpec]()
@@ -21,6 +19,7 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
   }
 
   val logic = during build new Area{
+    elaborationLock.await()
     val injectStage = pp.ctrl(0).up
 
     // Used to wait until everybody is ready after reset
@@ -101,6 +100,6 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
         Fetch.ID := hart.self.id
       }
     }
-    pp.release()
+    pp.elaborationLock.release()
   }
 }

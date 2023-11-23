@@ -1,7 +1,7 @@
 package vexiiriscv.fetch
 
 import spinal.core._
-import spinal.core.fiber.Lockable
+import spinal.core.fiber.{Lock, Lockable}
 import spinal.lib.{misc, _}
 import spinal.lib.misc.plugin.Plugin
 import vexiiriscv._
@@ -24,8 +24,9 @@ case class JumpCmd() extends Bundle{
   val hartId = HART_ID()
 }
 
-trait PcService extends Lockable{
+trait PcService {
   def createJumpInterface(age : Int, aggregationPriority : Int = 0) : Flow[JumpCmd] //High priority win
+  val elaborationLock = Lock()
 }
 
 trait InitService{

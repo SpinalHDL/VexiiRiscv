@@ -1,6 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
+import spinal.core.fiber.Lock
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.{Flow, MuxOH}
 import spinal.lib.misc.pipeline._
@@ -14,8 +15,9 @@ class IntFormatPlugin(val euId : String) extends FiberPlugin{
   withPrefix(euId)
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
   lazy val wbp = host.find[WriteBackPlugin](_.euId == euId)
-  addLockable(eu.pipelineLock)
-  addLockable(wbp)
+  buildBefore(eu.pipelineLock)
+  buildBefore(wbp.elaborationLock)
+  val elaborationLock = Lock()
 
   case class SignExtend(op : MicroOp, bitId : Int)
   case class Spec(port : Flow[Bits],
@@ -43,6 +45,7 @@ class IntFormatPlugin(val euId : String) extends FiberPlugin{
   }
 
   val logic = during build new Area{
+    elaborationLock.await()
     val specs = portToSpec.values
     val grouped = specs.groupByLinked(_.ctrlId)
     val stages = for(group <- grouped.values) yield new Area{

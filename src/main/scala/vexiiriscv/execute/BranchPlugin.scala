@@ -27,8 +27,8 @@ class BranchPlugin(val euId : String,
   import BranchPlugin._
   lazy val wbp = host.find[WriteBackPlugin](_.euId == euId)
   lazy val sp = host[SchedulePlugin]
-  addRetain(wbp)
-  addRetain(sp)
+  setupRetain(wbp.elaborationLock)
+  setupRetain(sp.elaborationLock)
 
   val logic = during build new Logic{
     import SrcKeys._
@@ -49,9 +49,10 @@ class BranchPlugin(val euId : String,
     val trapPort = sp.newTrapPort(42)
     val flushPort = sp.newFlushPort(42)
 
-    eu.release()
-    wbp.release()
-    sp.release()
+    eu.uopLock.release()
+    wbp.elaborationLock.release()
+    sp.elaborationLock.release()
+    srcp.elaborationLock.release()
 
     val aluCtrl = eu.execute(aluAt)
     val alu = new aluCtrl.Area {

@@ -22,7 +22,7 @@ class BarrelShifterPlugin(val euId : String,
                           var formatAt : Int = 0) extends ExecutionUnitElementSimple(euId)  {
   import BarrelShifterPlugin._
   lazy val ifp = host.find[IntFormatPlugin](_.euId == euId)
-  addLockable(ifp)
+  buildBefore(ifp.elaborationLock)
 
   val logic = during build new Logic{
     import SrcKeys._
@@ -52,7 +52,8 @@ class BarrelShifterPlugin(val euId : String,
       }
     }
 
-    eu.release()
+    eu.uopLock.release()
+    srcp.elaborationLock.release()
 
     val shiftCtrl = eu.execute(shiftAt)
     val shift = new shiftCtrl.Area {

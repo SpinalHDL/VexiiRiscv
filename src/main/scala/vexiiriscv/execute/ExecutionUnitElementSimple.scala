@@ -11,9 +11,10 @@ import vexiiriscv.riscv.{MicroOp, RD, RfResource}
 //This is a simple skeleton to ease the implementation of simple ExecutionUnit elements. It assume a single writeback and a single completion
 abstract class ExecutionUnitElementSimple(euId : String) extends FiberPlugin {
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
-  addLockable(eu.pipelineLock)
-  addRetain(eu)
-  addLockable(host[SrcPlugin])
+  lazy val srcp = host.find[SrcPlugin](_.euId == euId)
+  buildBefore(eu.pipelineLock)
+  setupRetain(eu.uopLock)
+  setupRetain(srcp.elaborationLock)
   withPrefix(euId)
 
   val SEL = Payload(Bool())

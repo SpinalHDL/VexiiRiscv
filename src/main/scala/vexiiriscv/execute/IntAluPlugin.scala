@@ -29,7 +29,7 @@ class IntAluPlugin(val euId : String,
                    var formatAt : Int = 0) extends ExecutionUnitElementSimple(euId)  {
   import IntAluPlugin._
   lazy val ifp = host.find[IntFormatPlugin](_.euId == euId)
-  addRetain(ifp)
+  setupRetain(ifp.elaborationLock)
 
   val logic = during build new Logic{
     import SrcKeys._
@@ -68,8 +68,9 @@ class IntAluPlugin(val euId : String,
       }
     }
 
-    eu.release()
-    ifp.release()
+    eu.uopLock.release()
+    srcp.elaborationLock.release()
+    ifp.elaborationLock.release()
 
     val aluCtrl = eu.execute(aluAt)
     val alu = new aluCtrl.Area {

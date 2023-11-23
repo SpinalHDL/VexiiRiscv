@@ -1,7 +1,7 @@
 package vexiiriscv.regfile
 
 import spinal.core._
-import spinal.core.fiber.Lockable
+import spinal.core.fiber.{Lock, Lockable}
 import spinal.lib._
 import vexiiriscv.riscv.RegfileSpec
 
@@ -69,7 +69,9 @@ case class RegFileRead(rfpp : RegFilePortParam, withReady : Boolean) extends Bun
 //  }
 //}
 
-trait RegfileService extends Lockable {
+trait RegfileService {
+  val elaborationLock = Lock()
+
   def rfSpec : RegfileSpec
   def getPhysicalDepth : Int
 
@@ -78,7 +80,6 @@ trait RegfileService extends Lockable {
 
   def newRead(withReady : Boolean) : RegFileRead
   def newWrite(withReady : Boolean, sharingKey : Any = null, priority : Int = 0) : RegFileWrite
-//  def newBypass(priority : Int) : RegFileBypass
 
   def getWrites() : Seq[RegFileWrite]
 }

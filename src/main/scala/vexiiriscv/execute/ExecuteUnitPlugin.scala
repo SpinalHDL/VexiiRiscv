@@ -23,18 +23,21 @@ class ExecuteUnitPlugin(val euId : String,
   withPrefix(euId)
 
   during setup {
-    host.list[RegfileService].foreach(_.retain())
+    host.list[RegfileService].foreach(_.elaborationLock.retain())
   }
 
   override def euName(): String = euId
-  override def insertNode: Node = ctrl(logic.idMin).up
+  override def insertNode: Node = ctrl(0).up
   override def nodeAt(id : Int): Node = ctrl(id).down
   override def dispatchPriority: Int = priority
   override def getMicroOp(): Seq[MicroOp] = {
-    lock.await()
+    uopLock.await()
     microOps.keys.toSeq
   }
-  override def getMicroOpSpecs(): Iterable[MicroOpSpec] = microOps.values
+  override def getMicroOpSpecs(): Iterable[MicroOpSpec] = {
+    uopLock.await()
+    microOps.values
+  }
 
   val microOps = mutable.LinkedHashMap[MicroOp, MicroOpSpec]()
   def addMicroOp(op : MicroOp): Unit = {
@@ -74,9 +77,7 @@ class ExecuteUnitPlugin(val euId : String,
     rfStageables.getOrElseUpdate(r, Payload(Bits(r.rf.width bits)).setName(s"${r.rf.getName()}_${r.access.getName()}"))
   }
 
-
-  val pipelineLock = new Lockable(){}
-  override def getConnectors(): Seq[Link] = pipeline.connectors
+  override def getConnectors(): Seq[Link] = logic.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, CtrlLink]()
   def ctrl(id : Int)  : CtrlLink = {
     idToCtrl.getOrElseUpdate(id, CtrlLink().setCompositeName(this, if(id >= executeAt) "exe" + (id - executeAt) else "dis" + id))
@@ -85,40 +86,41 @@ class ExecuteUnitPlugin(val euId : String,
     assert(id >= 0)
     ctrl(id + executeAt)
   }
-  val logic = during build new Area{
+
+  val logic = during build new Area {
     pipelineLock.await()
 
     val specs = microOps.values
     val resources = specs.flatMap(_.op.resources).distinctLinked
 
-    val rf = new Area{
+    val rf = new Area {
       val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked
       val rfPlugins = rfSpecs.map(spec => host.find[RegfileService](_.rfSpec == spec))
-      val readLatencyMax = rfPlugins.map(_.readLatency).max
       val readCtrl = ctrl(rfReadAt)
 
-      val reads = for((spec, payload) <- rfStageables) yield new Area{
+      val reads = for ((spec, payload) <- rfStageables) yield new Area {
         val rfa = Decode.rfaKeys.get(spec.access)
         val rfPlugin = host.find[RegfileService](_.rfSpec == spec.rf)
         val port = rfPlugin.newRead(false)
         port.valid := readCtrl.isValid && readCtrl(rfa.ENABLE) && rfa.is(spec.rf, readCtrl(rfa.RFID))
         port.address := readCtrl(rfa.PHYS)
 
-        case class BypassSpec(eu : ExecuteUnitService, nodeId : Int, payload : Payload[Bits])
+        case class BypassSpec(eu: ExecuteUnitService, nodeId: Int, payload: Payload[Bits])
+
         val bypassSpecs = mutable.LinkedHashSet[BypassSpec]()
 
         // Fill the bypassSpecs from all the eu's microOp rd spec
         val eus = host.list[ExecuteUnitService]
-        for(eu <- eus; ops = eu.getMicroOp();
-            op <- ops; opSpec = eu.getSpec(op)){
-          eu.lock.await() // Ensure that the eu specification is done
-          val sameRf = opSpec.op.resources.exists{
+        for (eu <- eus; ops = eu.getMicroOp();
+             op <- ops; opSpec = eu.getSpec(op)) {
+          eu.pipelineLock.await() // Ensure that the eu specification is done
+          val sameRf = opSpec.op.resources.exists {
             case RfResource(spec.rf, RD) => true
             case _ => false
           }
-          if(sameRf){
+          if (sameRf) {
             val rd = opSpec.rd.get
-            for(nodeId <- rd.bypassesAt){
+            for (nodeId <- rd.bypassesAt) {
               val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
               bypassSpecs += bypassSpec
             }
@@ -129,13 +131,13 @@ class ExecuteUnitPlugin(val euId : String,
         val rfaRd = Decode.rfaKeys.get(RD)
         val bypassSorted = bypassSpecs.toSeq.sortBy(_.nodeId)
         val bypassEnables = Bits(bypassSorted.size + 1 bits)
-        for((b, id) <- bypassSorted.zipWithIndex){
+        for ((b, id) <- bypassSorted.zipWithIndex) {
           val node = b.eu.nodeAt(b.nodeId)
           bypassEnables(id) := node(rfaRd.ENABLE) && node(rfaRd.PHYS) === dataCtrl(rfa.PHYS) && node(rfaRd.RFID) === dataCtrl(rfa.RFID)
         }
         bypassEnables.msb := True
         val sel = OHMasking.firstV2(bypassEnables)
-        dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b =>  b.eu.nodeAt(b.nodeId)(b.payload)) :+ port.data, true)
+        dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b => b.eu.nodeAt(b.nodeId)(b.payload)) :+ port.data, true)
       }
     }
 
@@ -147,12 +149,8 @@ class ExecuteUnitPlugin(val euId : String,
       }
     }
 
-    val idMin = (0 +: idToCtrl.keys.toList).min
-    host.list[RegfileService].foreach(_.release())
-  }
+    host.list[RegfileService].foreach(_.elaborationLock.release())
 
-  val pipeline = during build new Area {
-    linkLock.await()
     val idMax = (0 +: idToCtrl.keys.toList).max
     for (i <- 0 to idMax) ctrl(i)  //To ensure the creation to all intermediate nodes
     val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)

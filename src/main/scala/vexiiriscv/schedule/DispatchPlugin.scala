@@ -32,12 +32,12 @@ Schedule euristic :
 class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
   lazy val dpp = host[DecodePipelinePlugin]
   lazy val dp = host[DecoderService]
-  addLockable(host[PipelineBuilderPlugin])
-  addLockable(dpp)
-  addRetain(dp)
+  buildBefore(host[PipelineBuilderPlugin].elaborationLock)
+  buildBefore(dpp.elaborationLock)
+  setupRetain(dp.elaborationLock)
 
   during setup{
-    host.list[ExecuteUnitService].foreach(_.linkLock.retain())
+    host.list[ExecuteUnitService].foreach(_.pipelineLock.retain())
   }
 
   val logic = during build new Area{
@@ -52,7 +52,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
         dp.addMicroOpDecoding(op, key, True)
       }
     }
-    dp.release()
+    dp.elaborationLock.release()
     val slotsCount = 0
 
     val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
@@ -182,7 +182,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
 
     dispatchCtrl.down.ready := True //TODO remove
 
-   eus.foreach(_.linkLock.release())
+   eus.foreach(_.pipelineLock.release())
   }
 }
 

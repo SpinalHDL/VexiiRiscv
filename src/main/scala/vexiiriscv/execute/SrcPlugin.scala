@@ -5,6 +5,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
+import spinal.core.fiber.Lock
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -47,8 +48,9 @@ object SrcKeys extends AreaObject {
 }
 
 class SrcPlugin(val euId : String) extends FiberPlugin{
+  val elaborationLock = Lock()
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
-  addLockable(eu.pipelineLock)
+  setupRetain(eu.pipelineLock)
   withPrefix(euId)
 
   val spec = mutable.LinkedHashMap[MicroOp, mutable.LinkedHashSet[SrcKeys]]()
@@ -61,6 +63,8 @@ class SrcPlugin(val euId : String) extends FiberPlugin{
   }
 
   val logic = during build new Area{
+    elaborationLock.await()
+
     val ss = SrcStageables
     val sk = SrcKeys
 
@@ -110,6 +114,7 @@ class SrcPlugin(val euId : String) extends FiberPlugin{
       })
     }
 
+
     val addsub = opKeys.nonEmpty generate new onCtrl.Area{
       val alwaysAdd = !has(sk.Op.SUB, sk.Op.LESS, sk.Op.LESS_U)
       val alwaysSub = !has(sk.Op.ADD)
@@ -131,5 +136,6 @@ class SrcPlugin(val euId : String) extends FiberPlugin{
         ss.LESS := (ss.SRC1.msb === ss.SRC2.msb) ? ss.ADD_SUB.msb | Mux(ss.UNSIGNED, ss.SRC2.msb, ss.SRC1.msb)
       }
     }
+    eu.pipelineLock.release()
   }
 }

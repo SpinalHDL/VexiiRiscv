@@ -16,8 +16,8 @@ class AlignerPlugin(fetchAt : Int = 3,
   lazy val fpp = host[FetchPipelinePlugin]
   lazy val dpp = host[DecodePipelinePlugin]
 
-  addLockable(fpp)
-  addLockable(dpp)
+  buildBefore(fpp.elaborationLock)
+  buildBefore(dpp.elaborationLock)
 
   override def getConnectors(): Seq[Link] = logic.connectors
 

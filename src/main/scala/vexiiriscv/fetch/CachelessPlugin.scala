@@ -7,7 +7,6 @@ import spinal.lib.misc.database.Database._
 import spinal.lib.misc.pipeline._
 import vexiiriscv._
 import vexiiriscv.Global._
-import vexiiriscv.schedule.FlusherService
 
 case class CachelessBusParam(addressWidth : Int, dataWidth : Int, idCount : Int, cmdPersistence : Boolean){
   val idWidth = log2Up(idCount)
@@ -44,11 +43,11 @@ class CachelessPlugin(var wordWidth : Int,
                       var joinAt : Int = 1,
                       var cmdForkPersistence : Boolean = true) extends FiberPlugin{
   lazy val pp = host[FetchPipelinePlugin]
-  during setup{
-    pp.retain()
-    Fetch.WORD_WIDTH.set(wordWidth)
-  }
+  buildBefore(pp.elaborationLock)
+
   val logic = during build new Area{
+    Fetch.WORD_WIDTH.set(wordWidth)
+
     val idCount = joinAt - forkAt + 1 //TODO we need more of it
     val p = CachelessBusParam(MIXED_WIDTH, Fetch.WORD_WIDTH, idCount, false)
     val bus = master(CachelessBus(p))
@@ -102,7 +101,5 @@ class CachelessPlugin(var wordWidth : Int,
       }
       haltWhen(haltIt)
     }
-
-    pp.release()
   }
 }

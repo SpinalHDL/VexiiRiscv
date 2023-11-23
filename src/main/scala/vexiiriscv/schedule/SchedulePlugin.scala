@@ -5,13 +5,13 @@ import spinal.lib.misc.pipeline.CtrlLink
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.fetch.PcService
-import vexiiriscv.misc.{PipelineBuilderPlugin, ScheduleService, TrapCmd}
+import vexiiriscv.misc.{PipelineBuilderPlugin}
 
 import scala.collection.mutable.ArrayBuffer
 
 class SchedulePlugin extends FiberPlugin with ScheduleService {
-  addLockable(host[PcService])
-  addLockable(host[PipelineBuilderPlugin])
+  buildBefore(host[PcService].elaborationLock)
+  buildBefore(host[PipelineBuilderPlugin].elaborationLock)
 
   val flushPorts = ArrayBuffer[Flow[FlushCmd]]()
   val trapPorts  = ArrayBuffer[Flow[TrapCmd]]()

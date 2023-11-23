@@ -14,7 +14,7 @@ import vexiiriscv.riscv.IntRegFile
 import scala.collection.mutable.ArrayBuffer
 
 class WhiteboxerPlugin extends FiberPlugin{
-  addLockable(host[PipelineBuilderPlugin])
+  buildBefore(host[PipelineBuilderPlugin].elaborationLock)
 
   val logic = during build new Area{
     def wrap[T <: Data](that : T) : T = CombInit(that).simPublic
