@@ -18,9 +18,12 @@ class WriteBackPlugin(val euId : String,
                       var writeAt : Int,
                       var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin with CompletionService{
   withPrefix(euId + "_" + rf.getName())
+
   val elaborationLock = Lock()
+
   lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
   lazy val rfp = host.find[RegfileService](_.rfSpec == rf)
+
   setupRetain(eu.uopLock)
   buildBefore(eu.pipelineLock)
   buildBefore(rfp.elaborationLock)

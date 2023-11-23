@@ -90,26 +90,23 @@ class ExecuteUnitPlugin(val euId : String,
   val logic = during build new Area {
     pipelineLock.await()
 
-    val specs = microOps.values
-    val resources = specs.flatMap(_.op.resources).distinctLinked
-
+    // Generate the register files read + bypass
     val rf = new Area {
       val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked
       val rfPlugins = rfSpecs.map(spec => host.find[RegfileService](_.rfSpec == spec))
-      val readCtrl = ctrl(rfReadAt)
 
+      val readCtrl = ctrl(rfReadAt)
       val reads = for ((spec, payload) <- rfStageables) yield new Area {
+        // Implement the register file read
         val rfa = Decode.rfaKeys.get(spec.access)
         val rfPlugin = host.find[RegfileService](_.rfSpec == spec.rf)
         val port = rfPlugin.newRead(false)
         port.valid := readCtrl.isValid && readCtrl(rfa.ENABLE) && rfa.is(spec.rf, readCtrl(rfa.RFID))
         port.address := readCtrl(rfa.PHYS)
 
+        // Generate a bypass specification for the regfile readed data
         case class BypassSpec(eu: ExecuteUnitService, nodeId: Int, payload: Payload[Bits])
-
         val bypassSpecs = mutable.LinkedHashSet[BypassSpec]()
-
-        // Fill the bypassSpecs from all the eu's microOp rd spec
         val eus = host.list[ExecuteUnitService]
         for (eu <- eus; ops = eu.getMicroOp();
              op <- ops; opSpec = eu.getSpec(op)) {
@@ -127,6 +124,7 @@ class ExecuteUnitPlugin(val euId : String,
           }
         }
 
+        // Implement the bypass hardware
         val dataCtrl = ctrl(rfReadAt + rfPlugin.readLatency)
         val rfaRd = Decode.rfaKeys.get(RD)
         val bypassSorted = bypassSpecs.toSeq.sortBy(_.nodeId)
@@ -141,6 +139,7 @@ class ExecuteUnitPlugin(val euId : String,
       }
     }
 
+    // Implement some UOP decoding for the execute's plugin usages
     val decodeCtrl = ctrl(decodeAt)
     val decoding = new decodeCtrl.Area {
       val coverAll = getMicroOp().map(e => Masked(e.key))
@@ -151,6 +150,7 @@ class ExecuteUnitPlugin(val euId : String,
 
     host.list[RegfileService].foreach(_.elaborationLock.release())
 
+    // Interconnect the pipeline ctrls
     val idMax = (0 +: idToCtrl.keys.toList).max
     for (i <- 0 to idMax) ctrl(i)  //To ensure the creation to all intermediate nodes
     val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
