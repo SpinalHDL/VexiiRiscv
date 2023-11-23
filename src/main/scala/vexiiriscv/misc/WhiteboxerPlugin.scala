@@ -34,7 +34,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val hartId = wrap(c(Global.HART_ID, lane))
       val pc = wrap(c(Global.PC, lane))
       val fetchId = wrap(c(Fetch.ID, lane))
-      val decodeId = wrap(c(Decode.ID, lane))
+      val decodeId = wrap(c(Decode.DOP_ID, lane))
     }
 
     val serializeds = for(lane <- 0 until Decode.LANES) yield new Area {
@@ -42,16 +42,16 @@ class WhiteboxerPlugin extends FiberPlugin{
       host[DecoderPlugin].logic.await()
       val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID, lane))
-      val decodeId = wrap(c(Decode.ID, lane))
-      val microOpId = wrap(c(Decode.MICRO_OP_ID, lane))
-      val microOp = wrap(c(Decode.MICRO_OP, lane))
+      val decodeId = wrap(c(Decode.DOP_ID, lane))
+      val microOpId = wrap(c(Decode.UOP_ID, lane))
+      val microOp = wrap(c(Decode.UOP, lane))
     }
 
     val dispatches = for (eu <- host.list[ExecuteUnitService]) yield new Area {
       val c = eu.nodeAt(0)
       val fire = wrap(c.isFiring)
       val hartId = wrap(c(Global.HART_ID))
-      val microOpId = wrap(c(Decode.MICRO_OP_ID))
+      val microOpId = wrap(c(Decode.UOP_ID))
     }
 
 
@@ -59,7 +59,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val c = eu.nodeAt(eu.executeAt - 1)
       val fire = wrap(c.isFiring)
       val hartId = wrap(c(Global.HART_ID))
-      val microOpId = wrap(c(Decode.MICRO_OP_ID))
+      val microOpId = wrap(c(Decode.UOP_ID))
     }
 
     val rfWrites = new Area{

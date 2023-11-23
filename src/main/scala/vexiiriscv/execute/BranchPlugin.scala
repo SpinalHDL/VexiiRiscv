@@ -53,7 +53,7 @@ class BranchPlugin(val euId : String,
       val COND = insert(BRANCH_CTRL.mux(
         BranchCtrlEnum.JALR -> True,
         BranchCtrlEnum.JAL -> True,
-        BranchCtrlEnum.B -> MICRO_OP(14 downto 12).mux[Bool](
+        BranchCtrlEnum.B -> UOP(14 downto 12).mux[Bool](
           B"000" ->  EQ,
           B"001" -> !EQ,
           M"1-1" -> !ss.LESS,
@@ -61,7 +61,7 @@ class BranchPlugin(val euId : String,
         )
       ))
 
-      val imm = IMM(MICRO_OP)
+      val imm = IMM(UOP)
       val target_a = BRANCH_CTRL.mux(
         default -> S(PC),
         BranchCtrlEnum.JALR -> ss.SRC1.resize(PC_WIDTH)

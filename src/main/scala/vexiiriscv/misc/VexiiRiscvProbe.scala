@@ -27,8 +27,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
   val xlen = cpu.database(Riscv.XLEN)
   val hartsCount = cpu.database(Global.HART_COUNT)
   val fetchIdWidth = cpu.database(Fetch.ID_WIDTH)
-  val decodeIdWidth = cpu.database(Decode.ID_WIDTH)
-  val microOpIdWidth = cpu.database(Decode.MICRO_OP_ID_WIDTH)
+  val decodeIdWidth = cpu.database(Decode.DOP_ID_WIDTH)
+  val microOpIdWidth = cpu.database(Decode.UOP_ID_WIDTH)
 
   val disass = withRvls generate rvls.jni.Frontend.newDisassemble(xlen)
   val harts = hartsIds.map(new HartCtx(_)).toArray

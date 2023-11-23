@@ -40,7 +40,7 @@ trait ExecuteUnitService extends Lockable {
 
 case class CompletionPayload() extends Bundle{
   val hartId = Global.HART_ID()
-  val microOpId = Decode.MICRO_OP_ID()
+  val microOpId = Decode.UOP_ID()
 }
 trait CompletionService{
   def getCompletions() : Seq[Flow[CompletionPayload]]

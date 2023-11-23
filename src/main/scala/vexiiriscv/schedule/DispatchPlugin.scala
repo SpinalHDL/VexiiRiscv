@@ -57,7 +57,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
 
     val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
     hmKeys.add(Global.PC)
-    hmKeys.add(Decode.MICRO_OP_ID)
+    hmKeys.add(Decode.UOP_ID)
     for ((k, ac) <- Decode.rfaKeys) {
       hmKeys.add(ac.ENABLE)
       hmKeys.add(ac.RFID)
@@ -68,7 +68,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       val valid = Bool()
       val compatibility = Bits(eus.size bits)
       val hartId = Global.HART_ID()
-      val microOp = Decode.MICRO_OP()
+      val microOp = Decode.UOP()
       val hm = new HardMap()
       hmKeys.foreach(e => hm.add(e))
     }
@@ -106,7 +106,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       }
 
       for (id <- checkRange) {
-        node(Execute.BYPASSED, id) := decs(id).build(node(Decode.MICRO_OP), all)
+        node(Execute.BYPASSED, id) := decs(id).build(node(Decode.UOP), all)
       }
     }
 
@@ -150,7 +150,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       c.ctx.valid := dispatchCtrl.isValid && Dispatch.MASK
       c.ctx.compatibility := EU_COMPATIBILITY.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
-      c.ctx.microOp := Decode.MICRO_OP
+      c.ctx.microOp := Decode.UOP
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
       haltWhen(!c.fire)
     }
@@ -175,7 +175,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       val mux = candidates.reader(oh, true)
       insertNode.valid := oh.orR
       Global.HART_ID := mux(_.ctx.hartId)
-      Decode.MICRO_OP := mux(_.ctx.microOp)
+      Decode.UOP := mux(_.ctx.microOp)
       for(k <- hmKeys) k.assignFrom(mux(_.ctx.hm(k)))
       Decode.rfaKeys.get(RD).ENABLE clearWhen(!insertNode.valid) //Allow to avoid having to check the valid down the pipeline
     }

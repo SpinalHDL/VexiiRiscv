@@ -96,7 +96,7 @@ class SrcPlugin(val euId : String) extends FiberPlugin{
 
     val onCtrl = eu.execute(0)
     val src = new onCtrl.Area{
-      val imm = new IMM(Decode.MICRO_OP)
+      val imm = new IMM(Decode.UOP)
       if(src1Keys.nonEmpty) ss.SRC1 := SRC1_CTRL.muxListDc[SInt](src1Keys.map {
         case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(this(eu(IntRegFile, RS1)))
         case sk.SRC1.U  => src1ToEnum(sk.SRC1.U ) -> S(imm.u).resize(Riscv.XLEN)

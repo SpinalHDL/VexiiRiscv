@@ -130,17 +130,17 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
         }
       }
       Dispatch.MASK := True
-      Decode.MICRO_OP := Decode.INSTRUCTION
+      Decode.UOP := Decode.INSTRUCTION
 
-      Decode.MICRO_OP_ID.assignDontCare()
+      Decode.UOP_ID.assignDontCare()
       val harts = for (hartId <- 0 until Global.HART_COUNT) yield new Area {
-        val id = Reg(Decode.ID) init (0)
+        val id = Reg(Decode.DOP_ID) init (0)
       }
       harts.onSel(Global.HART_ID) { hart =>
         when(getCtrl.down.isFiring) {
           hart.id := hart.id + 1
         }
-       Decode.MICRO_OP_ID := hart.id
+       Decode.UOP_ID := hart.id
       }
     }
   }

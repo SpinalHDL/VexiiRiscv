@@ -23,7 +23,7 @@ class RegFilePlugin(var spec : RegfileSpec,
                     var syncRead : Boolean = true,
                     var latchBased : Boolean = false) extends FiberPlugin with RegfileService {
   withPrefix(spec.getName())
-  lazy val rfpp = RegFilePortParam(addressWidth, dataWidth, Global.HART_ID_WIDTH, Decode.MICRO_OP_ID_WIDTH)
+  lazy val rfpp = RegFilePortParam(addressWidth, dataWidth, Global.HART_ID_WIDTH, Decode.UOP_ID_WIDTH)
 
   override def writeLatency: Int = 1
   override def readLatency: Int = syncRead.toInt

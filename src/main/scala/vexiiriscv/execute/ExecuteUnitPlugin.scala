@@ -143,7 +143,7 @@ class ExecuteUnitPlugin(val euId : String,
     val decoding = new decodeCtrl.Area {
       val coverAll = getMicroOp().map(e => Masked(e.key))
       for ((key, spec) <- decodingSpecs) {
-        key.assignFromBits(spec.build(Decode.MICRO_OP, coverAll).asBits)
+        key.assignFromBits(spec.build(Decode.UOP, coverAll).asBits)
       }
     }
 

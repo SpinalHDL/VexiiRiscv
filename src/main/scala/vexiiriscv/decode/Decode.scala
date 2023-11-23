@@ -12,18 +12,18 @@ import scala.collection.mutable
 object Decode extends AreaObject {
   val LANES  = blocking[Int]
   val INSTRUCTION_WIDTH = blocking[Int]
-  val ID_WIDTH = blocking[Int]
-  val MICRO_OP_ID_WIDTH = blocking[Int]
+  val DOP_ID_WIDTH = blocking[Int]
+  val UOP_ID_WIDTH = blocking[Int]
 
   val INSTRUCTION = Payload(Bits(INSTRUCTION_WIDTH bits))
-  val MICRO_OP = Payload(Bits(INSTRUCTION_WIDTH bits))
+  val UOP = Payload(Bits(INSTRUCTION_WIDTH bits))
   val ALIGNED_MASK = Payload(Bool())
 
   val rfaKeys = blocking[mutable.LinkedHashMap[RfAccess, AccessKeys]]
 
   val LEGAL = Payload(Bool())
-  val ID = Payload(UInt(ID_WIDTH bits))
-  val MICRO_OP_ID = Payload(UInt(MICRO_OP_ID_WIDTH bits))
+  val DOP_ID = Payload(UInt(DOP_ID_WIDTH bits))
+  val UOP_ID = Payload(UInt(UOP_ID_WIDTH bits))
 }
 
 case class AccessKeys(physWidth : Int, rfMapping : Seq[RegfileSpec]) extends Area{

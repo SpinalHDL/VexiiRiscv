@@ -37,7 +37,7 @@ class AlignerPlugin(fetchAt : Int = 3,
     connectors += connector
 
     val harts = for(hartId <- 0 until Global.HART_COUNT) yield new Area {
-      val id = Reg(Decode.ID) init (0)
+      val id = Reg(Decode.DOP_ID) init (0)
     }
 
     val feeder = new down.Area{
@@ -46,12 +46,12 @@ class AlignerPlugin(fetchAt : Int = 3,
       this (Global.PC, 0) := Fetch.WORD_PC
       this (Fetch.ID, 0) := Fetch.ID
 
-      this (Decode.ID, 0).assignDontCare()
+      this (Decode.DOP_ID, 0).assignDontCare()
       harts.onSel(Global.HART_ID) { hart =>
         when(isFiring) {
           hart.id := hart.id + 1
         }
-        this (Decode.ID, 0) := hart.id
+        this (Decode.DOP_ID, 0) := hart.id
       }
     }
   }
