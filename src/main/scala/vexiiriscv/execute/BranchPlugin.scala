@@ -11,7 +11,7 @@ import vexiiriscv._
 import decode.Decode._
 import Global._
 import vexiiriscv.fetch.Fetch
-import vexiiriscv.schedule.SchedulePlugin
+import vexiiriscv.schedule.ReschedulePlugin
 
 object BranchPlugin extends AreaObject {
   val BranchCtrlEnum = new SpinalEnum(binarySequential) {
@@ -26,7 +26,7 @@ class BranchPlugin(val euId : String,
                    var wbAt: Int = 0) extends ExecutionUnitElementSimple(euId)  {
   import BranchPlugin._
   lazy val wbp = host.find[WriteBackPlugin](_.euId == euId)
-  lazy val sp = host[SchedulePlugin]
+  lazy val sp = host[ReschedulePlugin]
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)
 
@@ -45,9 +45,10 @@ class BranchPlugin(val euId : String,
     add(Rvi.BLTU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
     add(Rvi.BGEU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
 
-    val pcPort = sp.newPcPort(42)
-    val trapPort = sp.newTrapPort(42)
-    val flushPort = sp.newFlushPort(42)
+    val age = eu.getAge(jumpAt, false)
+    val pcPort = sp.newPcPort(age)
+//    val trapPort = if XXX sp.newTrapPort(age)
+    val flushPort = sp.newFlushPort(age)
 
     eu.uopLock.release()
     wbp.elaborationLock.release()

@@ -10,7 +10,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
-import vexiiriscv.schedule.DispatchPlugin
+import vexiiriscv.schedule.{Ages, DispatchPlugin}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -86,6 +86,9 @@ class ExecuteUnitPlugin(val euId : String,
     assert(id >= 0)
     ctrl(id + executeAt)
   }
+
+
+  def getAge(at: Int, prediction: Boolean): Int = Ages.EU + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
 
   val logic = during build new Area {
     pipelineLock.await()

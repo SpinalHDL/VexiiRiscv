@@ -23,7 +23,7 @@ class ParamSimple(){
       case false => plugins += new memory.StaticTranslationPlugin(32)
       case true =>
     }
-    plugins += new schedule.SchedulePlugin()
+    plugins += new schedule.ReschedulePlugin()
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
     plugins += new fetch.CachelessPlugin(wordWidth = 32)
