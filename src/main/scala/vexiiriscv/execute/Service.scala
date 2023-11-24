@@ -32,11 +32,10 @@ trait ExecuteUnitService {
 
   def executeAt: Int
   def rfReadAt: Int
-  def nodeAt(id : Int): Node
+  def ctrl(id : Int): ExecuteUnitCtrl
   def getMicroOp(): Seq[MicroOp]
   def getMicroOpSpecs(): Iterable[MicroOpSpec]
   def dispatchPriority : Int
-  def insertNode : Node
   def getSpec(op : MicroOp) : MicroOpSpec
 }
 

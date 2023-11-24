@@ -7,7 +7,7 @@ import spinal.lib.misc.pipeline.{CtrlApi, CtrlLink, NodeApi, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
-import vexiiriscv.execute.{Execute, ExecuteUnitService}
+import vexiiriscv.execute.{Execute, ExecuteUnitPipelinePlugin, ExecuteUnitPlugin, ExecuteUnitService}
 import vexiiriscv.misc.PipelineBuilderPlugin
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{RD, RfRead, RfResource}
@@ -32,8 +32,10 @@ Schedule euristic :
 class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
   lazy val dpp = host[DecodePipelinePlugin]
   lazy val dp = host[DecoderService]
+  lazy val eupp = host[ExecuteUnitPipelinePlugin]
   buildBefore(host[PipelineBuilderPlugin].elaborationLock)
   buildBefore(dpp.elaborationLock)
+  buildBefore(eupp.pipelineLock)
   setupRetain(dp.elaborationLock)
 
   during setup{
@@ -94,7 +96,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       }
       val checkRange = euToCheckRange(eu)
       val decs = checkRange.map(_ -> new DecodingSpec(Bool()).setDefault(Masked.zero)).toMapLinked()
-      val node = eu.nodeAt(1)
+      val node = eu.ctrl(1)
       for (spec <- eu.getMicroOpSpecs()) {
         val key = Masked(spec.op.key)
         spec.rd match {
@@ -136,7 +138,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
           for(writeEu <- eus) {
             val range = euToCheckRange(writeEu).dropRight(readAt)
             for(id <- range) {
-              val node = writeEu.nodeAt(id)
+              val node = writeEu.ctrl(id)
               hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === ctx.hm(rs.PHYS) && !node(Execute.BYPASSED, id)
             }
           }
@@ -179,26 +181,25 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       }
     }
 
-    val inserter = for ((eu, id) <- eus.zipWithIndex; insertNode = eu.insertNode) yield new Area with NodeApi {
-      override def getNode = insertNode
+    val inserter = for ((eu, id) <- eus.zipWithIndex; insertNode = eu.ctrl(0).up) yield new Area {
       val oh = B(scheduler.layer.map(l => l.doIt && l.eusOh(id)))
       val mux = candidates.reader(oh, true)
-      insertNode.valid := oh.orR
-      Global.HART_ID := mux(_.ctx.hartId)
-      Decode.UOP := mux(_.ctx.microOp)
-      for(k <- hmKeys) k.assignFrom(mux(_.ctx.hm(k)))
-      Decode.rfaKeys.get(RD).ENABLE clearWhen(!insertNode.valid) //Allow to avoid having to check the valid down the pipeline
+      insertNode(ExecuteUnitPlugin.SEL) := oh.orR
+      insertNode(Global.HART_ID) := mux(_.ctx.hartId)
+      insertNode(Decode.UOP) := mux(_.ctx.microOp)
+      for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
+      insertNode(rdKeys.ENABLE) clearWhen(!insertNode(ExecuteUnitPlugin.SEL)) //Allow to avoid having to check the valid down the pipeline
     }
 
-    dispatchCtrl.down.ready := True //TODO remove
+    dispatchCtrl.down.ready := True
 
-   eus.foreach(_.pipelineLock.release())
+    eupp.ctrl(0).up.setAlwaysValid()
+
+    eus.foreach(_.pipelineLock.release())
   }
 }
 
 /*
 //TODO
 - RFID hazard
-- no hazard on RD x0
-- Check RD ordering for dual issue (2 instruction scheduled the same cycle)
  */

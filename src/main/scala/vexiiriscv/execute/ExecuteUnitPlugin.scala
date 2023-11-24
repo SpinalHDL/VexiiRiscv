@@ -8,6 +8,7 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
+import vexiiriscv.execute.ExecuteUnitPlugin.SEL
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
@@ -16,11 +17,62 @@ import vexiiriscv.schedule.{Ages, DispatchPlugin}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+
+trait ExecuteUnitCtrlApi{
+  def getCtrl: ExecuteUnitCtrl
+  def euId : String
+  private val _c = getCtrl
+  import _c._
+
+  def isValid: Bool = SEL
+  def isFiring: Bool = SEL && _c.on.isReady
+
+  def apply[T <: Data](that: Payload[T]): T = _c.on.apply(that, euId)
+  def apply[T <: Data](that: Payload[T], subKey : Any): T = _c.on.apply(that, euId + "_" + subKey.toString)
+  def insert[T <: Data](that: T): Payload[T] = {
+    val p = Payload(that)
+    apply(p) := that
+    p
+  }
+  def bypass[T <: Data](that: Payload[T]): T =  _c.on.bypass(that, euId)
+
+  def up = {
+    val up = _c.on.up
+    new up.Area(euId)
+  }
+  def down = {
+    val down = _c.on.down
+    new down.Area(euId)
+  }
+
+  implicit def stageablePiped2[T <: Data](stageable: Payload[T]): T = this (stageable)
+  class BundlePimper[T <: Bundle](pimped: T) {
+    def :=(that: T): Unit = pimped := that
+  }
+
+  implicit def bundlePimper[T <: Bundle](stageable: Payload[T]) = new BundlePimper[T](this (stageable))
+}
+
+class ExecuteUnitCtrl(val at : Int, val on : CtrlLink, override val euId : String) extends Area with ExecuteUnitCtrlApi{
+  override def getCtrl: ExecuteUnitCtrl = this
+
+  class Area extends spinal.core.Area with ExecuteUnitCtrlApi{
+    override def getCtrl: ExecuteUnitCtrl = ExecuteUnitCtrl.this
+    override def euId: String = ExecuteUnitCtrl.this.euId
+  }
+}
+
+object ExecuteUnitPlugin extends AreaRoot{
+  val SEL = Payload(Bool())
+}
+
 class ExecuteUnitPlugin(val euId : String,
                         val priority : Int,
                         override val rfReadAt : Int,
                         val decodeAt : Int,
-                        override val executeAt : Int) extends FiberPlugin with PipelineService with ExecuteUnitService with CompletionService{
+                        override val executeAt : Int) extends FiberPlugin with ExecuteUnitService with CompletionService{
+  lazy val eupp = host[ExecuteUnitPipelinePlugin]
+  setupRetain(eupp.pipelineLock)
   withPrefix(euId)
 
   during setup {
@@ -28,8 +80,6 @@ class ExecuteUnitPlugin(val euId : String,
   }
 
   override def euName(): String = euId
-  override def insertNode: Node = ctrl(0).up
-  override def nodeAt(id : Int): Node = ctrl(id).down
   override def dispatchPriority: Int = priority
   override def getMicroOp(): Seq[MicroOp] = {
     uopLock.await()
@@ -82,12 +132,11 @@ class ExecuteUnitPlugin(val euId : String,
     rfStageables.getOrElseUpdate(r, Payload(Bits(r.rf.width bits)).setName(s"${r.rf.getName()}_${r.access.getName()}"))
   }
 
-  override def getLinks(): Seq[Link] = logic.connectors
-  val idToCtrl = mutable.LinkedHashMap[Int, CtrlLink]()
-  def ctrl(id : Int)  : CtrlLink = {
-    idToCtrl.getOrElseUpdate(id, CtrlLink().setCompositeName(this, if(id >= executeAt) "exe" + (id - executeAt) else "dis" + id))
+  val idToCtrl = mutable.LinkedHashMap[Int, ExecuteUnitCtrl]()
+  def ctrl(id : Int)  : ExecuteUnitCtrl = {
+    idToCtrl.getOrElseUpdate(id, new ExecuteUnitCtrl(id, eupp.ctrl(id), euId).setCompositeName(this, if(id >= executeAt) "exe" + (id - executeAt) else "dis" + id))
   }
-  def execute(id: Int) : CtrlLink = {
+  def execute(id: Int) : ExecuteUnitCtrl = {
     assert(id >= 0)
     ctrl(id + executeAt)
   }
@@ -140,12 +189,12 @@ class ExecuteUnitPlugin(val euId : String,
         val bypassSorted = bypassSpecs.toSeq.sortBy(_.nodeId)
         val bypassEnables = Bits(bypassSorted.size + 1 bits)
         for ((b, id) <- bypassSorted.zipWithIndex) {
-          val node = b.eu.nodeAt(b.nodeId)
+          val node = b.eu.ctrl(b.nodeId)
           bypassEnables(id) := node(rfaRd.ENABLE) && node(rfaRd.PHYS) === dataCtrl(rfa.PHYS) && node(rfaRd.RFID) === dataCtrl(rfa.RFID)
         }
         bypassEnables.msb := True
         val sel = OHMasking.firstV2(bypassEnables)
-        dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b => b.eu.nodeAt(b.nodeId)(b.payload)) :+ port.data, true)
+        dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b => b.eu.ctrl(b.nodeId)(b.payload)) :+ port.data, true)
       }
     }
 
@@ -159,7 +208,7 @@ class ExecuteUnitPlugin(val euId : String,
         setDecodingDefault(ENABLE, False)
         for(uop <- uops) addDecoding(uop.op, ENABLE -> True)
         val port = Flow(CompletionPayload())
-        port.valid := c.down.isFiring && c(ENABLE)
+        port.valid := c.isFiring && c(ENABLE)
         port.hartId := c(Global.HART_ID)
         port.microOpId := c(Decode.UOP_ID)
       }
@@ -174,14 +223,13 @@ class ExecuteUnitPlugin(val euId : String,
       }
     }
 
+    for(ctrlId <- 1 until idToCtrl.keys.max){
+      val c = ctrl(ctrlId)
+      c.up(SEL).setAsReg().init(False)
+    }
+
     host.list[RegfileService].foreach(_.elaborationLock.release())
 
-    // Interconnect the pipeline ctrls
-    val idMax = (0 +: idToCtrl.keys.toList).max
-    for (i <- 0 to idMax) ctrl(i)  //To ensure the creation to all intermediate nodes
-    val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
-    ctrls.last.down.setAlwaysReady()
-    val sc = for ((from, to) <- (ctrls, ctrls.tail).zipped) yield new StageLink(from.down, to.up).withoutCollapse()
-    val connectors = (sc ++ ctrls).toSeq
+    eupp.pipelineLock.release()
   }
 }
