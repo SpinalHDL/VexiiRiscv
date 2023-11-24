@@ -15,6 +15,7 @@ trait CtrlLaneApi{
   def isReady : Bool = _c.isReady
   def isFiring: Bool = isValid && isReady && !hasCancelRequest
   def isMoving: Bool = isValid && (isReady || hasCancelRequest)
+  def isCanceling: Bool = isValid && hasCancelRequest
   def hasCancelRequest : Bool = ???
 
   def apply[T <: Data](that: Payload[T]): T = _c.apply(that, laneId)
