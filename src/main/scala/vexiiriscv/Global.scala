@@ -23,5 +23,6 @@ object Global extends AreaRoot{
 
   def HART_ID_WIDTH = log2Up(HART_COUNT)
   val HART_ID = Payload(UInt(HART_ID_WIDTH bits))
+  def hartsIds = 0 until HART_COUNT
 
 }

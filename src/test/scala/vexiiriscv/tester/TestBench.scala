@@ -18,6 +18,7 @@ import scala.collection.mutable.ArrayBuffer
 class TestOptions{
   var dualSim = false // Double simulation, one ahead of the other which will trigger wave capture of the second simulation when it fail
   var traceIt = false
+  var withProbe = true
   var withRvls = new File("ext/rvls/build/apps/rvls.so").exists()
   var withRvlsCheck = withRvls
   var failAfter, passAfter = Option.empty[Long]
@@ -30,6 +31,7 @@ class TestOptions{
     import parser._
     opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
     opt[Unit]("trace") action { (v, c) => traceIt = true }
+    opt[Unit]("no-probe") action { (v, c) => withProbe = false; }
     opt[Unit]("no-rvls-check") action { (v, c) => withRvlsCheck = false;  }
     opt[Long]("failAfter") action { (v, c) => failAfter = Some(v) }
     opt[Long]("passAfter") action { (v, c) => passAfter = Some(v) }
@@ -63,6 +65,7 @@ class TestOptions{
     // Collect traces from the CPUs behaviour
     val probe = new VexiiRiscvProbe(dut, Some(new File(simCompiled.compiledPath, "trace.gem5o3")), withRvls)
     if (withRvlsCheck) probe.add(rvls)
+    probe.enabled = withProbe
 
     // Things to enable when we want to collect traces
     val tracerFile = new FileBackend(new File(new File(simCompiled.compiledPath, currentTestName), "tracer.log"))

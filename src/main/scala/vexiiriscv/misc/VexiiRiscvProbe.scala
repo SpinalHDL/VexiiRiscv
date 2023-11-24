@@ -14,6 +14,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Boolean){
+  var enabled = true
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
   val gem5 = gem5File.map{f =>
@@ -277,9 +278,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
 
   var cycle = 1l
   cpu.clockDomain.onSamplings {
-    checkPipelines()
-    checkCommits()
-    cycle += 1l
-    if((cycle & 0x3FFFl) == 0) flush()
+    if(enabled) {
+      checkPipelines()
+      checkCommits()
+      cycle += 1l
+      if ((cycle & 0x3FFFl) == 0) flush()
+    }
   }
 }

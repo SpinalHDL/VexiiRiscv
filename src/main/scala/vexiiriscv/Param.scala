@@ -14,6 +14,7 @@ class ParamSimple(){
   val hartCount = 1
   val withMmu = false
   val resetVector = 0x80000000l
+  val decoders = 2
 
   def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
@@ -26,10 +27,10 @@ class ParamSimple(){
     plugins += new schedule.ReschedulePlugin()
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
-    plugins += new fetch.CachelessPlugin(wordWidth = 32)
+    plugins += new fetch.CachelessPlugin(wordWidth = 32*decoders)
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new decode.DecodePipelinePlugin()
-    plugins += new decode.AlignerPlugin(lanes = 1)
+    plugins += new decode.AlignerPlugin(lanes = decoders)
     plugins += new decode.DecoderPlugin()
     plugins += new schedule.DispatchPlugin()
 

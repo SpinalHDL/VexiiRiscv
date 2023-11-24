@@ -145,14 +145,15 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       }
     }
 
-    for(lane <- 0 until Decode.LANES) new dispatchCtrl.Area(lane){
+    val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.Area(lane){
       val c = candidates(slotsCount + lane)
-      c.ctx.valid := dispatchCtrl.isValid && Dispatch.MASK
+      val sent = RegInit(False) setWhen(c.fire) clearWhen(getCtrl.down.isFiring)
+      c.ctx.valid := dispatchCtrl.isValid && Dispatch.MASK && !sent
       c.ctx.compatibility := EU_COMPATIBILITY.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
       c.ctx.microOp := Decode.UOP
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
-      haltWhen(!c.fire)
+      haltWhen(Dispatch.MASK && !sent && !c.fire)
     }
 
     val scheduler = new Area {
@@ -163,8 +164,8 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
         val eusHits = c.ctx.compatibility & eusFree(id) & c.eusReady
         val eusOh = OHMasking.firstV2(eusHits)
         val doIt = c.ctx.valid && eusHits.orR && hartFree(id)(c.ctx.hartId)
-        eusFree(id + 1) := eusFree(id) & eusOh.orMask(!doIt)
-        hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(doIt)
+        eusFree(id + 1) := eusFree(id) & (~eusOh).orMask(!doIt)
+        hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(!c.ctx.valid || doIt)
         c.fire := doIt
       }
     }

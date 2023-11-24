@@ -10,6 +10,7 @@ import vexiiriscv.riscv.{IMM, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
+import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
 import vexiiriscv.schedule.ReschedulePlugin
 
@@ -83,7 +84,7 @@ class BranchPlugin(val euId : String,
         BranchCtrlEnum.JALR -> imm.i_sext
       )
 
-      val slices = Fetch.INSTRUCTION_SLICE_COUNT +^ 1
+      val slices = Decode.INSTRUCTION_SLICE_COUNT +^ 1
       val sliceShift = Fetch.SLICE_RANGE_LOW.get
       val PC_TRUE = insert(U(target_a + target_b).as(PC)) //TODO overflows ?
       val PC_FALSE = insert(PC + (slices << sliceShift))
