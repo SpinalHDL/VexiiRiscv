@@ -3,6 +3,8 @@ package vexiiriscv.regfile
 import spinal.core._
 import spinal.core.fiber.{Lock, Lockable}
 import spinal.lib._
+import vexiiriscv.Global
+import vexiiriscv.decode.Decode
 import vexiiriscv.riscv.RegfileSpec
 
 case class RegFilePortParam(addressWidth: Int,
@@ -84,3 +86,13 @@ trait RegfileService {
   def getWrites() : Seq[RegFileWrite]
 }
 
+
+case class RegFileWriter(rfSpec : RegfileSpec) extends Bundle{
+  val hartId = Global.HART_ID()
+  val uopId = Decode.UOP_ID()
+  val data = Bits(rfSpec.width bits)
+}
+
+trait RegFileWriterService{
+  def getRegFileWriters() : Seq[Flow[RegFileWriter]]
+}

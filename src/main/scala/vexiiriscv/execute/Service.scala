@@ -18,6 +18,7 @@ case class RdSpec(DATA: Payload[Bits],
 
 class MicroOpSpec(val op: MicroOp) {
   var rd = Option.empty[RdSpec]
+  var completion = Option.empty[Int]
 }
 
 trait ExecuteUnitService {
@@ -43,6 +44,16 @@ case class CompletionPayload() extends Bundle{
   val hartId = Global.HART_ID()
   val microOpId = Decode.UOP_ID()
 }
+
+//case class RetirePayload() extends Bundle{
+//  val hartId = Global.HART_ID()
+//  val microOpId = Decode.UOP_ID()
+//}
+
 trait CompletionService{
   def getCompletions() : Seq[Flow[CompletionPayload]]
 }
+
+//trait RetireService{
+//  def getRetires() : Seq[Flow[RetirePayload]]
+//}

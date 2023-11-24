@@ -5,9 +5,9 @@ import spinal.core.fiber.Lock
 import spinal.lib.misc.pipeline._
 import spinal.lib.{Flow, OHMux}
 import spinal.lib.misc.plugin.FiberPlugin
-import vexiiriscv.Global
-import vexiiriscv.decode.Decode
-import vexiiriscv.regfile.RegfileService
+import vexiiriscv.Global._
+import vexiiriscv.decode.Decode._
+import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec}
 
 import scala.collection.mutable
@@ -16,7 +16,7 @@ import scala.collection.mutable.ArrayBuffer
 class WriteBackPlugin(val euId : String,
                       val rf : RegfileSpec,
                       var writeAt : Int,
-                      var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin with CompletionService{
+                      var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin with RegFileWriterService{
   withPrefix(euId + "_" + rf.getName())
 
   val elaborationLock = Lock()
@@ -47,9 +47,6 @@ class WriteBackPlugin(val euId : String,
     addMicroOp(port, head +: tail)
   }
 
-
-  override def getCompletions(): Seq[Flow[CompletionPayload]] = List(logic.write.completion)
-
   val logic = during build new Area {
     elaborationLock.await()
 
@@ -72,24 +69,27 @@ class WriteBackPlugin(val euId : String,
           eu.setRdSpec(op, DATA, writeAt + rfp.writeLatency, (ctrlId to writeAt + rfp.writeLatency-1 + rfp.readLatency).filter(bypassOn))
         }
       }
+
+      val write = Flow(RegFileWriter(rf))
+      write.valid := ctrl.down.isFiring && hits.orR
+      write.hartId := ctrl(HART_ID)
+      write.uopId := ctrl(UOP_ID)
+      write.data := muxed
     }
 
     eu.uopLock.release()
 
     val write = new writeCtrl.Area{
-      val rfa = Decode.rfaKeys.get(RD)
+      val rfa = rfaKeys.get(RD)
       val port = rfp.newWrite(false)
       port.valid := isValid && rfa.ENABLE
-      port.address := Global.HART_ID @@ rfa.PHYS
+      port.address := HART_ID @@ rfa.PHYS
       port.data := DATA
-      port.hartId := Global.HART_ID
-      port.uopId := Decode.UOP_ID
-
-      val completion = Flow(CompletionPayload())
-      completion.valid := port.fire
-      completion.hartId := Global.HART_ID
-      completion.microOpId := Decode.UOP_ID
+      port.hartId := HART_ID
+      port.uopId := UOP_ID
     }
   }
+
+  override def getRegFileWriters(): Seq[Flow[RegFileWriter]] = logic.stages.map(_.write)
 }
 

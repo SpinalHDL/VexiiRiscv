@@ -42,6 +42,7 @@ class IntFormatPlugin(val euId : String) extends FiberPlugin{
   def addMicroOp(port: Flow[Bits], microOp: MicroOp) : Unit = {
     val spec = portToSpec(port)
     spec.microOps += microOp
+    eu.setCompletion(microOp, portToSpec(port).ctrlId)
   }
 
   val logic = during build new Area{

@@ -8,7 +8,7 @@ import vexiiriscv.Global
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute.{CompletionService, ExecuteUnitService, WriteBackPlugin}
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
-import vexiiriscv.regfile.RegfileService
+import vexiiriscv.regfile.{RegFileWriterService, RegfileService}
 import vexiiriscv.riscv.IntRegFile
 
 import scala.collection.mutable.ArrayBuffer
@@ -63,7 +63,7 @@ class WhiteboxerPlugin extends FiberPlugin{
     }
 
     val rfWrites = new Area{
-      val ints = host.find[RegfileService](_.rfSpec == IntRegFile).getWrites().map(b => wrap(b.asWithoutReady()))
+      val ports = host.list[RegFileWriterService].flatMap(_.getRegFileWriters()).map(wrap)
     }
 
     val completions = new Area{

@@ -6,6 +6,7 @@ import spinal.lib._
 import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
+import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.regfile.RegfileService
@@ -19,7 +20,7 @@ class ExecuteUnitPlugin(val euId : String,
                         val priority : Int,
                         override val rfReadAt : Int,
                         val decodeAt : Int,
-                        override val executeAt : Int) extends FiberPlugin with PipelineService with ExecuteUnitService {
+                        override val executeAt : Int) extends FiberPlugin with PipelineService with ExecuteUnitService with CompletionService{
   withPrefix(euId)
 
   during setup {
@@ -47,6 +48,10 @@ class ExecuteUnitPlugin(val euId : String,
   def setRdSpec(op : MicroOp, data : Payload[Bits], rfReadableAt : Int, bypassesAt : Seq[Int]): Unit = {
     assert(microOps(op).rd.isEmpty)
     microOps(op).rd = Some(RdSpec(data, rfReadableAt + executeAt, bypassesAt.map(_ + executeAt)))
+  }
+
+  def setCompletion(op : MicroOp, executeCtrlId : Int): Unit = {
+    microOps(op).completion = Some(executeCtrlId + executeAt)
   }
 
   override def getSpec(op: MicroOp): MicroOpSpec = microOps(op)
@@ -89,8 +94,10 @@ class ExecuteUnitPlugin(val euId : String,
 
 
   def getAge(at: Int, prediction: Boolean): Int = Ages.EU + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
+  override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.completions.onCtrl.map(_.port).toSeq
 
   val logic = during build new Area {
+    uopLock.await()
     pipelineLock.await()
 
     // Generate the register files read + bypass
@@ -139,6 +146,22 @@ class ExecuteUnitPlugin(val euId : String,
         bypassEnables.msb := True
         val sel = OHMasking.firstV2(bypassEnables)
         dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b => b.eu.nodeAt(b.nodeId)(b.payload)) :+ port.data, true)
+      }
+    }
+
+    // Implement completion logic
+    val completions = new Area{
+      val groups = getMicroOpSpecs().groupBy(_.completion)
+
+      val onCtrl = for((at, uops) <- groups if at.exists(_ != -1)) yield new Area {
+        val c = ctrl(at.get)
+        val ENABLE = Payload(Bool())
+        setDecodingDefault(ENABLE, False)
+        for(uop <- uops) addDecoding(uop.op, ENABLE -> True)
+        val port = Flow(CompletionPayload())
+        port.valid := c.down.isFiring && c(ENABLE)
+        port.hartId := c(Global.HART_ID)
+        port.microOpId := c(Decode.UOP_ID)
       }
     }
 

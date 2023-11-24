@@ -3,7 +3,7 @@ package vexiiriscv.misc
 import org.apache.commons.io.FileUtils
 import rvls.spinal.TraceBackend
 import vexiiriscv._
-import vexiiriscv.riscv.Riscv
+import vexiiriscv.riscv.{FloatRegFile, IntRegFile, Riscv}
 import spinal.core.sim._
 import spinal.core._
 import vexiiriscv.decode.Decode
@@ -95,6 +95,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
     var dispatchAt = 0l
     var executeAt = 0l
     var completionAt = 0l
+    var retireAt = 0l
     var instruction = 0l
 
     def done = completionAt != 0
@@ -224,12 +225,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
       ctx.executeAt = cycle
     }
 
-    for (intWrite <- rfWrites.ints) if (intWrite.valid.toBoolean) {
-      val hart = harts(intWrite.hartId.toInt)
-      val ctx = hart.microOp(intWrite.uopId.toInt)
-      assert(!ctx.integerWriteValid)
-      ctx.integerWriteValid = true
-      ctx.integerWriteData = xlenExtends(intWrite.data.toLong)
+    for (port <- rfWrites.ports) if (port.valid.toBoolean) {
+      val hart = harts(port.hartId.toInt)
+      val ctx = hart.microOp(port.uopId.toInt)
+      port.rfSpec match {
+        case IntRegFile => {
+          assert(!ctx.integerWriteValid)
+          ctx.integerWriteValid = true
+          ctx.integerWriteData = xlenExtends(port.data.toLong)
+        }
+      }
     }
 
     for(port <- completions.ports) if(port.valid.toBoolean){
@@ -237,6 +242,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
       val microOpId = port.microOpId.toInt
       val microOp = hart.microOp(microOpId)
       microOp.completionAt = cycle
+      microOp.retireAt = cycle
       microOp.writeGem5(hart)
     }
   }
