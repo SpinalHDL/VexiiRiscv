@@ -12,7 +12,7 @@ import vexiiriscv.execute.ExecuteUnitPlugin.SEL
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
-import vexiiriscv.schedule.{Ages, DispatchPlugin}
+import vexiiriscv.schedule.{Ages, DispatchPlugin, ReschedulePlugin}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -24,7 +24,7 @@ trait ExecuteUnitCtrlApi{
   private val _c = getCtrl
   import _c._
 
-  def isValid: Bool = SEL
+  def isValid: Bool = up(SEL)
   def isFiring: Bool = SEL && _c.on.isReady
 
   def apply[T <: Data](that: Payload[T]): T = _c.on.apply(that, euId)
@@ -223,9 +223,17 @@ class ExecuteUnitPlugin(val euId : String,
       }
     }
 
-    for(ctrlId <- 1 until idToCtrl.keys.max){
+    // Handle SEL initialisation and flushes
+    val rp = host[ReschedulePlugin]
+    for(ctrlId <- 0 until idToCtrl.keys.max){
       val c = ctrl(ctrlId)
-      c.up(SEL).setAsReg().init(False)
+      if(ctrlId != 0) c.up(SEL).setAsReg().init(False)
+
+      val age = getAge(ctrlId, true)
+      val doIt = rp.isFlushedAt(age, c(Global.HART_ID))
+      doIt.foreach(cond => when(cond){
+        c.bypass(SEL) := False
+      })
     }
 
     host.list[RegfileService].foreach(_.elaborationLock.release())

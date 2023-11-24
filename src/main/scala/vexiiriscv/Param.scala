@@ -14,7 +14,7 @@ class ParamSimple(){
   val hartCount = 1
   val withMmu = false
   val resetVector = 0x80000000l
-  val decoders = 2
+  val decoders = 1
 
   def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
@@ -50,13 +50,13 @@ class ParamSimple(){
     plugins += new BranchPlugin("EU0")
     plugins += new WriteBackPlugin("EU0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
-    plugins += new execute.ExecuteUnitPlugin("EU1", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
-    plugins += new SrcPlugin("EU1")
-    plugins += new IntAluPlugin("EU1", formatAt = 0)
-    plugins += new BarrelShifterPlugin("EU1", formatAt = 1)
-    plugins += new IntFormatPlugin("EU1")
-    plugins += new BranchPlugin("EU1")
-    plugins += new WriteBackPlugin("EU1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+//    plugins += new execute.ExecuteUnitPlugin("EU1", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+//    plugins += new SrcPlugin("EU1")
+//    plugins += new IntAluPlugin("EU1", formatAt = 0)
+//    plugins += new BarrelShifterPlugin("EU1", formatAt = 1)
+//    plugins += new IntFormatPlugin("EU1")
+//    plugins += new BranchPlugin("EU1")
+//    plugins += new WriteBackPlugin("EU1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
 
     plugins += new WhiteboxerPlugin()

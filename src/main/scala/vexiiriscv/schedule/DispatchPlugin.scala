@@ -150,7 +150,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
 
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.Area(lane){
       val c = candidates(slotsCount + lane)
-      val sent = RegInit(False) setWhen(c.fire) clearWhen(getCtrl.down.isFiring)
+      val sent = RegInit(False) setWhen(c.fire) clearWhen(getCtrl.up.isMoving)
       c.ctx.valid := dispatchCtrl.isValid && Dispatch.MASK && !sent
       c.ctx.compatibility := EU_COMPATIBILITY.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
