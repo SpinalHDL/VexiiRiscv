@@ -136,7 +136,7 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
 
       Decode.UOP_ID := (laneId match {
         case 0 => harts.map(_.uopId).read(decodeCtrl.link(Global.HART_ID))
-        case _ => decodeCtrl.lane(laneId-1)(Decode.UOP_ID) + decodeCtrl.lane(laneId-1)(Decode.ALIGNED_MASK).asUInt
+        case _ => decodeCtrl.lane(laneId-1)(Decode.UOP_ID) + decodeCtrl.lane(laneId-1).isValid.asUInt
       })
     }
   }

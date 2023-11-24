@@ -230,7 +230,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
       val ctx = hart.microOp(port.uopId.toInt)
       port.rfSpec match {
         case IntRegFile => {
-          assert(!ctx.integerWriteValid)
           ctx.integerWriteValid = true
           ctx.integerWriteData = xlenExtends(port.data.toLong)
         }

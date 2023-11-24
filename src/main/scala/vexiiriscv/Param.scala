@@ -54,7 +54,7 @@ class ParamSimple(){
     plugins += new BranchPlugin("lane0")
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
-//    plugins += new execute.ExecuteLanePlugin("lane1", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+//    plugins += new execute.ExecuteLanePlugin("lane1", priority = 1, rfReadAt = 0, decodeAt = 1, executeAt = 2)
 //    plugins += new SrcPlugin("lane1")
 //    plugins += new IntAluPlugin("lane1", formatAt = 0)
 //    plugins += new BarrelShifterPlugin("lane1", formatAt = 1)

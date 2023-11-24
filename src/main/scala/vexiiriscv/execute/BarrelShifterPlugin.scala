@@ -28,7 +28,7 @@ class BarrelShifterPlugin(val laneName : String,
     import SrcKeys._
 
     val wb = ifp.access(formatAt)
-    implicit val _ = ImplicitIntFormatPluginPort(ifp, wb)
+    implicit val _ = ifp -> wb
 
     add(Rvi.SLL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True, SIGNED -> False)
     add(Rvi.SRL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, SIGNED -> False)

@@ -54,14 +54,14 @@ class AlignerPlugin(fetchAt : Int = 3,
         val lane = downCtrl.lane(laneId)
         val pcLaneLow = log2Up(Decode.INSTRUCTION_WIDTH/8)
         val pcLaneRange = pcLaneLow + log2Up(Decode.LANES) -1 downto pcLaneLow
-        lane(Decode.ALIGNED_MASK)    := up(Fetch.WORD_PC)(pcLaneRange) >= laneId
+        lane.up(lane.LANE_SEL)          := up.valid && up(Fetch.WORD_PC)(pcLaneRange) >= laneId
         lane(Decode.INSTRUCTION)     := instructionSlices(laneId)
         lane(Global.PC)              := up(Fetch.WORD_PC)
         lane(Global.PC)(pcLaneRange) := laneId
         lane(Fetch.ID)               := up(Fetch.ID)
         lane(Decode.DOP_ID)          := (laneId match {
           case 0 => harts.map(_.dopId).read(up(Global.HART_ID))
-          case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1)(Decode.ALIGNED_MASK).asUInt
+          case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1).isValid.asUInt
         })
       }
 

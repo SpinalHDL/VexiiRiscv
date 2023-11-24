@@ -38,7 +38,7 @@ class IntAluPlugin(val laneName : String,
     val abce = AluBitwiseCtrlEnum
 
     val formatBus = ifp.access(formatAt)
-    implicit val _ = ImplicitIntFormatPluginPort(ifp, formatBus)
+    implicit val _ = ifp -> formatBus
 
     add(Rvi.ADD ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
     add(Rvi.SUB ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )

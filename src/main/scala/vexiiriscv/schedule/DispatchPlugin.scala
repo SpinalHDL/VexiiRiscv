@@ -192,7 +192,6 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     }
 
     dispatchCtrl.link.down.ready := True
-
     eupp.ctrl(0).up.setAlwaysValid()
 
     eus.foreach(_.pipelineLock.release())

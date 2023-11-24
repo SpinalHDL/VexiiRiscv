@@ -18,7 +18,6 @@ object Decode extends AreaObject {
 
   val INSTRUCTION = Payload(Bits(INSTRUCTION_WIDTH bits))
   val UOP = Payload(Bits(INSTRUCTION_WIDTH bits))
-  val ALIGNED_MASK = Payload(Bool())
 
   val rfaKeys = blocking[mutable.LinkedHashMap[RfAccess, AccessKeys]]
 

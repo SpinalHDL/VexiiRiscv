@@ -43,10 +43,10 @@ class WhiteboxerPlugin extends FiberPlugin{
       val c = dpp.ctrl(host[DecoderPlugin].decodeAt).lane(lane)
       host[DecoderPlugin].logic.await()
       val fire = wrap(c.down.isFiring)
-      val hartId = wrap(c(Global.HART_ID, lane))
-      val decodeId = wrap(c(Decode.DOP_ID, lane))
-      val microOpId = wrap(c(Decode.UOP_ID, lane))
-      val microOp = wrap(c(Decode.UOP, lane))
+      val hartId = wrap(c(Global.HART_ID))
+      val decodeId = wrap(c(Decode.DOP_ID))
+      val microOpId = wrap(c(Decode.UOP_ID))
+      val microOp = wrap(c(Decode.UOP))
     }
 
     val dispatches = for (eu <- host.list[ExecuteLaneService]) yield new Area {
