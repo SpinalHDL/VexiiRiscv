@@ -78,11 +78,7 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
         val rfid = new DecodingSpec(UInt(rfaKey.rfIdWidth bits))
       }
       val rfAccessDec = rfAccesses.map(rfa => rfa -> new RfAccessDecoding(rfa)).toMapLinked()
-//      val readRs1, readRs2, readRs3, writeRd, fpSpec, rmSpec = new DecodingSpec(Bool()).setDefault(zero)
-//      val regfileRs1, regfileRs2, regfileRs3, regfileRd = new DecodingSpec(REGFILE_RD())
-//      val resourceToSpec = resourceToStageable.keys.map(_ -> new DecodingSpec(Bool()).setDefault(zero)).toMap
-//      val regfileSelMask = (1 << setup.keys.regfileSelWidth) - 1
-//      var withRs3 = false
+
       for (e <- singleDecodings) {
         val key = Masked(e.key)
         all += key
@@ -95,19 +91,14 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
           }
           case PC_READ =>
           case INSTRUCTION_SIZE =>
-//          case FPU => fpSpec.addNeeds(key, one)
-//          case RM => rmSpec.addNeeds(key, one)
-//          case r if resourceToStageable.contains(r) => resourceToSpec(r).addNeeds(key, one)
-//          case naxriscv.interfaces.SQ =>
-//          case naxriscv.interfaces.LQ =>
         }
       }
     }
 
-    val decodeCtrl = dpp.rawCtrl(decodeAt)
+    val decodeCtrl = dpp.ctrl(decodeAt)
     val harts = for (hartId <- Global.hartsIds) yield new Area {
       val uopId = Reg(Decode.UOP_ID) init (0)
-      when(decodeCtrl.ctrl.down.isFiring && decodeCtrl.ctrl(Global.HART_ID) === hartId) {
+      when(decodeCtrl.link.down.isFiring && decodeCtrl.link(Global.HART_ID) === hartId) {
         uopId := decodeCtrl.lane(Decode.LANES - 1)(Decode.UOP_ID) + 1
       }
     }
@@ -144,7 +135,7 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
       Decode.UOP := Decode.INSTRUCTION
 
       Decode.UOP_ID := (laneId match {
-        case 0 => harts.map(_.uopId).read(decodeCtrl.ctrl(Global.HART_ID))
+        case 0 => harts.map(_.uopId).read(decodeCtrl.link(Global.HART_ID))
         case _ => decodeCtrl.lane(laneId-1)(Decode.UOP_ID) + decodeCtrl.lane(laneId-1)(Decode.ALIGNED_MASK).asUInt
       })
     }

@@ -34,8 +34,8 @@ class AlignerPlugin(fetchAt : Int = 3,
 
 
     val up = fpp.ctrl(fetchAt).down
-    val downCtrl = dpp.rawCtrl(0)
-    val downNode = downCtrl.ctrl.up
+    val downCtrl = dpp.ctrl(0)
+    val downNode = downCtrl.link.up
     val connector = CtrlLink(up, downNode)
     connectors += connector
 

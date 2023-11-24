@@ -35,11 +35,10 @@ trait CtrlLaneApi{
   }
 
   implicit def stageablePiped2[T <: Data](stageable: Payload[T]): T = this (stageable)
+  implicit def bundlePimper[T <: Bundle](stageable: Payload[T]) = new BundlePimper[T](this (stageable))
   class BundlePimper[T <: Bundle](pimped: T) {
     def :=(that: T): Unit = pimped := that
   }
-
-  implicit def bundlePimper[T <: Bundle](stageable: Payload[T]) = new BundlePimper[T](this (stageable))
 
   class Area(from : CtrlLaneApi = this) extends CtrlLaneMirror(from)
 }
