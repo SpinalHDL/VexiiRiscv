@@ -31,13 +31,13 @@ abstract class CtrlPipelinePlugin extends FiberPlugin with PipelineService{
     val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageLink(from.down, to.up) //.withoutCollapse()
     val connectors = (sc ++ ctrls).toSeq
 
-    val rp = host[ReschedulePlugin]
-    val flushRange = 1 until ctrls.size
-    val flushes = for(id <- flushRange) yield new Area {
-      val age = getAge(id, true)
-      val c = ctrl(id)
-      val doIt = rp.isFlushedAt(age, c(Global.HART_ID))
-      doIt.foreach(v => c.throwWhen(v, usingReady = false))
-    }
+//    val rp = host[ReschedulePlugin]
+//    val flushRange = 1 until ctrls.size
+//    val flushes = for(id <- flushRange) yield new Area {
+//      val age = getAge(id, true)
+//      val c = ctrl(id)
+//      val doIt = rp.isFlushedAt(age, c(Global.HART_ID))
+//      doIt.foreach(v => c.throwWhen(v, usingReady = false))
+//    }
   }
 }
