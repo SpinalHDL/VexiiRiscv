@@ -39,5 +39,5 @@ Here are a few key / typical code examples :
 - A cpu configuration generator : dev/src/main/scala/vexiiriscv/Param.scala
 - Some globaly shared definitions : src/main/scala/vexiiriscv/Global.scala
 - Integer ALU plugin ; src/main/scala/vexiiriscv/execute/IntAluPlugin.scala
-- A plugin which probe the CPU at different points for simulation purposes : https://github.com/SpinalHDL/VexiiRiscv/blob/dev/src/main/scala/vexiiriscv/misc/WhiteboxerPlugin.scala
+- A plugin which probe the CPU at different points for simulation purposes : src/main/scala/vexiiriscv/misc/WhiteboxerPlugin.scala
 - 
