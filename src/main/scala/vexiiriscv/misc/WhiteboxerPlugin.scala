@@ -30,8 +30,8 @@ class WhiteboxerPlugin extends FiberPlugin{
     }
 
 
-    val decodes =  for(lane <- 0 until Decode.LANES) yield new Area{
-      val c = dpp.ctrl(0).lane(lane)
+    val decodes =  for(laneId <- 0 until Decode.LANES) yield new Area{
+      val c = dpp.ctrl(0).lane(laneId)
       val fire = wrap(c.isFiring)
       val hartId = wrap(c(Global.HART_ID))
       val pc = wrap(c(Global.PC))
@@ -39,8 +39,8 @@ class WhiteboxerPlugin extends FiberPlugin{
       val decodeId = wrap(c(Decode.DOP_ID))
     }
 
-    val serializeds = for(lane <- 0 until Decode.LANES) yield new Area {
-      val c = dpp.ctrl(host[DecoderPlugin].decodeAt).lane(lane)
+    val serializeds = for(laneId <- 0 until Decode.LANES) yield new Area {
+      val c = dpp.ctrl(host[DecoderPlugin].decodeAt).lane(laneId)
       host[DecoderPlugin].logic.await()
       val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID))
