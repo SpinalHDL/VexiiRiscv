@@ -30,3 +30,12 @@ sbt "test:runMain vexiiriscv.scratchpad.Play1"
 (cd ext/NaxSoftware/baremetal/vexiiriscv && make rv32ima)
 sbt " test:runMain vexiiriscv.tester.TestBench --load-elf ext/NaxSoftware/baremetal/vexiiriscv/build/rv32ima/vexiiriscv.elf  --passAfter 3000 --trace --no-rvls-check --no-probe"
 ```
+
+# Navigating the code
+
+Here are a few key / typical code examples : 
+
+- The CPU toplevel src/main/scala/vexiiriscv/VexiiRiscv.scala
+- A cpu configuration generator : dev/src/main/scala/vexiiriscv/Param.scala
+- Some globaly shared definitions : src/main/scala/vexiiriscv/Global.scala
+- Integer ALU plugin ; src/main/scala/vexiiriscv/execute/IntAluPlugin.scala
