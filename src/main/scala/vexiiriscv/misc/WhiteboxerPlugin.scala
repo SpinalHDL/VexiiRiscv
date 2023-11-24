@@ -6,7 +6,7 @@ import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
-import vexiiriscv.execute.{CompletionService, ExecuteUnitService, WriteBackPlugin}
+import vexiiriscv.execute.{CompletionService, ExecuteLaneService, WriteBackPlugin}
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.regfile.{RegFileWriterService, RegfileService}
 import vexiiriscv.riscv.IntRegFile
@@ -47,7 +47,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val microOp = wrap(c(Decode.UOP, lane))
     }
 
-    val dispatches = for (eu <- host.list[ExecuteUnitService]) yield new Area {
+    val dispatches = for (eu <- host.list[ExecuteLaneService]) yield new Area {
       val c = eu.ctrl(0)
       val fire = wrap(c.isFiring)
       val hartId = wrap(c(Global.HART_ID))
@@ -55,7 +55,7 @@ class WhiteboxerPlugin extends FiberPlugin{
     }
 
 
-    val executes = for (eu <- host.list[ExecuteUnitService]) yield new Area {
+    val executes = for (eu <- host.list[ExecuteLaneService]) yield new Area {
       val c = eu.ctrl(eu.executeAt - 1)
       val fire = wrap(c.isFiring)
       val hartId = wrap(c(Global.HART_ID))

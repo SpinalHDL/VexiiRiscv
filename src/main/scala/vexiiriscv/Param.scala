@@ -37,26 +37,27 @@ class ParamSimple(){
     plugins += new regfile.RegFilePlugin(
       spec = riscv.IntRegFile,
       physicalDepth = 32,
-      preferedWritePortForInit = "EU0",
+      preferedWritePortForInit = "lane0",
       syncRead = true
     )
 
-    plugins += new execute.ExecuteUnitPipelinePlugin()
-    plugins += new execute.ExecuteUnitPlugin("EU0", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
-    plugins += new SrcPlugin("EU0")
-    plugins += new IntAluPlugin("EU0", formatAt = 0)
-    plugins += new BarrelShifterPlugin("EU0", formatAt = 1)
-    plugins += new IntFormatPlugin("EU0")
-    plugins += new BranchPlugin("EU0")
-    plugins += new WriteBackPlugin("EU0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+    plugins += new execute.ExecutePipelinePlugin()
 
-//    plugins += new execute.ExecuteUnitPlugin("EU1", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
-//    plugins += new SrcPlugin("EU1")
-//    plugins += new IntAluPlugin("EU1", formatAt = 0)
-//    plugins += new BarrelShifterPlugin("EU1", formatAt = 1)
-//    plugins += new IntFormatPlugin("EU1")
-//    plugins += new BranchPlugin("EU1")
-//    plugins += new WriteBackPlugin("EU1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+    plugins += new execute.ExecuteLanePlugin("lane0", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+    plugins += new SrcPlugin("lane0")
+    plugins += new IntAluPlugin("lane0", formatAt = 0)
+    plugins += new BarrelShifterPlugin("lane0", formatAt = 1)
+    plugins += new IntFormatPlugin("lane0")
+    plugins += new BranchPlugin("lane0")
+    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+
+//    plugins += new execute.ExecuteLanePlugin("lane1", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+//    plugins += new SrcPlugin("lane1")
+//    plugins += new IntAluPlugin("lane1", formatAt = 0)
+//    plugins += new BarrelShifterPlugin("lane1", formatAt = 1)
+//    plugins += new IntFormatPlugin("lane1")
+//    plugins += new BranchPlugin("lane1")
+//    plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
 
     plugins += new WhiteboxerPlugin()

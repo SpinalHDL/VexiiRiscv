@@ -17,11 +17,11 @@ object BarrelShifterPlugin extends AreaObject {
   val SHIFT_RESULT = Payload(Bits(Riscv.XLEN bits))
 }
 
-class BarrelShifterPlugin(val euId : String,
+class BarrelShifterPlugin(val laneName : String,
                           var shiftAt : Int = 0,
-                          var formatAt : Int = 0) extends ExecutionUnitElementSimple(euId)  {
+                          var formatAt : Int = 0) extends ExecutionUnitElementSimple(laneName)  {
   import BarrelShifterPlugin._
-  lazy val ifp = host.find[IntFormatPlugin](_.euId == euId)
+  lazy val ifp = host.find[IntFormatPlugin](_.laneName == laneName)
   buildBefore(ifp.elaborationLock)
 
   val logic = during build new Logic{

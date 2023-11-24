@@ -12,6 +12,7 @@ import vexiiriscv.Global
 import scala.collection.mutable
 
 class DecodePipelinePlugin extends FiberPlugin with PipelineService{
+  setName("decode")
   val elaborationLock = Lock()
   def getAge(at: Int, prediction: Boolean): Int = Ages.DECODE + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
 

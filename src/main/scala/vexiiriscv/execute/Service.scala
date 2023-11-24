@@ -21,11 +21,11 @@ class MicroOpSpec(val op: MicroOp) {
   var completion = Option.empty[Int]
 }
 
-trait ExecuteUnitService {
+trait ExecuteLaneService {
   val uopLock = Lock()
   val pipelineLock = Lock()
 
-  def euName() : String
+  def laneName() : String
 //  def pushPort() : ExecutionUnitPush
 //  def staticLatencies() : ArrayBuffer[StaticLatency] = ArrayBuffer[StaticLatency]()
 //  def addMicroOp(enc : MicroOp)

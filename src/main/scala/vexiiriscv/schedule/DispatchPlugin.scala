@@ -7,7 +7,7 @@ import spinal.lib.misc.pipeline.{CtrlApi, CtrlLink, NodeApi, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
-import vexiiriscv.execute.{Execute, ExecuteUnitPipelinePlugin, ExecuteUnitPlugin, ExecuteUnitService}
+import vexiiriscv.execute.{Execute, ExecutePipelinePlugin, ExecuteLanePlugin, ExecuteLaneService}
 import vexiiriscv.misc.PipelineBuilderPlugin
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{RD, RfRead, RfResource}
@@ -32,20 +32,20 @@ Schedule euristic :
 class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
   lazy val dpp = host[DecodePipelinePlugin]
   lazy val dp = host[DecoderService]
-  lazy val eupp = host[ExecuteUnitPipelinePlugin]
+  lazy val eupp = host[ExecutePipelinePlugin]
   buildBefore(host[PipelineBuilderPlugin].elaborationLock)
   buildBefore(dpp.elaborationLock)
   buildBefore(eupp.pipelineLock)
   setupRetain(dp.elaborationLock)
 
   during setup{
-    host.list[ExecuteUnitService].foreach(_.pipelineLock.retain())
+    host.list[ExecuteLaneService].foreach(_.pipelineLock.retain())
   }
 
   val logic = during build new Area{
     val dispatchCtrl = dpp.ctrl(dispatchAt)
 
-    val eus = host.list[ExecuteUnitService].sortBy(_.dispatchPriority).reverse
+    val eus = host.list[ExecuteLaneService].sortBy(_.dispatchPriority).reverse
     val EU_COMPATIBILITY = eus.map(eu => eu -> Payload(Bool())).toMapLinked()
     for(eu <- eus){
       val key = EU_COMPATIBILITY(eu)
@@ -184,11 +184,11 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     val inserter = for ((eu, id) <- eus.zipWithIndex; insertNode = eu.ctrl(0).up) yield new Area {
       val oh = B(scheduler.layer.map(l => l.doIt && l.eusOh(id)))
       val mux = candidates.reader(oh, true)
-      insertNode(ExecuteUnitPlugin.SEL) := oh.orR
+      insertNode(ExecuteLanePlugin.SEL) := oh.orR
       insertNode(Global.HART_ID) := mux(_.ctx.hartId)
       insertNode(Decode.UOP) := mux(_.ctx.microOp)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
-      insertNode(rdKeys.ENABLE) clearWhen(!insertNode(ExecuteUnitPlugin.SEL)) //Allow to avoid having to check the valid down the pipeline
+      insertNode(rdKeys.ENABLE) clearWhen(!insertNode(ExecuteLanePlugin.SEL)) //Allow to avoid having to check the valid down the pipeline
     }
 
     dispatchCtrl.down.ready := True

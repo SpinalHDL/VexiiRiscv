@@ -15,7 +15,8 @@ import vexiiriscv.schedule.Ages
 
 import scala.collection.mutable
 
-class ExecuteUnitPipelinePlugin() extends FiberPlugin with PipelineService{
+class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
+  setName("execute")
   val pipelineLock = Lock()
 
   override def getLinks(): Seq[Link] = logic.connectors

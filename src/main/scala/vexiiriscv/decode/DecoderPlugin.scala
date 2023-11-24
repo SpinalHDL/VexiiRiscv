@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.pipeline.{CtrlLink, Link, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
-import vexiiriscv.execute.ExecuteUnitService
+import vexiiriscv.execute.ExecuteLaneService
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.misc.PipelineService
 import vexiiriscv.{Global, riscv}
@@ -43,7 +43,7 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
 
     Decode.INSTRUCTION_WIDTH.set(32)
 
-    val eus = host.list[ExecuteUnitService]
+    val eus = host.list[ExecuteLaneService]
     val microOps = eus.flatMap(_.getMicroOp())
     val resources = microOps.flatMap(_.resources).distinctLinked
     val rfAccesses = mutable.LinkedHashSet[RfAccess]()

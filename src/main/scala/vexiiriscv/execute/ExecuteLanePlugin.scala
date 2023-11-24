@@ -8,7 +8,7 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
-import vexiiriscv.execute.ExecuteUnitPlugin.SEL
+import vexiiriscv.execute.ExecuteLanePlugin.SEL
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
@@ -18,69 +18,23 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
-trait CtrlLaneApi{
-  def getCtrl: CtrlLink
-  def laneId: String
-  def LANE_SEL: Payload[Bool]
-
-  private val _c = getCtrl
-  private val _laneId = laneId
-  private val _SEL = LANE_SEL
-  import _c._
-
-  def isValid: Bool = up(LANE_SEL)
-  def isFiring: Bool = _c(LANE_SEL) && _c.isReady
-
-  def apply[T <: Data](that: Payload[T]): T = _c.apply(that, laneId)
-  def apply[T <: Data](that: Payload[T], subKey : Any): T = _c.apply(that, laneId + "_" + subKey.toString)
-  def insert[T <: Data](that: T): Payload[T] = {
-    val p = Payload(that)
-    apply(p) := that
-    p
-  }
-  def bypass[T <: Data](that: Payload[T]): T =  _c.bypass(that, laneId)
-
-  def up = {
-    val up = _c.up
-    new up.Area(laneId)
-  }
-  def down = {
-    val down = _c.down
-    new down.Area(laneId)
-  }
-
-  implicit def stageablePiped2[T <: Data](stageable: Payload[T]): T = this (stageable)
-  class BundlePimper[T <: Bundle](pimped: T) {
-    def :=(that: T): Unit = pimped := that
-  }
-
-  implicit def bundlePimper[T <: Bundle](stageable: Payload[T]) = new BundlePimper[T](this (stageable))
-
-  class Area(__ctrl: CtrlLink = getCtrl, __laneId : String = laneId, __SEL : Payload[Bool] = LANE_SEL) extends spinal.core.Area with CtrlLaneApi {
-    override def getCtrl: CtrlLink = __ctrl
-    override def laneId: String = __laneId
-    override def LANE_SEL: Payload[Bool] = __SEL
-  }
-}
-
-object ExecuteUnitPlugin extends AreaRoot{
+object ExecuteLanePlugin extends AreaRoot{
   val SEL = Payload(Bool())
 }
 
-class ExecuteUnitPlugin(val euId : String,
+class ExecuteLanePlugin(override val laneName : String,
                         val priority : Int,
                         override val rfReadAt : Int,
                         val decodeAt : Int,
-                        override val executeAt : Int) extends FiberPlugin with ExecuteUnitService with CompletionService{
-  lazy val eupp = host[ExecuteUnitPipelinePlugin]
+                        override val executeAt : Int) extends FiberPlugin with ExecuteLaneService with CompletionService{
+  lazy val eupp = host[ExecutePipelinePlugin]
   setupRetain(eupp.pipelineLock)
-  withPrefix(euId)
+  setName("execute_" + laneName)
 
   during setup {
     host.list[RegfileService].foreach(_.elaborationLock.retain())
   }
 
-  override def euName(): String = euId
   override def dispatchPriority: Int = priority
   override def getMicroOp(): Seq[MicroOp] = {
     uopLock.await()
@@ -137,8 +91,8 @@ class ExecuteUnitPlugin(val euId : String,
   def ctrl(id : Int) : CtrlLaneApi = {
     idToCtrl.getOrElseUpdate(id, new CtrlLaneApi{
       override def getCtrl: CtrlLink = eupp.ctrl(id)
-      override def laneId: String = euId
-      override def LANE_SEL: Payload[Bool] = ExecuteUnitPlugin.SEL
+      override def laneId: String = laneName
+      override def LANE_SEL: Payload[Bool] = ExecuteLanePlugin.SEL
     })
   }
   def execute(id: Int) : CtrlLaneApi = {
@@ -169,9 +123,9 @@ class ExecuteUnitPlugin(val euId : String,
         port.address := readCtrl(rfa.PHYS)
 
         // Generate a bypass specification for the regfile readed data
-        case class BypassSpec(eu: ExecuteUnitService, nodeId: Int, payload: Payload[Bits])
+        case class BypassSpec(eu: ExecuteLaneService, nodeId: Int, payload: Payload[Bits])
         val bypassSpecs = mutable.LinkedHashSet[BypassSpec]()
-        val eus = host.list[ExecuteUnitService]
+        val eus = host.list[ExecuteLaneService]
         for (eu <- eus; ops = eu.getMicroOp();
              op <- ops; opSpec = eu.getSpec(op)) {
           eu.pipelineLock.await() // Ensure that the eu specification is done

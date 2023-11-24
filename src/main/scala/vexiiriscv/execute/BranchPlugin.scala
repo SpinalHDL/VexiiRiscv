@@ -21,12 +21,12 @@ object BranchPlugin extends AreaObject {
   val BRANCH_CTRL =  Payload(BranchCtrlEnum())
 }
 
-class BranchPlugin(val euId : String,
+class BranchPlugin(val laneName : String,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
-                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(euId)  {
+                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(laneName)  {
   import BranchPlugin._
-  lazy val wbp = host.find[WriteBackPlugin](_.euId == euId)
+  lazy val wbp = host.find[WriteBackPlugin](_.laneName == laneName)
   lazy val sp = host[ReschedulePlugin]
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)

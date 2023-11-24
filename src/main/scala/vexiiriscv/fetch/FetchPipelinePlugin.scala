@@ -12,6 +12,7 @@ import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 import scala.collection.mutable
 
 class FetchPipelinePlugin extends FiberPlugin with PipelineService{
+  setName("fetch")
   val elaborationLock = Lock()
   def getAge(at: Int, prediction: Boolean): Int = Ages.FETCH + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
 

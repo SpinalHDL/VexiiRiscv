@@ -47,11 +47,11 @@ object SrcKeys extends AreaObject {
   }
 }
 
-class SrcPlugin(val euId : String) extends FiberPlugin{
+class SrcPlugin(val laneName : String) extends FiberPlugin{
   val elaborationLock = Lock()
-  lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
+  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
   setupRetain(eu.pipelineLock)
-  withPrefix(euId)
+  withPrefix(laneName)
 
   val spec = mutable.LinkedHashMap[MicroOp, mutable.LinkedHashSet[SrcKeys]]()
   def specify(microOp: MicroOp, keys: Seq[SrcKeys]) = {

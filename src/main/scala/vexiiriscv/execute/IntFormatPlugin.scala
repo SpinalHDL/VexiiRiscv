@@ -11,10 +11,10 @@ import vexiiriscv.riscv.{MicroOp, Riscv}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class IntFormatPlugin(val euId : String) extends FiberPlugin{
-  withPrefix(euId)
-  lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
-  lazy val wbp = host.find[WriteBackPlugin](_.euId == euId)
+class IntFormatPlugin(val laneName : String) extends FiberPlugin{
+  withPrefix(laneName)
+  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
+  lazy val wbp = host.find[WriteBackPlugin](_.laneName == laneName)
   buildBefore(eu.pipelineLock)
   buildBefore(wbp.elaborationLock)
   val elaborationLock = Lock()

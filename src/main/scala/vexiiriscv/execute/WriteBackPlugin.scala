@@ -13,15 +13,15 @@ import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class WriteBackPlugin(val euId : String,
+class WriteBackPlugin(val laneName : String,
                       val rf : RegfileSpec,
                       var writeAt : Int,
                       var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin with RegFileWriterService{
-  withPrefix(euId + "_" + rf.getName())
+  withPrefix(laneName + "_" + rf.getName())
 
   val elaborationLock = Lock()
 
-  lazy val eu = host.find[ExecuteUnitPlugin](_.euId == euId)
+  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
   lazy val rfp = host.find[RegfileService](_.rfSpec == rf)
 
   setupRetain(eu.uopLock)
