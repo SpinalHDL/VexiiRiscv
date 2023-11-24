@@ -104,15 +104,15 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
       }
     }
 
-    val decodeCtrl = dpp.ctrl(decodeAt)
+    val decodeCtrl = dpp.rawCtrl(decodeAt)
     val harts = for (hartId <- Global.hartsIds) yield new Area {
       val uopId = Reg(Decode.UOP_ID) init (0)
-      when(decodeCtrl.down.isFiring && decodeCtrl(Global.HART_ID) === hartId) {
-        uopId := decodeCtrl(Decode.UOP_ID, Decode.LANES - 1) + 1
+      when(decodeCtrl.ctrl.down.isFiring && decodeCtrl.ctrl(Global.HART_ID) === hartId) {
+        uopId := decodeCtrl.lane(Decode.LANES - 1)(Decode.UOP_ID) + 1
       }
     }
 
-    val laneLogic = for(laneId <- 0 until Decode.LANES) yield new decodeCtrl.Area(laneId) {
+    val laneLogic = for(laneId <- 0 until Decode.LANES) yield new decodeCtrl.LaneArea(laneId) {
       LEGAL := Symplify(Decode.INSTRUCTION, encodings.all)
       for(rfa <- rfAccesses){
         val keys = rfaKeys(rfa)
@@ -144,19 +144,9 @@ class DecoderPlugin(var decodeAt : Int = 2) extends FiberPlugin with DecoderServ
       Decode.UOP := Decode.INSTRUCTION
 
       Decode.UOP_ID := (laneId match {
-        case 0 => harts.map(_.uopId).read(decodeCtrl(Global.HART_ID))
-        case _ => decodeCtrl(Decode.UOP_ID, laneId - 1) + decodeCtrl(Decode.ALIGNED_MASK, laneId - 1).asUInt
+        case 0 => harts.map(_.uopId).read(decodeCtrl.ctrl(Global.HART_ID))
+        case _ => decodeCtrl.lane(laneId-1)(Decode.UOP_ID) + decodeCtrl.lane(laneId-1)(Decode.ALIGNED_MASK).asUInt
       })
-//      Decode.UOP_ID.assignDontCare()
-//      val harts = for (hartId <- 0 until Global.HART_COUNT) yield new Area {
-//        val id = Reg(Decode.DOP_ID) init (0)
-//      }
-//      harts.onSel(Global.HART_ID) { hart =>
-//        when(getCtrl.down.isFiring) {
-//          hart.id := hart.id + 1
-//        }
-//       Decode.UOP_ID := hart.id
-//      }
     }
   }
 }

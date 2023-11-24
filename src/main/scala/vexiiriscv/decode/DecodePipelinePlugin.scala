@@ -5,11 +5,15 @@ import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 import spinal.core._
 import spinal.core.fiber.Lock
 import spinal.lib.misc.pipeline
-import spinal.lib.misc.pipeline.Link
+import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 
 import scala.collection.mutable
+
+object DecodePipelinePlugin{
+  val LANE_SEL = Payload(Bool())
+}
 
 class DecodePipelinePlugin extends FiberPlugin with PipelineService{
   setName("decode")
@@ -17,25 +21,53 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
   def getAge(at: Int, prediction: Boolean): Int = Ages.DECODE + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
 
   override def getLinks(): Seq[Link] = logic.connectors
-  val idToCtrl = mutable.LinkedHashMap[Int, pipeline.CtrlLink]()
-  def ctrl(id : Int) = idToCtrl.getOrElseUpdate(id, pipeline.CtrlLink())
+  val idToRawCtrl = mutable.LinkedHashMap[Int, Ctrl]()
 
-  def up = ctrl(0).up
+
+  class Ctrl() extends Area{
+    val laneIdToCtrlLane = mutable.LinkedHashMap[Int, CtrlLaneApiImpl]()
+    val ctrl = CtrlLink().setCompositeName(this)
+
+    def lane(laneId : Int) = laneIdToCtrlLane.getOrElseUpdate(laneId, new CtrlLaneApiImpl(laneId).setCompositeName(this, "lane" + laneId))
+
+    class LaneArea(laneId : Int) extends Area with CtrlLaneApi{
+      def clai = lane(laneId)
+      override def getCtrl: CtrlLink = clai.getCtrl
+      override def laneName: String = clai.laneName
+      override def LANE_SEL: Payload[Bool] = clai.LANE_SEL
+    }
+
+    class CtrlLaneApiImpl(_laneId: Int) extends Area with CtrlLaneApi {
+      val cancel = Bool()
+
+      override def getCtrl: CtrlLink = ctrl
+      override def laneName: String = _laneId.toString
+      override def LANE_SEL: Payload[Bool] = DecodePipelinePlugin.LANE_SEL
+      override def hasCancelRequest = cancel
+    }
+  }
+
+
+  def rawCtrl(id: Int): Ctrl = {
+    idToRawCtrl.getOrElseUpdate(id, new Ctrl().setCompositeName(this, "ctrls_" + id.toString))
+  }
+
+
   val logic = during build new Area{
     elaborationLock.await()
-    val idMax = idToCtrl.keys.max
-    for(i <- 0 to idMax) ctrl(i).unsetName() //To ensure the creation to all intermediate nodes
-    val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
-    val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageLink(from.down, to.up) //.withoutCollapse()
-    val connectors = (sc ++ ctrls).toSeq
+    val idMax = idToRawCtrl.keys.max
+    for(i <- 0 to idMax) rawCtrl(i).unsetName() //To ensure the creation to all intermediate nodes
+    val ctrls = idToRawCtrl.toList.sortBy(_._1).map(_._2)
+    val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageLink(from.ctrl.down, to.ctrl.up) //.withoutCollapse()
+    val connectors = (sc ++ ctrls.map(_.ctrl)).toSeq
 
     val rp = host[ReschedulePlugin]
     val flushRange = 0 until ctrls.size
     val flushes = for(id <- flushRange) yield new Area {
       val age = getAge(id, true)
-      val c = ctrl(id)
-      val doIt = rp.isFlushedAt(age, c(Global.HART_ID))
-      doIt.foreach(v => c.throwWhen(v, usingReady = false))
+      val c = idToRawCtrl(id)
+      val doIt = rp.isFlushedAt(age, c.ctrl(Global.HART_ID))
+      doIt.foreach(v => c.ctrl.throwWhen(v, usingReady = false))
     }
   }
 }

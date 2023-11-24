@@ -34,33 +34,34 @@ class AlignerPlugin(fetchAt : Int = 3,
 
 
     val up = fpp.ctrl(fetchAt).down
-    val down = dpp.up
-    val connector = CtrlLink(up, down)
+    val downCtrl = dpp.rawCtrl(0)
+    val downNode = downCtrl.ctrl.up
+    val connector = CtrlLink(up, downNode)
     connectors += connector
 
 
 
-    val feeder = new down.Area{
+    val feeder = new Area{
       val harts = for (hartId <- Global.hartsIds) yield new Area {
         val dopId = Reg(Decode.DOP_ID) init (0)
-        when(isFiring && up(Global.HART_ID) === hartId) {
-          dopId := down(Decode.DOP_ID, Decode.LANES-1) + 1
+        when(downNode.isFiring && up(Global.HART_ID) === hartId) {
+          dopId := downCtrl.lane(Decode.LANES-1)(Decode.DOP_ID) + 1
         }
       }
 
-      val instructionSlices = Fetch.WORD.subdivideIn(Decode.LANES.get slices)
+      val instructionSlices = up(Fetch.WORD).subdivideIn(Decode.LANES.get slices)
       val lane = for(laneId <- Decode.laneIds) new Area{
-        val lane = new down.Area(laneId)
+        val lane = downCtrl.lane(laneId)
         val pcLaneLow = log2Up(Decode.INSTRUCTION_WIDTH/8)
         val pcLaneRange = pcLaneLow + log2Up(Decode.LANES) -1 downto pcLaneLow
-        lane(Decode.ALIGNED_MASK)    := Fetch.WORD_PC(pcLaneRange) >= laneId
+        lane(Decode.ALIGNED_MASK)    := up(Fetch.WORD_PC)(pcLaneRange) >= laneId
         lane(Decode.INSTRUCTION)     := instructionSlices(laneId)
-        lane(Global.PC)              := Fetch.WORD_PC
+        lane(Global.PC)              := up(Fetch.WORD_PC)
         lane(Global.PC)(pcLaneRange) := laneId
-        lane(Fetch.ID)               := Fetch.ID
+        lane(Fetch.ID)               := up(Fetch.ID)
         lane(Decode.DOP_ID)          := (laneId match {
           case 0 => harts.map(_.dopId).read(up(Global.HART_ID))
-          case _ => down(Decode.DOP_ID, laneId-1) + down(Decode.ALIGNED_MASK, laneId-1).asUInt
+          case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1)(Decode.ALIGNED_MASK).asUInt
         })
       }
 

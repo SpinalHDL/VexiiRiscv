@@ -43,7 +43,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
   }
 
   val logic = during build new Area{
-    val dispatchCtrl = dpp.ctrl(dispatchAt)
+    val dispatchCtrl = dpp.rawCtrl(dispatchAt)
 
     val eus = host.list[ExecuteLaneService].sortBy(_.dispatchPriority).reverse
     val EU_COMPATIBILITY = eus.map(eu => eu -> Payload(Bool())).toMapLinked()
@@ -148,15 +148,15 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       }
     }
 
-    val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.Area(lane){
+    val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
       val c = candidates(slotsCount + lane)
       val sent = RegInit(False) setWhen(c.fire) clearWhen(getCtrl.up.isMoving)
-      c.ctx.valid := dispatchCtrl.isValid && Dispatch.MASK && !sent
+      c.ctx.valid := dispatchCtrl.ctrl.isValid && Dispatch.MASK && !sent
       c.ctx.compatibility := EU_COMPATIBILITY.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
       c.ctx.microOp := Decode.UOP
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
-      haltWhen(Dispatch.MASK && !sent && !c.fire)
+      dispatchCtrl.ctrl.haltWhen(Dispatch.MASK && !sent && !c.fire)
     }
 
     val scheduler = new Area {
@@ -191,7 +191,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       insertNode(rdKeys.ENABLE) clearWhen(!insertNode(ExecuteLanePlugin.SEL)) //Allow to avoid having to check the valid down the pipeline
     }
 
-    dispatchCtrl.down.ready := True
+    dispatchCtrl.ctrl.down.ready := True
 
     eupp.ctrl(0).up.setAlwaysValid()
 

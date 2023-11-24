@@ -3,6 +3,7 @@ package vexiiriscv.misc
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
+import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
@@ -28,17 +29,18 @@ class WhiteboxerPlugin extends FiberPlugin{
       val fetchId = wrap(c(Fetch.ID))
     }
 
-    val decodes =  for(lane <- 0 until Decode.LANES) yield new Area {
-      val c = dpp.ctrl(0)
-      val fire = wrap(c.down.isFiring)
-      val hartId = wrap(c(Global.HART_ID, lane))
-      val pc = wrap(c(Global.PC, lane))
-      val fetchId = wrap(c(Fetch.ID, lane))
-      val decodeId = wrap(c(Decode.DOP_ID, lane))
+
+    val decodes =  for(lane <- 0 until Decode.LANES) yield new Area{
+      val c = dpp.rawCtrl(0).lane(lane)
+      val fire = wrap(c.isFiring)
+      val hartId = wrap(c(Global.HART_ID))
+      val pc = wrap(c(Global.PC))
+      val fetchId = wrap(c(Fetch.ID))
+      val decodeId = wrap(c(Decode.DOP_ID))
     }
 
     val serializeds = for(lane <- 0 until Decode.LANES) yield new Area {
-      val c = dpp.ctrl(host[DecoderPlugin].decodeAt)
+      val c = dpp.rawCtrl(host[DecoderPlugin].decodeAt).lane(lane)
       host[DecoderPlugin].logic.await()
       val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID, lane))

@@ -89,10 +89,10 @@ class ExecuteLanePlugin(override val laneName : String,
 
   val idToCtrl = mutable.LinkedHashMap[Int, CtrlLaneApiImpl]()
 
-  class CtrlLaneApiImpl(id : Int) extends Area with CtrlLaneApi{
+  class CtrlLaneApiImpl(ctrlId : Int) extends Area with CtrlLaneApi{
     val cancel = Bool()
-    override def getCtrl: CtrlLink = eupp.ctrl(id)
-    override def laneId: String = laneName
+    override def getCtrl: CtrlLink = eupp.ctrl(ctrlId)
+    override def laneName: String = ExecuteLanePlugin.this.laneName
     override def LANE_SEL: Payload[Bool] = ExecuteLanePlugin.SEL
     override def hasCancelRequest = cancel
   }
