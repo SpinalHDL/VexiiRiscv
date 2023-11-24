@@ -46,10 +46,10 @@ class BranchPlugin(val laneName : String,
     add(Rvi.BLTU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
     add(Rvi.BGEU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
 
-    val age = eu.getAge(jumpAt, false)
+    val age = eu.getExecuteAge(jumpAt)
     val pcPort = sp.newPcPort(age)
 //    val trapPort = if XXX sp.newTrapPort(age)
-    val flushPort = sp.newFlushPort(age)
+    val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt-1))
 
     eu.uopLock.release()
     wbp.elaborationLock.release()

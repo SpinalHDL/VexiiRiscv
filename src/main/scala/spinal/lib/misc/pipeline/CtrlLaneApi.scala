@@ -10,10 +10,12 @@ trait CtrlLaneApi{
   private val _c = getCtrl
   private val _laneId = laneId
   private val _SEL = LANE_SEL
-  import _c._
 
   def isValid: Bool = up(LANE_SEL)
-  def isFiring: Bool = _c(LANE_SEL) && _c.isReady
+  def isReady : Bool = _c.isReady
+  def isFiring: Bool = isValid && isReady && !hasCancelRequest
+  def isMoving: Bool = isValid && (isReady || hasCancelRequest)
+  def hasCancelRequest : Bool = ???
 
   def apply[T <: Data](that: Payload[T]): T = _c.apply(that, laneId)
   def apply[T <: Data](that: Payload[T], subKey : Any): T = _c.apply(that, laneId + "_" + subKey.toString)

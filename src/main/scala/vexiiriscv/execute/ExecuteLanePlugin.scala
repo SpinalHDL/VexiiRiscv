@@ -87,20 +87,24 @@ class ExecuteLanePlugin(override val laneName : String,
     rfStageables.getOrElseUpdate(r, Payload(Bits(r.rf.width bits)).setName(s"${r.rf.getName()}_${r.access.getName()}"))
   }
 
-  val idToCtrl = mutable.LinkedHashMap[Int, CtrlLaneApi]()
+  val idToCtrl = mutable.LinkedHashMap[Int, CtrlLaneApiImpl]()
+
+  class CtrlLaneApiImpl(id : Int) extends Area with CtrlLaneApi{
+    val cancel = Bool()
+    override def getCtrl: CtrlLink = eupp.ctrl(id)
+    override def laneId: String = laneName
+    override def LANE_SEL: Payload[Bool] = ExecuteLanePlugin.SEL
+    override def hasCancelRequest = cancel
+  }
   def ctrl(id : Int) : CtrlLaneApi = {
-    idToCtrl.getOrElseUpdate(id, new CtrlLaneApi{
-      override def getCtrl: CtrlLink = eupp.ctrl(id)
-      override def laneId: String = laneName
-      override def LANE_SEL: Payload[Bool] = ExecuteLanePlugin.SEL
-    })
+    idToCtrl.getOrElseUpdate(id, new CtrlLaneApiImpl(id).setCompositeName(this, "ctrls_" + id.toString))
   }
   def execute(id: Int) : CtrlLaneApi = {
     assert(id >= 0)
     ctrl(id + executeAt)
   }
 
-
+  def getExecuteAge(at : Int) = getAge(at + executeAt, false)
   def getAge(at: Int, prediction: Boolean): Int = Ages.EU + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.completions.onCtrl.map(_.port).toSeq
 
@@ -185,14 +189,19 @@ class ExecuteLanePlugin(override val laneName : String,
     // Handle SEL initialisation and flushes
     val rp = host[ReschedulePlugin]
     for(ctrlId <- 0 until idToCtrl.keys.max){
-      val c = ctrl(ctrlId)
+      val c = idToCtrl(ctrlId)
       if(ctrlId != 0) c.up(SEL).setAsReg().init(False)
 
       val age = getAge(ctrlId, true)
       val doIt = rp.isFlushedAt(age, c(Global.HART_ID))
-      doIt.foreach(cond => when(cond){
-        c.bypass(SEL) := False
-      })
+      doIt match {
+        case Some(cond) =>
+          c.cancel := cond
+          when(cond) {
+            c.bypass(SEL) := False
+          }
+        case None => c.cancel := False
+      }
     }
 
     host.list[RegfileService].foreach(_.elaborationLock.release())
