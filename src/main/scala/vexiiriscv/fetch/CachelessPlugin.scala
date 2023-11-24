@@ -51,7 +51,6 @@ class CachelessPlugin(var wordWidth : Int,
     val idCount = joinAt - forkAt + 1 //TODO we need more of it
     val p = CachelessBusParam(MIXED_WIDTH, Fetch.WORD_WIDTH, idCount, false)
     val bus = master(CachelessBus(p))
-    val x = CombInit(pp.ctrl(2)(Fetch.WORD_PC))
 
     val forkCtrl = pp.ctrl(forkAt)
     val joinCtrl = pp.ctrl(joinAt)

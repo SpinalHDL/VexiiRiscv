@@ -73,13 +73,5 @@ class RegFileMem(rfpp : RegFilePortParam,
       port.cmd.payload := r.address
       r.data := port.rsp
     }
-
-//    val bypass = (!r.forceNoBypass && bypassCount != 0) generate new Area {
-//      val hits = io.bypasses.map(b => b.valid && b.address === r.address)
-//      val hitsValue = MuxOH.mux(hits, io.bypasses.map(_.data))
-//      when(hits.orR) {
-//        r.data := hitsValue
-//      }
-//    }
   }
 }
