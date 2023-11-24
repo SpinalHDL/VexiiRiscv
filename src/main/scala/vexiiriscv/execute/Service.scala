@@ -32,7 +32,7 @@ trait ExecuteUnitService {
 
   def executeAt: Int
   def rfReadAt: Int
-  def ctrl(id : Int): ExecuteUnitCtrl
+  def ctrl(id : Int): CtrlLaneApi
   def getMicroOp(): Seq[MicroOp]
   def getMicroOpSpecs(): Iterable[MicroOpSpec]
   def dispatchPriority : Int

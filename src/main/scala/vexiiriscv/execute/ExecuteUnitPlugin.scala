@@ -18,31 +18,35 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
-trait ExecuteUnitCtrlApi{
-  def getCtrl: ExecuteUnitCtrl
-  def euId : String
+trait CtrlLaneApi{
+  def getCtrl: CtrlLink
+  def laneId: String
+  def LANE_SEL: Payload[Bool]
+
   private val _c = getCtrl
+  private val _laneId = laneId
+  private val _SEL = LANE_SEL
   import _c._
 
-  def isValid: Bool = up(SEL)
-  def isFiring: Bool = SEL && _c.on.isReady
+  def isValid: Bool = up(LANE_SEL)
+  def isFiring: Bool = _c(LANE_SEL) && _c.isReady
 
-  def apply[T <: Data](that: Payload[T]): T = _c.on.apply(that, euId)
-  def apply[T <: Data](that: Payload[T], subKey : Any): T = _c.on.apply(that, euId + "_" + subKey.toString)
+  def apply[T <: Data](that: Payload[T]): T = _c.apply(that, laneId)
+  def apply[T <: Data](that: Payload[T], subKey : Any): T = _c.apply(that, laneId + "_" + subKey.toString)
   def insert[T <: Data](that: T): Payload[T] = {
     val p = Payload(that)
     apply(p) := that
     p
   }
-  def bypass[T <: Data](that: Payload[T]): T =  _c.on.bypass(that, euId)
+  def bypass[T <: Data](that: Payload[T]): T =  _c.bypass(that, laneId)
 
   def up = {
-    val up = _c.on.up
-    new up.Area(euId)
+    val up = _c.up
+    new up.Area(laneId)
   }
   def down = {
-    val down = _c.on.down
-    new down.Area(euId)
+    val down = _c.down
+    new down.Area(laneId)
   }
 
   implicit def stageablePiped2[T <: Data](stageable: Payload[T]): T = this (stageable)
@@ -51,14 +55,11 @@ trait ExecuteUnitCtrlApi{
   }
 
   implicit def bundlePimper[T <: Bundle](stageable: Payload[T]) = new BundlePimper[T](this (stageable))
-}
 
-class ExecuteUnitCtrl(val at : Int, val on : CtrlLink, override val euId : String) extends Area with ExecuteUnitCtrlApi{
-  override def getCtrl: ExecuteUnitCtrl = this
-
-  class Area extends spinal.core.Area with ExecuteUnitCtrlApi{
-    override def getCtrl: ExecuteUnitCtrl = ExecuteUnitCtrl.this
-    override def euId: String = ExecuteUnitCtrl.this.euId
+  class Area(__ctrl: CtrlLink = getCtrl, __laneId : String = laneId, __SEL : Payload[Bool] = LANE_SEL) extends spinal.core.Area with CtrlLaneApi {
+    override def getCtrl: CtrlLink = __ctrl
+    override def laneId: String = __laneId
+    override def LANE_SEL: Payload[Bool] = __SEL
   }
 }
 
@@ -132,11 +133,15 @@ class ExecuteUnitPlugin(val euId : String,
     rfStageables.getOrElseUpdate(r, Payload(Bits(r.rf.width bits)).setName(s"${r.rf.getName()}_${r.access.getName()}"))
   }
 
-  val idToCtrl = mutable.LinkedHashMap[Int, ExecuteUnitCtrl]()
-  def ctrl(id : Int)  : ExecuteUnitCtrl = {
-    idToCtrl.getOrElseUpdate(id, new ExecuteUnitCtrl(id, eupp.ctrl(id), euId).setCompositeName(this, if(id >= executeAt) "exe" + (id - executeAt) else "dis" + id))
+  val idToCtrl = mutable.LinkedHashMap[Int, CtrlLaneApi]()
+  def ctrl(id : Int) : CtrlLaneApi = {
+    idToCtrl.getOrElseUpdate(id, new CtrlLaneApi{
+      override def getCtrl: CtrlLink = eupp.ctrl(id)
+      override def laneId: String = euId
+      override def LANE_SEL: Payload[Bool] = ExecuteUnitPlugin.SEL
+    })
   }
-  def execute(id: Int) : ExecuteUnitCtrl = {
+  def execute(id: Int) : CtrlLaneApi = {
     assert(id >= 0)
     ctrl(id + executeAt)
   }
