@@ -12,12 +12,12 @@ import scala.collection.mutable
 
 
 trait PipelineService{
-  def getConnectors() : Seq[Link]
+  def getLinks() : Seq[Link]
 }
 
 abstract class CtrlPipelinePlugin extends FiberPlugin with PipelineService{
   val elaborationLock = Lock()
-  override def getConnectors(): Seq[Link] = logic.connectors
+  override def getLinks(): Seq[Link] = logic.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, pipeline.CtrlLink]()
   def ctrl(id : Int) = idToCtrl.getOrElseUpdate(id, pipeline.CtrlLink())
 

@@ -19,7 +19,7 @@ class AlignerPlugin(fetchAt : Int = 3,
   buildBefore(fpp.elaborationLock)
   buildBefore(dpp.elaborationLock)
 
-  override def getConnectors(): Seq[Link] = logic.connectors
+  override def getLinks(): Seq[Link] = logic.connectors
 
   val logic = during build new Area{
     val connectors = ArrayBuffer[Link]()

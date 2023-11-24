@@ -77,7 +77,7 @@ class ExecuteUnitPlugin(val euId : String,
     rfStageables.getOrElseUpdate(r, Payload(Bits(r.rf.width bits)).setName(s"${r.rf.getName()}_${r.access.getName()}"))
   }
 
-  override def getConnectors(): Seq[Link] = logic.connectors
+  override def getLinks(): Seq[Link] = logic.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, CtrlLink]()
   def ctrl(id : Int)  : CtrlLink = {
     idToCtrl.getOrElseUpdate(id, CtrlLink().setCompositeName(this, if(id >= executeAt) "exe" + (id - executeAt) else "dis" + id))
