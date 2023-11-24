@@ -116,6 +116,7 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
+
       val eusReady = Bits(eus.size bits)
       //TODO merge duplicated logic using signal cache
       val euLogic = for((readEu, euId) <- eus.zipWithIndex) yield new Area{
@@ -157,13 +158,21 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     }
 
     val scheduler = new Area {
-      val eusFree, hartFree = Array.fill(candidates.size + 1)(Bits(eus.size bits))
+      val eusFree = Array.fill(candidates.size + 1)(Bits(eus.size bits))
+      val hartFree = Array.fill(candidates.size + 1)(Bits(Global.HART_COUNT bits))
       eusFree(0).setAll()
       hartFree(0).setAll()
       val layer = for ((c, id) <- candidates.zipWithIndex) yield new Area {
+        val olders = candidates.take(id)
+        val olderHazards = for(o <- olders) yield new Area{
+          val doWrite = o.ctx.valid && o.ctx.hartId === c.ctx.hartId && o.ctx.hm(rdKeys.ENABLE)
+          val rfas = Decode.rfaKeys.get.map{case (rfa, k) => c.ctx.hm(k.ENABLE) && o.ctx.hm(rdKeys.PHYS) === c.ctx.hm(k.PHYS) && o.ctx.hm(rdKeys.RFID) === c.ctx.hm(k.RFID)}
+          val hit = doWrite && rfas.orR
+        }
+        val oldersHazard = olderHazards.map(_.hit).orR
         val eusHits = c.ctx.compatibility & eusFree(id) & c.eusReady
         val eusOh = OHMasking.firstV2(eusHits)
-        val doIt = c.ctx.valid && eusHits.orR && hartFree(id)(c.ctx.hartId)
+        val doIt = c.ctx.valid && eusHits.orR && hartFree(id)(c.ctx.hartId) && !oldersHazard
         eusFree(id + 1) := eusFree(id) & (~eusOh).orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(!c.ctx.valid || doIt)
         c.fire := doIt

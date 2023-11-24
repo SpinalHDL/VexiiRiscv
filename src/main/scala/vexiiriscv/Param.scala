@@ -41,6 +41,7 @@ class ParamSimple(){
       syncRead = true
     )
 
+
     plugins += new execute.ExecuteUnitPlugin("EU0", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
     plugins += new SrcPlugin("EU0")
     plugins += new IntAluPlugin("EU0", formatAt = 0)
@@ -48,6 +49,14 @@ class ParamSimple(){
     plugins += new IntFormatPlugin("EU0")
     plugins += new BranchPlugin("EU0")
     plugins += new WriteBackPlugin("EU0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+
+    plugins += new execute.ExecuteUnitPlugin("EU1", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+    plugins += new SrcPlugin("EU1")
+    plugins += new IntAluPlugin("EU1", formatAt = 0)
+    plugins += new BarrelShifterPlugin("EU1", formatAt = 1)
+    plugins += new IntFormatPlugin("EU1")
+    plugins += new BranchPlugin("EU1")
+    plugins += new WriteBackPlugin("EU1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
 
     plugins += new WhiteboxerPlugin()
