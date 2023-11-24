@@ -24,11 +24,14 @@ class ParamSimple(){
       case false => plugins += new memory.StaticTranslationPlugin(32)
       case true =>
     }
+
+    plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
+
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
     plugins += new fetch.CachelessPlugin(wordWidth = 32*decoders)
-    plugins += new misc.PipelineBuilderPlugin()
+
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(lanes = decoders)
     plugins += new decode.DecoderPlugin()

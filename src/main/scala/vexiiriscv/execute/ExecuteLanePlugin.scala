@@ -91,7 +91,7 @@ class ExecuteLanePlugin(override val laneName : String,
 
   class CtrlLaneApiImpl(ctrlId : Int) extends Area with CtrlLaneApi{
     val cancel = Bool()
-    override def getCtrl: CtrlLink = eupp.ctrl(ctrlId)
+    override def ctrlLink: CtrlLink = eupp.ctrl(ctrlId)
     override def laneName: String = ExecuteLanePlugin.this.laneName
     override def LANE_SEL: Payload[Bool] = ExecuteLanePlugin.SEL
     override def hasCancelRequest = cancel

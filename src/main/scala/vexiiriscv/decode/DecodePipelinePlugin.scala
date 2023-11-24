@@ -25,23 +25,16 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
 
 
   class Ctrl() extends Area{
-    val laneIdToCtrlLane = mutable.LinkedHashMap[Int, CtrlLaneApiImpl]()
+    val laneIdToCtrlLane = mutable.LinkedHashMap[Int, LaneImpl]()
     val ctrl = CtrlLink().setCompositeName(this)
 
-    def lane(laneId : Int) = laneIdToCtrlLane.getOrElseUpdate(laneId, new CtrlLaneApiImpl(laneId).setCompositeName(this, "lane" + laneId))
+    def lane(laneId : Int) = laneIdToCtrlLane.getOrElseUpdate(laneId, new LaneImpl(laneId).setCompositeName(this, "lane" + laneId))
 
-    class LaneArea(laneId : Int) extends Area with CtrlLaneApi{
-      def clai = lane(laneId)
-      override def getCtrl: CtrlLink = clai.getCtrl
-      override def laneName: String = clai.laneName
-      override def LANE_SEL: Payload[Bool] = clai.LANE_SEL
-    }
-
-    class CtrlLaneApiImpl(_laneId: Int) extends Area with CtrlLaneApi {
+    class LaneArea(laneId : Int) extends CtrlLaneMirror(lane(laneId))
+    class LaneImpl(laneId: Int) extends Area with CtrlLaneApi {
       val cancel = Bool()
-
-      override def getCtrl: CtrlLink = ctrl
-      override def laneName: String = _laneId.toString
+      override def ctrlLink: CtrlLink = ctrl
+      override def laneName: String = laneId.toString
       override def LANE_SEL: Payload[Bool] = DecodePipelinePlugin.LANE_SEL
       override def hasCancelRequest = cancel
     }

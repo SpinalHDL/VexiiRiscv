@@ -3,20 +3,18 @@ package spinal.lib.misc.pipeline
 import spinal.core._
 
 trait CtrlLaneApi{
-  def getCtrl: CtrlLink
+  def ctrlLink: CtrlLink
   def laneName: String
   def LANE_SEL: Payload[Bool]
 
-  private val _c = getCtrl
-  private val _laneName = laneName
-  private val _SEL = LANE_SEL
+  private val _c = ctrlLink
 
   def isValid: Bool = up(LANE_SEL)
   def isReady : Bool = _c.isReady
   def isFiring: Bool = isValid && _c.up.isReady && !hasCancelRequest
   def isMoving: Bool = isValid && (_c.up.isReady || hasCancelRequest)
   def isCanceling: Bool = isValid && hasCancelRequest
-  def hasCancelRequest : Bool = ???
+  def hasCancelRequest : Bool
 
   def apply[T <: Data](that: Payload[T]): T = _c.apply(that, laneName)
   def apply[T <: Data](that: Payload[T], subKey : Any): T = _c.apply(that, laneName + "_" + subKey.toString)
@@ -43,9 +41,12 @@ trait CtrlLaneApi{
 
   implicit def bundlePimper[T <: Bundle](stageable: Payload[T]) = new BundlePimper[T](this (stageable))
 
-  class Area(__ctrl: CtrlLink = getCtrl, __laneName : String = laneName, __SEL : Payload[Bool] = LANE_SEL) extends spinal.core.Area with CtrlLaneApi {
-    override def getCtrl: CtrlLink = __ctrl
-    override def laneName: String = __laneName
-    override def LANE_SEL: Payload[Bool] = __SEL
-  }
+  class Area(from : CtrlLaneApi = this) extends CtrlLaneMirror(from)
+}
+
+class CtrlLaneMirror(from : CtrlLaneApi) extends spinal.core.Area with CtrlLaneApi {
+  override def ctrlLink: CtrlLink = from.ctrlLink
+  override def laneName: String = from.laneName
+  override def LANE_SEL: Payload[Bool] = from.LANE_SEL
+  override def hasCancelRequest: Bool = from.hasCancelRequest
 }
