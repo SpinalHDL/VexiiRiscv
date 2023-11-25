@@ -8,22 +8,18 @@ import spinal.core.sim._
 import spinal.core._
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
+import vexiiriscv.misc.konata.{Comment, Retire, Spawn, Stage}
 
 import java.io.{BufferedWriter, File, FileWriter}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Boolean){
+class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean){
   var enabled = true
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
-  val gem5 = gem5File.map{f =>
-    FileUtils.forceMkdir(f.getParentFile)
-    new BufferedWriter(new FileWriter(f))
-  }
-  val hartsIds = List(0)
 
-  var gem5Enabled = gem5File.nonEmpty
+  val hartsIds = List(0)
 
   val xlen = cpu.database(Riscv.XLEN)
   val hartsCount = cpu.database(Global.HART_COUNT)
@@ -42,11 +38,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
   }
 
   def flush(): Unit = {
-    gem5.foreach(_.flush())
+
   }
 
   def close(): Unit = {
-    gem5.foreach(_.close())
+    harts.foreach(_.close())
     if(withRvls) rvls.jni.Frontend.deleteDisassemble(disass)
   }
 
@@ -63,8 +59,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
     var microOpRetirePtr, microOpAllocPtr = 0
     var lastCommitAt = 0l
 
-    //    val microOpIdQueue = mutable.Queue[Int]()
-
+    val konataThread = kb.newThread()
 
     def add(tracer: TraceBackend): Unit = {
       for (hartId <- hartsIds) {
@@ -74,6 +69,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
         tracer.setPc(hartId, pc)
         this
       }
+    }
+
+    def close(): Unit = {
+      konataThread.cycleLock = Long.MaxValue
     }
   }
 
@@ -87,7 +86,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
     var pc = 0l
   }
 
-  var opCounter = 0
 
   class MicroOpCtx() {
     var fetchId = -1
@@ -133,28 +131,27 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
       case 0l => ""
       case v => v.toString
     }
-    def writeGem5(hart : HartCtx): Unit = {
-      if(gem5Enabled){
-        gem5.foreach{ f =>
-          val fetch = hart.fetch(fetchId)
-          val decode = hart.decode(decodeId)
-          val instruction = if(withRvls) rvls.jni.Frontend.disassemble(disass, this.instruction) else "? rvls disabled ?"
-          f.write(f"O3PipeView:fetch:${fetch.spawnAt}:0x${decode.pc}%08x:0:${opCounter}:$instruction\n")
-          f.write(f"O3PipeView:decode:${traceT2s(decode.spawnAt)}\n")
-          f.write(f"O3PipeView:dispatch:${traceT2s(spawnAt)}\n")
-          f.write(f"O3PipeView:issue:${traceT2s(executeAt)}\n")
-          f.write(f"O3PipeView:complete:${traceT2s(completionAt)}\n")
-          f.write(f"O3PipeView:retire:${traceT2s(completionAt+1)}:store:\n")
-          //          gem5 << "O3PipeView:fetch:" << traceT2s(fetch.fetchAt) << ":0x" << hex << setw(8) << std :: setfill('0') << op.pc << dec << ":0:" << op.counter << ":" << assembly << endl;
-          //          gem5 << "O3PipeView:decode:" << traceT2s(fetch.decodeAt) << endl;
-          //          gem5 << "O3PipeView:rename:" << traceT2s(op.renameAt) << endl;
-          //          gem5 << "O3PipeView:dispatch:" << traceT2s(op.dispatchAt) << endl;
-          //          gem5 << "O3PipeView:issue:" << traceT2s(op.issueAt) << endl;
-          //          gem5 << "O3PipeView:complete:" << traceT2s(op.completeAt) << endl;
-          //          gem5 << "O3PipeView:retire:" << traceT2s(op.commitAt) << ":store:" << traceT2s(op.sqAllocated ? op.storeAt: 0) << endl;
-        }
-      }
-      opCounter += 1
+    def toKonata(hart : HartCtx): Unit = {
+      val fetch = hart.fetch(fetchId)
+      val decode = hart.decode(decodeId)
+      val instruction = if(withRvls) rvls.jni.Frontend.disassemble(disass, this.instruction) else "? rvls disabled ?"
+
+      val i = new konata.Instruction()
+      i += new Spawn(fetch.spawnAt, hart.hartId)
+      i += new Comment(fetch.spawnAt, f"${decode.pc}%x : $instruction")
+      i += new Stage(fetch.spawnAt, "F")
+      i += new Stage(decode.spawnAt, "D")
+      i += new Stage(executeAt, "E")
+      i += new Stage(completionAt, "C")
+      i += new Retire(retireAt+1)
+      kb.insert(i)
+
+//        f.write(f"O3PipeView:fetch:${fetch.spawnAt}:0x${decode.pc}%08x:0:${opCounter}:$instruction\n")
+//        f.write(f"O3PipeView:decode:${traceT2s(decode.spawnAt)}\n")
+//        f.write(f"O3PipeView:dispatch:${traceT2s(spawnAt)}\n")
+//        f.write(f"O3PipeView:issue:${traceT2s(executeAt)}\n")
+//        f.write(f"O3PipeView:complete:${traceT2s(completionAt)}\n")
+//        f.write(f"O3PipeView:retire:${traceT2s(completionAt+1)}:store:\n")
     }
 
     def clear() {
@@ -274,10 +271,13 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
       while(hart.microOp(hart.microOpRetirePtr).done){
         import hart._
         val uop = hart.microOp(hart.microOpRetirePtr)
+        val fetch = hart.fetch(uop.fetchId)
         val decode = hart.decode(uop.decodeId)
-        uop.writeGem5(hart)
+
+        hart.konataThread.cycleLock = fetch.spawnAt
         lastCommitAt = cycle
         if(uop.didCommit) {
+          uop.toKonata(hart)
           if (uop.loadValid) {
             backends.foreach(_.loadCommit(hartId, uop.loadLqId))
           }

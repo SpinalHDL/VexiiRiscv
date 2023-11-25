@@ -10,7 +10,10 @@ object IntegrationSynthBench extends App{
   LutInputs.set(6)
 
   val rtls = ArrayBuffer[Rtl]()
-  rtls += Rtl(SpinalVerilog(Rtl.ffIo(VexiiRiscv(new ParamSimple().plugins()))))
+  rtls += Rtl(SpinalVerilog {
+    val param = new ParamSimple
+    Rtl.ffIo(VexiiRiscv(param.plugins()))
+  })
   val targets = XilinxStdTargets().take(2)
 
   Bench(rtls, targets)

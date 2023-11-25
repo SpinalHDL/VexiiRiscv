@@ -14,7 +14,8 @@ class ParamSimple(){
   val hartCount = 1
   val withMmu = false
   val resetVector = 0x80000000l
-  val decoders = 1
+  var decoders = 1
+  var lanes = 1
 
   def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
@@ -54,13 +55,15 @@ class ParamSimple(){
     plugins += new BranchPlugin("lane0")
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
-//    plugins += new execute.ExecuteLanePlugin("lane1", priority = 1, rfReadAt = 0, decodeAt = 1, executeAt = 2)
-//    plugins += new SrcPlugin("lane1")
-//    plugins += new IntAluPlugin("lane1", formatAt = 0)
-//    plugins += new BarrelShifterPlugin("lane1", formatAt = 1)
-//    plugins += new IntFormatPlugin("lane1")
-//    plugins += new BranchPlugin("lane1")
-//    plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+    if(lanes >= 2) {
+      plugins += new execute.ExecuteLanePlugin("lane1", priority = 1, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+      plugins += new SrcPlugin("lane1")
+      plugins += new IntAluPlugin("lane1", formatAt = 0)
+      plugins += new BarrelShifterPlugin("lane1", formatAt = 1)
+      plugins += new IntFormatPlugin("lane1")
+      plugins += new BranchPlugin("lane1")
+      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+    }
 
 
     plugins += new WhiteboxerPlugin()

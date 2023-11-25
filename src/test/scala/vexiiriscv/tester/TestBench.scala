@@ -13,6 +13,7 @@ import vexiiriscv.riscv.Riscv
 import java.io.File
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import vexiiriscv.misc.konata
 
 
 class TestOptions{
@@ -21,6 +22,7 @@ class TestOptions{
   var withProbe = true
   var withRvls = new File("ext/rvls/build/apps/rvls.so").exists()
   var withRvlsCheck = withRvls
+//  var withKonata = true
   var failAfter, passAfter = Option.empty[Long]
   val bins = ArrayBuffer[(Long, String)]()
   val elfs = ArrayBuffer[String]()
@@ -62,8 +64,11 @@ class TestOptions{
       rvls.spinalSimTime(10000)
     }
 
+    val konataBackend = new konata.Backend(new File(simCompiled.compiledPath, "konata.log"))
+    delayed(1)(konataBackend.spinalSimFlusher(10 * 10000)) // Delayed to ensure this is registred last
+
     // Collect traces from the CPUs behaviour
-    val probe = new VexiiRiscvProbe(dut, Some(new File(simCompiled.compiledPath, "trace.gem5o3")), withRvls)
+    val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
     if (withRvlsCheck) probe.add(rvls)
     probe.enabled = withProbe
 
