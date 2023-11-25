@@ -3,11 +3,11 @@ package vexiiriscv.schedule
 import spinal.core._
 import spinal.lib._
 import spinal.lib.logic.{DecodingSpec, Masked}
-import spinal.lib.misc.pipeline.{CtrlApi, CtrlLink, NodeApi, Payload}
+import spinal.lib.misc.pipeline.{CtrlApi, CtrlLaneApi, CtrlLink, NodeApi, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
-import vexiiriscv.execute.{Execute, ExecutePipelinePlugin, ExecuteLanePlugin, ExecuteLaneService}
+import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin}
 import vexiiriscv.misc.PipelineBuilderPlugin
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{RD, RfRead, RfResource}
@@ -185,11 +185,11 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
       import insertNode._
       val oh = B(scheduler.layer.map(l => l.doIt && l.eusOh(id)))
       val mux = candidates.reader(oh, true)
-      ExecuteLanePlugin.SEL := oh.orR
+      insertNode(CtrlLaneApi.LANE_SEL) := oh.orR
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.UOP := mux(_.ctx.microOp)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
-      rdKeys.ENABLE clearWhen(!ExecuteLanePlugin.SEL) //Allow to avoid having to check the valid down the pipeline
+      rdKeys.ENABLE clearWhen(!CtrlLaneApi.LANE_SEL) //Allow to avoid having to check the valid down the pipeline
       Execute.LANE_AGE := OHToUInt(oh)
     }
 

@@ -277,23 +277,23 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
         val decode = hart.decode(uop.decodeId)
         uop.writeGem5(hart)
         lastCommitAt = cycle
-        if (uop.loadValid) {
-          backends.foreach(_.loadCommit(hartId, uop.loadLqId))
-        }
-        if (uop.isSc) {
-          backends.foreach(_.storeConditional(hartId, uop.scFailure))
-        }
-        if (uop.storeValid) {
-          backends.foreach(_.storeCommit(hartId, uop.storeSqId, uop.lsuAddress, uop.lsuLen, uop.storeData))
-        }
-        if (uop.integerWriteValid) {
-          backends.foreach(_.writeRf(hartId, 0, 32, uop.integerWriteData))
-        }
-        if (uop.csrValid) {
-          if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))
-          if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
-        }
         if(uop.didCommit) {
+          if (uop.loadValid) {
+            backends.foreach(_.loadCommit(hartId, uop.loadLqId))
+          }
+          if (uop.isSc) {
+            backends.foreach(_.storeConditional(hartId, uop.scFailure))
+          }
+          if (uop.storeValid) {
+            backends.foreach(_.storeCommit(hartId, uop.storeSqId, uop.lsuAddress, uop.lsuLen, uop.storeData))
+          }
+          if (uop.integerWriteValid) {
+            backends.foreach(_.writeRf(hartId, 0, 32, uop.integerWriteData))
+          }
+          if (uop.csrValid) {
+            if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))
+            if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
+          }
           backends.foreach(_.commit(hartId, decode.pc))
           commitsCallbacks.foreach(_(hartId, decode.pc))
         }

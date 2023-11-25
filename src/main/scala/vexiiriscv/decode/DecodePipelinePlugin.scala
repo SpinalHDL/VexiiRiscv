@@ -8,13 +8,9 @@ import spinal.lib.misc.pipeline
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
-import vexiiriscv.decode.DecodePipelinePlugin.LANE_SEL
 
 import scala.collection.mutable
 
-object DecodePipelinePlugin extends AreaRoot{
-  val LANE_SEL = Payload(Bool())
-}
 
 class DecodePipelinePlugin extends FiberPlugin with PipelineService{
   setName("decode")
@@ -36,7 +32,6 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
       val cancel = Bool()
       override def ctrlLink: CtrlLink = link
       override def laneName: String = laneId.toString
-      override def LANE_SEL: Payload[Bool] = DecodePipelinePlugin.LANE_SEL
       override def hasCancelRequest = cancel
     }
   }
@@ -76,7 +71,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
           case Some(cond) =>
             l.cancel := cond
             when(cond) {
-              l.bypass(LANE_SEL) := False
+              l.bypass(l.LANE_SEL) := False
             }
           case None => l.cancel := False
         }

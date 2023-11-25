@@ -8,7 +8,6 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
-import vexiiriscv.execute.ExecuteLanePlugin.SEL
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
@@ -17,10 +16,6 @@ import vexiiriscv.schedule.{Ages, DispatchPlugin, ReschedulePlugin}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-
-object ExecuteLanePlugin extends AreaRoot{
-  val SEL = Payload(Bool())
-}
 
 class ExecuteLanePlugin(override val laneName : String,
                         val priority : Int,
@@ -98,7 +93,6 @@ class ExecuteLanePlugin(override val laneName : String,
     val cancel = Bool()
     override def ctrlLink: CtrlLink = eupp.ctrl(ctrlId)
     override def laneName: String = ExecuteLanePlugin.this.laneName
-    override def LANE_SEL: Payload[Bool] = ExecuteLanePlugin.SEL
     override def hasCancelRequest = cancel
   }
   def ctrl(id : Int) : CtrlLaneApi = {
@@ -195,7 +189,7 @@ class ExecuteLanePlugin(override val laneName : String,
     val rp = host[ReschedulePlugin]
     for(ctrlId <- 0 until idToCtrl.keys.max){
       val c = idToCtrl(ctrlId)
-      if(ctrlId != 0) c.up(SEL).setAsReg().init(False)
+      if(ctrlId != 0) c.up(c.LANE_SEL).setAsReg().init(False)
 
       val age = getAge(ctrlId, false)
       val doIt = rp.isFlushedAt(age, c(Global.HART_ID), c(Execute.LANE_AGE))
@@ -203,7 +197,7 @@ class ExecuteLanePlugin(override val laneName : String,
         case Some(cond) =>
           c.cancel := cond
           when(cond) {
-            c.bypass(SEL) := False
+            c.bypass(c.LANE_SEL) := False
           }
         case None => c.cancel := False
       }

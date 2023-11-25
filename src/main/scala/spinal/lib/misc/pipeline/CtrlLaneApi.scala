@@ -2,10 +2,14 @@ package spinal.lib.misc.pipeline
 
 import spinal.core._
 
+object CtrlLaneApi extends AreaRoot{
+  val LANE_SEL = Payload(Bool())
+}
+
 trait CtrlLaneApi{
   def ctrlLink: CtrlLink
   def laneName: String
-  def LANE_SEL: Payload[Bool]
+  def LANE_SEL: Payload[Bool] = CtrlLaneApi.LANE_SEL
 
   private val _c = ctrlLink
 
