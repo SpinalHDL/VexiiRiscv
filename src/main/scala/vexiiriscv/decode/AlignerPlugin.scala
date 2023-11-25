@@ -54,7 +54,7 @@ class AlignerPlugin(fetchAt : Int = 3,
         val lane = downCtrl.lane(laneId)
         val pcLaneLow = log2Up(Decode.INSTRUCTION_WIDTH/8)
         val pcLaneRange = pcLaneLow + log2Up(Decode.LANES) -1 downto pcLaneLow
-        lane.up(lane.LANE_SEL)          := up.valid && up(Fetch.WORD_PC)(pcLaneRange) >= laneId
+        lane.up(lane.LANE_SEL)       := up.valid && up(Fetch.WORD_PC)(pcLaneRange) <= laneId
         lane(Decode.INSTRUCTION)     := instructionSlices(laneId)
         lane(Global.PC)              := up(Fetch.WORD_PC)
         lane(Global.PC)(pcLaneRange) := laneId

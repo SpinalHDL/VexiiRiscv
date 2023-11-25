@@ -29,7 +29,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
     val idToLane = mutable.LinkedHashMap[Int, LaneImpl]()
     val link = CtrlLink().setCompositeName(this)
 
-    def lane(laneId : Int) = idToLane.getOrElseUpdate(laneId, new LaneImpl(laneId).setCompositeName(this, "lane" + laneId))
+    def lane(laneId : Int) = idToLane.getOrElseUpdate(laneId, ContextSwapper.outsideCondScope(new LaneImpl(laneId).setCompositeName(this, "lane" + laneId)))
 
     class LaneArea(laneId : Int) extends CtrlLaneMirror(lane(laneId))
     class LaneImpl(laneId: Int) extends Area with CtrlLaneApi {
