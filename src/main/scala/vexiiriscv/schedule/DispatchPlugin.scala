@@ -182,13 +182,15 @@ class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
     }
 
     val inserter = for ((eu, id) <- eus.zipWithIndex; insertNode = eu.ctrl(0).up) yield new Area {
+      import insertNode._
       val oh = B(scheduler.layer.map(l => l.doIt && l.eusOh(id)))
       val mux = candidates.reader(oh, true)
-      insertNode(ExecuteLanePlugin.SEL) := oh.orR
-      insertNode(Global.HART_ID) := mux(_.ctx.hartId)
-      insertNode(Decode.UOP) := mux(_.ctx.microOp)
+      ExecuteLanePlugin.SEL := oh.orR
+      Global.HART_ID := mux(_.ctx.hartId)
+      Decode.UOP := mux(_.ctx.microOp)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
-      insertNode(rdKeys.ENABLE) clearWhen(!insertNode(ExecuteLanePlugin.SEL)) //Allow to avoid having to check the valid down the pipeline
+      rdKeys.ENABLE clearWhen(!ExecuteLanePlugin.SEL) //Allow to avoid having to check the valid down the pipeline
+      Execute.LANE_AGE := OHToUInt(oh)
     }
 
     dispatchCtrl.link.down.ready := True

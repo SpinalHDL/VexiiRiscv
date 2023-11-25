@@ -34,7 +34,7 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
     val flushes = for(id <- flushRange) yield new Area {
       val age = getAge(id, true)
       val c = ctrl(id)
-      val doIt = rp.isFlushedAt(age, c(Global.HART_ID))
+      val doIt = rp.isFlushedAt(age, c(Global.HART_ID), U(0))
       doIt.foreach(v => c.throwWhen(v, usingReady = false))
     }
   }

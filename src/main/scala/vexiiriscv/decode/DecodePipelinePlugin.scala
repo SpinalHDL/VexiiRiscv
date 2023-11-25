@@ -65,7 +65,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
     val flushes = for(ctrlId <- flushRange) yield new Area {
       val age = getAge(ctrlId, true)
       val c = idToCtrl(ctrlId)
-      val doIt = rp.isFlushedAt(age, c.link(Global.HART_ID))
+      val doIt = rp.isFlushedAt(age, c.link(Global.HART_ID), U(0))
       doIt.foreach(v => c.link.throwWhen(v, usingReady = false))
 
       for (laneId <- 0 until Decode.LANES) {

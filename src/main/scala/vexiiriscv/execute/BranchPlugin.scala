@@ -52,7 +52,7 @@ class BranchPlugin(val laneName : String,
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = sp.newPcPort(age)
 //    val trapPort = if XXX sp.newTrapPort(age)
-    val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt-1), withUopId = true)
+    val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
 
     eu.uopLock.release()
     wbp.elaborationLock.release()
@@ -103,6 +103,8 @@ class BranchPlugin(val laneName : String,
       flushPort.valid := doIt
       flushPort.hartId := Global.HART_ID
       flushPort.uopId :=  Decode.UOP_ID + 1
+      flushPort.laneAge := Execute.LANE_AGE
+      flushPort.self := False
     }
 
     val wbCtrl = eu.execute(wbAt)

@@ -197,8 +197,8 @@ class ExecuteLanePlugin(override val laneName : String,
       val c = idToCtrl(ctrlId)
       if(ctrlId != 0) c.up(SEL).setAsReg().init(False)
 
-      val age = getAge(ctrlId, true)
-      val doIt = rp.isFlushedAt(age, c(Global.HART_ID))
+      val age = getAge(ctrlId, false)
+      val doIt = rp.isFlushedAt(age, c(Global.HART_ID), c(Execute.LANE_AGE))
       doIt match {
         case Some(cond) =>
           c.cancel := cond

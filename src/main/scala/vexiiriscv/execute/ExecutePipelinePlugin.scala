@@ -15,6 +15,8 @@ import vexiiriscv.schedule.Ages
 
 import scala.collection.mutable
 
+
+
 class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
   setName("execute")
   val pipelineLock = Lock()
@@ -28,6 +30,7 @@ class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
   def getAge(at: Int, prediction: Boolean): Int = Ages.EU + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
 
   val logic = during build new Area {
+    Execute.LANE_AGE_WIDTH.set(log2Up(host.list[ExecuteLaneService].size))
     pipelineLock.await()
 
     // Interconnect the pipeline ctrls
