@@ -55,9 +55,14 @@ class ExecuteLanePlugin(override val laneName : String,
     microOps(op).rd = Some(RdSpec(data, rfReadableAt + executeAt, bypassesAt.map(_ + executeAt)))
   }
 
-  def setCompletion(op : MicroOp, executeCtrlId : Int): Unit = {
-    microOps(op).completion = Some(executeCtrlId + executeAt)
+  def setCompletion(executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
+    uops.foreach(microOps(_).completion = Some(executeCtrlId + executeAt))
   }
+
+  def setCompletion(executeCtrlId: Int, head : MicroOp, tail : MicroOp*): Unit = {
+    setCompletion(executeCtrlId, head +: tail)
+  }
+
 
   override def getSpec(op: MicroOp): MicroOpSpec = microOps(op)
 

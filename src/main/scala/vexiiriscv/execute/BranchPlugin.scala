@@ -6,7 +6,7 @@ package vexiiriscv.execute
 
 import spinal.core._
 import spinal.lib.misc.pipeline._
-import vexiiriscv.riscv.{IMM, Riscv, Rvi}
+import vexiiriscv.riscv.{IMM, RD, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
@@ -46,10 +46,13 @@ class BranchPlugin(val laneName : String,
     add(Rvi.BLTU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
     add(Rvi.BGEU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
 
+    eu.setCompletion(Math.max(jumpAt, wbAt), Rvi.JAL, Rvi.JALR)
+    eu.setCompletion(jumpAt, Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU)
+
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = sp.newPcPort(age)
 //    val trapPort = if XXX sp.newTrapPort(age)
-    val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt-1))
+    val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt-1), withUopId = true)
 
     eu.uopLock.release()
     wbp.elaborationLock.release()
@@ -98,11 +101,13 @@ class BranchPlugin(val laneName : String,
       pcPort.pc := alu.PC_TRUE
 
       flushPort.valid := doIt
+      flushPort.hartId := Global.HART_ID
+      flushPort.uopId :=  Decode.UOP_ID + 1
     }
 
     val wbCtrl = eu.execute(wbAt)
     val wbLogic = new wbCtrl.Area{
-      wb.valid := SEL
+      wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
       wb.payload := alu.PC_FALSE.asBits
     }
   }

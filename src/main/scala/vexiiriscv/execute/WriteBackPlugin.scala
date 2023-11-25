@@ -53,34 +53,37 @@ class WriteBackPlugin(val laneName : String,
     val specs = portToSpec.values
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
-
-    val writeCtrl = eu.execute(writeAt)
-
     val DATA = Payload(Bits(rf.width bits))
+    for (group <- sorted) {
+      val ctrlId = group.head.ctrlAt
+      for (spec <- group) {
+        for (op <- spec.microOps) {
+          eu.setRdSpec(op, DATA, writeAt + rfp.writeLatency, (ctrlId to writeAt + rfp.writeLatency - 1 + rfp.readLatency).filter(bypassOn))
+        }
+      }
+    }
+    eu.uopLock.release()
+
+    val rfa = rfaKeys.get(RD)
     val stages = for (group <- sorted) yield new Area {
       val ctrlId = group.head.ctrlAt
       val ctrl = eu.execute(ctrlId)
+      import ctrl._
       val hits = B(group.map(_.port.valid))
       val muxed = OHMux.or(hits, group.map(_.port.payload), group == sorted.head && group.size == 1)
       val merged = if(group == sorted.head) muxed else ctrl.up(DATA) | muxed
       ctrl.bypass(DATA) := merged
-      for (spec <- group) {
-        for(op <- spec.microOps) {
-          eu.setRdSpec(op, DATA, writeAt + rfp.writeLatency, (ctrlId to writeAt + rfp.writeLatency-1 + rfp.readLatency).filter(bypassOn))
-        }
-      }
 
       val write = Flow(RegFileWriter(rf))
-      write.valid := ctrl.down.isFiring && hits.orR
-      write.hartId := ctrl(HART_ID)
-      write.uopId := ctrl(UOP_ID)
+      write.valid := down.isFiring && hits.orR && rfa.ENABLE
+      write.hartId := HART_ID
+      write.uopId := UOP_ID
       write.data := muxed
     }
 
-    eu.uopLock.release()
 
+    val writeCtrl = eu.execute(writeAt)
     val write = new writeCtrl.Area{
-      val rfa = rfaKeys.get(RD)
       val port = rfp.newWrite(false)
       port.valid := isValid && rfa.ENABLE
       port.address := HART_ID @@ rfa.PHYS

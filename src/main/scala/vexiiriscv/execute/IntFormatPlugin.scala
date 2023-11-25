@@ -42,7 +42,7 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
   def addMicroOp(port: Flow[Bits], microOp: MicroOp) : Unit = {
     val spec = portToSpec(port)
     spec.microOps += microOp
-    eu.setCompletion(microOp, portToSpec(port).ctrlId)
+    eu.setCompletion(portToSpec(port).ctrlId, microOp)
   }
 
   val logic = during build new Area{

@@ -5,6 +5,7 @@ import spinal.core.fiber.{Lock, Lockable}
 import spinal.lib.Flow
 import spinal.lib.misc.pipeline.CtrlLink
 import vexiiriscv.Global
+import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.JumpCmd
 
 object Ages {
@@ -15,9 +16,10 @@ object Ages {
   val EU = 2000
 }
 
-case class FlushCmd(age : Int/*, subAgeWidth : Int*/) extends Bundle{
+case class FlushCmd(age : Int/*, subAgeWidth : Int*/, withUopId : Boolean) extends Bundle{
 //  val subAge = UInt(subAgeWidth bits)
   val hartId = Global.HART_ID()
+  val uopId = withUopId generate Decode.UOP_ID()
 }
 
 case class TrapCmd(age : Int, pcWidth : Int, tvalWidth : Int, causeWidth : Int) extends Bundle {
@@ -27,7 +29,7 @@ case class TrapCmd(age : Int, pcWidth : Int, tvalWidth : Int, causeWidth : Int) 
 }
 
 trait ScheduleService {
-  def newFlushPort(age: Int): Flow[FlushCmd]
+  def newFlushPort(age: Int, withUopId : Boolean): Flow[FlushCmd]
   def newPcPort(age : Int, aggregationPriority : Int = 0) : Flow[JumpCmd]
   def newTrapPort(age : Int, causeWidth : Int = 4) : Flow[TrapCmd]
   def isFlushedAt(age: Int, tid : UInt): Option[Bool]

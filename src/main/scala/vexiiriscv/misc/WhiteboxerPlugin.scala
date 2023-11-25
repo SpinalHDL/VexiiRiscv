@@ -11,6 +11,7 @@ import vexiiriscv.execute.{CompletionService, ExecuteLaneService, WriteBackPlugi
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.regfile.{RegFileWriterService, RegfileService}
 import vexiiriscv.riscv.IntRegFile
+import vexiiriscv.schedule.ReschedulePlugin
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -70,6 +71,12 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val completions = new Area{
       val ports = host.list[CompletionService].flatMap(cp => cp.getCompletions().map(wrap))
+    }
+
+    val reschedules = new Area{
+      val rp = host[ReschedulePlugin]
+      rp.elaborationLock.await()
+      val flushes = rp.flushPorts.map(wrap)
     }
   }
 }

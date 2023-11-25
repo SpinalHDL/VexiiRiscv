@@ -30,6 +30,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
   val fetchIdWidth = cpu.database(Fetch.ID_WIDTH)
   val decodeIdWidth = cpu.database(Decode.DOP_ID_WIDTH)
   val microOpIdWidth = cpu.database(Decode.UOP_ID_WIDTH)
+  val microOpIdMask = (1 << microOpIdWidth)-1
 
   val disass = withRvls generate rvls.jni.Frontend.newDisassemble(xlen)
   val harts = hartsIds.map(new HartCtx(_)).toArray
@@ -59,7 +60,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
     val decode = Array.fill(1 << decodeIdWidth)(new DecodeCtx())
     val microOp = Array.fill(1 << microOpIdWidth)(new MicroOpCtx())
 
-    var microOpPtr = 0
+    var microOpRetirePtr, microOpAllocPtr = 0
     var lastCommitAt = 0l
 
     //    val microOpIdQueue = mutable.Queue[Int]()
@@ -95,10 +96,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
     var dispatchAt = 0l
     var executeAt = 0l
     var completionAt = 0l
+    var flushAt = 0l
     var retireAt = 0l
     var instruction = 0l
 
-    def done = completionAt != 0
+    def done = retireAt != 0 || flushAt != 0
+    def didCommit = done && flushAt == 0
 
     var integerWriteValid = false
     var integerWriteData = -1l
@@ -161,6 +164,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
       dispatchAt = 0l
       executeAt = 0l
       completionAt = 0l
+      flushAt = 0l
 
       integerWriteValid = false;
       floatWriteValid = false;
@@ -204,13 +208,14 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
       val hart = harts(serialized.hartId.toInt)
       val decodeId = serialized.decodeId.toInt
       val microOpId = serialized.microOpId.toInt
-      val ctx = hart.microOp(decodeId)
+      val ctx = hart.microOp(microOpId)
       val decodeCtx = hart.decode(decodeId)
       ctx.clear()
       ctx.fetchId = decodeCtx.fetchId
       ctx.decodeId = decodeId
       ctx.instruction = serialized.microOp.toLong
       ctx.spawnAt = cycle
+      hart.microOpAllocPtr = microOpId
     }
 
     for (dispatch <- dispatches) if (dispatch.fire.toBoolean) {
@@ -242,7 +247,20 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
       val microOp = hart.microOp(microOpId)
       microOp.completionAt = cycle
       microOp.retireAt = cycle
-      microOp.writeGem5(hart)
+    }
+    
+    for(port <- reschedules.flushes) if(port.valid.toBoolean){
+      val hart = harts(port.hartId.toInt)
+      if(port.withUopId){
+        val uopId = port.uopId.toInt
+        var ptr = uopId
+        val until = (hart.microOpAllocPtr + 1) & microOpIdMask
+        while(ptr != until){
+          val opCtx = hart.microOp(ptr)
+          if(opCtx.flushAt == 0) opCtx.flushAt = cycle
+          ptr = (ptr + 1) & microOpIdMask
+        }
+      }
     }
   }
 
@@ -253,10 +271,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
         simFailure("Vexii didn't commited anything since too long")
       }
 
-      while(hart.microOp(hart.microOpPtr).done){
+      while(hart.microOp(hart.microOpRetirePtr).done){
         import hart._
-        val uop = hart.microOp(hart.microOpPtr)
+        val uop = hart.microOp(hart.microOpRetirePtr)
         val decode = hart.decode(uop.decodeId)
+        uop.writeGem5(hart)
         lastCommitAt = cycle
         if (uop.loadValid) {
           backends.foreach(_.loadCommit(hartId, uop.loadLqId))
@@ -274,9 +293,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, gem5File : Option[File], withRvls : Bool
           if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))
           if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
         }
-        backends.foreach(_.commit(hartId, decode.pc))
-        commitsCallbacks.foreach(_(hartId, decode.pc))
-        hart.microOpPtr += 1
+        if(uop.didCommit) {
+          backends.foreach(_.commit(hartId, decode.pc))
+          commitsCallbacks.foreach(_(hartId, decode.pc))
+        }
+        hart.microOpRetirePtr += 1
       }
     }
   }
