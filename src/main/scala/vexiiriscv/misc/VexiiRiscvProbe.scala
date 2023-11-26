@@ -8,7 +8,7 @@ import spinal.core.sim._
 import spinal.core._
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
-import vexiiriscv.misc.konata.{Comment, Retire, Spawn, Stage}
+import vexiiriscv.misc.konata.{Comment, Flush, Retire, Spawn, Stage}
 
 import java.io.{BufferedWriter, File, FileWriter}
 import scala.collection.mutable
@@ -90,16 +90,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
   class MicroOpCtx() {
     var fetchId = -1
     var decodeId = -1
-    var spawnAt = 0l
-    var dispatchAt = 0l
-    var executeAt = 0l
-    var completionAt = 0l
-    var flushAt = 0l
-    var retireAt = 0l
-    var instruction = 0l
+    var spawnAt = -1l
+    var issueAt = -1l
+    var executeAt = -1l
+    var completionAt = -1l
+    var flushAt = -1l
+    var retireAt = -1l
+    var instruction = -1l
 
-    def done = retireAt != 0 || flushAt != 0
-    def didCommit = done && flushAt == 0
+    def done = retireAt != -1 || flushAt != -1
+    def didCommit = done && flushAt == -1
 
     var integerWriteValid = false
     var integerWriteData = -1l
@@ -139,11 +139,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
       val i = new konata.Instruction()
       i += new Spawn(fetch.spawnAt, hart.hartId)
       i += new Comment(fetch.spawnAt, f"${decode.pc}%x : $instruction")
-      i += new Stage(fetch.spawnAt, "F")
-      i += new Stage(decode.spawnAt, "D")
-      i += new Stage(executeAt, "E")
-      i += new Stage(completionAt, "C")
-      i += new Retire(retireAt+1)
+      if (fetch.spawnAt != -1) i += new Stage(fetch.spawnAt, "F")
+      if (decode.spawnAt != -1) i += new Stage(decode.spawnAt, "D")
+      if (issueAt != -1) i += new Stage(issueAt, "I")
+      if (executeAt != -1) i += new Stage(executeAt, "E")
+      if (completionAt != -1) i += new Stage(completionAt, "C")
+      if (didCommit) {
+        i += new Retire(retireAt)
+      } else {
+        i += new Flush(flushAt)
+      }
       kb.insert(i)
 
 //        f.write(f"O3PipeView:fetch:${fetch.spawnAt}:0x${decode.pc}%08x:0:${opCounter}:$instruction\n")
@@ -157,11 +162,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
     def clear() {
       fetchId = -1
       decodeId = -1
-      spawnAt = 0l
-      dispatchAt = 0l
-      executeAt = 0l
-      completionAt = 0l
-      flushAt = 0l
+      spawnAt = -1l
+      issueAt = -1l
+      executeAt = -1l
+      completionAt = -1l
+      flushAt = -1l
 
       integerWriteValid = false;
       floatWriteValid = false;
@@ -218,7 +223,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
     for (dispatch <- dispatches) if (dispatch.fire.toBoolean) {
       val hart = harts(dispatch.hartId.toInt)
       val ctx = hart.microOp(dispatch.microOpId.toInt)
-      ctx.dispatchAt = cycle
+      ctx.issueAt = cycle
     }
 
     for (execute <- executes) if (execute.fire.toBoolean) {
@@ -243,7 +248,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
       val microOpId = port.microOpId.toInt
       val microOp = hart.microOp(microOpId)
       microOp.completionAt = cycle
-      microOp.retireAt = cycle
+      microOp.retireAt = cycle+1
     }
     
     for(port <- reschedules.flushes) if(port.valid.toBoolean){
@@ -254,7 +259,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
         val until = (hart.microOpAllocPtr + 1) & microOpIdMask
         while(ptr != until){
           val opCtx = hart.microOp(ptr)
-          if(opCtx.flushAt == 0) opCtx.flushAt = cycle
+          if(opCtx.flushAt == -1) opCtx.flushAt = cycle
           ptr = (ptr + 1) & microOpIdMask
         }
       }
@@ -276,8 +281,9 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
 
         hart.konataThread.cycleLock = fetch.spawnAt
         lastCommitAt = cycle
+
+        uop.toKonata(hart)
         if(uop.didCommit) {
-          uop.toKonata(hart)
           if (uop.loadValid) {
             backends.foreach(_.loadCommit(hartId, uop.loadLqId))
           }
