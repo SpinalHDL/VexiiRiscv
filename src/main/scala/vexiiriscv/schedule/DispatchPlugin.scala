@@ -29,7 +29,7 @@ Schedule euristic :
 - If the slot can't be schedule, disable all following ones with same HART_ID
 */
 
-class DispatchPlugin(dispatchAt : Int = 3) extends FiberPlugin{
+class DispatchPlugin(dispatchAt : Int = 2) extends FiberPlugin{
   lazy val dpp = host[DecodePipelinePlugin]
   lazy val dp = host[DecoderService]
   lazy val eupp = host[ExecutePipelinePlugin]
