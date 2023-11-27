@@ -7,6 +7,7 @@ import spinal.lib.misc.Elf
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamMonitor, StreamReadyRandomizer}
 import vexiiriscv._
+import vexiiriscv.fetch.PcService
 import vexiiriscv.misc.VexiiRiscvProbe
 import vexiiriscv.riscv.Riscv
 
@@ -24,10 +25,16 @@ class TestOptions{
   var withRvlsCheck = withRvls
 //  var withKonata = true
   var failAfter, passAfter = Option.empty[Long]
-  val bins = ArrayBuffer[(Long, String)]()
-  val elfs = ArrayBuffer[String]()
+  var startSymbol = Option.empty[String]
+  var startSymbolOffset = 0l
+  val bins = ArrayBuffer[(Long, File)]()
+  val elfs = ArrayBuffer[File]()
 
   if(!withRvls) SpinalWarning("RVLS not detected")
+
+  def addElf(f : File) : this.type = { elfs += f; this }
+  def setFailAfter(time : Long) : this.type = { failAfter = Some(time); this }
+
 
   def addOptions(parser : scopt.OptionParser[Unit]): Unit = {
     import parser._
@@ -37,8 +44,8 @@ class TestOptions{
     opt[Unit]("no-rvls-check") action { (v, c) => withRvlsCheck = false;  }
     opt[Long]("failAfter") action { (v, c) => failAfter = Some(v) }
     opt[Long]("passAfter") action { (v, c) => passAfter = Some(v) }
-    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += (java.lang.Long.parseLong(v(0), 16) -> v(1)) }
-    opt[String]("load-elf") unbounded() action { (v, c) => elfs += v }
+    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0), 16) -> new File(v(1)) }
+    opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
@@ -64,7 +71,7 @@ class TestOptions{
       rvls.spinalSimTime(10000)
     }
 
-    val konataBackend = new konata.Backend(new File(simCompiled.compiledPath, "konata.log"))
+    val konataBackend = new konata.Backend(new File(simCompiled.compiledPath, currentTestName + "/konata.log"))
     delayed(1)(konataBackend.spinalSimFlusher(10 * 10000)) // Delayed to ensure this is registred last
 
     // Collect traces from the CPUs behaviour
@@ -77,7 +84,6 @@ class TestOptions{
     onTrace {
       enableSimWave()
       if (withRvlsCheck) rvls.debug()
-
 
       tracerFile.spinalSimFlusher(10 * 10000)
       tracerFile.spinalSimTime(10000)
@@ -96,16 +102,25 @@ class TestOptions{
     // Load the binaries
     for ((offset, file) <- bins) {
       mem.loadBin(offset - 0x80000000l, file)
-      if (withRvlsCheck) rvls.loadBin(offset, new File(file))
-      tracerFile.loadBin(0, new File(file))
+      if (withRvlsCheck) rvls.loadBin(offset, file)
+      tracerFile.loadBin(0, file)
     }
 
     // load elfs
     for (file <- elfs) {
-      val elf = new Elf(new File(file), xlen)
+      val elf = new Elf(file, xlen)
       elf.load(mem, 0)
       if (withRvlsCheck) rvls.loadElf(0, elf.f)
       tracerFile.loadElf(0, elf.f)
+
+      startSymbol.foreach(symbol => fork{
+        val pc = elf.getSymbolAddress(symbol) + startSymbolOffset
+
+        waitUntil(cd.resetSim.toBoolean == false); sleep(1)
+        println(f"set harts pc to 0x$pc%x")
+        dut.host[PcService].simSetPc(pc)
+        for(hartId <- probe.hartsIds) probe.backends.foreach(_.setPc(hartId, pc))
+      })
 
       if (elf.getELFSymbol("pass") != null && elf.getELFSymbol("fail") != null) {
         val passSymbol = elf.getSymbolAddress("pass")

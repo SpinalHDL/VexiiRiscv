@@ -8,14 +8,17 @@ import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.memory.AddressTranslationService
 
-case class JumpCmd() extends Bundle{
+case class JumpCmd(laneAgeWidth : Int) extends Bundle{
   val pc = PC()
   val hartId = HART_ID()
+  val laneAge = UInt(laneAgeWidth bits)
 }
 
 trait PcService {
-  def createJumpInterface(age : Int, aggregationPriority : Int = 0) : Flow[JumpCmd] //High priority win
+  def createJumpInterface(age: Int, laneAgeWidth : Int, aggregationPriority : Int) : Flow[JumpCmd] //High priority win
   val elaborationLock = Lock()
+  def simSetPc(value : Long) : Unit
+  def forcedSpawn() : Bool
 }
 
 trait InitService{

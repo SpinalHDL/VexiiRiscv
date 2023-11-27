@@ -11,7 +11,6 @@ import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
 import vexiiriscv.riscv.{INSTRUCTION_SIZE, MicroOp, PC_READ, RD, RS1, RS2, RS3, Resource, RfAccess, RfResource, SingleDecoding}
-import vexiiriscv.schedule.Dispatch
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -131,7 +130,7 @@ class DecoderPlugin(var decodeAt : Int = 1) extends FiberPlugin with DecoderServ
           key.assignFromBits(spec.build(Decode.INSTRUCTION, encodings.all).asBits)
         }
       }
-      Dispatch.MASK := True
+
       Decode.UOP := Decode.INSTRUCTION
 
       Decode.UOP_ID := (laneId match {

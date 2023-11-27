@@ -151,12 +151,12 @@ class DispatchPlugin(dispatchAt : Int = 2) extends FiberPlugin{
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
       val c = candidates(slotsCount + lane)
       val sent = RegInit(False) setWhen(c.fire) clearWhen(ctrlLink.up.isMoving)
-      c.ctx.valid := dispatchCtrl.link.isValid && Dispatch.MASK && !sent
+      c.ctx.valid := dispatchCtrl.link.isValid && LANE_SEL && !sent
       c.ctx.compatibility := EU_COMPATIBILITY.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
       c.ctx.microOp := Decode.UOP
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
-      dispatchCtrl.link.haltWhen(Dispatch.MASK && !sent && !c.fire)
+      dispatchCtrl.link.haltWhen(LANE_SEL && !sent && !c.fire)
     }
 
     val scheduler = new Area {

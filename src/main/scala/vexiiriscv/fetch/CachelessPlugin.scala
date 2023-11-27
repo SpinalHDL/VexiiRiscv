@@ -81,10 +81,12 @@ class CachelessPlugin(var wordWidth : Int,
     }
 
     val fork = new forkCtrl.Area{
-      val cmdFork = forkStream()
+      val fresh = (forkAt == 0).option(host[PcPlugin].forcedSpawn())
+      val cmdFork = forkStream(fresh)
       bus.cmd.arbitrationFrom(cmdFork.haltWhen(buffer.full))
       bus.cmd.id := buffer.reserveId
       bus.cmd.address := Fetch.WORD_PC
+      bus.cmd.address(Fetch.SLICE_RANGE) := 0
 
       BUFFER_ID := buffer.reserveId
     }

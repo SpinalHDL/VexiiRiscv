@@ -11,7 +11,7 @@ import vexiiriscv._
 import decode.Decode._
 import Global._
 import vexiiriscv.decode.Decode
-import vexiiriscv.fetch.Fetch
+import vexiiriscv.fetch.{Fetch, PcPlugin}
 import vexiiriscv.schedule.ReschedulePlugin
 
 object BranchPlugin extends AreaObject {
@@ -28,8 +28,10 @@ class BranchPlugin(val laneName : String,
   import BranchPlugin._
   lazy val wbp = host.find[WriteBackPlugin](_.laneName == laneName)
   lazy val sp = host[ReschedulePlugin]
+  lazy val pcp = host[PcPlugin]
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)
+  setupRetain(pcp.elaborationLock)
 
   val logic = during build new Logic{
     import SrcKeys._
@@ -50,7 +52,7 @@ class BranchPlugin(val laneName : String,
     eu.setCompletion(jumpAt, Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU)
 
     val age = eu.getExecuteAge(jumpAt)
-    val pcPort = sp.newPcPort(age)
+    val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
 //    val trapPort = if XXX sp.newTrapPort(age)
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
 
@@ -58,6 +60,7 @@ class BranchPlugin(val laneName : String,
     wbp.elaborationLock.release()
     sp.elaborationLock.release()
     srcp.elaborationLock.release()
+    pcp.elaborationLock.release()
 
     val aluCtrl = eu.execute(aluAt)
     val alu = new aluCtrl.Area {
@@ -99,6 +102,7 @@ class BranchPlugin(val laneName : String,
 
       pcPort.valid := doIt
       pcPort.pc := alu.PC_TRUE
+      pcPort.laneAge := Execute.LANE_AGE
 
       flushPort.valid := doIt
       flushPort.hartId := Global.HART_ID
