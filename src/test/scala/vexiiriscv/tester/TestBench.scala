@@ -29,6 +29,9 @@ class TestOptions{
   var startSymbolOffset = 0l
   val bins = ArrayBuffer[(Long, File)]()
   val elfs = ArrayBuffer[File]()
+  var testName = Option.empty[String]
+
+  def getTestName() = testName.getOrElse("test")
 
   if(!withRvls) SpinalWarning("RVLS not detected")
 
@@ -51,7 +54,7 @@ class TestOptions{
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
       case true => DualSimTracer.withCb(compiled, window = 50000 * 10, seed = 2)(test)
-      case false => compiled.doSimUntilVoid(name = s"test", seed = 2) { dut => disableSimWave(); test(dut, f => if (traceIt) f) }
+      case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => if (traceIt) f) }
     }
   }
 
@@ -65,13 +68,13 @@ class TestOptions{
     val xlen = dut.database(Riscv.XLEN)
 
     // Rvls will check that the CPUs are doing things right
-    val rvls = withRvlsCheck generate new RvlsBackend(new File(simCompiled.compiledPath, currentTestName))
+    val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath))
     if (withRvlsCheck) {
       rvls.spinalSimFlusher(10 * 10000)
       rvls.spinalSimTime(10000)
     }
 
-    val konataBackend = new konata.Backend(new File(simCompiled.compiledPath, currentTestName + "/konata.log"))
+    val konataBackend = new konata.Backend(new File(currentTestPath, "konata.log"))
     delayed(1)(konataBackend.spinalSimFlusher(10 * 10000)) // Delayed to ensure this is registred last
 
     // Collect traces from the CPUs behaviour
@@ -80,7 +83,7 @@ class TestOptions{
     probe.enabled = withProbe
 
     // Things to enable when we want to collect traces
-    val tracerFile = new FileBackend(new File(new File(simCompiled.compiledPath, currentTestName), "tracer.log"))
+    val tracerFile = new FileBackend(new File(currentTestPath, "tracer.log"))
     onTrace {
       enableSimWave()
       if (withRvlsCheck) rvls.debug()
@@ -166,6 +169,7 @@ object TestBench extends App{
 
   val simConfig = SpinalSimConfig()
   simConfig.withFstWave
+  simConfig.withTestFolder
 
   val param = new ParamSimple()
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {

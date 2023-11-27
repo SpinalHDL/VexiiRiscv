@@ -24,13 +24,14 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
 
   //rvi tests
   val f = new File("ext/NaxSoftware/riscv-tests")
-  val riscvTests = f.list()
+  val riscvTests = f.list().sorted
   val rvi = riscvTests.filter(t => t.startsWith(s"rv${xlen}ui-p-") && !t.contains(".")).map(new File(f, _))
   for(elf <- rvi) {
     val t = newTest()
     t.elfs += elf
     t.failAfter = Some(100000)
     t.startSymbol = Some("test_2")
+    t.testName = Some(elf.getName)
     tests += t
   }
 
@@ -42,6 +43,7 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
 object Regression extends App{
   val simConfig = SpinalSimConfig()
   simConfig.withFstWave
+  simConfig.withTestFolder
 
   val param = new ParamSimple()
   val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
