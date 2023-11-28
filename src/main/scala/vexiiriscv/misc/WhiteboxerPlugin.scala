@@ -7,10 +7,10 @@ import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
-import vexiiriscv.execute.{CompletionService, ExecuteLaneService, WriteBackPlugin}
+import vexiiriscv.execute.{AguPlugin, CompletionService, ExecuteLaneService, IntFormatPlugin, LsuCachelessPlugin, SrcStageables, WriteBackPlugin}
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.regfile.{RegFileWriterService, RegfileService}
-import vexiiriscv.riscv.IntRegFile
+import vexiiriscv.riscv.{IntRegFile, Riscv}
 import vexiiriscv.schedule.ReschedulePlugin
 
 import scala.collection.mutable.ArrayBuffer
@@ -77,6 +77,62 @@ class WhiteboxerPlugin extends FiberPlugin{
       val rp = host[ReschedulePlugin]
       rp.elaborationLock.await()
       val flushes = rp.flushPorts.map(wrap)
+    }
+
+    val loadExecute = new Area{
+      val fire = Bool()
+      val hartId = Global.HART_ID()
+      val uopId = Decode.UOP_ID()
+      val size = UInt(2 bits)
+      val address = Global.PHYSICAL_ADDRESS()
+      val data = Bits(Riscv.LSLEN bits)
+
+      SimPublic(fire, hartId, uopId, size, address, data)
+
+      val lcp = host.get[LsuCachelessPlugin] map (p =>new Area{
+        val c = p.logic.wbCtrl
+        fire := c.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD)
+        hartId := c(Global.HART_ID)
+        uopId := c(Decode.UOP_ID)
+        size := c(AguPlugin.SIZE).resized
+        address := c(SrcStageables.ADD_SUB).asUInt
+        data := host.find[IntFormatPlugin](_.laneName == p.laneName).logic.stages.find(_.stage == c).get.wb.payload
+      })
+    }
+
+    val storeCommit = new Area {
+      val fire = Bool()
+      val hartId = Global.HART_ID()
+      val uopId = Decode.UOP_ID()
+      val size = UInt(2 bits)
+      val address = Global.PHYSICAL_ADDRESS()
+      val data = Bits(Riscv.LSLEN bits)
+      SimPublic(fire, hartId, uopId, size, address, data)
+
+      val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
+        val c = p.logic.forkCtrl
+        val bus = p.logic.bus
+        fire := bus.cmd.fire && bus.cmd.write
+        hartId := c(Global.HART_ID)
+        uopId := c(Decode.UOP_ID)
+        size := bus.cmd.size.resized
+        address := bus.cmd.address
+        data := bus.cmd.data
+      })
+    }
+
+    val storeBroadcast = new Area {
+      val fire = Bool()
+      val hartId = Global.HART_ID()
+      val uopId = Decode.UOP_ID()
+      SimPublic(fire, hartId, uopId)
+
+      val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
+        val c = p.logic.joinCtrl
+        fire := c.isFiring && c(AguPlugin.SEL) && !c(AguPlugin.LOAD)
+        hartId := c(Global.HART_ID)
+        uopId := c(Decode.UOP_ID)
+      })
     }
   }
 }

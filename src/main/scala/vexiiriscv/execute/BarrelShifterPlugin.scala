@@ -48,7 +48,7 @@ class BarrelShifterPlugin(val laneName : String,
       add(Rvi.SRLIW).srcs(SRC1.RF, SRC2.I ).decode(LEFT -> False, SIGNED -> False, IS_W -> True, IS_W_RIGHT -> True )
       add(Rvi.SRAIW).srcs(SRC1.RF, SRC2.I ).decode(LEFT -> False, SIGNED -> True , IS_W -> True, IS_W_RIGHT -> True )
       for (op <- List(Rvi.SLLW, Rvi.SRLW, Rvi.SRAW, Rvi.SLLIW, Rvi.SRLIW, Rvi.SRAIW)) {
-        ifp.signExtend(wb, op, 31)
+        ifp.signExtend(wb, op, 32)
       }
     }
 

@@ -137,7 +137,7 @@ class TestOptions{
       }
     }
 
-    val fcp = dut.host.get[fetch.CachelessPlugin].map { p =>
+    val fclp = dut.host.get[fetch.CachelessPlugin].map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
@@ -153,6 +153,42 @@ class TestOptions{
           val cmd = pending.randomPop()
           p.word #= mem.readBytes(cmd.address, p.p.dataWidth / 8)
           p.id #= cmd.id
+          p.error #= false
+        }
+        doIt
+      }
+
+      cmdReady.setFactor(2.0f)
+      rspDriver.setFactor(2.0f)
+    }
+
+    val lsclp = dut.host.get[execute.LsuCachelessPlugin].map { p =>
+      val bus = p.logic.bus
+      val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
+
+      case class Cmd(write : Boolean, address: Long, data : Array[Byte], bytes : Int)
+      val pending = mutable.ArrayBuffer[Cmd]()
+
+      val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>
+        val bytes = 1 << bus.cmd.size.toInt
+        pending += Cmd(p.write.toBoolean, p.address.toLong, p.data.toBytes.take(bytes), bytes)
+      }
+      val rspDriver = FlowDriver(bus.rsp, cd) { p =>
+        val doIt = pending.nonEmpty
+        if (doIt) {
+          val cmd = pending.randomPop()
+          cmd.write match {
+            case true =>{
+              mem.write(cmd.address, cmd.data)
+              p.data.randomize()
+            }
+            case false => {
+              val bytes = new Array[Byte](p.p.dataWidth/8)
+              simRandom.nextBytes(bytes)
+              mem.readBytes(cmd.address, cmd.bytes, bytes, cmd.address.toInt & (p.p.dataWidth/8-1))
+              p.data #= bytes
+            }
+          }
           p.error #= false
         }
         doIt

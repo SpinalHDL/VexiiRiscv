@@ -11,10 +11,13 @@ class RiscvPlugin(var xlen : Int,
                   var hartCount : Int) extends FiberPlugin{
 
   val logic = during build new Area{
-    Riscv.XLEN.set(xlen)
     Riscv.RVC.set(rvc)
     Riscv.RVF.set(false)
     Riscv.RVD.set(false)
+    Riscv.RVA.set(false)
+    Riscv.XLEN.set(xlen)
+    Riscv.FLEN.set(List(Riscv.RVF.get.toInt*32, Riscv.RVD.get.toInt*64).max)
+    Riscv.LSLEN.set(List(Riscv.XLEN.get, Riscv.FLEN.get).max)
     Global.HART_COUNT.set(hartCount)
     Fetch.SLICE_WIDTH.set(if(Riscv.RVC) 16 else 32)
     Fetch.SLICE_BYTES.set(if(Riscv.RVC) 2 else 4)

@@ -2,18 +2,18 @@ package vexiiriscv
 
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
-import vexiiriscv.execute.{BarrelShifterPlugin, BranchPlugin, IntAluPlugin, IntFormatPlugin, SrcPlugin, WriteBackPlugin}
+import vexiiriscv.execute.{AguPlugin, BarrelShifterPlugin, BranchPlugin, IntAluPlugin, IntFormatPlugin, LsuCachelessPlugin, SrcPlugin, WriteBackPlugin}
 import vexiiriscv.misc.WhiteboxerPlugin
 import vexiiriscv.riscv.IntRegFile
 
 import scala.collection.mutable.ArrayBuffer
 
 class ParamSimple(){
-  val xlen = 32
-  val rvc = false
-  val hartCount = 1
-  val withMmu = false
-  val resetVector = 0x80000000l
+  var xlen = 32
+  var rvc = false
+  var hartCount = 1
+  var withMmu = false
+  var resetVector = 0x80000000l
   var decoders = 1
   var lanes = 1
 
@@ -53,6 +53,7 @@ class ParamSimple(){
     plugins += new BarrelShifterPlugin("lane0", formatAt = 1)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin("lane0")
+    plugins += new LsuCachelessPlugin("lane0")
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
     if(lanes >= 2) {

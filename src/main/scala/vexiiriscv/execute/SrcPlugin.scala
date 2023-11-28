@@ -62,6 +62,8 @@ class SrcPlugin(val laneName : String) extends FiberPlugin{
     }
   }
 
+  def specify(microOp: MicroOp, head: SrcKeys, tail : SrcKeys*) : Unit = specify(microOp, head +: tail)
+
   val logic = during build new Area{
     elaborationLock.await()
 

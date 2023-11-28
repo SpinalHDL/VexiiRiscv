@@ -10,7 +10,7 @@ import vexiiriscv.misc.PipelineService
 import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
-import vexiiriscv.riscv.{INSTRUCTION_SIZE, MicroOp, PC_READ, RD, RS1, RS2, RS3, Resource, RfAccess, RfResource, SingleDecoding}
+import vexiiriscv.riscv._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -90,6 +90,8 @@ class DecoderPlugin(var decodeAt : Int = 1) extends FiberPlugin with DecoderServ
           }
           case PC_READ =>
           case INSTRUCTION_SIZE =>
+          case LQ =>
+          case vexiiriscv.riscv.SQ =>
         }
       }
     }

@@ -23,8 +23,10 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
   }
   val tests = ArrayBuffer[TestOptions]()
 
+  val nsf = new File("ext/NaxSoftware")
+
   //rvi tests
-  val riscvTestsFile = new File("ext/NaxSoftware/riscv-tests")
+  val riscvTestsFile = new File(nsf, "riscv-tests")
   val riscvTests = riscvTestsFile.list().sorted
   val rvi = riscvTests.filter(t => t.startsWith(s"rv${xlen}ui-p-") && !t.contains(".")).map(new File(riscvTestsFile, _))
   for(elf <- rvi) {
@@ -36,24 +38,36 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
     tests += t
   }
 
+  {
+    val t = newTest()
+    t.elfs += new File(nsf, "baremetal/dhrystone/build/rv32ima/dhrystone.elf")
+    t.failAfter = Some(10000000)
+    t.testName = Some("dhrystone")
+    tests += t
+  }
+
   implicit val ec = ExecutionContext.global
   val jobs = ArrayBuffer[AsyncJob]()
   for(t <- tests){
     val testPath = new File(compiled.simConfig.getTestPath(t.testName.get))
     val passFile = new File(testPath, "PASS")
     val failFile = new File(testPath, "FAIL")
+    val testName = t.testName.get
     if(!passFile.exists()){
+      val stdoutHost = Console.out
       val job = new AsyncJob(toStdout = false, logsPath = testPath)({
         t.test(compiled)
         FileUtils.deleteQuietly(failFile)
         val bf = new BufferedWriter(new FileWriter(passFile))
         bf.flush()
         bf.close()
+        stdoutHost.println(s"PASS $testName")
       }){
         override def onFail() = {
           val bf = new BufferedWriter(new FileWriter(failFile))
           bf.flush()
           bf.close()
+          stdoutHost.println(s"FAIL $testName")
         }
       }
       jobs += job
@@ -65,10 +79,17 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
 object Regression extends App{
   val simConfig = SpinalSimConfig()
   simConfig.withFstWave
-  simConfig.withTestFolder
   simConfig.setTestPath("$WORKSPACE/$COMPILED_tests/$TEST")
 
   val param = new ParamSimple()
   val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
   val regression = new Regression(compiled)
+  println("*"*80)
+  val fails = regression.jobs.filter(_.failed)
+  if(fails.size == 0){ println("PASS"); System.exit(0) }
+  println(s"FAILED ${fails.size}/${regression.jobs.size}")
+  for(fail <- fails){
+    println("- " + fail.logsFile.getAbsolutePath)
+  }
+  System.exit(regression.jobs.count(_.failed))
 }

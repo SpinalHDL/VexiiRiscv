@@ -64,7 +64,7 @@ class IntAluPlugin(val laneName : String,
       add(Rvi.ADDIW).srcs(Op.ADD   , SRC1.RF, SRC2.I ).decode(ALU_CTRL -> ace.ADD_SUB)
 
       for(op <- List(Rvi.ADDW, Rvi.SUBW, Rvi.ADDIW)){
-        ifp.signExtend(formatBus, op, 31)
+        ifp.signExtend(formatBus, op, 32)
       }
     }
 

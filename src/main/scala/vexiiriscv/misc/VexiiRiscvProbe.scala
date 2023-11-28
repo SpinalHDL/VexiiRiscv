@@ -63,7 +63,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
 
     def add(tracer: TraceBackend): Unit = {
       for (hartId <- hartsIds) {
-        tracer.newCpuMemoryView(hartId, 1, 1) //TODO readIds writeIds
+        tracer.newCpuMemoryView(hartId, 16, 16) //TODO readIds writeIds
         tracer.newCpu(hartId, s"RV${xlen}IMA", "MSU", 32, hartId)
         val pc = pcExtends(0x80000000l)
         tracer.setPc(hartId, pc)
@@ -232,6 +232,42 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
       ctx.executeAt = cycle
     }
 
+    if (loadExecute.fire.toBoolean) {
+      val hartId = loadExecute.hartId.toInt
+      val hart = harts(hartId)
+      val uopId = loadExecute.uopId.toInt
+      val uop = hart.microOp(uopId)
+      val address = loadExecute.address.toLong
+      val bytes = 1 << loadExecute.size.toInt
+      uop.loadValid = true
+      uop.loadData = loadExecute.data.toLong
+      uop.loadLqId = uopId & 0xF
+      backends.foreach(_.loadExecute(hartId, uop.loadLqId, address, bytes, uop.loadData))
+    }
+
+    if (storeCommit.fire.toBoolean) {
+      val hartId = storeCommit.hartId.toInt
+      val uopId = storeCommit.uopId.toInt
+      val hart = harts(hartId)
+      val uop = hart.microOp(uopId)
+      val address = storeCommit.address.toLong
+      val bytes = 1 << storeCommit.size.toInt
+      uop.storeValid = true
+      uop.storeData = storeCommit.data.toLong
+      uop.storeSqId = uopId & 0xF
+      uop.lsuAddress = address
+      uop.lsuLen = bytes
+    }
+
+
+//    if (storeBroadcast.fire.toBoolean) {
+//      val hartId = storeBroadcast.hartId.toInt
+//      val uopId = storeBroadcast.uopId.toInt
+//      //      val hart = harts(hartId)
+//      //      val uop = hart.microOp(uopId)
+//      backends.foreach(_.storeBroadcast(hartId, uopId & 0xF))
+//    }
+
     for (port <- rfWrites.ports) if (port.valid.toBoolean) {
       val hart = harts(port.hartId.toInt)
       val ctx = hart.microOp(port.uopId.toInt)
@@ -250,7 +286,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
       microOp.completionAt = cycle
       microOp.retireAt = cycle+1
     }
-    
+
     for(port <- reschedules.flushes) if(port.valid.toBoolean){
       val hart = harts(port.hartId.toInt)
       if(port.withUopId){
@@ -301,6 +337,9 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
             if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
           }
           backends.foreach(_.commit(hartId, decode.pc))
+          if(uop.storeValid){
+            backends.foreach(_.storeBroadcast(hartId, hart.microOpRetirePtr & 0xF))
+          }
           commitsCallbacks.foreach(_(hartId, decode.pc))
         }
         hart.microOpRetirePtr += 1
