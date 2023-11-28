@@ -38,6 +38,16 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
     tests += t
   }
 
+  val rvm = riscvTests.filter(t => t.startsWith(s"rv${xlen}um-p-") && !t.contains(".")).map(new File(riscvTestsFile, _))
+  for (elf <- rvm) {
+    val t = newTest()
+    t.elfs += elf
+    t.failAfter = Some(100000)
+    t.startSymbol = Some("test_2")
+    t.testName = Some(elf.getName)
+    tests += t
+  }
+
   {
     val t = newTest()
     t.elfs += new File(nsf, "baremetal/dhrystone/build/rv32ima/dhrystone.elf")
