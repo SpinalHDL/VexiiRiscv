@@ -7,10 +7,10 @@ import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
-import vexiiriscv.execute.{AguPlugin, CompletionService, ExecuteLaneService, IntFormatPlugin, LsuCachelessPlugin, SrcStageables, WriteBackPlugin}
+import vexiiriscv.execute.{AguPlugin, CompletionService, CsrAccessPlugin, ExecuteLaneService, IntFormatPlugin, LsuCachelessPlugin, SrcStageables, WriteBackPlugin}
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.regfile.{RegFileWriterService, RegfileService}
-import vexiiriscv.riscv.{IntRegFile, Riscv}
+import vexiiriscv.riscv.{Const, IntRegFile, Riscv}
 import vexiiriscv.schedule.ReschedulePlugin
 
 import scala.collection.mutable.ArrayBuffer
@@ -63,6 +63,27 @@ class WhiteboxerPlugin extends FiberPlugin{
       val fire = wrap(c.isFiring)
       val hartId = wrap(c(Global.HART_ID))
       val microOpId = wrap(c(Decode.UOP_ID))
+    }
+
+    val csr = new Area{
+      val p = host[CsrAccessPlugin].logic
+      val port = Verilator.public(Flow(new Bundle {
+        val hartId = Global.HART_ID()
+        val uopId = Decode.UOP_ID()
+        val address = UInt(12 bits)
+        val write = Bits(Riscv.XLEN bits)
+        val read = Bits(Riscv.XLEN bits)
+        val writeDone = Bool()
+        val readDone = Bool()
+      }))
+      port.valid := p.fsm.regs.fire
+      port.uopId := p.fsm.regs.uopId
+      port.hartId := p.fsm.regs.hartId
+      port.address := U(p.fsm.regs.uop)(Const.csrRange)
+      port.write := p.fsm.regs.onWriteBits
+      port.read := p.fsm.regs.csrValue
+      port.writeDone := p.fsm.regs.write
+      port.readDone := p.fsm.regs.read
     }
 
     val rfWrites = new Area{

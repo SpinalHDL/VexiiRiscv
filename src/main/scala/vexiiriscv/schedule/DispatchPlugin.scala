@@ -1,6 +1,7 @@
 package vexiiriscv.schedule
 
 import spinal.core._
+import spinal.core.fiber.Lock
 import spinal.lib._
 import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline.{CtrlApi, CtrlLaneApi, CtrlLink, NodeApi, Payload}
@@ -10,7 +11,7 @@ import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderServi
 import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin}
 import vexiiriscv.misc.PipelineBuilderPlugin
 import vexiiriscv.regfile.RegfileService
-import vexiiriscv.riscv.{RD, RfRead, RfResource}
+import vexiiriscv.riscv.{MicroOp, RD, RfRead, RfResource}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -33,6 +34,7 @@ class DispatchPlugin(dispatchAt : Int = 2) extends FiberPlugin{
   lazy val dpp = host[DecodePipelinePlugin]
   lazy val dp = host[DecoderService]
   lazy val eupp = host[ExecutePipelinePlugin]
+
   buildBefore(host[PipelineBuilderPlugin].elaborationLock)
   buildBefore(dpp.elaborationLock)
   buildBefore(eupp.pipelineLock)
@@ -42,7 +44,15 @@ class DispatchPlugin(dispatchAt : Int = 2) extends FiberPlugin{
     host.list[ExecuteLaneService].foreach(_.pipelineLock.retain())
   }
 
+  val elaborationLock = Lock()
+
+//  val fenceYoungerOps = mutable.LinkedHashSet[MicroOp]()
+//  val fenceOlderOps = mutable.LinkedHashSet[MicroOp]()
+//  def fenceYounger(op : MicroOp) = fenceYoungerOps += op
+//  def fenceOlder(op : MicroOp) = fenceOlderOps += op
+
   val logic = during build new Area{
+    elaborationLock.await()
     val dispatchCtrl = dpp.ctrl(dispatchAt)
 
     val eus = host.list[ExecuteLaneService].sortBy(_.dispatchPriority).reverse
@@ -83,7 +93,7 @@ class DispatchPlugin(dispatchAt : Int = 2) extends FiberPlugin{
         case _ => false
       })
       val readAt = eu.rfReadAt
-      val readableAt = opWithRd.map(_.rd.get.rfReadableAt).max
+      val readableAt = opWithRd.flatMap(_.rd.map(_.rfReadableAt)).max
       val checkCount = readableAt - 1
       val range = 1 until 1 + checkCount
       eu -> range
@@ -177,7 +187,7 @@ class DispatchPlugin(dispatchAt : Int = 2) extends FiberPlugin{
         val doIt = c.ctx.valid && eusHits.orR && hartFree(id)(c.ctx.hartId) && !oldersHazard
         eusFree(id + 1) := eusFree(id) & (~eusOh).orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(!c.ctx.valid || doIt)
-        c.fire := doIt
+        c.fire := doIt && !eupp.isFreezed()
       }
     }
 

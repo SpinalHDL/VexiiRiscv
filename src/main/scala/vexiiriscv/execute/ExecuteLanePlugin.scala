@@ -2,6 +2,7 @@ package vexiiriscv.execute
 
 import spinal.core._
 import spinal.core.fiber.{Lock, Lockable}
+import spinal.idslplugin.Location
 import spinal.lib._
 import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline._
@@ -48,6 +49,11 @@ class ExecuteLanePlugin(override val laneName : String,
   def setRdSpec(op : MicroOp, data : Payload[Bits], rfReadableAt : Int, bypassesAt : Seq[Int]): Unit = {
     assert(microOps(op).rd.isEmpty)
     microOps(op).rd = Some(RdSpec(data, rfReadableAt + executeAt, bypassesAt.map(_ + executeAt)))
+  }
+
+  def setRdOutOfPip(op: MicroOp): Unit = {
+    assert(microOps(op).rd.isEmpty)
+    microOps(op).rd = None
   }
 
   def setCompletion(executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
@@ -136,12 +142,13 @@ class ExecuteLanePlugin(override val laneName : String,
             case RfResource(spec.rf, RD) => true
             case _ => false
           }
-          if (sameRf) {
-            val rd = opSpec.rd.get
-            for (nodeId <- rd.bypassesAt) {
-              val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
-              bypassSpecs += bypassSpec
-            }
+          if (sameRf) opSpec.rd match {
+            case Some(rd) =>
+              for (nodeId <- rd.bypassesAt) {
+                val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
+                bypassSpecs += bypassSpec
+              }
+            case None =>
           }
         }
 
@@ -172,7 +179,7 @@ class ExecuteLanePlugin(override val laneName : String,
         val port = Flow(CompletionPayload())
         port.valid := c.isFiring && c(ENABLE)
         port.hartId := c(Global.HART_ID)
-        port.microOpId := c(Decode.UOP_ID)
+        port.uopId := c(Decode.UOP_ID)
       }
     }
 
@@ -207,4 +214,7 @@ class ExecuteLanePlugin(override val laneName : String,
 
     eupp.pipelineLock.release()
   }
+
+  def freezeWhen(cond: Bool)(implicit loc: Location) = eupp.freezeWhen(cond)
+  def isFreezed(): Bool = eupp.isFreezed()
 }

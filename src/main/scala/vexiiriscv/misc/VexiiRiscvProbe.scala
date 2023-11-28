@@ -260,13 +260,18 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
     }
 
 
-//    if (storeBroadcast.fire.toBoolean) {
-//      val hartId = storeBroadcast.hartId.toInt
-//      val uopId = storeBroadcast.uopId.toInt
-//      //      val hart = harts(hartId)
-//      //      val uop = hart.microOp(uopId)
-//      backends.foreach(_.storeBroadcast(hartId, uopId & 0xF))
-//    }
+    if (csr.port.fire.toBoolean) {
+      val hartId = csr.port.hartId.toInt
+      val uopId = csr.port.uopId.toInt
+      val hart = harts(hartId)
+      val uop = hart.microOp(uopId)
+      uop.csrValid = true
+      uop.csrAddress = csr.port.address.toInt
+      uop.csrWriteDone = csr.port.writeDone.toBoolean
+      uop.csrReadDone = csr.port.readDone.toBoolean
+      uop.csrWriteData = csr.port.write.toLong
+      uop.csrReadData = csr.port.read.toLong
+    }
 
     for (port <- rfWrites.ports) if (port.valid.toBoolean) {
       val hart = harts(port.hartId.toInt)
@@ -281,7 +286,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
 
     for(port <- completions.ports) if(port.valid.toBoolean){
       val hart = harts(port.hartId.toInt)
-      val microOpId = port.microOpId.toInt
+      val microOpId = port.uopId.toInt
       val microOp = hart.microOp(microOpId)
       microOp.completionAt = cycle
       microOp.retireAt = cycle+1

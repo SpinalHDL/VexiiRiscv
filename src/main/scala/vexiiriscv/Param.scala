@@ -2,8 +2,8 @@ package vexiiriscv
 
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
-import vexiiriscv.execute.{AguPlugin, BarrelShifterPlugin, BranchPlugin, IntAluPlugin, IntFormatPlugin, LsuCachelessPlugin, SrcPlugin, WriteBackPlugin}
-import vexiiriscv.misc.WhiteboxerPlugin
+import vexiiriscv.execute.{AguPlugin, BarrelShifterPlugin, BranchPlugin, CsrAccessPlugin, IntAluPlugin, IntFormatPlugin, LsuCachelessPlugin, SrcPlugin, WriteBackPlugin}
+import vexiiriscv.misc.{PrivilegedPlugin, WhiteboxerPlugin}
 import vexiiriscv.riscv.IntRegFile
 
 import scala.collection.mutable.ArrayBuffer
@@ -46,6 +46,7 @@ class ParamSimple(){
     )
 
     plugins += new execute.ExecutePipelinePlugin()
+    val intRegFileRelaxedPort = "intShared" //Used by out of pip units to write stuff into the pipeline, //TODO ensure some sort of fairness between no ready and with ready
 
     plugins += new execute.ExecuteLanePlugin("lane0", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
     plugins += new SrcPlugin("lane0")
@@ -54,7 +55,9 @@ class ParamSimple(){
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin("lane0")
     plugins += new LsuCachelessPlugin("lane0")
-    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+    plugins += new CsrAccessPlugin("lane0", writeBackKey = intRegFileRelaxedPort)
+    plugins += new PrivilegedPlugin()
+    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = if(lanes == 1) intRegFileRelaxedPort else null)
 
     if(lanes >= 2) {
       plugins += new execute.ExecuteLanePlugin("lane1", priority = 1, rfReadAt = 0, decodeAt = 1, executeAt = 2)
@@ -63,8 +66,10 @@ class ParamSimple(){
       plugins += new BarrelShifterPlugin("lane1", formatAt = 1)
       plugins += new IntFormatPlugin("lane1")
       plugins += new BranchPlugin("lane1")
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = intRegFileRelaxedPort)
     }
+
+
 
 
     plugins += new WhiteboxerPlugin()

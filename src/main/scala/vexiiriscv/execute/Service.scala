@@ -2,6 +2,7 @@ package vexiiriscv.execute
 
 import spinal.core._
 import spinal.core.fiber.{Lock, Lockable}
+import spinal.idslplugin.Location
 import spinal.lib._
 import spinal.lib.logic.Masked
 import spinal.lib.misc.pipeline._
@@ -37,11 +38,14 @@ trait ExecuteLaneService {
   def getMicroOpSpecs(): Iterable[MicroOpSpec]
   def dispatchPriority : Int
   def getSpec(op : MicroOp) : MicroOpSpec
+
+  def freezeWhen(cond: Bool)(implicit loc : Location)
+  def isFreezed(): Bool
 }
 
 case class CompletionPayload() extends Bundle{
   val hartId = Global.HART_ID()
-  val microOpId = Decode.UOP_ID()
+  val uopId = Decode.UOP_ID()
 }
 
 //case class RetirePayload() extends Bundle{

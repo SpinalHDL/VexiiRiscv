@@ -16,6 +16,7 @@ import scala.collection.mutable.ArrayBuffer
 class WriteBackPlugin(val laneName : String,
                       val rf : RegfileSpec,
                       var writeAt : Int,
+                      var writeBackKey : Any = null,
                       var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin with RegFileWriterService{
   withPrefix(laneName + "_" + rf.getName())
 
@@ -47,6 +48,8 @@ class WriteBackPlugin(val laneName : String,
     addMicroOp(port, head +: tail)
   }
 
+  val SEL = Payload(Bool())
+
   val logic = during build new Area {
     elaborationLock.await()
 
@@ -54,11 +57,13 @@ class WriteBackPlugin(val laneName : String,
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
     val DATA = Payload(Bits(rf.width bits))
+    eu.setDecodingDefault(SEL, False)
     for (group <- sorted) {
       val ctrlId = group.head.ctrlAt
       for (spec <- group) {
         for (op <- spec.microOps) {
           eu.setRdSpec(op, DATA, writeAt + rfp.writeLatency, (ctrlId to writeAt + rfp.writeLatency - 1 + rfp.readLatency).filter(bypassOn))
+          eu.addDecoding(op, SEL -> True)
         }
       }
     }
@@ -84,8 +89,8 @@ class WriteBackPlugin(val laneName : String,
 
     val writeCtrl = eu.execute(writeAt)
     val write = new writeCtrl.Area{
-      val port = rfp.newWrite(false)
-      port.valid := isValid && rfa.ENABLE
+      val port = rfp.newWrite(false, sharingKey = writeBackKey)
+      port.valid := isValid && rfa.ENABLE && SEL
       port.address := HART_ID @@ rfa.PHYS
       port.data := DATA
       port.hartId := HART_ID

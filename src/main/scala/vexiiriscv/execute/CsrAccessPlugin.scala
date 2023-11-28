@@ -1,0 +1,403 @@
+package vexiiriscv.execute
+
+import spinal.core._
+import spinal.lib._
+import spinal.lib.fsm.{State, StateMachine}
+import spinal.lib.misc.plugin.FiberPlugin
+import spinal.lib.misc.pipeline._
+import vexiiriscv.Global
+import vexiiriscv.decode.Decode
+import vexiiriscv.decode.Decode.{UOP, rfaKeys}
+import vexiiriscv.regfile.RegfileService
+import vexiiriscv.riscv.{Const, IMM, IntRegFile, RD, RS1, Rvi}
+
+import scala.collection.mutable.ArrayBuffer
+import vexiiriscv.riscv.Riscv._
+import vexiiriscv.schedule.DispatchPlugin
+
+object CsrFsm{
+  val CSR_VALUE = Payload(Bits(XLEN bits))
+}
+
+class CsrAccessPlugin(laneName : String,
+                      writeBackKey : Any,
+                      integrated : Boolean = true,
+                      injectAt : Int = 0) extends FiberPlugin with CsrService with CompletionService {
+  lazy val elp = host.find[ExecuteLanePlugin](_.laneName == laneName)
+  lazy val irf = host.find[RegfileService](_.rfSpec == IntRegFile)
+  lazy val iwb = host.find[IntFormatPlugin](_.laneName == laneName)
+  lazy val dp = host[DispatchPlugin]
+  setupRetain(dp.elaborationLock)
+  setupRetain(iwb.elaborationLock)
+  setupRetain(elp.uopLock)
+  buildBefore(elp.pipelineLock)
+  buildBefore(irf.elaborationLock)
+
+
+  override def getCompletions(): Seq[Flow[CompletionPayload]] = if(!integrated) Seq(logic.fsm.completion) else Nil
+
+  val SEL = Payload(Bool())
+  val CSR_IMM = Payload(Bool())
+  val CSR_MASK = Payload(Bool())
+  val CSR_CLEAR = Payload(Bool())
+  val CSR_WRITE = Payload(Bool())
+  val CSR_READ = Payload(Bool())
+  val CSR_ADDRESS = Payload(UInt(12 bits))
+
+  import CsrFsm._
+
+  override def onDecodeTrap(): Unit = apiIo.onDecodeTrap := True
+  override def onDecodeUntrap(): Unit = apiIo.onDecodeTrap := False
+  override def onDecodeFlushPipeline(): Unit = ???
+  override def onDecodeRead: Bool = apiIo.onDecodeRead
+  override def onDecodeWrite: Bool = apiIo.onDecodeWrite
+  override def onDecodeHartId: UInt = apiIo.onDecodeHartId
+  override def onDecodeAddress: UInt = apiIo.onDecodeAddress
+
+  override def onReadAddress: UInt = apiIo.onReadAddress
+  override def onReadHalt(): Unit = apiIo.onReadHalt := True
+
+  override def onReadToWriteBits: Bits = ???
+
+  override def onWriteHalt(): Unit = apiIo.onWriteHalt := True
+  override def onWriteBits: Bits = apiIo.onWriteBits
+  override def onWriteAddress: UInt = apiIo.onWriteAddress
+  override def onWriteFlushPipeline(): Unit = ???
+
+  override def getCsrRam(): CsrRamService = ???
+
+  override def onReadMovingOff: Bool = apiIo.onReadMovingOff
+  override def onWriteMovingOff: Bool = apiIo.onWriteMovingOff
+
+  val apiIo = during build new Area{
+    val onDecodeTrap = False
+//    val onDecodeFlushPipeline(): Unit
+    val onDecodeRead = Bool()
+    val onDecodeWrite = Bool()
+    val onDecodeHartId = Global.HART_ID()
+    val onDecodeAddress = CSR_ADDRESS()
+    val onReadAddress = CSR_ADDRESS()
+    val onReadHalt = False
+    val onReadToWriteBits = CSR_VALUE()
+    val onWriteHalt = False
+    val onWriteBits = CSR_VALUE()
+    val onWriteAddress = CSR_ADDRESS()
+//    val onWriteFlushPipeline(): Unit
+//    val getCsrRam(): CsrRamService
+    val onReadMovingOff = Bool()
+    val onWriteMovingOff = Bool()
+  }
+
+  val logic = during build new Area {
+    elp.setDecodingDefault(SEL, False)
+
+    val add = new ExecuteUnitElementSimple.Api(elp, null, SEL).add(_)
+    add(Rvi.CSRRW).decode(CSR_IMM -> False, CSR_MASK -> False)
+    add(Rvi.CSRRS).decode(CSR_IMM -> False, CSR_MASK -> True, CSR_CLEAR -> False)
+    add(Rvi.CSRRC).decode(CSR_IMM -> False, CSR_MASK -> True, CSR_CLEAR -> True)
+    add(Rvi.CSRRWI).decode(CSR_IMM -> True, CSR_MASK -> False)
+    add(Rvi.CSRRSI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> False)
+    add(Rvi.CSRRCI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> True)
+
+    val wbWi = integrated generate iwb.access(injectAt)
+
+    for (op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI)) {
+      if(!integrated) elp.setRdOutOfPip(op)
+      if(integrated) iwb.addMicroOp(wbWi, op)
+//      dp.fenceYounger(op)
+//      dp.fenceOlder(op)
+    }
+
+    iwb.elaborationLock.release()
+    elp.uopLock.release()
+    dp.elaborationLock.release()
+
+    csrLock.await()
+
+    val wbNi = !integrated generate irf.newWrite(withReady = true, sharingKey = writeBackKey)
+
+
+    def filterToName(filter: Any) = filter match {
+      case f: Int => f.toString
+      case f: Nameable => f.getName()
+    }
+
+    val injectCtrl = elp.execute(injectAt)
+    val grouped = spec.groupByLinked(_.csrFilter)
+
+    val fsm = new StateMachine{
+      val IDLE = makeInstantEntry()
+      val READ, WRITE, DONE = new State()
+      import injectCtrl._
+      assert(!(up(LANE_SEL) && SEL && hasCancelRequest))
+
+      val rd = rfaKeys.get(RD)
+
+      //TODO this is a bit fat
+      val regs = new Area {
+        def doReg[T <: Data](that : HardType[T]) : T = if(integrated) that() else Reg(that)
+        val sels = grouped.map(e => e._1 -> Reg(Bool()).setName("REG_CSR_" + filterToName(e._1)))
+        val read, write = doReg(Bool())
+        val rs1 = doReg(CSR_VALUE)
+        val aluInput, csrValue, onWriteBits = Reg(CSR_VALUE) //onWriteBits is only for whiteboxing
+        val hartId = doReg(Global.HART_ID)
+        val uopId = doReg(Decode.UOP_ID)
+        val uop = doReg(Decode.UOP)
+        val doImm, doMask, doClear = doReg(Bool())
+        val rdPhys = doReg(rd.PHYS)
+        val rdEnable = doReg(Bool())
+        val fire = False
+      }
+
+      val inject = new injectCtrl.Area{
+        val imm = IMM(UOP)
+        val immZero = imm.z === 0
+        val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
+        val csrWrite = !(CSR_MASK && srcZero)
+        val csrRead = !(!CSR_MASK && !rd.ENABLE)
+        val sels = grouped.map(e => e._1 -> Bool().setName("COMB_CSR_" + filterToName(e._1)))
+        for ((filter, sel) <- sels) sel := (filter match {
+          case filter: Int => UOP(Const.csrRange) === filter
+          case filter: CsrListFilter => filter.mapping.map(UOP(Const.csrRange) === _).orR
+        })
+        val implemented = sels.values.orR
+
+        val onDecodeDo = Bool()
+        val spawned = RegInit(False) setWhen(onDecodeDo) clearWhen(isMoving)
+        onDecodeDo := isValid && !spawned && SEL && isActive(IDLE)
+        val priorities = spec.collect { case e: CsrOnDecode => e.priority }.distinct.sorted
+        for (priority <- priorities) {
+          for ((csrFilter, elements) <- grouped) {
+            val onDecodes = elements.collect { case e: CsrOnDecode if e.priority == priority => e }
+            if (onDecodes.nonEmpty) when(onDecodeDo && sels(csrFilter)) {
+              onDecodes.foreach(_.body())
+            }
+          }
+        }
+
+
+        val trap = !implemented || apiIo.onDecodeTrap
+
+        def connectRegs(): Unit = {
+          regs.hartId := Global.HART_ID
+          regs.uopId := Decode.UOP_ID
+          regs.write := SEL && !trap && csrWrite
+          regs.read := SEL && !trap && csrRead
+          regs.rs1 := elp(IntRegFile, RS1)
+          regs.uop := UOP
+          regs.doImm := CSR_IMM
+          regs.doMask := CSR_MASK
+          regs.doClear := CSR_CLEAR
+          regs.rdEnable := rd.ENABLE
+          regs.rdPhys := rd.PHYS
+        }
+
+
+        val iLogic = integrated generate new Area{
+          connectRegs()
+          val freeze = isValid && SEL && !isActive(DONE)
+          elp.freezeWhen(freeze)
+        }
+        val niLogic = !integrated generate new Area{
+          when(isActive(IDLE)) {
+            connectRegs()
+          }
+        }
+
+
+        //TODO handle trap
+        IDLE whenIsActive {
+//          regs.trap := trap
+//          regs.flushPipeline := setup.onDecodeFlushPipeline
+
+          (regs.sels.values, sels.values).zipped.foreach(_ := _)
+//
+//          if (useRam) {
+//            ramReadPort.get //Ensure the ram port is generated
+//            regs.ramSel := False
+//            switch(MICRO_OP(Const.csrRange)) {
+//              for (e <- spec.collect { case x: CsrRamSpec => x }) e.csrFilter match {
+//                case filter: CsrListFilter => for ((csrId, offset) <- filter.mapping.zipWithIndex) {
+//                  is(csrId) {
+//                    regs.ramSel := True
+//                    regs.ramAddress := e.alloc.at + offset
+//                  }
+//                }
+//                case csrId: Int => {
+//                  is(csrId) {
+//                    regs.ramSel := True
+//                    regs.ramAddress := e.alloc.at
+//                  }
+//                }
+//              }
+//            }
+//          }
+
+          when(onDecodeDo) {
+            goto(READ)
+          }
+        }
+      }
+
+      val readLogic = new Area {
+        apiIo.onReadAddress := U(regs.uop(Const.csrRange))
+        val onReadsDo = False
+        val onReadsFireDo = False
+
+        apiIo.onReadMovingOff := !apiIo.onReadHalt //TODO || eu.getExecute(0).isFlushed
+
+        val groupedLogic = for ((csrFilter, elements) <- grouped) yield new Area {
+          setPartialName(filterToName(csrFilter))
+
+          val onReads = elements.collect { case e: CsrOnRead => e }
+          val onReadsData = elements.collect { case e: CsrOnReadData => e }
+          val onReadsAlways = onReads.filter(!_.onlyOnFire)
+          val onReadsFire = onReads.filter(_.onlyOnFire)
+
+          if (onReadsAlways.nonEmpty) when(onReadsDo && regs.sels(csrFilter)) {
+            onReadsAlways.foreach(_.body())
+          }
+          if (onReadsFire.nonEmpty) when(onReadsFireDo && regs.sels(csrFilter)) {
+            onReadsFire.foreach(_.body())
+          }
+
+          val read = onReadsData.nonEmpty generate new Area {
+            val bitCount = onReadsData.map(e => widthOf(e.value)).sum
+            assert(bitCount <= XLEN.get)
+
+            val value = if (bitCount != XLEN.get) B(0, XLEN bits) else Bits(XLEN bits)
+            onReadsData.foreach(e => value.assignFromBits(e.value.asBits, e.bitOffset, widthOf(e.value) bits))
+            val masked = value.andMask(regs.sels(csrFilter))
+          }
+        }
+
+        val csrValue = CSR_VALUE()
+        if (groupedLogic.exists(_.onReadsData.nonEmpty)) {
+          csrValue := groupedLogic.filter(_.onReadsData.nonEmpty).map(_.read.masked).toList.reduceBalancedTree(_ | _)
+        } else {
+          csrValue := 0
+        }
+
+        //    val ramRead = useRamRead generate new Area {
+        //      ramReadPort.valid := onReadsDo && regs.ramSel
+        //      ramReadPort.address := regs.ramAddress
+        //      when(regs.ramSel) {
+        //        csrValue := ramReadPort.data
+        //      }
+        //      setup.onReadHalt setWhen(ramReadPort.valid && !ramReadPort.ready)
+        //    }
+
+        apiIo.onReadToWriteBits := csrValue
+        for ((csrFilter, elements) <- grouped) {
+          val onReadToWrite = elements.collect { case e: CsrOnReadToWrite => e }
+          if (onReadToWrite.nonEmpty) when(onReadsDo && regs.sels(csrFilter)) {
+            onReadToWrite.foreach(_.body())
+          }
+        }
+
+        READ.whenIsActive {
+          onReadsDo := regs.read
+          regs.aluInput := apiIo.onReadToWriteBits
+          regs.csrValue := csrValue
+          when(!apiIo.onReadHalt) {
+            onReadsFireDo := regs.read
+            goto(WRITE)
+          }
+        }
+      }
+
+
+      val writeLogic = new Area {
+        val imm = IMM(regs.uop)
+        apiIo.onWriteMovingOff := !apiIo.onWriteHalt //TODO || eu.getExecute(0).isFlushed
+
+        val alu = new Area {
+          val mask = regs.doImm ? imm.z.resized | regs.rs1
+          val masked = regs.doClear ? (regs.aluInput & ~mask) otherwise (regs.aluInput | mask)
+          val result = regs.doMask ? masked otherwise mask
+        }
+
+        regs.onWriteBits := alu.result
+        apiIo.onWriteBits := alu.result
+        apiIo.onWriteAddress := U(regs.uop(Const.csrRange))
+
+        val onWritesDo = False
+        val onWritesFireDo = False
+
+        WRITE.whenIsActive {
+//          regs.flushPipeline setWhen (io.onWriteFlushPipeline)
+          onWritesDo := regs.write
+          when(!apiIo.onWriteHalt) {
+            onWritesFireDo := regs.write
+            goto(DONE)
+          }
+        }
+
+
+        val groupedLogic = for ((csrFilter, elements) <- grouped) yield new Area {
+          setPartialName(filterToName(csrFilter))
+
+          val cancels = elements.collect { case e: CsrWriteCancel => e }.toList
+          val onWrites = elements.collect { case e: CsrOnWrite => e }
+          val onWritesAlways = onWrites.filter(!_.onlyOnFire)
+          val onWritesFire = onWrites.filter(_.onlyOnFire)
+
+          def doIt() {
+            if (onWritesAlways.nonEmpty) when(onWritesDo && regs.sels(csrFilter)) {
+              onWritesAlways.foreach(_.body())
+            }
+            if (onWritesFire.nonEmpty) when(onWritesFireDo && regs.sels(csrFilter)) {
+              onWritesFire.foreach(_.body())
+            }
+          }
+
+          cancels match {
+            case Nil => doIt()
+            case l => when(cancels.map(_.cond).orR === False) {
+              doIt()
+            }
+          }
+        }
+
+        //    val ramWrite = useRamRead generate new Area {
+        //      val fired = RegInit(False) setWhen (ramWritePort.fire) clearWhen (setup.onWriteMovingOff)
+        //      ramWritePort.valid := onWritesDo && regs.ramSel && !fired
+        //      ramWritePort.address := regs.ramAddress
+        //      ramWritePort.data := setup.onWriteBits
+        //      setup.onWriteHalt setWhen (ramWritePort.valid && !ramWritePort.ready)
+        //    }
+      }
+
+      val completion = Flow(CompletionPayload())
+      completion.valid := False
+      completion.uopId := regs.uopId
+      completion.hartId := regs.hartId
+
+      integrated match {
+        case true => {
+          wbWi.valid := SEL
+          wbWi.payload := regs.csrValue
+        }
+        case false =>{
+          wbNi.valid := False
+          wbNi.data := regs.csrValue
+          wbNi.uopId := regs.uopId
+          wbNi.hartId := regs.hartId
+          wbNi.address := regs.rdPhys
+        }
+      }
+
+
+      DONE.whenIsActive {
+        regs.fire := True
+        completion.valid := True
+        when(regs.rdEnable){
+          if(!integrated) wbNi.valid := True
+        }
+        when(isFiring) {
+          goto(IDLE)
+        }
+      }
+    }
+  }
+}
