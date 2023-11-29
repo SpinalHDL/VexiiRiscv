@@ -114,9 +114,10 @@ class LsuCachelessPlugin(var laneName : String,
       val tpk =  onAddress.translationPort.keys
       val RS2 = elp(IntRegFile, riscv.RS2)
       assert(bus.cmd.ready) // For now
-      bus.cmd.valid := isValid && SEL && !hasCancelRequest
+      val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(isReady)
+      bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest //TODO may add that cancel specification to the elp, likely forkAt+1
       bus.cmd.write := ! LOAD
-      bus.cmd.address := tpk.TRANSLATED //TODO Overflow ?
+      bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>
         val w = (1 << size) * 8
         size -> RS2(0, w bits).#*(Riscv.LSLEN / w)
@@ -127,14 +128,15 @@ class LsuCachelessPlugin(var laneName : String,
       bus.cmd.io := tpk.IO
       bus.cmd.hartId := Global.HART_ID
       assert(tpk.REDO === False)
+
+      elp.freezeWhen(bus.cmd.isStall)
     }
 
     val onJoin = new joinCtrl.Area{
-      when(isValid && SEL){
-        assert(!(LOAD && !bus.rsp.valid)) //For now
-      }
-
-      val READ_DATA = insert(bus.rsp.data)
+      val buffer = bus.rsp.toStream.queueLowLatency(joinAt-forkAt).combStage
+      val READ_DATA = insert(buffer.data)
+      elp.freezeWhen(isValid && SEL && !buffer.valid)
+      buffer.ready := isFiring && SEL
     }
 
     val onWb = new wbCtrl.Area{
