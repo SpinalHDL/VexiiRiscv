@@ -67,7 +67,7 @@ class DivPlugin(val laneName : String,
       div.io.cmd.valid := isValid && SEL && !cmdSent
       div.io.cmd.a := RS1_UNSIGNED.resized
       div.io.cmd.b := RS2_UNSIGNED.resized
-      div.io.flush := isMoving
+      div.io.flush := div.io.rsp.valid && isMoving
 
       div.io.rsp.ready := False
 

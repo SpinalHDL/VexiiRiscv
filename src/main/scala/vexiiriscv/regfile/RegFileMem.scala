@@ -30,6 +30,7 @@ class RegFileMem(rfpp : RegFilePortParam,
   val ram = Mem.fill((1 << addressWidth))(Bits(dataWidth bits))
   Verilator.public(ram)
 
+  io.initDone := True
   val writes = for ((w, i) <- io.writes.zipWithIndex) yield new Area {
     //    ram.write(w.address, w.data, w.valid)
     val port = ram.writePort()
@@ -37,7 +38,6 @@ class RegFileMem(rfpp : RegFilePortParam,
     port.address := w.address
     port.data := w.data
 
-    io.initDone := True
     if (i == preferedWritePortForInit) {
       if (headZero) {
         val counter = Reg(UInt(addressWidth + 1 bits)) init (0)

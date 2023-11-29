@@ -1,17 +1,15 @@
-package vexiiriscv.misc
+package vexiiriscv.test
 
-import org.apache.commons.io.FileUtils
 import rvls.spinal.{TraceBackend, TraceIo}
-import vexiiriscv._
-import vexiiriscv.riscv.{FloatRegFile, IntRegFile, Riscv}
-import spinal.core.sim._
 import spinal.core._
+import spinal.core.sim._
+import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.LsuCachelessPlugin
 import vexiiriscv.fetch.Fetch
-import vexiiriscv.misc.konata.{Comment, Flush, Retire, Spawn, Stage}
+import vexiiriscv.riscv.{IntRegFile, Riscv}
+import vexiiriscv.test.konata.{Comment, Flush, Retire, Spawn, Stage}
 
-import java.io.{BufferedWriter, File, FileWriter}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
@@ -168,6 +166,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
       executeAt = -1l
       completionAt = -1l
       flushAt = -1l
+      retireAt = -1l
 
       integerWriteValid = false;
       floatWriteValid = false;
@@ -196,9 +195,9 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
     var hartId = 0
   }
 
-  import wbp._
-
   def checkPipelines(): Unit = {
+    import wbp._
+
     if (fetch.fire.toBoolean) {
       val hart = harts(fetch.hartId.toInt)
       val fetchId = fetch.fetchId.toInt
@@ -295,7 +294,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
 
 
     for(bus <- lsuClpb) {
-
       if(bus.cmd.valid.toBoolean && bus.cmd.ready.toBoolean){
         val trace = new ProbeTraceIo
         trace.sizel2 = bus.cmd.size.toInt
@@ -385,7 +383,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
           }
           commitsCallbacks.foreach(_(hartId, decode.pc))
         }
-        hart.microOpRetirePtr += 1
+        uop.clear()
+        hart.microOpRetirePtr = (hart.microOpRetirePtr + 1) % hart.microOp.size
       }
     }
   }

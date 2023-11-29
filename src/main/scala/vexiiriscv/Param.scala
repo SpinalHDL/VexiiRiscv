@@ -4,8 +4,9 @@ import spinal.core._
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
 import vexiiriscv.execute.{AguPlugin, BarrelShifterPlugin, BranchPlugin, CsrAccessPlugin, DivPlugin, IntAluPlugin, IntFormatPlugin, LsuCachelessPlugin, MulPlugin, RsUnsignedPlugin, SrcPlugin, WriteBackPlugin}
-import vexiiriscv.misc.{PrivilegedConfig, PrivilegedPlugin, WhiteboxerPlugin}
+import vexiiriscv.misc.{PrivilegedConfig, PrivilegedPlugin}
 import vexiiriscv.riscv.IntRegFile
+import vexiiriscv.test.WhiteboxerPlugin
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -15,8 +16,8 @@ class ParamSimple(){
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
-  var decoders = 1
-  var lanes = 1
+  var decoders = 2
+  var lanes = 2
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
 

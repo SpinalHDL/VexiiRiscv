@@ -1,4 +1,4 @@
-package vexiiriscv.misc.konata
+package vexiiriscv.test.konata
 
 import org.apache.commons.io.FileUtils
 

@@ -1,19 +1,17 @@
-package vexiiriscv.misc
+package vexiiriscv.test
 
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
-import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
-import vexiiriscv.execute.{AguPlugin, CompletionService, CsrAccessPlugin, ExecuteLaneService, IntFormatPlugin, LsuCachelessPlugin, SrcStageables, WriteBackPlugin}
+import vexiiriscv.execute._
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
-import vexiiriscv.regfile.{RegFileWriterService, RegfileService}
-import vexiiriscv.riscv.{Const, IntRegFile, Riscv}
+import vexiiriscv.misc.PipelineBuilderPlugin
+import vexiiriscv.regfile.RegFileWriterService
+import vexiiriscv.riscv.{Const, Riscv}
 import vexiiriscv.schedule.ReschedulePlugin
-
-import scala.collection.mutable.ArrayBuffer
 
 class WhiteboxerPlugin extends FiberPlugin{
   buildBefore(host[PipelineBuilderPlugin].elaborationLock)
@@ -112,7 +110,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p =>new Area{
         val c = p.logic.wbCtrl
-        fire := c.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD)
+        fire := c.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(p.logic.onAddress.translationPort.keys.IO)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized

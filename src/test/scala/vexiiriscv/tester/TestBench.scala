@@ -8,13 +8,13 @@ import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamMonitor, StreamReadyRandomizer}
 import vexiiriscv._
 import vexiiriscv.fetch.PcService
-import vexiiriscv.misc.VexiiRiscvProbe
 import vexiiriscv.riscv.Riscv
 
 import java.io.File
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-import vexiiriscv.misc.konata
+import vexiiriscv.test.konata.Backend
+import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 
 
 class TestOptions{
@@ -74,7 +74,7 @@ class TestOptions{
       rvls.spinalSimTime(10000)
     }
 
-    val konataBackend = new konata.Backend(new File(currentTestPath, "konata.log"))
+    val konataBackend = new Backend(new File(currentTestPath, "konata.log"))
     delayed(1)(konataBackend.spinalSimFlusher(10 * 10000)) // Delayed to ensure this is registred last
 
     // Collect traces from the CPUs behaviour
@@ -137,6 +137,10 @@ class TestOptions{
       }
     }
 
+    val peripheral = new PeripheralEmulator(0x10000000, null, null){
+      override def getClintTime(): Long = probe.cycle
+    }
+
     val fclp = dut.host.get[fetch.CachelessPlugin].map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
@@ -166,32 +170,42 @@ class TestOptions{
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
-      case class Cmd(write : Boolean, address: Long, data : Array[Byte], bytes : Int)
-      val pending = mutable.Queue[Cmd]()
+      case class Access(write : Boolean, address: Long, data : Array[Byte], bytes : Int, io : Boolean)
+      val pending = mutable.Queue[Access]()
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>
         val bytes = 1 << bus.cmd.size.toInt
         val address = p.address.toLong
         val offset = address.toInt & (bytes-1)
-        pending.enqueue(Cmd(p.write.toBoolean, address, p.data.toBytes.drop(offset).take(bytes), bytes))
+        pending.enqueue(Access(p.write.toBoolean, address, p.data.toBytes.drop(offset).take(bytes), bytes, p.io.toBoolean))
       }
       val rspDriver = FlowDriver(bus.rsp, cd) { p =>
         val doIt = pending.nonEmpty
         if (doIt) {
           val cmd = pending.dequeue()
-          cmd.write match {
-            case true =>{
-              mem.write(cmd.address, cmd.data)
-              p.data.randomize()
-            }
-            case false => {
-              val bytes = new Array[Byte](p.p.dataWidth/8)
+          if (cmd.io) {
+            p.error #= peripheral.access(cmd.write, cmd.address, cmd.data)
+            if(!cmd.write) {
+              val bytes = new Array[Byte](p.p.dataWidth / 8)
               simRandom.nextBytes(bytes)
-              mem.readBytes(cmd.address, cmd.bytes, bytes, cmd.address.toInt & (p.p.dataWidth/8-1))
+              Array.copy(cmd.data, 0, bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1), cmd.data.size)
               p.data #= bytes
             }
+          } else {
+            p.error #= false
+            cmd.write match {
+              case true => {
+                mem.write(cmd.address, cmd.data)
+                p.data.randomize()
+              }
+              case false => {
+                val bytes = new Array[Byte](p.p.dataWidth / 8)
+                simRandom.nextBytes(bytes)
+                mem.readBytes(cmd.address, cmd.bytes, bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
+                p.data #= bytes
+              }
+            }
           }
-          p.error #= false
         }
         doIt
       }

@@ -15,8 +15,8 @@ trait CtrlLaneApi{
 
   def isValid: Bool = up(LANE_SEL)
   def isReady : Bool = _c.isReady
-  def isFiring: Bool = isValid && _c.up.isReady && !hasCancelRequest
-  def isMoving: Bool = isValid && (_c.up.isReady || hasCancelRequest)
+  def isFiring: Bool = (isValid && _c.up.isReady && !hasCancelRequest)
+  def isMoving: Bool = (isValid && (_c.up.isReady || hasCancelRequest))
   def isCanceling: Bool = isValid && hasCancelRequest
   def hasCancelRequest : Bool
 

@@ -53,8 +53,8 @@ class BranchPlugin(val laneName : String,
 
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
-//    val trapPort = if XXX sp.newTrapPort(age)
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
+    //    val trapPort = if XXX sp.newTrapPort(age)
 
     eu.uopLock.release()
     wbp.elaborationLock.release()

@@ -24,8 +24,8 @@ class RiscvPlugin(var xlen : Int,
     Fetch.SLICE_COUNT.set(Fetch.WORD_WIDTH/Fetch.SLICE_WIDTH)
     Fetch.SLICE_RANGE_LOW.set(if (Riscv.RVC) 1 else 2)
     Fetch.SLICE_RANGE.set((Fetch.SLICE_RANGE_LOW.get + log2Up(Fetch.SLICE_COUNT.get) - 1) downto Fetch.SLICE_RANGE_LOW.get)
-    Fetch.ID_WIDTH.set(16)
-    Decode.DOP_ID_WIDTH.set(16)
+    Fetch.ID_WIDTH.set(10)
+    Decode.DOP_ID_WIDTH.set(10)
     Decode.UOP_ID_WIDTH.set(16)
   }
 }
