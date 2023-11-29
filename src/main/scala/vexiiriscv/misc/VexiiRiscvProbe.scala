@@ -1,12 +1,13 @@
 package vexiiriscv.misc
 
 import org.apache.commons.io.FileUtils
-import rvls.spinal.TraceBackend
+import rvls.spinal.{TraceBackend, TraceIo}
 import vexiiriscv._
 import vexiiriscv.riscv.{FloatRegFile, IntRegFile, Riscv}
 import spinal.core.sim._
 import spinal.core._
 import vexiiriscv.decode.Decode
+import vexiiriscv.execute.LsuCachelessPlugin
 import vexiiriscv.fetch.Fetch
 import vexiiriscv.misc.konata.{Comment, Flush, Retire, Spawn, Stage}
 
@@ -183,9 +184,17 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
   };
 
 
-
+  val sizeMask = Array(0xFFl, 0xFFFFl, 0xFFFFFFFFl, -1l)
 
   val wbp = cpu.host[WhiteboxerPlugin].logic.get
+  val lsuClpb = cpu.host.get[LsuCachelessPlugin].map(_.logic.get.bus)
+  val pendingIo = mutable.Queue[ProbeTraceIo]()
+
+  class ProbeTraceIo extends TraceIo {
+    var sizel2 = 0
+    var io = false
+    var hartId = 0
+  }
 
   import wbp._
 
@@ -280,6 +289,35 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
         case IntRegFile => {
           ctx.integerWriteValid = true
           ctx.integerWriteData = xlenExtends(port.data.toLong)
+        }
+      }
+    }
+
+
+    for(bus <- lsuClpb) {
+
+      if(bus.cmd.valid.toBoolean && bus.cmd.ready.toBoolean){
+        val trace = new ProbeTraceIo
+        trace.sizel2 = bus.cmd.size.toInt
+        trace.write = bus.cmd.write.toBoolean
+        trace.address = bus.cmd.address.toLong
+        trace.size = 1 << trace.sizel2
+        trace.io = bus.cmd.io.toBoolean
+        trace.hartId = bus.cmd.hartId.toInt
+        val offset = trace.address.toInt & (trace.size - 1)
+        trace.data = bus.cmd.data.toLong
+        pendingIo.enqueue(trace)
+      }
+
+      if (bus.rsp.valid.toBoolean) {
+        val trace = pendingIo.dequeue()
+        if(trace.io){
+          if(!trace.write){
+            trace.data = bus.rsp.data.toLong
+          }
+          val offset = trace.address.toInt & (trace.size - 1)
+          trace.data = (trace.data >> offset*8) & sizeMask(trace.sizel2)
+          backends.foreach(_.ioAccess(trace.hartId, trace))
         }
       }
     }

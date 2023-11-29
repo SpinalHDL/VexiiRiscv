@@ -133,7 +133,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.forkCtrl
         val bus = p.logic.bus
-        fire := bus.cmd.fire && bus.cmd.write
+        fire := bus.cmd.fire && bus.cmd.write && !bus.cmd.io
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := bus.cmd.size.resized

@@ -167,16 +167,18 @@ class TestOptions{
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
       case class Cmd(write : Boolean, address: Long, data : Array[Byte], bytes : Int)
-      val pending = mutable.ArrayBuffer[Cmd]()
+      val pending = mutable.Queue[Cmd]()
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>
         val bytes = 1 << bus.cmd.size.toInt
-        pending += Cmd(p.write.toBoolean, p.address.toLong, p.data.toBytes.take(bytes), bytes)
+        val address = p.address.toLong
+        val offset = address.toInt & (bytes-1)
+        pending.enqueue(Cmd(p.write.toBoolean, address, p.data.toBytes.drop(offset).take(bytes), bytes))
       }
       val rspDriver = FlowDriver(bus.rsp, cd) { p =>
         val doIt = pending.nonEmpty
         if (doIt) {
-          val cmd = pending.randomPop()
+          val cmd = pending.dequeue()
           cmd.write match {
             case true =>{
               mem.write(cmd.address, cmd.data)

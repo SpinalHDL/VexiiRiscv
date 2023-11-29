@@ -7,13 +7,14 @@ import vexiiriscv.{Global, riscv}
 import vexiiriscv.riscv.{Const, IntRegFile, MicroOp, RS1, Riscv, Rvi}
 import AguPlugin._
 import vexiiriscv.decode.Decode
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
 import vexiiriscv.misc.AddressToMask
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-case class CachelessBusParam(addressWidth : Int, dataWidth : Int){
+case class CachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth : Int){
 
 }
 
@@ -23,6 +24,8 @@ case class CachelessCmd(p : CachelessBusParam) extends Bundle{
   val data = Bits(p.dataWidth bit)
   val size = UInt(log2Up(log2Up(p.dataWidth / 8) + 1) bits)
   val mask = Bits(p.dataWidth / 8 bits)
+  val io = Bool() //This is for verification purposes, allowing RVLS to track stuff
+  val hartId = UInt(p.hartIdWidth bits)
 }
 
 case class CachelessRsp(p : CachelessBusParam) extends Bundle{
@@ -41,16 +44,21 @@ case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave 
 }
 
 class LsuCachelessPlugin(var laneName : String,
+                         var translationStorageParameter: Any,
+                         var translationPortParameter: Any,
+                         var addressAt: Int = 0,
                          var forkAt: Int = 0,
                          var joinAt: Int = 1,
                          var wbAt: Int = 2) extends FiberPlugin{
   lazy val elp = host.find[ExecuteLanePlugin](_.laneName == laneName)
   lazy val ifp = host.find[IntFormatPlugin](_.laneName == laneName)
   lazy val srcp = host.find[SrcPlugin](_.laneName == laneName)
+  lazy val ats = host[AddressTranslationService]
   buildBefore(elp.pipelineLock)
   setupRetain(elp.uopLock)
   setupRetain(srcp.elaborationLock)
   setupRetain(ifp.elaborationLock)
+  setupRetain(ats.elaborationLock)
 
   val logic = during build new Area{
     val frontend = new AguFrontend(laneName, host)
@@ -81,18 +89,34 @@ class LsuCachelessPlugin(var laneName : String,
     }
 
     // Hardware elaboration
+    val addressCtrl = elp.execute(addressAt)
     val forkCtrl = elp.execute(forkAt)
     val joinCtrl = elp.execute(joinAt)
     val wbCtrl = elp.execute(wbAt)
 
-    val busParam = CachelessBusParam(addressWidth = Global.PHYSICAL_WIDTH, dataWidth = Riscv.LSLEN)
+    val busParam = CachelessBusParam(addressWidth = Global.PHYSICAL_WIDTH, dataWidth = Riscv.LSLEN, hartIdWidth = Global.HART_ID_WIDTH)
     val bus = master(CachelessBus(busParam))
+
+    val onAddress = new addressCtrl.Area{
+      val RAW_ADDRESS = insert(SrcStageables.ADD_SUB.asUInt)
+
+      val translationPort = ats.newTranslationPort(
+        nodes = Seq(forkCtrl.down),
+        rawAddress = RAW_ADDRESS,
+        allowRefill = insert(True),
+        usage = AddressTranslationPortUsage.LOAD_STORE,
+        portSpec = translationPortParameter,
+        storageSpec = translationStorageParameter
+      )
+    }
+
     val onFork = new forkCtrl.Area{
+      val tpk =  onAddress.translationPort.keys
       val RS2 = elp(IntRegFile, riscv.RS2)
       assert(bus.cmd.ready) // For now
       bus.cmd.valid := isValid && SEL && !hasCancelRequest
       bus.cmd.write := ! LOAD
-      bus.cmd.address := SrcStageables.ADD_SUB.asUInt //TODO Overflow ?
+      bus.cmd.address := tpk.TRANSLATED //TODO Overflow ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>
         val w = (1 << size) * 8
         size -> RS2(0, w bits).#*(Riscv.LSLEN / w)
@@ -100,6 +124,9 @@ class LsuCachelessPlugin(var laneName : String,
       bus.cmd.data := bus.cmd.size.muxListDc(mapping)
       bus.cmd.size := SIZE.resized
       bus.cmd.mask := AddressToMask(bus.cmd.address, bus.cmd.size, Riscv.LSLEN/8)
+      bus.cmd.io := tpk.IO
+      bus.cmd.hartId := Global.HART_ID
+      assert(tpk.REDO === False)
     }
 
     val onJoin = new joinCtrl.Area{
@@ -128,5 +155,8 @@ class LsuCachelessPlugin(var laneName : String,
       iwb.valid := SEL
       iwb.payload := rspShifted
     }
+
+
+    ats.elaborationLock.release()
   }
 }

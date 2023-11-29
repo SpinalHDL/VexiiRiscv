@@ -57,6 +57,7 @@ class PrivilegedPlugin(p : PrivilegedConfig) extends FiberPlugin{
 //    cap.readWrite(CSR.MCAUSE, XLEN - 1 -> cause.interrupt, 0 -> cause.code)
     cap.readWrite(CSR.MSTATUS, 11 -> mstatus.mpp, 7 -> mstatus.mpie, 3 -> mstatus.mie)
     cap.read(CSR.MSTATUS, XLEN - 1 -> mstatus.sd)
+    if(withFs) cap.readWrite(CSR.MSTATUS, 13 -> mstatus.fs)
 //    cap.read(CSR.MIP, 11 -> mip.meip, 7 -> mip.mtip, 3 -> mip.msip)
 //    cap.readWrite(CSR.MIE, 11 -> mie.meie, 7 -> mie.mtie, 3 -> mie.msie)
     cap.readWrite(mtval, CSR.MTVAL)

@@ -1,5 +1,6 @@
 package vexiiriscv
 
+import spinal.core._
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
 import vexiiriscv.execute.{AguPlugin, BarrelShifterPlugin, BranchPlugin, CsrAccessPlugin, DivPlugin, IntAluPlugin, IntFormatPlugin, LsuCachelessPlugin, MulPlugin, RsUnsignedPlugin, SrcPlugin, WriteBackPlugin}
@@ -16,13 +17,15 @@ class ParamSimple(){
   var resetVector = 0x80000000l
   var decoders = 1
   var lanes = 1
+  var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
+  var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
 
   def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
 
     plugins += new riscv.RiscvPlugin(xlen, rvc, hartCount)
     withMmu match {
-      case false => plugins += new memory.StaticTranslationPlugin(32)
+      case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
       case true =>
     }
 
@@ -54,7 +57,11 @@ class ParamSimple(){
     plugins += new BarrelShifterPlugin("lane0", formatAt = 1)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin("lane0")
-    plugins += new LsuCachelessPlugin("lane0")
+    plugins += new LsuCachelessPlugin(
+      laneName = "lane0",
+      translationStorageParameter = null,
+      translationPortParameter = null
+    )
     plugins += new RsUnsignedPlugin("lane0")
     plugins += new MulPlugin("lane0")
     plugins += new DivPlugin("lane0")

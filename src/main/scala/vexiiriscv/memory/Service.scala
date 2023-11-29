@@ -1,23 +1,42 @@
 package vexiiriscv.memory
 
 import spinal.core._
+import spinal.core.fiber.Lock
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin._
-import vexiiriscv.Global._
+import vexiiriscv.Global
 
-trait AddressTranslationService extends Area {
-  def createTranslationPort(): Unit
+trait AddressTranslationPortUsage
+object AddressTranslationPortUsage{
+  object FETCH extends AddressTranslationPortUsage
+  object LOAD_STORE extends AddressTranslationPortUsage
 }
 
-class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with AddressTranslationService {
+trait AddressTranslationService extends Area {
+  val elaborationLock = Lock()
+  def newStorage(pAny: Any): Any
 
-  override def createTranslationPort(): Unit = ???
+  def newTranslationPort(nodes: Seq[NodeApi],
+                         rawAddress: Payload[UInt],
+                         allowRefill: Payload[Bool],
+                         usage: AddressTranslationPortUsage,
+                         portSpec: Any,
+                         storageSpec: Any): AddressTranslationRsp
+}
 
-  val logic = during build new Area {
-    PHYSICAL_WIDTH.set(physicalWidth)
-    VIRTUAL_WIDTH.set(physicalWidth)
-    MIXED_WIDTH.set(physicalWidth)
-    PC_WIDTH.set(physicalWidth)
-    TVAL_WIDTH.set(physicalWidth)
+class AddressTranslationRsp(s : AddressTranslationService, wakesCount : Int, val wayCount : Int) extends Area{
+  val keys = new Area {
+    setName("MMU")
+    val TRANSLATED = Payload(UInt(Global.PHYSICAL_WIDTH bits))
+    val IO = Payload(Bool())
+    val REDO = Payload(Bool())
+    val ALLOW_READ, ALLOW_WRITE, ALLOW_EXECUTE = Payload(Bool())
+    val PAGE_FAULT = Payload(Bool())
+    val ACCESS_FAULT = Payload(Bool())
+    val WAYS_OH  = Payload(Bits(wayCount bits))
+    val WAYS_PHYSICAL  = Payload(Vec.fill(wayCount)(UInt(Global.PHYSICAL_WIDTH bits)))
+    val BYPASS_TRANSLATION = Payload(Bool())
   }
+  val wake = Bool()
+  val pipelineLock = Lock().retain()
 }
