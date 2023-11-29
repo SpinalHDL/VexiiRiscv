@@ -136,10 +136,15 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
       val instruction = if(withRvls) rvls.jni.Frontend.disassemble(disass, this.instruction) else "? rvls disabled ?"
 
       val i = new konata.Instruction()
-      i += new Spawn(fetch.spawnAt, hart.hartId)
-      i += new Comment(fetch.spawnAt, f"${decode.pc}%x : $instruction")
-      if (fetch.spawnAt != -1) i += new Stage(fetch.spawnAt, "F")
-      if (decode.spawnAt != -1) i += new Stage(decode.spawnAt, "D")
+      if (fetch.spawnAt != -1) {
+        i += new Spawn(fetch.spawnAt, hart.hartId)
+        i += new Stage(fetch.spawnAt, "A")
+        i += new Stage(fetch.spawnAt+1, "F")
+      }
+      if (decode.spawnAt != -1) {
+        i += new Stage(decode.spawnAt, "D")
+        i += new Comment(decode.spawnAt, f"${decode.pc}%x : $instruction")
+      }
       if (issueAt != -1) i += new Stage(issueAt, "I")
       if (executeAt != -1) i += new Stage(executeAt, "E")
       if (completionAt != -1) i += new Stage(completionAt, "C")
@@ -201,7 +206,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
     if (fetch.fire.toBoolean) {
       val hart = harts(fetch.hartId.toInt)
       val fetchId = fetch.fetchId.toInt
-      hart.fetch((fetchId + 1) & ((1 << fetchIdWidth) - 1)).spawnAt = cycle
+      hart.fetch(fetchId).spawnAt = cycle-1
     }
 
     for(decode <- decodes) if (decode.fire.toBoolean) {

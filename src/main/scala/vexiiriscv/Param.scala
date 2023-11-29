@@ -62,7 +62,7 @@ class ParamSimple(){
     plugins += new execute.ExecuteLanePlugin("lane0", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
     plugins += new SrcPlugin("lane0")
     plugins += new IntAluPlugin("lane0", formatAt = 0)
-    plugins += new BarrelShifterPlugin("lane0", formatAt = 1)
+    plugins += new BarrelShifterPlugin("lane0", formatAt = 0)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin("lane0")
     plugins += new LsuCachelessPlugin(
@@ -81,7 +81,7 @@ class ParamSimple(){
       plugins += new execute.ExecuteLanePlugin("lane1", priority = 1, rfReadAt = 0, decodeAt = 1, executeAt = 2)
       plugins += new SrcPlugin("lane1")
       plugins += new IntAluPlugin("lane1", formatAt = 0)
-      plugins += new BarrelShifterPlugin("lane1", formatAt = 1)
+      plugins += new BarrelShifterPlugin("lane1", formatAt = 0)
       plugins += new IntFormatPlugin("lane1")
       plugins += new BranchPlugin("lane1")
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = intRegFileRelaxedPort)

@@ -46,6 +46,9 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
 
   val elaborationLock = Lock()
 
+  val MAY_FLUSH = Payload(Bool())
+  val DONT_FLUSH = Payload(Bool())
+
 //  val fenceYoungerOps = mutable.LinkedHashSet[MicroOp]()
 //  val fenceOlderOps = mutable.LinkedHashSet[MicroOp]()
 //  def fenceYounger(op : MicroOp) = fenceYoungerOps += op
@@ -54,6 +57,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
   val logic = during build new Area{
     elaborationLock.await()
     val dispatchCtrl = dpp.ctrl(dispatchAt)
+    val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
 
     val eus = host.list[ExecuteLaneService].sortBy(_.dispatchPriority).reverse
     val EU_COMPATIBILITY = eus.map(eu => eu -> Payload(Bool())).toMapLinked()
@@ -64,10 +68,25 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
         dp.addMicroOpDecoding(op, key, True)
       }
     }
+
+    hmKeys.add(MAY_FLUSH)
+    hmKeys.add(DONT_FLUSH)
+    dp.addMicroOpDecodingDefault(MAY_FLUSH, False)
+    dp.addMicroOpDecodingDefault(DONT_FLUSH, False)
+    for (eu <- eus; spec <- eu.getMicroOpSpecs()) {
+      spec.mayFlushUpTo match {
+        case Some(x) => dp.addMicroOpDecoding(spec.op, MAY_FLUSH, True)
+        case None =>
+      }
+      spec.dontFlushFrom match {
+        case Some(x) => dp.addMicroOpDecoding(spec.op, DONT_FLUSH, True)
+        case None =>
+      }
+    }
+
     dp.elaborationLock.release()
     val slotsCount = 0
 
-    val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
     hmKeys.add(Global.PC)
     hmKeys.add(Decode.UOP_ID)
     for ((k, ac) <- Decode.rfaKeys) {
@@ -125,9 +144,17 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
     assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
     assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
 
+    val dontFlushFrom = eus.flatMap(_.getMicroOpSpecs().map(_.dontFlushFrom.getOrElse(100))).min
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
+
+      val flushesChecks = for(elp <- eus) yield new Area{
+        val flushUpTo = elp.getMicroOpSpecs().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
+        val ctrlRange = 1 to flushUpTo - dontFlushFrom
+        val hits = ctrlRange.map(i => elp.ctrl(i)(MAY_FLUSH))
+      }
+      val flushHazard = ctx.hm(DONT_FLUSH) && flushesChecks.flatMap(_.hits).orR
 
       val eusReady = Bits(eus.size bits)
       //TODO merge duplicated logic using signal cache
@@ -184,7 +211,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
         val oldersHazard = olderHazards.map(_.hit).orR
         val eusHits = c.ctx.compatibility & eusFree(id) & c.eusReady
         val eusOh = OHMasking.firstV2(eusHits)
-        val doIt = c.ctx.valid && eusHits.orR && hartFree(id)(c.ctx.hartId) && !oldersHazard
+        val doIt = c.ctx.valid && !c.flushHazard && eusHits.orR && hartFree(id)(c.ctx.hartId) && !oldersHazard
         eusFree(id + 1) := eusFree(id) & (~eusOh).orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(!c.ctx.valid || doIt)
         c.fire := doIt && !eupp.isFreezed()
@@ -199,7 +226,11 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.UOP := mux(_.ctx.microOp)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
-      rdKeys.ENABLE clearWhen(!CtrlLaneApi.LANE_SEL) //Allow to avoid having to check the valid down the pipeline
+      when(!CtrlLaneApi.LANE_SEL){
+        //Allow to avoid having to check the valid down the pipeline
+        rdKeys.ENABLE := False
+        MAY_FLUSH := False
+      }
       Execute.LANE_AGE := OHToUInt(oh)
     }
 

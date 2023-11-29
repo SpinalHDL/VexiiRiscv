@@ -56,12 +56,19 @@ class ExecuteLanePlugin(override val laneName : String,
     microOps(op).rd = None
   }
 
+  def setCompletion(executeCtrlId: Int, head : MicroOp, tail : MicroOp*): Unit = setCompletion(executeCtrlId, head +: tail)
   def setCompletion(executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
     uops.foreach(microOps(_).completion = Some(executeCtrlId + executeAt))
   }
 
-  def setCompletion(executeCtrlId: Int, head : MicroOp, tail : MicroOp*): Unit = {
-    setCompletion(executeCtrlId, head +: tail)
+  def mayFlushUpTo(executeCtrlId: Int, head: MicroOp, tail: MicroOp*): Unit = mayFlushUpTo(executeCtrlId, head +: tail)
+  def mayFlushUpTo(executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
+    uops.foreach(microOps(_).mayFlushUpTo = Some(executeCtrlId + executeAt))
+  }
+
+  def dontFlushFrom(executeCtrlId: Int, head: MicroOp, tail: MicroOp*): Unit = dontFlushFrom(executeCtrlId, head +: tail)
+  def dontFlushFrom(executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
+    uops.foreach(microOps(_).dontFlushFrom = Some(executeCtrlId + executeAt))
   }
 
 

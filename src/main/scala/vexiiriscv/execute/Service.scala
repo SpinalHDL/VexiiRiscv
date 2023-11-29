@@ -20,6 +20,9 @@ case class RdSpec(DATA: Payload[Bits],
 class MicroOpSpec(val op: MicroOp) {
   var rd = Option.empty[RdSpec]
   var completion = Option.empty[Int]
+  var mayFlushUpTo = Option.empty[Int]
+  var dontFlushFrom = Option.empty[Int]
+  var canBeFlushed = true
 }
 
 trait ExecuteLaneService {

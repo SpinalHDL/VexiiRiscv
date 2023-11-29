@@ -48,8 +48,12 @@ class BranchPlugin(val laneName : String,
     add(Rvi.BLTU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
     add(Rvi.BGEU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
 
-    eu.setCompletion(Math.max(jumpAt, wbAt), Rvi.JAL, Rvi.JALR)
-    eu.setCompletion(jumpAt, Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU)
+    val jList = List(Rvi.JAL, Rvi.JALR)
+    val bList = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU)
+
+    eu.setCompletion(Math.max(jumpAt, wbAt), jList)
+    eu.setCompletion(jumpAt, bList)
+    eu.mayFlushUpTo(jumpAt, jList ++ bList)
 
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)

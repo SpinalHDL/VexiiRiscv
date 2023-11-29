@@ -99,6 +99,8 @@ class CsrAccessPlugin(laneName : String,
     add(Rvi.CSRRSI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> False)
     add(Rvi.CSRRCI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> True)
 
+    elp.dontFlushFrom(injectAt, Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI)
+
     val wbWi = integrated generate iwb.access(injectAt)
 
     for (op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI)) {
