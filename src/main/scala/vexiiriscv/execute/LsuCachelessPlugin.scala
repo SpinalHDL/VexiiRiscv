@@ -74,6 +74,11 @@ class LsuCachelessPlugin(var laneName : String,
       }
     }
 
+
+    for (uop <- frontend.loads ++ frontend.stores) {
+      elp.dontFlushFrom(forkAt+1, uop)
+    }
+
     elp.addMicroOp(Rvi.FENCE) //TODO
 
     elp.setCompletion(joinAt, List(Rvi.FENCE))
@@ -137,6 +142,7 @@ class LsuCachelessPlugin(var laneName : String,
       val READ_DATA = insert(buffer.data)
       elp.freezeWhen(isValid && SEL && !buffer.valid)
       buffer.ready := isFiring && SEL
+      assert(!(isCanceling && SEL))
     }
 
     val onWb = new wbCtrl.Area{

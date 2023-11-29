@@ -149,12 +149,9 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       val ctx = MicroOpCtx()
       val fire = Bool()
 
-      val flushesChecks = for(elp <- eus) yield new Area{
-        val flushUpTo = elp.getMicroOpSpecs().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
-        val ctrlRange = 1 to flushUpTo - dontFlushFrom
-        val hits = ctrlRange.map(i => elp.ctrl(i)(MAY_FLUSH))
-      }
-      val flushHazard = ctx.hm(DONT_FLUSH) && flushesChecks.flatMap(_.hits).orR
+
+
+      val flushHazard = Bool()
 
       val eusReady = Bits(eus.size bits)
       //TODO merge duplicated logic using signal cache
@@ -183,6 +180,18 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
         }
         eusReady(euId) :=  !rsLogic.map(_.hazard).orR //TODO handle bypasses
       }
+    }
+
+    val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
+      val c = candidates(cId)
+      val executeCheck = for (elp <- eus) yield new Area {
+        val flushUpTo = elp.getMicroOpSpecs().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
+        val ctrlRange = 1 to flushUpTo - dontFlushFrom
+        val hits = ctrlRange.map(i => elp.ctrl(i)(MAY_FLUSH) && elp.ctrl(i)(Global.HART_ID) === c.ctx.hartId)
+      }
+      val olders = candidates.take(cId)
+      val oldersHazard = olders.map(o => o.ctx.valid && o.ctx.hm(MAY_FLUSH)).orR
+      c.flushHazard := c.ctx.hm(DONT_FLUSH) && (executeCheck.flatMap(_.hits).orR || oldersHazard)
     }
 
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
