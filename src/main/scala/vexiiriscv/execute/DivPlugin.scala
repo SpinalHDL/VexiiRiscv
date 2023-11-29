@@ -67,11 +67,11 @@ class DivPlugin(val laneName : String,
       div.io.cmd.valid := isValid && SEL && !cmdSent
       div.io.cmd.a := RS1_UNSIGNED.resized
       div.io.cmd.b := RS2_UNSIGNED.resized
-      div.io.flush := div.io.rsp.valid && isMoving
-
+      div.io.flush := isReady
       div.io.rsp.ready := False
 
-      val freeze = isValid && SEL && !div.io.rsp.valid
+      val unscheduleRequest = RegNext(hasCancelRequest) clearWhen (isReady) init (False)
+      val freeze = isValid && SEL && !div.io.rsp.valid & !unscheduleRequest
       eu.freezeWhen(freeze)
 
       val selected = REM ? div.io.rsp.remain otherwise div.io.rsp.result
