@@ -19,8 +19,12 @@ import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 
 class TestOptions{
   var dualSim = false // Double simulation, one ahead of the other which will trigger wave capture of the second simulation when it fail
-  var traceIt = false
+  var traceWave = false
+  var traceKonata = false
+  var traceRvlsLog = false
+  var traceSpikeLog = false
   var withProbe = true
+  var simSpeedPrinter = Option.empty[Double]
   var withRvls = new File("ext/rvls/build/apps/rvls.so").exists()
   var withRvlsCheck = withRvls
 //  var withKonata = true
@@ -42,11 +46,16 @@ class TestOptions{
   def addOptions(parser : scopt.OptionParser[Unit]): Unit = {
     import parser._
     opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
-    opt[Unit]("trace") action { (v, c) => traceIt = true }
+    opt[Unit]("with-wave") action { (v, c) => traceWave = true }
+    opt[Unit]("with-konata") action { (v, c) => traceKonata = true }
+    opt[Unit]("with-rvls-log") action { (v, c) => traceRvlsLog = true }
+    opt[Unit]("with-spike-log") action { (v, c) => traceSpikeLog = true }
+    opt[Unit]("with-all") action { (v, c) => traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true }
     opt[Unit]("no-probe") action { (v, c) => withProbe = false; }
     opt[Unit]("no-rvls-check") action { (v, c) => withRvlsCheck = false;  }
-    opt[Long]("failAfter") action { (v, c) => failAfter = Some(v) }
-    opt[Long]("passAfter") action { (v, c) => passAfter = Some(v) }
+    opt[Long]("fail-after") action { (v, c) => failAfter = Some(v) }
+    opt[Long]("pass-after") action { (v, c) => passAfter = Some(v) }
+    opt[Double]("sim-speed-printer") action { (v, c) => simSpeedPrinter = Some(v) }
     opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0), 16) -> new File(v(1)) }
     opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
   }
@@ -54,13 +63,14 @@ class TestOptions{
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
       case true => DualSimTracer.withCb(compiled, window = 50000 * 10, seed = 2)(test)
-      case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => if (traceIt) f) }
+      case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => if (traceWave) f) }
     }
   }
 
   def test(dut : VexiiRiscv, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
     val cd = dut.clockDomain
     cd.forkStimulus(10)
+    simSpeedPrinter.foreach(cd.forkSimSpeedPrinter)
 
     failAfter.map(delayed(_)(simFailure("Reached Timeout")))
     passAfter.map(delayed(_)(simSuccess()))
@@ -74,8 +84,8 @@ class TestOptions{
       rvls.spinalSimTime(10000)
     }
 
-    val konataBackend = new Backend(new File(currentTestPath, "konata.log"))
-    delayed(1)(konataBackend.spinalSimFlusher(10 * 10000)) // Delayed to ensure this is registred last
+    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath, "konata.log")))
+    delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registred last
 
     // Collect traces from the CPUs behaviour
     val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
@@ -83,14 +93,17 @@ class TestOptions{
     probe.enabled = withProbe
 
     // Things to enable when we want to collect traces
-    val tracerFile = new FileBackend(new File(currentTestPath, "tracer.log"))
+    val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath, "tracer.log")))
     onTrace {
       enableSimWave()
-      if (withRvlsCheck) rvls.debug()
+      if (withRvlsCheck && traceSpikeLog) rvls.debug()
 
-      tracerFile.spinalSimFlusher(10 * 10000)
-      tracerFile.spinalSimTime(10000)
-      probe.add(tracerFile)
+      tracerFile.foreach{f =>
+        f.spinalSimFlusher(10 * 10000)
+        f.spinalSimTime(10000)
+        probe.add(f)
+      }
+
       val r = probe.backends.reverse
       probe.backends.clear()
       probe.backends ++= r
@@ -106,7 +119,7 @@ class TestOptions{
     for ((offset, file) <- bins) {
       mem.loadBin(offset - 0x80000000l, file)
       if (withRvlsCheck) rvls.loadBin(offset, file)
-      tracerFile.loadBin(0, file)
+      tracerFile.foreach(_.loadBin(0, file))
     }
 
     // load elfs
@@ -114,7 +127,7 @@ class TestOptions{
       val elf = new Elf(file, xlen)
       elf.load(mem, 0)
       if (withRvlsCheck) rvls.loadElf(0, elf.f)
-      tracerFile.loadElf(0, elf.f)
+      tracerFile.foreach(_.loadElf(0, elf.f))
 
       startSymbol.foreach(symbol => fork{
         val pc = elf.getSymbolAddress(symbol) + startSymbolOffset

@@ -18,7 +18,7 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
 
   def newTest() = {
     val t = new TestOptions()
-    t.traceIt = true
+    t.traceWave = true
     t
   }
   val tests = ArrayBuffer[TestOptions]()

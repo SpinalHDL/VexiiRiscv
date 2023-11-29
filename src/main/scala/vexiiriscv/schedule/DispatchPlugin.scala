@@ -148,9 +148,6 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
-
-
-
       val flushHazard = Bool()
 
       val eusReady = Bits(eus.size bits)
@@ -182,6 +179,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       }
     }
 
+    //TODO flushChecker is pessimistic, would need to improve by checking hazard depending from were the current op can't be flushed any more from (LSU)
     val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
       val c = candidates(cId)
       val executeCheck = for (elp <- eus) yield new Area {

@@ -13,7 +13,7 @@ import vexiiriscv.test.konata.{Comment, Flush, Retire, Spawn, Stage}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean){
+class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : Boolean){
   var enabled = true
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
@@ -58,7 +58,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
     var microOpRetirePtr, microOpAllocPtr = 0
     var lastCommitAt = 0l
 
-    val konataThread = kb.newThread()
+    val konataThread = kb.map(_.newThread())
 
     def add(tracer: TraceBackend): Unit = {
       for (hartId <- hartsIds) {
@@ -71,7 +71,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
     }
 
     def close(): Unit = {
-      konataThread.cycleLock = Long.MaxValue
+      konataThread.foreach(_.cycleLock = Long.MaxValue)
     }
   }
 
@@ -153,7 +153,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
       } else {
         i += new Flush(flushAt)
       }
-      kb.insert(i)
+      kb.foreach(_.insert(i))
 
 //        f.write(f"O3PipeView:fetch:${fetch.spawnAt}:0x${decode.pc}%08x:0:${opCounter}:$instruction\n")
 //        f.write(f"O3PipeView:decode:${traceT2s(decode.spawnAt)}\n")
@@ -361,7 +361,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
         val fetch = hart.fetch(uop.fetchId)
         val decode = hart.decode(uop.decodeId)
 
-        hart.konataThread.cycleLock = fetch.spawnAt
+        hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
         lastCommitAt = cycle
 
         uop.toKonata(hart)
@@ -399,8 +399,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : konata.Backend, withRvls : Boolean)
     if(enabled) {
       checkPipelines()
       checkCommits()
-      cycle += 1l
-      if ((cycle & 0x3FFFl) == 0) flush()
     }
+    cycle += 1l
+    if ((cycle & 0x3FFFl) == 0) flush()
   }
 }
