@@ -28,7 +28,7 @@ sbt "test:runMain vexiiriscv.scratchpad.Play1"
 
 ```shell
 (cd ext/NaxSoftware/baremetal/vexiiriscv && make rv32ima)
-sbt " test:runMain vexiiriscv.tester.TestBench --load-elf ext/NaxSoftware/baremetal/vexiiriscv/build/rv32ima/vexiiriscv.elf  --passAfter 3000 --trace --no-rvls-check --no-probe"
+sbt " test:runMain vexiiriscv.tester.TestBench --load-elf ext/NaxSoftware/baremetal/vexiiriscv/build/rv32ima/vexiiriscv.elf  --pass-after 3000 --with-all --no-rvls-check"
 ```
 
 # Navigating the code
