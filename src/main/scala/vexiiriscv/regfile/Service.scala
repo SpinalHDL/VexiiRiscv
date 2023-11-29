@@ -18,7 +18,7 @@ case class RegFileIo( rfpp : RegFilePortParam,
                     ) extends Bundle{
   val writes = Vec(writesParameter.map(p => slave(RegFileWrite(rfpp, p.withReady))))
   val reads = Vec(readsParameter.map(p => slave(RegFileRead(rfpp, p.withReady))))
-//  val bypasses = Vec.fill(bypasseCount)(slave(RegFileBypass(addressWidth, dataWidth)))
+  val initDone = out Bool()
 }
 
 case class RegFileWrite(rfpp : RegFilePortParam, withReady : Boolean) extends Bundle with IMasterSlave {

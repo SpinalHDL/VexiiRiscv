@@ -2,8 +2,8 @@ package vexiiriscv
 
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
-import vexiiriscv.execute.{AguPlugin, BarrelShifterPlugin, BranchPlugin, CsrAccessPlugin, IntAluPlugin, IntFormatPlugin, LsuCachelessPlugin, MulPlugin, SrcPlugin, WriteBackPlugin}
-import vexiiriscv.misc.{PrivilegedPlugin, WhiteboxerPlugin}
+import vexiiriscv.execute.{AguPlugin, BarrelShifterPlugin, BranchPlugin, CsrAccessPlugin, DivPlugin, IntAluPlugin, IntFormatPlugin, LsuCachelessPlugin, MulPlugin, RsUnsignedPlugin, SrcPlugin, WriteBackPlugin}
+import vexiiriscv.misc.{PrivilegedConfig, PrivilegedPlugin, WhiteboxerPlugin}
 import vexiiriscv.riscv.IntRegFile
 
 import scala.collection.mutable.ArrayBuffer
@@ -55,9 +55,11 @@ class ParamSimple(){
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin("lane0")
     plugins += new LsuCachelessPlugin("lane0")
+    plugins += new RsUnsignedPlugin("lane0")
     plugins += new MulPlugin("lane0")
+    plugins += new DivPlugin("lane0")
     plugins += new CsrAccessPlugin("lane0", writeBackKey = intRegFileRelaxedPort)
-    plugins += new PrivilegedPlugin()
+    plugins += new PrivilegedPlugin(PrivilegedConfig.full)
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = if(lanes == 1) intRegFileRelaxedPort else null)
 
     if(lanes >= 2) {

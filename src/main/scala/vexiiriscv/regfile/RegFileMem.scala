@@ -20,11 +20,9 @@ class RegFileMem(rfpp : RegFilePortParam,
 //                 bypassCount     : Int,
                  preferedWritePortForInit : Int,
                  headZero        : Boolean,
-                 allOne          : Boolean,
                  syncRead        : Boolean,
                  asyncReadBySyncReadRevertedClk : Boolean = false) extends Component {
   import rfpp._
-  assert(!(allOne && headZero))
 
   val io = RegFileIo(rfpp, readsParameter, writesParameter)
   io.reads.foreach(e => assert(!e.withReady))
@@ -39,23 +37,17 @@ class RegFileMem(rfpp : RegFilePortParam,
     port.address := w.address
     port.data := w.data
 
+    io.initDone := True
     if (i == preferedWritePortForInit) {
       if (headZero) {
-        val booted = RegNext(True) init (False)
-        when(!booted) {
-          port.valid := True
-          port.address := 0
-          port.data := 0
-        }
-      }
-      val initAll = allOne generate new Area {
         val counter = Reg(UInt(addressWidth + 1 bits)) init (0)
         val done = counter.msb
         when(!done) {
           port.valid := True
           port.address := counter.resized
-          port.data.setAll()
+          port.data := 0
           counter := counter + 1
+          io.initDone := False
         }
       }
     }

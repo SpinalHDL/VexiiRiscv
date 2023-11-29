@@ -11,6 +11,7 @@ import spinal.lib.eda.bench.{Bench, Rtl, XilinxStdTargets}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
+import vexiiriscv.fetch.InitService
 import vexiiriscv.riscv.RegfileSpec
 
 import scala.collection.mutable.ArrayBuffer
@@ -21,7 +22,7 @@ class RegFilePlugin(var spec : RegfileSpec,
                     var asyncReadBySyncReadRevertedClk : Boolean = false,
                     var allOne : Boolean = false,
                     var syncRead : Boolean = true,
-                    var latchBased : Boolean = false) extends FiberPlugin with RegfileService {
+                    var latchBased : Boolean = false) extends FiberPlugin with RegfileService with InitService {
   withPrefix(spec.getName())
   lazy val rfpp = RegFilePortParam(addressWidth, dataWidth, Global.HART_ID_WIDTH, Decode.UOP_ID_WIDTH)
 
@@ -55,6 +56,9 @@ class RegFilePlugin(var spec : RegfileSpec,
     logic.await()
     writes.map(_.port)
   }
+
+
+  override def initHold(): Bool = !logic.regfile.io.initDone
 
   val logic = during build new Area{
     elaborationLock.await()
@@ -97,7 +101,6 @@ class RegFilePlugin(var spec : RegfileSpec,
         writesParameter = writeMerges.map(e => RegFileWriteParameter(withReady = false)).toList,
         headZero = spec.x0AlwaysZero,
         preferedWritePortForInit = writeGroups.zipWithIndex.find(_._1._2.exists(_.port.getName().contains(preferedWritePortForInit))).map(_._2).getOrElse(0),
-        allOne = allOne,
         syncRead = syncRead,
         asyncReadBySyncReadRevertedClk = asyncReadBySyncReadRevertedClk
       )
