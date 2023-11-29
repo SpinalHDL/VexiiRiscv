@@ -15,7 +15,7 @@ import vexiiriscv.riscv._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class DecoderPlugin(var decodeAt : Int = 1) extends FiberPlugin with DecoderService{
+class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
   lazy val dpp = host[DecodePipelinePlugin]
   buildBefore(dpp.elaborationLock)
 

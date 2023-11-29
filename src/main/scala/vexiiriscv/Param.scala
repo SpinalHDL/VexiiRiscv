@@ -38,9 +38,16 @@ class ParamSimple(){
     plugins += new fetch.CachelessPlugin(wordWidth = 32*decoders)
 
     plugins += new decode.DecodePipelinePlugin()
-    plugins += new decode.AlignerPlugin(lanes = decoders)
-    plugins += new decode.DecoderPlugin()
-    plugins += new schedule.DispatchPlugin()
+    plugins += new decode.AlignerPlugin(
+      fetchAt = 2,
+      lanes = decoders
+    )
+    plugins += new decode.DecoderPlugin(
+      decodeAt = 0
+    )
+    plugins += new schedule.DispatchPlugin(
+      dispatchAt = 2
+    )
 
     plugins += new regfile.RegFilePlugin(
       spec = riscv.IntRegFile,

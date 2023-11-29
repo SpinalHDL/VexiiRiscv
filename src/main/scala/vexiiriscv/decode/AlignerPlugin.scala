@@ -11,7 +11,7 @@ import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv}
 
 import scala.collection.mutable.ArrayBuffer
 
-class AlignerPlugin(fetchAt : Int = 3,
+class AlignerPlugin(fetchAt : Int,
                     lanes : Int = 1) extends FiberPlugin with PipelineService{
   lazy val fpp = host[FetchPipelinePlugin]
   lazy val dpp = host[DecodePipelinePlugin]
