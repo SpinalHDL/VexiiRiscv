@@ -37,6 +37,7 @@ trait CtrlLaneApi{
     override def apply(key: NamedTypeKey) = ???
     override def apply[T <: Data](key: Payload[T]) = node(key, laneName)
     override def apply(subKey: Seq[Any]) = ???
+    def transactionSpawn = valid && !RegNext(valid, False) clearWhen(ready || cancel)
   }
 
   def up = new NodeMirror(_c.up)

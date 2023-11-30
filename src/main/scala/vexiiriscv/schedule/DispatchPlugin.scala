@@ -199,6 +199,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       c.flushHazard := c.ctx.hm(DONT_FLUSH) && executeCheck.flatMap(_.hits).orR || c.ctx.hm(DONT_FLUSH_FROM_LANES) && oldersHazard
     }
 
+    dispatchCtrl.link.down.ready := True
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
       val c = candidates(slotsCount + lane)
       val sent = RegInit(False) setWhen(c.fire) clearWhen(ctrlLink.up.isMoving)
@@ -207,7 +208,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       c.ctx.hartId := Global.HART_ID
       c.ctx.microOp := Decode.UOP
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
-      dispatchCtrl.link.haltWhen(LANE_SEL && !sent && !c.fire)
+      dispatchCtrl.link.down.ready clearWhen(LANE_SEL && !sent && !c.fire)
     }
 
     val scheduler = new Area {
@@ -248,7 +249,6 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       Execute.LANE_AGE := OHToUInt(oh)
     }
 
-    dispatchCtrl.link.down.ready := True
     eupp.ctrl(0).up.setAlwaysValid()
 
     eus.foreach(_.pipelineLock.release())

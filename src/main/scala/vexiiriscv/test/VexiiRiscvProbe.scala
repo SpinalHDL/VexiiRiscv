@@ -148,7 +148,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
       if (issueAt != -1) i += new Stage(issueAt, "I")
       if (executeAt != -1) i += new Stage(executeAt, "E")
-      if (completionAt != -1) i += new Stage(completionAt, "C")
+//      if (completionAt != -1) i += new Stage(completionAt, "C")
       if (didCommit) {
         i += new Retire(retireAt)
       } else {

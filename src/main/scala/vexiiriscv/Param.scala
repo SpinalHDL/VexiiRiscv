@@ -18,6 +18,7 @@ class ParamSimple(){
   var resetVector = 0x80000000l
   var decoders = 2
   var lanes = 2
+  var regFileSync = false
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
 
@@ -39,24 +40,24 @@ class ParamSimple(){
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = 2,
+      fetchAt = 1,
       lanes = decoders
     )
     plugins += new decode.DecoderPlugin(
-      decodeAt = 0
+      decodeAt = 1
     )
     plugins += new schedule.DispatchPlugin(
-      dispatchAt = 1
+      dispatchAt = 2
     )
 
     plugins += new regfile.RegFilePlugin(
       spec = riscv.IntRegFile,
       physicalDepth = 32,
       preferedWritePortForInit = "lane0",
-      syncRead = true
+      syncRead = regFileSync
     )
 
-    def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(name, priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+    def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(name, priority = 0, rfReadAt = 0, decodeAt = regFileSync.toInt, executeAt = regFileSync.toInt + 1)
 
     plugins += new execute.ExecutePipelinePlugin()
     val intRegFileRelaxedPort = "intShared" //Used by out of pip units to write stuff into the pipeline, //TODO ensure some sort of fairness between no ready and with ready
