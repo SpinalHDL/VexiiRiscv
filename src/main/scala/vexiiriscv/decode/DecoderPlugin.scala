@@ -36,6 +36,10 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
     getDecodingSpec(key).setDefault(Masked(value))
   }
 
+  override def covers() =  {
+    elaborationLock.await()
+    host.list[ExecuteLaneService].flatMap(_.getMicroOp()).map(e => Masked(e.key))
+  }
 
   val logic = during build new Area{
     elaborationLock.await()

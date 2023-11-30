@@ -50,6 +50,9 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
   val DONT_FLUSH = Payload(Bool())
   val DONT_FLUSH_FROM_LANES = Payload(Bool())
 
+
+  val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
+
 //  val fenceYoungerOps = mutable.LinkedHashSet[MicroOp]()
 //  val fenceOlderOps = mutable.LinkedHashSet[MicroOp]()
 //  def fenceYounger(op : MicroOp) = fenceYoungerOps += op
@@ -58,7 +61,6 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
   val logic = during build new Area{
     elaborationLock.await()
     val dispatchCtrl = dpp.ctrl(dispatchAt)
-    val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
 
     val eus = host.list[ExecuteLaneService].sortBy(_.dispatchPriority).reverse
     val EU_COMPATIBILITY = eus.map(eu => eu -> Payload(Bool())).toMapLinked()

@@ -16,8 +16,8 @@ class ParamSimple(){
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
-  var decoders = 2
-  var lanes = 2
+  var decoders = 1
+  var lanes = 1
   var regFileSync = false
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
@@ -33,6 +33,16 @@ class ParamSimple(){
 
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
+
+    plugins += new prediction.BtbPlugin(
+      hashWidth = 16,
+      entries = 256,
+      jumpAt = 1
+    )
+    plugins += new prediction.DecodePredictionPlugin(
+      decodeAt = 1,
+      jumpAt   = 1
+    )
 
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
@@ -51,7 +61,7 @@ class ParamSimple(){
       decodeAt = 1
     )
     plugins += new schedule.DispatchPlugin(
-      dispatchAt = 2
+      dispatchAt = 1
     )
 
     plugins += new regfile.RegFilePlugin(

@@ -37,4 +37,5 @@ case class AccessKeys(physWidth : Int, rfMapping : Seq[RegfileSpec]) extends Are
   val ENABLE = Payload(Bool())
   val PHYS = Payload(UInt(physWidth bits))
   val RFID = Payload(UInt(rfIdWidth bits))
+  def ARCH = PHYS
 }

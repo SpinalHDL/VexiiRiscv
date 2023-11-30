@@ -10,8 +10,10 @@ import vexiiriscv.riscv.{IMM, RD, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
+import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
+import vexiiriscv.prediction.{FetchWordPrediction, LearnCmd, Prediction}
 import vexiiriscv.schedule.ReschedulePlugin
 
 object BranchPlugin extends AreaObject {
@@ -66,6 +68,10 @@ class BranchPlugin(val laneName : String,
     srcp.elaborationLock.release()
     pcp.elaborationLock.release()
 
+    // Without prediction, the plugin can assume that there is no correction to do if no branch is needed
+    // leading to a simpler design.
+    val withBtb = host.get[FetchWordPrediction].nonEmpty
+
     val alu = new eu.Execute(aluAt) {
       val ss = SrcStageables
       val EQ = insert(ss.SRC1 === ss.SRC2)
@@ -97,13 +103,26 @@ class BranchPlugin(val laneName : String,
       val sliceShift = Fetch.SLICE_RANGE_LOW.get
       val PC_TRUE = insert(U(target_a + target_b).as(PC)) //TODO overflows ?
       val PC_FALSE = insert(PC + (slices << sliceShift))
+
+      // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
+      // with the 32 bits of the TRUE/FALSE adders, ending up in a quite long combinatorial path (21 lut XD)
+      KeepAttribute(this(PC_TRUE ))
+      KeepAttribute(this(PC_FALSE))
+
+      val btb = withBtb generate new Area {
+        val BAD_TARGET = insert(Prediction.ALIGNED_JUMPED_PC =/= PC_TRUE)
+        val REAL_TARGET = insert(COND.mux[UInt](PC_TRUE, PC_FALSE))
+      }
     }
 
     val jumpLogic = new eu.Execute(jumpAt) {
-      val doIt = isValid && SEL && alu.COND
+      val wrongCond = withBtb.mux[Bool](Prediction.ALIGNED_JUMPED =/= alu.COND     , alu.COND )
+      val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond)
+      val doIt = isValid && SEL && needFix
+      val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
 
       pcPort.valid := doIt
-      pcPort.pc := alu.PC_TRUE
+      pcPort.pc := pcTarget
       pcPort.laneAge := Execute.LANE_AGE
 
       flushPort.valid := doIt
@@ -111,6 +130,16 @@ class BranchPlugin(val laneName : String,
       flushPort.uopId :=  Decode.UOP_ID + 1
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
+
+      val btb = withBtb generate new Area{
+        val learn = Flow(LearnCmd())
+
+        learn.valid := up.isFiring && SEL
+        learn.taken := alu.COND
+        learn.pcTarget := alu.PC_TRUE
+        learn.pcOnLastSlice := PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
+        learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
+      }
     }
 
     val wbLogic = new eu.Execute(wbAt){

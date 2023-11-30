@@ -7,6 +7,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.PipelineService
+import vexiiriscv.prediction.Prediction
 import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv}
 
 import scala.collection.mutable.ArrayBuffer
@@ -63,6 +64,11 @@ class AlignerPlugin(fetchAt : Int,
           case 0 => harts.map(_.dopId).read(up(Global.HART_ID))
           case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1).isValid.asUInt
         })
+
+        assert(laneId == 0) //TODO
+        lane(Prediction.ALIGNED_JUMPED) := up(Prediction.WORD_JUMPED)
+        lane(Prediction.ALIGNED_JUMPED_PC) := up(Prediction.WORD_JUMP_PC)
+
       }
 
     }
