@@ -58,6 +58,8 @@ class TestOptions{
     opt[Double]("sim-speed-printer") action { (v, c) => simSpeedPrinter = Some(v) }
     opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0), 16) -> new File(v(1)) }
     opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
+    opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
+    opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {

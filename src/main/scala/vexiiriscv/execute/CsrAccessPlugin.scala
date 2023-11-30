@@ -165,7 +165,7 @@ class CsrAccessPlugin(laneName : String,
         val implemented = sels.values.orR
 
         val onDecodeDo = Bool()
-        val spawned = RegInit(False) setWhen(onDecodeDo) clearWhen(isMoving)
+        val spawned = RegInit(False) setWhen(onDecodeDo) clearWhen(isReady)
         onDecodeDo := isValid && !spawned && SEL && isActive(IDLE)
         val priorities = spec.collect { case e: CsrOnDecode => e.priority }.distinct.sorted
         for (priority <- priorities) {
@@ -396,7 +396,7 @@ class CsrAccessPlugin(laneName : String,
         when(regs.rdEnable){
           if(!integrated) wbNi.valid := True
         }
-        when(isFiring) {
+        when(isReady) {
           goto(IDLE)
         }
       }

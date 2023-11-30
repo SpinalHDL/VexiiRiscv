@@ -31,7 +31,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val decodes =  for(laneId <- 0 until Decode.LANES) yield new Area{
       val c = dpp.ctrl(0).lane(laneId)
-      val fire = wrap(c.isFiring)
+      val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID))
       val pc = wrap(c(Global.PC))
       val fetchId = wrap(c(Fetch.ID))
@@ -50,7 +50,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val dispatches = for (eu <- host.list[ExecuteLaneService]) yield new Area {
       val c = eu.ctrl(0)
-      val fire = wrap(c.isFiring)
+      val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID))
       val microOpId = wrap(c(Decode.UOP_ID))
     }
@@ -58,7 +58,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val executes = for (eu <- host.list[ExecuteLaneService]) yield new Area {
       val c = eu.ctrl(eu.executeAt - 1)
-      val fire = wrap(c.isFiring)
+      val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID))
       val microOpId = wrap(c(Decode.UOP_ID))
     }
@@ -110,7 +110,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p =>new Area{
         val c = p.logic.wbCtrl
-        fire := c.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(p.logic.onAddress.translationPort.keys.IO)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(p.logic.onAddress.translationPort.keys.IO)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
@@ -148,7 +148,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.joinCtrl
-        fire := c.isFiring && c(AguPlugin.SEL) && !c(AguPlugin.LOAD)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && !c(AguPlugin.LOAD)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
       })

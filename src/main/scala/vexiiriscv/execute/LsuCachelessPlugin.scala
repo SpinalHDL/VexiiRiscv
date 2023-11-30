@@ -141,8 +141,8 @@ class LsuCachelessPlugin(var laneName : String,
       val buffer = bus.rsp.toStream.queueLowLatency(joinAt-forkAt).combStage
       val READ_DATA = insert(buffer.data)
       elp.freezeWhen(isValid && SEL && !buffer.valid)
-      buffer.ready := isFiring && SEL
-      assert(!(isCanceling && SEL))
+      buffer.ready := isReady && SEL
+      assert(!(up.isCanceling && SEL))
     }
 
     val onWb = new wbCtrl.Area{

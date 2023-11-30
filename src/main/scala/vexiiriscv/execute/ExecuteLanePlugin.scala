@@ -184,7 +184,7 @@ class ExecuteLanePlugin(override val laneName : String,
         setDecodingDefault(ENABLE, False)
         for(uop <- uops) addDecoding(uop.op, ENABLE -> True)
         val port = Flow(CompletionPayload())
-        port.valid := c.isFiring && c(ENABLE)
+        port.valid := c.down.isFiring && c(ENABLE)
         port.hartId := c(Global.HART_ID)
         port.uopId := c(Decode.UOP_ID)
       }

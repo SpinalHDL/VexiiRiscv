@@ -63,7 +63,7 @@ class DivPlugin(val laneName : String,
 
       DIV_REVERT_RESULT := (RS1_REVERT ^ (RS2_REVERT && !REM)) && !(RS2_FORMATED === 0 && RS2_SIGNED && !REM) //RS2_SIGNED == RS1_SIGNED anyway
 
-      val cmdSent = RegInit(False) setWhen (div.io.cmd.fire) clearWhen (isMoving)
+      val cmdSent = RegInit(False) setWhen (div.io.cmd.fire) clearWhen (isReady)
       div.io.cmd.valid := isValid && SEL && !cmdSent
       div.io.cmd.a := RS1_UNSIGNED.resized
       div.io.cmd.b := RS2_UNSIGNED.resized

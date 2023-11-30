@@ -15,9 +15,6 @@ trait CtrlLaneApi{
 
   def isValid: Bool = up(LANE_SEL)
   def isReady : Bool = _c.isReady
-  def isFiring: Bool = (isValid && _c.up.isReady && !hasCancelRequest)
-  def isMoving: Bool = (isValid && (_c.up.isReady || hasCancelRequest))
-  def isCanceling: Bool = isValid && hasCancelRequest
   def hasCancelRequest : Bool
 
   def apply[T <: Data](that: Payload[T]): T = _c.apply(that, laneName)
@@ -31,11 +28,17 @@ trait CtrlLaneApi{
 
   def up = {
     val up = _c.up
-    new up.Area(laneName)
+    new up.Area(laneName){
+      override def isValid = CtrlLaneApi.this.isValid
+      override def isFiring = CtrlLaneApi.this.isValid && CtrlLaneApi.this.isReady && !CtrlLaneApi.this.hasCancelRequest
+    }
   }
   def down = {
     val down = _c.down
-    new down.Area(laneName)
+    new down.Area(laneName) {
+      override def isValid = CtrlLaneApi.this.isValid
+      override def isFiring = CtrlLaneApi.this.isValid && CtrlLaneApi.this.isReady && !CtrlLaneApi.this.hasCancelRequest
+    }
   }
 
   implicit def stageablePiped2[T <: Data](stageable: Payload[T]): T = this (stageable)
