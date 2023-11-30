@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.fiber.Lock
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline
-import spinal.lib.misc.pipeline.Link
+import spinal.lib.misc.pipeline.{CtrlLink, CtrlLinkMirror, Link}
 import vexiiriscv.Global
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.schedule.{Ages, ReschedulePlugin}
@@ -38,4 +38,6 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
       doIt.foreach(v => c.throwWhen(v, usingReady = false))
     }
   }
+
+  class CtrlArea(id : Int) extends CtrlLinkMirror(ctrl(id))
 }

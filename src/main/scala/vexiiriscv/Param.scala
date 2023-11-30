@@ -86,7 +86,7 @@ class ParamSimple(){
       plugins += new IntAluPlugin("lane1", formatAt = 0)
       plugins += new BarrelShifterPlugin("lane1", formatAt = 0)
       plugins += new IntFormatPlugin("lane1")
-      plugins += new BranchPlugin("lane1")
+//      plugins += new BranchPlugin("lane1")
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = intRegFileRelaxedPort)
     }
 
