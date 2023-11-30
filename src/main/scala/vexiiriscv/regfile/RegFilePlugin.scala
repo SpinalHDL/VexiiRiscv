@@ -22,7 +22,8 @@ class RegFilePlugin(var spec : RegfileSpec,
                     var asyncReadBySyncReadRevertedClk : Boolean = false,
                     var allOne : Boolean = false,
                     var syncRead : Boolean = true,
-                    var latchBased : Boolean = false) extends FiberPlugin with RegfileService with InitService {
+                    var latchBased : Boolean = false,
+                    var maskReadDuringWrite : Boolean = true) extends FiberPlugin with RegfileService with InitService {
   withPrefix(spec.getName())
   lazy val rfpp = RegFilePortParam(addressWidth, dataWidth, Global.HART_ID_WIDTH, Decode.UOP_ID_WIDTH)
 
@@ -102,7 +103,8 @@ class RegFilePlugin(var spec : RegfileSpec,
         headZero = spec.x0AlwaysZero,
         preferedWritePortForInit = writeGroups.zipWithIndex.find(_._1._2.exists(_.port.getName().contains(preferedWritePortForInit))).map(_._2).getOrElse(0),
         syncRead = syncRead,
-        asyncReadBySyncReadRevertedClk = asyncReadBySyncReadRevertedClk
+        asyncReadBySyncReadRevertedClk = asyncReadBySyncReadRevertedClk,
+        maskReadDuringWrite = maskReadDuringWrite
       )
 
       val latches = latchBased generate ???

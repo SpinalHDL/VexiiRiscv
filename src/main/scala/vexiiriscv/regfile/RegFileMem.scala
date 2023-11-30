@@ -21,7 +21,8 @@ class RegFileMem(rfpp : RegFilePortParam,
                  preferedWritePortForInit : Int,
                  headZero        : Boolean,
                  syncRead        : Boolean,
-                 asyncReadBySyncReadRevertedClk : Boolean = false) extends Component {
+                 asyncReadBySyncReadRevertedClk : Boolean = false,
+                 maskReadDuringWrite: Boolean = true) extends Component {
   import rfpp._
 
   val io = RegFileIo(rfpp, readsParameter, writesParameter)
@@ -54,6 +55,10 @@ class RegFileMem(rfpp : RegFilePortParam,
   }
 
   val reads = for ((r, i) <- io.reads.zipWithIndex) yield new Area {
+    val valid = maskReadDuringWrite match {
+      case false => r.valid
+      case true => r.valid && !io.writes.map(w => w.valid && w.address === r.address).orR
+    }
     val async = !syncRead generate new Area {
       val port = if (asyncReadBySyncReadRevertedClk) ram.readAsyncPortBySyncReadRevertedClk else ram.readAsyncPort
       port.address := r.address
@@ -61,7 +66,7 @@ class RegFileMem(rfpp : RegFilePortParam,
     }
     val sync = syncRead generate new Area {
       val port = ram.readSyncPort
-      port.cmd.valid := r.valid
+      port.cmd.valid := valid
       port.cmd.payload := r.address
       r.data := port.rsp
     }
