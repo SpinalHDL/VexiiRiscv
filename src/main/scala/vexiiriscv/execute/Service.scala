@@ -8,7 +8,7 @@ import spinal.lib.logic.Masked
 import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
-import vexiiriscv.riscv.{MicroOp, RegfileSpec, RfRead}
+import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfRead, RfResource}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -35,11 +35,17 @@ trait ExecuteLaneService {
 
   def executeAt: Int
   def rfReadAt: Int
+  def rfReadLatencyMax : Int
   def ctrl(id : Int): CtrlLaneApi
   def getMicroOp(): Seq[MicroOp]
   def getMicroOpSpecs(): Iterable[MicroOpSpec]
   def dispatchPriority : Int
   def getSpec(op : MicroOp) : MicroOpSpec
+
+  def getRdReadableAtMax() = getMicroOpSpecs().filter(_.op.resources.exists{
+    case RfResource(_, `RD`) => true
+    case _ => false
+  }).map(_.rd.get.rfReadableAt).max
 }
 
 case class CompletionPayload() extends Bundle{

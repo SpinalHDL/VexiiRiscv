@@ -119,13 +119,12 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
         case RfResource(_, RD) => true
         case _ => false
       })
-      val readAt = eu.rfReadAt
       val readableAt = opWithRd.flatMap(_.rd.map(_.rfReadableAt)).max
-      val checkCount = readableAt - 1
-      val range = 1 until 1 + checkCount
+      val range = 1 to readableAt
       eu -> range
     }.toMapLinked()
 
+    // Will generate the Execute.BYPASSED decoder in each EU for their respective euToCheckRange
     for(eu <- eus){
       val all = ArrayBuffer[Masked]()
       for(op <- eu.getMicroOp()){
@@ -133,12 +132,12 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       }
       val checkRange = euToCheckRange(eu)
       val decs = checkRange.map(_ -> new DecodingSpec(Bool()).setDefault(Masked.zero)).toMapLinked()
-      val node = eu.ctrl(1)
+      val node = eu.ctrl(1) //TODO May be done earlier to improve FMax
       for (spec <- eu.getMicroOpSpecs()) {
         val key = Masked(spec.op.key)
         spec.rd match {
           case Some(rd) => rd.bypassesAt.foreach { id =>
-            decs(id-checkRange.low).addNeeds(key, Masked.one)
+            decs(id).addNeeds(key, Masked.one)
           }
           case None =>
         }
@@ -175,7 +174,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
         val rsLogic = for (rs <- rfaReadsFiltered) yield new Area {
           val hazards = ArrayBuffer[Bool]()
           for(writeEu <- eus) {
-            val range = euToCheckRange(writeEu).dropRight(readAt)
+            val range = (1 until writeEu.getRdReadableAtMax() + readEu.rfReadLatencyMax - readAt)
             for(id <- range) {
               val node = writeEu.ctrl(id)
               hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === ctx.hm(rs.PHYS) && !node(Execute.BYPASSED, id)
@@ -183,7 +182,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
           }
           val hazard = ctx.hm(rs.ENABLE) && hazards.orR
         }
-        eusReady(euId) :=  !rsLogic.map(_.hazard).orR //TODO handle bypasses
+        eusReady(euId) :=  !rsLogic.map(_.hazard).orR
       }
     }
 

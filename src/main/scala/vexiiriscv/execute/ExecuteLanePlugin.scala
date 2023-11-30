@@ -1,7 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.{Lock, Lockable}
+import spinal.core.fiber.{Handle, Lock, Lockable}
 import spinal.idslplugin.Location
 import spinal.lib._
 import spinal.lib.logic.{DecodingSpec, Masked}
@@ -30,6 +30,9 @@ class ExecuteLanePlugin(override val laneName : String,
   during setup {
     host.list[RegfileService].foreach(_.elaborationLock.retain())
   }
+
+  val readLatencyMax = Handle[Int]
+  override def rfReadLatencyMax: Int = readLatencyMax.get
 
   override def dispatchPriority: Int = priority
   override def getMicroOp(): Seq[MicroOp] = {
@@ -122,6 +125,14 @@ class ExecuteLanePlugin(override val laneName : String,
 
   val logic = during build new Area {
     uopLock.await()
+
+    var readLatencyMax = 0
+    val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked
+    val reads = for ((spec, payload) <- rfStageables) yield new Area { //IMPROVE Bit pessimistic as it also trigger on rd
+      readLatencyMax = readLatencyMax max readLatencyMax
+    }
+    ExecuteLanePlugin.this.readLatencyMax.load(readLatencyMax)
+
     pipelineLock.await()
 
     // Generate the register files read + bypass
@@ -159,6 +170,7 @@ class ExecuteLanePlugin(override val laneName : String,
           }
         }
 
+        assert(rfReadAt + rfPlugin.readLatency + 1 == executeAt, "as for now the bypass isn't implemented to udpate the data on the read latency + 1 until execute at")
         // Implement the bypass hardware
         val dataCtrl = ctrl(rfReadAt + rfPlugin.readLatency)
         val rfaRd = Decode.rfaKeys.get(RD)
