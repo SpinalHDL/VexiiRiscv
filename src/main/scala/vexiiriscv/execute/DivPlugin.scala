@@ -18,7 +18,7 @@ object DivPlugin extends AreaObject {
 }
 
 class DivPlugin(val laneName : String,
-                var ctrlAt: Int = 0,
+                var divAt: Int = 0,
                 val writebackAt : Int = 0) extends ExecutionUnitElementSimple(laneName){
   import DivPlugin._
 
@@ -54,11 +54,7 @@ class DivPlugin(val laneName : String,
     srcp.elaborationLock.release()
     ifp.elaborationLock.release()
 
-
-    val divCtrl = eu.execute(ctrlAt)
-    val wbCtrl = eu.execute(writebackAt)
-
-    val processing = new divCtrl.Area {
+    val processing = new eu.Execute(divAt) {
       val div = DivRadix4(width = XLEN.get)
 
       DIV_REVERT_RESULT := (RS1_REVERT ^ (RS2_REVERT && !REM)) && !(RS2_FORMATED === 0 && RS2_SIGNED && !REM) //RS2_SIGNED == RS1_SIGNED anyway
@@ -80,7 +76,7 @@ class DivPlugin(val laneName : String,
       DIV_RESULT := twoComplement(B(selected), DIV_REVERT_RESULT).asBits.resized
     }
 
-    val writeback = new wbCtrl.Area{
+    val writeback = new eu.Execute(writebackAt){
       formatBus.valid := SEL
       formatBus.payload := DIV_RESULT
     }

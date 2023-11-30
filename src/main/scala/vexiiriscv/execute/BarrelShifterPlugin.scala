@@ -55,8 +55,7 @@ class BarrelShifterPlugin(val laneName : String,
     eu.uopLock.release()
     srcp.elaborationLock.release()
 
-    val shiftCtrl = eu.execute(shiftAt)
-    val shift = new shiftCtrl.Area {
+    val shift = new eu.Execute(shiftAt) {
       val ss = SrcStageables
       val amplitude = ss.SRC2(log2Up(Riscv.XLEN.get) - 1 downto 0).asUInt
       val reversed = Mux[SInt](LEFT, ss.SRC1.reversed, ss.SRC1)
@@ -75,8 +74,7 @@ class BarrelShifterPlugin(val laneName : String,
       SHIFT_RESULT := B(patched)
     }
 
-    val formatCtrl = eu.execute(formatAt)
-    val format = new formatCtrl.Area {
+    val format = new eu.Execute(formatAt) {
       wb.valid := SEL
       wb.payload := SHIFT_RESULT
     }

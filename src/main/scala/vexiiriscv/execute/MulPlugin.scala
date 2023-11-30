@@ -58,11 +58,6 @@ class MulPlugin(val laneName : String,
     srcp.elaborationLock.release()
     ifp.elaborationLock.release()
 
-
-    val srcCtrl = eu.execute(srcAt)
-    val mulctrl = eu.execute(mulAt)
-    val writebackCtrl = eu.execute(writebackAt)
-
     val finalWidth = XLEN*2
     val SRC_WIDTH = XLEN.get + (!useRsUnsignedPlugin).toInt
     val keys = new AreaRoot{
@@ -71,8 +66,7 @@ class MulPlugin(val laneName : String,
     }
     import keys._
 
-    val src = new srcCtrl.Area {
-
+    val src = new eu.Execute(srcAt) {
       val rs1 = eu(IntRegFile, RS1)
       val rs2 = eu(IntRegFile, RS2)
       useRsUnsignedPlugin match {
@@ -91,7 +85,7 @@ class MulPlugin(val laneName : String,
     }
 
     // Generate all the partial multiplications
-    val mul = new mulctrl.Area {
+    val mul = new eu.Execute(mulAt) {
       // MulSpliter.splits Will generate a data model of all partial multiplications
       val splits = MulSpliter(SRC_WIDTH, SRC_WIDTH, splitWidthA, splitWidthB, !useRsUnsignedPlugin, !useRsUnsignedPlugin)
       // Generate the partial multiplications from the splits data model
@@ -113,10 +107,7 @@ class MulPlugin(val laneName : String,
       var ptr = 0
     }
 
-    val steps = for(stepId <- sumsSpec.indices) yield new Area {
-      val ctrl = eu.execute(sumAt + stepId)
-      import ctrl._
-
+    val steps = for(stepId <- sumsSpec.indices) yield new eu.Execute(sumAt + stepId) {
       val (stepWidth, stepLanes) = sumsSpec(stepId)
       // Generate the specification for ever adders of the current step
       val addersSpec = AdderAggregator(
@@ -126,7 +117,7 @@ class MulPlugin(val laneName : String,
         untilOffset = if(stepId == 0) untilOffsetS0 else Integer.MAX_VALUE
       )
       // Generate the hardware corresponding to every addersSpec
-      val adders = addersSpec.map(_.craft(sourceToSignal.mapValues(ctrl(_)))).map(insert(_))
+      val adders = addersSpec.map(_.craft(sourceToSignal.mapValues(this(_)))).map(insert(_))
 
       // Setup the iteration variables for the next step
       sourcesSpec = addersSpec.map(_.toSource()).toList
@@ -149,7 +140,7 @@ class MulPlugin(val laneName : String,
       }
     }
 
-    val writeback = new writebackCtrl.Area {
+    val writeback = new eu.Execute(writebackAt) {
       assert(sourcesSpec.size == 1)
       val result = useRsUnsignedPlugin match {
         case false => apply(sourceToSignal(sourcesSpec.head))

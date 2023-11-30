@@ -124,14 +124,12 @@ class CsrAccessPlugin(laneName : String,
       case f: Nameable => f.getName()
     }
 
-    val injectCtrl = elp.execute(injectAt)
     val grouped = spec.groupByLinked(_.csrFilter)
 
     val fsm = new StateMachine{
       val IDLE = makeInstantEntry()
       val READ, WRITE, DONE = new State()
-      import injectCtrl._
-      assert(!(up(LANE_SEL) && SEL && hasCancelRequest))
+
 
       val rd = rfaKeys.get(RD)
 
@@ -151,7 +149,9 @@ class CsrAccessPlugin(laneName : String,
         val fire = False
       }
 
-      val inject = new injectCtrl.Area{
+      val inject = new elp.Execute(injectAt){
+
+        assert(!(up(LANE_SEL) && SEL && hasCancelRequest))
         val imm = IMM(UOP)
         val immZero = imm.z === 0
         val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
@@ -377,7 +377,7 @@ class CsrAccessPlugin(laneName : String,
 
       integrated match {
         case true => {
-          wbWi.valid := SEL
+          wbWi.valid := inject(SEL)
           wbWi.payload := regs.csrValue
         }
         case false =>{
@@ -396,7 +396,7 @@ class CsrAccessPlugin(laneName : String,
         when(regs.rdEnable){
           if(!integrated) wbNi.valid := True
         }
-        when(isReady) {
+        when(inject.isReady) {
           goto(IDLE)
         }
       }

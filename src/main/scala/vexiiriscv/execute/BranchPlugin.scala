@@ -66,8 +66,7 @@ class BranchPlugin(val laneName : String,
     srcp.elaborationLock.release()
     pcp.elaborationLock.release()
 
-    val aluCtrl = eu.execute(aluAt)
-    val alu = new aluCtrl.Area {
+    val alu = new eu.Execute(aluAt) {
       val ss = SrcStageables
       val EQ = insert(ss.SRC1 === ss.SRC2)
 
@@ -100,8 +99,7 @@ class BranchPlugin(val laneName : String,
       val PC_FALSE = insert(PC + (slices << sliceShift))
     }
 
-    val jumpCtrl = eu.execute(jumpAt)
-    val jumpLogic = new jumpCtrl.Area {
+    val jumpLogic = new eu.Execute(jumpAt) {
       val doIt = isValid && SEL && alu.COND
 
       pcPort.valid := doIt
@@ -115,8 +113,7 @@ class BranchPlugin(val laneName : String,
       flushPort.self := False
     }
 
-    val wbCtrl = eu.execute(wbAt)
-    val wbLogic = new wbCtrl.Area{
+    val wbLogic = new eu.Execute(wbAt){
       wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
       wb.payload := alu.PC_FALSE.asBits
     }

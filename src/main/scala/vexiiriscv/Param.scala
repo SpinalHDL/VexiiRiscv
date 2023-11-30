@@ -36,7 +36,11 @@ class ParamSimple(){
 
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
-    plugins += new fetch.CachelessPlugin(wordWidth = 32*decoders)
+    plugins += new fetch.CachelessPlugin(
+      forkAt = 0,
+      joinAt = 1, //You can for instance allow the external memory to have more latency by changing this
+      wordWidth = 32*decoders
+    )
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(

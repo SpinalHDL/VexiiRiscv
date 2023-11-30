@@ -72,8 +72,7 @@ class IntAluPlugin(val laneName : String,
     srcp.elaborationLock.release()
     ifp.elaborationLock.release()
 
-    val aluCtrl = eu.execute(aluAt)
-    val alu = new aluCtrl.Area {
+    val alu = new eu.Execute(aluAt) {
       val ss = SrcStageables
 
       val bitwise = ALU_BITWISE_CTRL.mux(
@@ -91,8 +90,7 @@ class IntAluPlugin(val laneName : String,
       ALU_RESULT := result.asBits
     }
 
-    val formatCtrl = eu.execute(formatAt)
-    val format = new formatCtrl.Area {
+    val format = new eu.Execute(formatAt) {
       formatBus.valid := SEL
       formatBus.payload := ALU_RESULT
     }

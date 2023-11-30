@@ -52,23 +52,16 @@ class CachelessPlugin(var wordWidth : Int,
     val p = CachelessBusParam(MIXED_WIDTH, Fetch.WORD_WIDTH, idCount, false)
     val bus = master(CachelessBus(p))
 
-    val forkCtrl = pp.ctrl(forkAt)
-    val joinCtrl = pp.ctrl(joinAt)
-
     val BUFFER_ID = Payload(UInt(log2Up(idCount) bits))
 
     val buffer = new Area{
       val reserveId = Counter(idCount)
       val inflight = Vec.fill(idCount)(RegInit(False))
       val words = Mem.fill(idCount)(Fetch.WORD)
-      val reservedHits = for (ctrlId <- forkAt+1 to joinAt; ctrl = pp.ctrl(ctrlId)) yield {
+      val reservedHits = for (ctrlId <- forkAt+1 to joinAt; ctrl = pp.fetch(ctrlId)) yield {
         ctrl.isValid && ctrl(BUFFER_ID) === reserveId
       }
       val full = CombInit(reservedHits.orR || inflight.read(reserveId)) //TODO that's one cycle late, can use sort of ahead value
-
-      when(forkCtrl.up.isMoving){
-        reserveId.increment()
-      }
 
       when(bus.cmd.fire) {
         inflight(reserveId) := True
@@ -80,11 +73,7 @@ class CachelessPlugin(var wordWidth : Int,
       }
     }
 
-    forkCtrl.isValid
-    val xxx = CombInit(forkCtrl(BUFFER_ID))
-    val yyy = CombInit(joinCtrl(BUFFER_ID))
-
-    val fork = new forkCtrl.Area{
+    val fork = new pp.Fetch(forkAt){
       val fresh = (forkAt == 0).option(host[PcPlugin].forcedSpawn())
       val cmdFork = forkStream(fresh)
       bus.cmd.arbitrationFrom(cmdFork.haltWhen(buffer.full))
@@ -93,9 +82,13 @@ class CachelessPlugin(var wordWidth : Int,
       bus.cmd.address(Fetch.SLICE_RANGE) := 0
 
       BUFFER_ID := buffer.reserveId
+
+      when(up.isMoving) {
+        buffer.reserveId.increment()
+      }
     }
 
-    val join = new joinCtrl.Area{
+    val join = new pp.Fetch(joinAt){
       val haltIt = buffer.inflight.read(BUFFER_ID)
       Fetch.WORD := buffer.words.readAsync(BUFFER_ID)
       // Implement bus rsp bypass into the pipeline (without using the buffer)

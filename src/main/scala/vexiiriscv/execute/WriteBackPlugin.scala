@@ -70,14 +70,11 @@ class WriteBackPlugin(val laneName : String,
     eu.uopLock.release()
 
     val rfa = rfaKeys.get(RD)
-    val stages = for (group <- sorted) yield new Area {
-      val ctrlId = group.head.ctrlAt
-      val ctrl = eu.execute(ctrlId)
-      import ctrl._
+    val stages = for (group <- sorted; ctrlId = group.head.ctrlAt) yield new eu.Execute(ctrlId) {
       val hits = B(group.map(_.port.valid))
       val muxed = OHMux.or(hits, group.map(_.port.payload), group == sorted.head && group.size == 1)
-      val merged = if(group == sorted.head) muxed else ctrl.up(DATA) | muxed
-      ctrl.bypass(DATA) := merged
+      val merged = if(group == sorted.head) muxed else up(DATA) | muxed
+      bypass(DATA) := merged
 
       val write = Flow(RegFileWriter(rf))
       write.valid := down.isFiring && hits.orR && rfa.ENABLE

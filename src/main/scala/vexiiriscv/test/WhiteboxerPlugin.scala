@@ -22,7 +22,7 @@ class WhiteboxerPlugin extends FiberPlugin{
     val fpp = host[FetchPipelinePlugin]
     val dpp = host[DecodePipelinePlugin]
     val fetch = new Area {
-      val c = fpp.ctrl(0)
+      val c = fpp.fetch(0)
       val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID))
       val fetchId = wrap(c(Fetch.ID))
@@ -115,7 +115,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
         address := c(SrcStageables.ADD_SUB).asUInt
-        data := host.find[IntFormatPlugin](_.laneName == p.laneName).logic.stages.find(_.stage == c).get.wb.payload
+        data := host.find[IntFormatPlugin](_.laneName == p.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
       })
     }
 

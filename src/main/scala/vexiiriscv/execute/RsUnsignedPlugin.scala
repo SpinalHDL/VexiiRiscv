@@ -24,12 +24,9 @@ class RsUnsignedPlugin(val laneName : String) extends FiberPlugin{
 
   buildBefore(elp.pipelineLock)
 
-  val logic = during build new Area{
-    val ctrl = elp.execute(0)
-    import ctrl._
-
-    val rs1 = ctrl(elp(IntRegFile, RS1))
-    val rs2 = ctrl(elp(IntRegFile, RS2))
+  val logic = during build new elp.Execute(0){
+    val rs1 = this(elp(IntRegFile, RS1))
+    val rs2 = this(elp(IntRegFile, RS2))
 
     RS1_FORMATED := CombInit(rs1)
     RS2_FORMATED := CombInit(rs2)

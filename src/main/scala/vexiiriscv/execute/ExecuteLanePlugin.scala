@@ -236,4 +236,6 @@ class ExecuteLanePlugin(override val laneName : String,
 
   def freezeWhen(cond: Bool)(implicit loc: Location) = eupp.freezeWhen(cond)
   def isFreezed(): Bool = eupp.isFreezed()
+  class Execute(id : Int) extends CtrlLaneMirror(execute(id))
+  class Ctrl(id : Int) extends CtrlLaneMirror(ctrl(id))
 }

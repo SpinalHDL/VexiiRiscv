@@ -63,21 +63,21 @@ class BtbPlugin(var entries : Int,
 //      port.data.isBranch := branchContext.learnRead(IS_BRANCH)
 //    }
 
-    val readCmd = new fpp.CtrlArea(readAt){
+    val readCmd = new fpp.Fetch(readAt){
       val entryAddress = (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
     }
 
-    val readRsp = new fpp.CtrlArea(readAt+1){
+    val readRsp = new fpp.Fetch(readAt+1){
       ENTRY := mem.readSync(readCmd.entryAddress, readCmd.isReady, readUnderWrite = readFirst)
       KeepAttribute(this(ENTRY))
     }
 
-    val hitCalc = new fpp.CtrlArea(hitAt){
+    val hitCalc = new fpp.Fetch(hitAt){
       val postPcPrediction = WORD_PC(SLICE_RANGE.get) > ENTRY.slice
       HIT := ENTRY.hash === getHash(WORD_PC) && !postPcPrediction
     }
 
-    val applyIt = new fpp.CtrlArea(jumpAt){
+    val applyIt = new fpp.Fetch(jumpAt){
       val prediction = True //TODO
 //      val prediction = getServiceOption[FetchConditionalPrediction] match {
 //        case Some(s) => s.getPredictionAt(jumpAt)(ENTRY.slice)

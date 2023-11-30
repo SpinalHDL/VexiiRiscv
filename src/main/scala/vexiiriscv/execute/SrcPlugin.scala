@@ -100,8 +100,7 @@ class SrcPlugin(val laneName : String) extends FiberPlugin{
       )
     }
 
-    val onCtrl = eu.execute(0)
-    val src = new onCtrl.Area{
+    val src = new eu.Execute(0){
       val imm = new IMM(Decode.UOP)
       if(src1Keys.nonEmpty) ss.SRC1 := SRC1_CTRL.muxListDc[SInt](src1Keys.map {
         case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(this(eu(IntRegFile, RS1)))
@@ -117,7 +116,7 @@ class SrcPlugin(val laneName : String) extends FiberPlugin{
     }
 
 
-    val addsub = opKeys.nonEmpty generate new onCtrl.Area{
+    val addsub = opKeys.nonEmpty generate new eu.Execute(0){
       val alwaysAdd = !has(sk.Op.SUB, sk.Op.LESS, sk.Op.LESS_U)
       val alwaysSub = !has(sk.Op.ADD)
       val withRevert = !alwaysAdd && !alwaysSub

@@ -17,15 +17,15 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   def getAge(at: Int, prediction: Boolean): Int = Ages.FETCH + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
 
   override def getLinks(): Seq[Link] = logic.connectors
-  val idToCtrl = mutable.LinkedHashMap[Int, pipeline.CtrlLink]()
-  def ctrl(id : Int) = idToCtrl.getOrElseUpdate(id, pipeline.CtrlLink())
+  val idToFetch = mutable.LinkedHashMap[Int, pipeline.CtrlLink]()
+  def fetch(id : Int) = idToFetch.getOrElseUpdate(id, pipeline.CtrlLink())
 
-  def up = ctrl(0).up
+  def up = fetch(0).up
   val logic = during build new Area{
     elaborationLock.await()
-    val idMax = idToCtrl.keys.max
-    for(i <- 0 to idMax) ctrl(i).unsetName() //To ensure the creation to all intermediate nodes
-    val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
+    val idMax = idToFetch.keys.max
+    for(i <- 0 to idMax) fetch(i).unsetName() //To ensure the creation to all intermediate nodes
+    val ctrls = idToFetch.toList.sortBy(_._1).map(_._2)
     val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageLink(from.down, to.up) //.withoutCollapse()
     val connectors = (sc ++ ctrls).toSeq
 
@@ -33,11 +33,11 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
     val flushRange = 1 until ctrls.size - 1
     val flushes = for(id <- flushRange) yield new Area {
       val age = getAge(id, true)
-      val c = ctrl(id)
+      val c = fetch(id)
       val doIt = rp.isFlushedAt(age, c(Global.HART_ID), U(0))
       doIt.foreach(v => c.throwWhen(v, usingReady = false))
     }
   }
 
-  class CtrlArea(id : Int) extends CtrlLinkMirror(ctrl(id))
+  class Fetch(id : Int) extends CtrlLinkMirror(fetch(id))
 }

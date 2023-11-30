@@ -80,11 +80,7 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
     }
 
 
-    val stages = for(group <- grouped.values) yield new Area{
-      val stageId = group.head.ctrlId
-      val stage = eu.execute(stageId)
-      import stage._
-
+    val stages = for(group <- grouped.values; stageId = group.head.ctrlId) yield new eu.Execute(stageId){
       val wb = wbp.createPort(stageId)
       for(spec <- group) wbp.addMicroOp(wb, spec.microOps.toSeq)
 

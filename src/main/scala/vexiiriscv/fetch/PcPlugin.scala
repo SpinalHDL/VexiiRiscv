@@ -36,7 +36,7 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
 
   val logic = during build new Area{
     elaborationLock.await()
-    val injectStage = pp.ctrl(0).up
+    val injectStage = pp.fetch(0).up
 
     // Used to wait until everybody is ready after reset
     val init = new Area {
