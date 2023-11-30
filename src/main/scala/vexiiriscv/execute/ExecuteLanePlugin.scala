@@ -166,7 +166,7 @@ class ExecuteLanePlugin(override val laneName : String,
         val bypassEnables = Bits(bypassSorted.size + 1 bits)
         for ((b, id) <- bypassSorted.zipWithIndex) {
           val node = b.eu.ctrl(b.nodeId)
-          bypassEnables(id) := node(rfaRd.ENABLE) && node(rfaRd.PHYS) === dataCtrl(rfa.PHYS) && node(rfaRd.RFID) === dataCtrl(rfa.RFID)
+          bypassEnables(id) := node.isValid && node(rfaRd.ENABLE) && node(rfaRd.PHYS) === dataCtrl(rfa.PHYS) && node(rfaRd.RFID) === dataCtrl(rfa.RFID)
         }
         bypassEnables.msb := True
         val sel = OHMasking.firstV2(bypassEnables)

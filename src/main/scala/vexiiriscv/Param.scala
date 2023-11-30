@@ -46,7 +46,7 @@ class ParamSimple(){
       decodeAt = 0
     )
     plugins += new schedule.DispatchPlugin(
-      dispatchAt = 2
+      dispatchAt = 1
     )
 
     plugins += new regfile.RegFilePlugin(
@@ -56,10 +56,12 @@ class ParamSimple(){
       syncRead = true
     )
 
+    def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(name, priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+
     plugins += new execute.ExecutePipelinePlugin()
     val intRegFileRelaxedPort = "intShared" //Used by out of pip units to write stuff into the pipeline, //TODO ensure some sort of fairness between no ready and with ready
 
-    plugins += new execute.ExecuteLanePlugin("lane0", priority = 0, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+    plugins += newExecuteLanePlugin("lane0")
     plugins += new SrcPlugin("lane0")
     plugins += new IntAluPlugin("lane0", formatAt = 0)
     plugins += new BarrelShifterPlugin("lane0", formatAt = 0)
@@ -78,7 +80,7 @@ class ParamSimple(){
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = if(lanes == 1) intRegFileRelaxedPort else null)
 
     if(lanes >= 2) {
-      plugins += new execute.ExecuteLanePlugin("lane1", priority = 1, rfReadAt = 0, decodeAt = 1, executeAt = 2)
+      plugins += newExecuteLanePlugin("lane1")
       plugins += new SrcPlugin("lane1")
       plugins += new IntAluPlugin("lane1", formatAt = 0)
       plugins += new BarrelShifterPlugin("lane1", formatAt = 0)
