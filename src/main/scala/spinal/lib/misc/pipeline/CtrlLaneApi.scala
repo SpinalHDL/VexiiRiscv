@@ -26,20 +26,21 @@ trait CtrlLaneApi{
   }
   def bypass[T <: Data](that: Payload[T]): T =  _c.bypass(that, laneName)
 
-  def up = {
-    val up = _c.up
-    new up.Area(laneName){
-      override def isValid = CtrlLaneApi.this.isValid
-      override def isFiring = CtrlLaneApi.this.isValid && CtrlLaneApi.this.isReady && !CtrlLaneApi.this.hasCancelRequest
-    }
+
+  class NodeMirror(node : Node) extends NodeBaseApi {
+    override def valid = node(LANE_SEL, laneName)
+    override def ready = node.ready
+    override def cancel = node.cancel
+    override def isFiring = valid && ready && !cancel
+    override def isMoving = valid && (ready || cancel)
+    override def isCanceling = valid && cancel
+    override def apply(key: NamedTypeKey) = ???
+    override def apply[T <: Data](key: Payload[T]) = node(key, laneName)
+    override def apply(subKey: Seq[Any]) = ???
   }
-  def down = {
-    val down = _c.down
-    new down.Area(laneName) {
-      override def isValid = CtrlLaneApi.this.isValid
-      override def isFiring = CtrlLaneApi.this.isValid && CtrlLaneApi.this.isReady && !CtrlLaneApi.this.hasCancelRequest
-    }
-  }
+
+  def up = new NodeMirror(_c.up)
+  def down = new NodeMirror(_c.down)
 
   implicit def stageablePiped2[T <: Data](stageable: Payload[T]): T = this (stageable)
   implicit def bundlePimper[T <: Bundle](stageable: Payload[T]) = new BundlePimper[T](this (stageable))

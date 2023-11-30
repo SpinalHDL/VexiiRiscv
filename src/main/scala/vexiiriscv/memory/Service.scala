@@ -16,7 +16,7 @@ trait AddressTranslationService extends Area {
   val elaborationLock = Lock()
   def newStorage(pAny: Any): Any
 
-  def newTranslationPort(nodes: Seq[NodeApi],
+  def newTranslationPort(nodes: Seq[NodeBaseApi],
                          rawAddress: Payload[UInt],
                          allowRefill: Payload[Bool],
                          usage: AddressTranslationPortUsage,

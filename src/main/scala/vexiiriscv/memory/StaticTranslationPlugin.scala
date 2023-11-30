@@ -11,7 +11,7 @@ class StaticTranslationPlugin(var physicalWidth: Int,
                               var fetchRange: UInt => Bool) extends FiberPlugin with AddressTranslationService {
 
   override def newStorage(pAny: Any): Any = { }
-  override def newTranslationPort(nodes: Seq[NodeApi],
+  override def newTranslationPort(nodes: Seq[NodeBaseApi],
                                   rawAddress: Payload[UInt],
                                   allowRefill: Payload[Bool],
                                   usage: AddressTranslationPortUsage,
