@@ -48,6 +48,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
 
   val MAY_FLUSH = Payload(Bool())
   val DONT_FLUSH = Payload(Bool())
+  val DONT_FLUSH_FROM_LANES = Payload(Bool())
 
 //  val fenceYoungerOps = mutable.LinkedHashSet[MicroOp]()
 //  val fenceOlderOps = mutable.LinkedHashSet[MicroOp]()
@@ -71,15 +72,22 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
 
     hmKeys.add(MAY_FLUSH)
     hmKeys.add(DONT_FLUSH)
+    hmKeys.add(DONT_FLUSH_FROM_LANES)
     dp.addMicroOpDecodingDefault(MAY_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH, False)
+    dp.addMicroOpDecodingDefault(DONT_FLUSH_FROM_LANES, False)
+    val flushesUpTo = eus.flatMap(_.getMicroOpSpecs().map(_.mayFlushUpTo.getOrElse(-1))).max
     for (eu <- eus; spec <- eu.getMicroOpSpecs()) {
       spec.mayFlushUpTo match {
         case Some(x) => dp.addMicroOpDecoding(spec.op, MAY_FLUSH, True)
         case None =>
       }
       spec.dontFlushFrom match {
-        case Some(x) => dp.addMicroOpDecoding(spec.op, DONT_FLUSH, True)
+        case Some(x) =>
+          dp.addMicroOpDecoding(spec.op, DONT_FLUSH_FROM_LANES, True)
+          if (x < flushesUpTo) {
+            dp.addMicroOpDecoding(spec.op, DONT_FLUSH, True)
+          }
         case None =>
       }
     }
@@ -189,7 +197,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       }
       val olders = candidates.take(cId)
       val oldersHazard = olders.map(o => o.ctx.valid && o.ctx.hm(MAY_FLUSH)).orR
-      c.flushHazard := c.ctx.hm(DONT_FLUSH) && (executeCheck.flatMap(_.hits).orR || oldersHazard)
+      c.flushHazard := c.ctx.hm(DONT_FLUSH) && executeCheck.flatMap(_.hits).orR || c.ctx.hm(DONT_FLUSH_FROM_LANES) && oldersHazard
     }
 
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){

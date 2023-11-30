@@ -76,7 +76,7 @@ class LsuCachelessPlugin(var laneName : String,
 
 
     for (uop <- frontend.loads ++ frontend.stores) {
-      elp.dontFlushFrom(forkAt+1, uop)
+      elp.dontFlushFrom(forkAt+1, uop) //+1 as the fork doesn't happen on cancel request
     }
 
     elp.addMicroOp(Rvi.FENCE) //TODO
@@ -120,7 +120,7 @@ class LsuCachelessPlugin(var laneName : String,
       val RS2 = elp(IntRegFile, riscv.RS2)
       assert(bus.cmd.ready) // For now
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(isReady)
-      bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest //TODO may add that cancel specification to the elp, likely forkAt+1
+      bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest
       bus.cmd.write := ! LOAD
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>

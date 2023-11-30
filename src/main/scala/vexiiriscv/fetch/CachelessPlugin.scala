@@ -80,6 +80,10 @@ class CachelessPlugin(var wordWidth : Int,
       }
     }
 
+    forkCtrl.isValid
+    val xxx = CombInit(forkCtrl(BUFFER_ID))
+    val yyy = CombInit(joinCtrl(BUFFER_ID))
+
     val fork = new forkCtrl.Area{
       val fresh = (forkAt == 0).option(host[PcPlugin].forcedSpawn())
       val cmdFork = forkStream(fresh)

@@ -22,7 +22,6 @@ class MicroOpSpec(val op: MicroOp) {
   var completion = Option.empty[Int]
   var mayFlushUpTo = Option.empty[Int]
   var dontFlushFrom = Option.empty[Int]
-  var canBeFlushed = true
 }
 
 trait ExecuteLaneService {
@@ -41,9 +40,6 @@ trait ExecuteLaneService {
   def getMicroOpSpecs(): Iterable[MicroOpSpec]
   def dispatchPriority : Int
   def getSpec(op : MicroOp) : MicroOpSpec
-
-  def freezeWhen(cond: Bool)(implicit loc : Location)
-  def isFreezed(): Bool
 }
 
 case class CompletionPayload() extends Bundle{

@@ -97,6 +97,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     var retireAt = -1l
     var instruction = -1l
 
+    def spawned = spawnAt != -1
     def done = retireAt != -1 || flushAt != -1
     def didCommit = done && flushAt == -1
 
@@ -329,8 +330,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       val hart = harts(port.hartId.toInt)
       val microOpId = port.uopId.toInt
       val microOp = hart.microOp(microOpId)
-      microOp.completionAt = cycle
-      microOp.retireAt = cycle+1
+      if(microOp.spawned) {
+        microOp.completionAt = cycle
+        microOp.retireAt = cycle + 1
+      }
     }
 
     for(port <- reschedules.flushes) if(port.valid.toBoolean){
@@ -341,7 +344,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         val until = (hart.microOpAllocPtr + 1) & microOpIdMask
         while(ptr != until){
           val opCtx = hart.microOp(ptr)
-          if(opCtx.flushAt == -1) opCtx.flushAt = cycle
+          if(opCtx.spawned && opCtx.flushAt == -1) opCtx.flushAt = cycle
           ptr = (ptr + 1) & microOpIdMask
         }
       }

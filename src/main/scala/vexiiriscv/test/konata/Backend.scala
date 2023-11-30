@@ -26,11 +26,11 @@ class Stage(at : Long, name : String) extends Command(at){
 }
 
 class Retire(at : Long) extends Command(at){
-  override def toString(id : Long): String = s"R\t$id\t0\t0\n"
+  override def toString(id : Long): String = s"R\t$id\t$id\t0\n"
 }
 
 class Flush(at : Long) extends Command(at){
-  override def toString(id : Long): String = s"R\t$id\t0\t1\n"
+  override def toString(id : Long): String = s"R\t$id\t$id\t1\n"
 }
 
 class Instruction(){
