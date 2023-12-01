@@ -65,8 +65,9 @@ class AlignerPlugin(fetchAt : Int,
           case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1).isValid.asUInt
         })
 
-        assert(laneId == 0) //TODO
-        lane(Prediction.ALIGNED_JUMPED) := up(Prediction.WORD_JUMPED)
+
+        val predictionSliceHit = up(Prediction.WORD_JUMP_SLICE) <= lane(Global.PC)(Fetch.SLICE_RANGE)
+        lane(Prediction.ALIGNED_JUMPED) := up(Prediction.WORD_JUMPED) && predictionSliceHit
         lane(Prediction.ALIGNED_JUMPED_PC) := up(Prediction.WORD_JUMP_PC)
 
       }

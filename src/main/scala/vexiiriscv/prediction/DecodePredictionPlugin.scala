@@ -37,7 +37,11 @@ class DecodePredictionPlugin(var decodeAt: Int,
       any.addNeeds(branchKeys ++ jalKeys, Masked.one)
     }
 
-    val slots = for (slotId <- 0 until Decode.LANES) yield new Area {
+
+    flushPort.setIdle()
+    pcPort.setIdle()
+
+    val slots = for (slotId <- (0 until Decode.LANES).reverse) yield new Area {
       val decodeStage = dpp.ctrl(decodeAt).lane(slotId)
       val jumpStage = dpp.ctrl(jumpAt).lane(slotId)
 
@@ -50,13 +54,16 @@ class DecodePredictionPlugin(var decodeAt: Int,
 
         val fixIt = up.isValid && ALIGNED_JUMPED && !IS_ANY
         val fixed = RegInit(False) setWhen(fixIt) clearWhen(up.ready || up.cancel)
-        flushPort.valid := fixIt
-        flushPort.self := True // that way we don't have to calculate the next PC
-        flushPort.hartId := HART_ID
-        flushPort.uopId := Decode.UOP_ID //TODO naaaaa not realy good
 
-        pcPort.valid := fixIt
-        pcPort.pc := PC
+        when(fixIt) {
+          flushPort.valid := True
+          flushPort.self := True // that way we don't have to calculate the next PC
+          flushPort.hartId := HART_ID
+          flushPort.uopId := Decode.UOP_ID //TODO naaaaa not realy good
+
+          pcPort.valid := True
+          pcPort.pc := PC
+        }
       }
     }
 

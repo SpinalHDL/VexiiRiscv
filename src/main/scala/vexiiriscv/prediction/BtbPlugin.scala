@@ -121,7 +121,7 @@ class BtbPlugin(var entries : Int,
       pcPort.pc := ENTRY.pcTarget
 
       WORD_JUMPED := needIt
-      WORD_BRANCH_SLICE := ENTRY.slice
+      WORD_JUMP_SLICE := ENTRY.slice
       WORD_JUMP_PC := ENTRY.pcTarget
 //
 //      setup.historyPush.flush    := isValid && HIT && ENTRY.isBranch && !correctionSent

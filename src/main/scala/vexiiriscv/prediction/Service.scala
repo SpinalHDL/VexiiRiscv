@@ -11,7 +11,7 @@ trait FetchWordPrediction
 object Prediction extends AreaObject{
   //Used by fetch based instruction to inform the aligner plugin about predictions done
   val WORD_JUMPED = Payload(Bool())
-  val WORD_BRANCH_SLICE = Payload(Fetch.SLICE_ID)
+  val WORD_JUMP_SLICE = Payload(Fetch.SLICE_ID)
   val WORD_JUMP_PC = Payload(Global.PC)
 
 //  //Used by decoder based prediction to know the fetch based prediction modified the flow of future instructions
