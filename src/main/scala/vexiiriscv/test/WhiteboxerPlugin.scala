@@ -9,15 +9,16 @@ import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.PipelineBuilderPlugin
-import vexiiriscv.regfile.RegFileWriterService
+import vexiiriscv.regfile.{RegFileWrite, RegFileWriter, RegFileWriterService}
 import vexiiriscv.riscv.{Const, Riscv}
-import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
+import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
 
 class WhiteboxerPlugin extends FiberPlugin{
   buildBefore(host[PipelineBuilderPlugin].elaborationLock)
 
-  val logic = during build new Area{
-    def wrap[T <: Data](that : T) : T = CombInit(that).simPublic
+  val logic = during build new Logic()
+  class Logic extends Area{
+    def wrap[T <: Data](that: T): T = CombInit(that).simPublic
 
     val fpp = host[FetchPipelinePlugin]
     val dpp = host[DecodePipelinePlugin]
@@ -29,7 +30,7 @@ class WhiteboxerPlugin extends FiberPlugin{
     }
 
 
-    val decodes =  for(laneId <- 0 until Decode.LANES) yield new Area{
+    val decodes = for (laneId <- 0 until Decode.LANES) yield new Area {
       val c = dpp.ctrl(0).lane(laneId)
       val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID))
@@ -38,12 +39,11 @@ class WhiteboxerPlugin extends FiberPlugin{
       val decodeId = wrap(c(Decode.DOP_ID))
     }
 
-    val serializeds = for(laneId <- 0 until Decode.LANES) yield new Area {
+    val serializeds = for (laneId <- 0 until Decode.LANES) yield new Area {
       val decodeAt = host[DecoderPlugin].decodeAt
       val c = dpp.ctrl(decodeAt).lane(laneId)
 
       host[DecoderPlugin].logic.await()
-//      val fire = wrap(c.down.isFiring)
       val fire = wrap(c.up.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
       val decodeId = wrap(c(Decode.DOP_ID))
@@ -66,7 +66,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val microOpId = wrap(c(Decode.UOP_ID))
     }
 
-    val csr = new Area{
+    val csr = new Area {
       val p = host[CsrAccessPlugin].logic
       val port = Verilator.public(Flow(new Bundle {
         val hartId = Global.HART_ID()
@@ -87,21 +87,21 @@ class WhiteboxerPlugin extends FiberPlugin{
       port.readDone := p.fsm.regs.read
     }
 
-    val rfWrites = new Area{
+    val rfWrites = new Area {
       val ports = host.list[RegFileWriterService].flatMap(_.getRegFileWriters()).map(wrap)
     }
 
-    val completions = new Area{
+    val completions = new Area {
       val ports = host.list[CompletionService].flatMap(cp => cp.getCompletions().map(wrap))
     }
 
-    val reschedules = new Area{
+    val reschedules = new Area {
       val rp = host[ReschedulePlugin]
       rp.elaborationLock.await()
       val flushes = rp.flushPorts.map(wrap)
     }
 
-    val loadExecute = new Area{
+    val loadExecute = new Area {
       val fire = Bool()
       val hartId = Global.HART_ID()
       val uopId = Decode.UOP_ID()
@@ -111,7 +111,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       SimPublic(fire, hartId, uopId, size, address, data)
 
-      val lcp = host.get[LsuCachelessPlugin] map (p =>new Area{
+      val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.wbCtrl
         fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(p.logic.onAddress.translationPort.keys.IO)
         hartId := c(Global.HART_ID)
@@ -155,6 +155,120 @@ class WhiteboxerPlugin extends FiberPlugin{
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
       })
+    }
+
+
+    def self = this
+    class Proxies {
+      val fetch = new FetchProxy()
+      val decodes = self.decodes.indices.map(new DecodeProxy(_)).toArray
+      val serializeds = self.serializeds.indices.map(new SerializedProxy(_)).toArray
+      val dispatches = self.dispatches.indices.map(new DispatchProxy(_)).toArray
+      val executes = self.executes.indices.map(new ExecuteProxy(_)).toArray
+      val csr = new CsrProxy()
+      val rfWrites = self.rfWrites.ports.map(new RfWriteProxy(_)).toArray
+      val completions = self.completions.ports.map(new CompletionProxy(_)).toArray
+      val flushes = self.reschedules.flushes.map(new FlushProxy(_)).toArray
+      val loadExecute = new LoadExecuteProxy()
+      val storeCommit = new StoreCommitProxy()
+      val storeBroadcast = new storeBroadcastProxy()
+
+    }
+
+    class FetchProxy {
+      val fire = fetch.fire.simProxy()
+      val hartd = fetch.hartId.simProxy()
+      val id = fetch.fetchId.simProxy()
+    }
+
+    class DecodeProxy(laneId: Int) {
+      val self = decodes(laneId)
+      val fire = self.fire.simProxy()
+      val hartId = self.hartId.simProxy()
+      val pc = self.pc.simProxy()
+      val fetchId = self.fetchId.simProxy()
+      val decodeId = self.decodeId.simProxy()
+    }
+
+    class SerializedProxy(laneId: Int) {
+      val self = serializeds(laneId)
+      val fire = self.fire.simProxy()
+      val hartId = self.hartId.simProxy()
+      val decodeId = self.decodeId.simProxy()
+      val microOpId = self.microOpId.simProxy()
+      val microOp = self.microOp.simProxy()
+    }
+
+    class DispatchProxy(laneId: Int) {
+      val self = dispatches(laneId)
+      val fire = self.fire.simProxy()
+      val hartId = self.hartId.simProxy()
+      val microOpId = self.microOpId.simProxy()
+    }
+
+    class ExecuteProxy(laneId: Int) {
+      val self = executes(laneId)
+      val fire = self.fire.simProxy()
+      val hartId = self.hartId.simProxy()
+      val microOpId = self.microOpId.simProxy()
+    }
+
+
+    class CsrProxy{
+      val valid = self.csr.port.valid.simProxy()
+      val hartId = self.csr.port.hartId.simProxy()
+      val uopId = self.csr.port.uopId.simProxy()
+      val address = self.csr.port.address.simProxy()
+      val write = self.csr.port.write.simProxy()
+      val read = self.csr.port.read.simProxy()
+      val writeDone = self.csr.port.writeDone.simProxy()
+      val readDone = self.csr.port.readDone.simProxy()
+    }
+
+    class RfWriteProxy(val port : Flow[RegFileWriter]) {
+      val valid = port.valid.simProxy()
+      val data = port.data.simProxy()
+      val hartId = port.hartId.simProxy()
+      val uopId = port.uopId.simProxy()
+    }
+
+    class CompletionProxy(port: Flow[CompletionPayload]) {
+      val valid = port.valid.simProxy()
+      val hartId = port.hartId.simProxy()
+      val uopId = port.uopId.simProxy()
+    }
+
+    class FlushProxy(port: Flow[FlushCmd]) {
+      val withUopId = port.withUopId
+      val valid = port.valid.simProxy()
+      val hartId = port.hartId.simProxy()
+      val uopId = port.withUopId generate port.uopId.simProxy()
+      val laneAge = port.laneAge.simProxy()
+      val self = port.self.simProxy()
+    }
+
+    class LoadExecuteProxy {
+      val fire = loadExecute.fire.simProxy()
+      val hartId = loadExecute.hartId.simProxy()
+      val uopId = loadExecute.uopId.simProxy()
+      val size = loadExecute.size.simProxy()
+      val address = loadExecute.address.simProxy()
+      val data = loadExecute.data.simProxy()
+    }
+
+    class StoreCommitProxy {
+      val fire = storeCommit.fire.simProxy()
+      val hartId = storeCommit.hartId.simProxy()
+      val uopId = storeCommit.uopId.simProxy()
+      val size = storeCommit.size.simProxy()
+      val address = storeCommit.address.simProxy()
+      val data = storeCommit.data.simProxy()
+    }
+
+    class storeBroadcastProxy {
+      val fire = storeCommit.fire.simProxy()
+      val hartId = storeBroadcast.hartId.simProxy()
+      val uopId = storeBroadcast.uopId.simProxy()
     }
   }
 }

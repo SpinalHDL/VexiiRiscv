@@ -202,16 +202,19 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     var hartId = 0
   }
 
-  def checkPipelines(): Unit = {
-    import wbp._
 
-    if (fetch.fire.toBoolean) {
-      val hart = harts(fetch.hartId.toInt)
-      val fetchId = fetch.fetchId.toInt
-      hart.fetch(fetchId).spawnAt = cycle-1
+  val proxies = new wbp.Proxies()
+
+  def checkPipelines(): Unit = {
+    import proxies._
+
+    if (proxies.fetch.fire.toBoolean) {
+      val hart = harts(fetch.hartd.toInt)
+      val fetchId = fetch.id.toInt
+      hart.fetch(fetchId).spawnAt = cycle - 1
     }
 
-    for(decode <- decodes) if (decode.fire.toBoolean) {
+    for(decode <-decodes) if (decode.fire.toBoolean) {
       val hart = harts(decode.hartId.toInt)
       val fetchId = decode.fetchId.toInt
       val decodeId = decode.decodeId.toInt
@@ -221,7 +224,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       ctx.spawnAt = cycle
     }
 
-    for(serialized <- serializeds) if (serialized.fire.toBoolean) {
+    for(serialized <- wbp.serializeds) if (serialized.fire.toBoolean) {
       val hart = harts(serialized.hartId.toInt)
       val decodeId = serialized.decodeId.toInt
       val microOpId = serialized.microOpId.toInt
@@ -275,23 +278,23 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     }
 
 
-    if (csr.port.fire.toBoolean) {
-      val hartId = csr.port.hartId.toInt
-      val uopId = csr.port.uopId.toInt
+    if (csr.valid.toBoolean) {
+      val hartId = csr.hartId.toInt
+      val uopId = csr.uopId.toInt
       val hart = harts(hartId)
       val uop = hart.microOp(uopId)
       uop.csrValid = true
-      uop.csrAddress = csr.port.address.toInt
-      uop.csrWriteDone = csr.port.writeDone.toBoolean
-      uop.csrReadDone = csr.port.readDone.toBoolean
-      uop.csrWriteData = csr.port.write.toLong
-      uop.csrReadData = csr.port.read.toLong
+      uop.csrAddress = csr.address.toInt
+      uop.csrWriteDone = csr.writeDone.toBoolean
+      uop.csrReadDone = csr.readDone.toBoolean
+      uop.csrWriteData = csr.write.toLong
+      uop.csrReadData = csr.read.toLong
     }
 
-    for (port <- rfWrites.ports) if (port.valid.toBoolean) {
+    for (port <- rfWrites) if (port.valid.toBoolean) {
       val hart = harts(port.hartId.toInt)
       val ctx = hart.microOp(port.uopId.toInt)
-      port.rfSpec match {
+      port.port.rfSpec match {
         case IntRegFile => {
           ctx.integerWriteValid = true
           ctx.integerWriteData = xlenExtends(port.data.toLong)
@@ -327,7 +330,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
     }
 
-    for(port <- completions.ports) if(port.valid.toBoolean){
+    for(port <- completions) if(port.valid.toBoolean){
       val hart = harts(port.hartId.toInt)
       val microOpId = port.uopId.toInt
       val microOp = hart.microOp(microOpId)
@@ -337,7 +340,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
     }
 
-    for(port <- reschedules.flushes) if(port.valid.toBoolean){
+    for(port <- flushes) if(port.valid.toBoolean){
       val hart = harts(port.hartId.toInt)
       if(port.withUopId){
         val self = port.self.toBoolean
