@@ -355,7 +355,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   def checkCommits(): Unit = {
     for(hart <- harts){
       if(hart.lastCommitAt + 100l < cycle){
-        simFailure("Vexii didn't commited anything since too long")
+        simFailure(f"Vexii didn't commited anything since too long, waiting on uop 0x${hart.microOpRetirePtr}%x")
       }
 
       while(hart.microOp(hart.microOpRetirePtr).done){

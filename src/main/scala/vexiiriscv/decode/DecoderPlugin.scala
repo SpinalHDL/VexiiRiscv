@@ -104,7 +104,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
     val harts = for (hartId <- Global.hartsIds) yield new Area {
       val uopId = Reg(Decode.UOP_ID) init (0)
       when(decodeCtrl.link.down.isFiring && decodeCtrl.link(Global.HART_ID) === hartId) {
-        uopId := decodeCtrl.lane(Decode.LANES - 1)(Decode.UOP_ID) + 1
+        uopId := uopId + CountOne(laneIds.map(decodeCtrl.lane).map(_.down.isFiring))//decodeCtrl.lane(Decode.LANES - 1)(Decode.UOP_ID) + 1
       }
     }
 

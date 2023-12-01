@@ -25,8 +25,8 @@ class DecodePredictionPlugin(var decodeAt: Int,
 
   val logic = during build new Area{
     val age = dpp.getAge(jumpAt, true)
-    val pcPort = pcp.createJumpInterface(age, 0, 0)
-    val flushPort = rp.newFlushPort(age, 0, true)
+    val pcPorts = List.fill(Decode.LANES)(pcp.createJumpInterface(age, log2Up(Decode.LANES), 0))
+    val flushPorts = List.fill(Decode.LANES)(rp.newFlushPort(age, log2Up(Decode.LANES), true))
 
     rp.elaborationLock.release()
 
@@ -38,10 +38,9 @@ class DecodePredictionPlugin(var decodeAt: Int,
     }
 
 
-    flushPort.setIdle()
-    pcPort.setIdle()
 
-    val slots = for (slotId <- (0 until Decode.LANES).reverse) yield new Area {
+
+    val slots = for (slotId <- 0 until Decode.LANES) yield new Area {
       val decodeStage = dpp.ctrl(decodeAt).lane(slotId)
       val jumpStage = dpp.ctrl(jumpAt).lane(slotId)
 
@@ -55,15 +54,17 @@ class DecodePredictionPlugin(var decodeAt: Int,
         val fixIt = up.isValid && ALIGNED_JUMPED && !IS_ANY
         val fixed = RegInit(False) setWhen(fixIt) clearWhen(up.ready || up.cancel)
 
-        when(fixIt) {
-          flushPort.valid := True
-          flushPort.self := True // that way we don't have to calculate the next PC
-          flushPort.hartId := HART_ID
-          flushPort.uopId := Decode.UOP_ID //TODO naaaaa not realy good
+        val flushPort = flushPorts(slotId)
+        flushPort.valid := fixIt
+        flushPort.self := True // that way we don't have to calculate the next PC
+        flushPort.hartId := HART_ID
+        flushPort.uopId := Decode.UOP_ID //TODO naaaaa not realy good
+        flushPort.laneAge := slotId //That may have been static instead ?
 
-          pcPort.valid := True
-          pcPort.pc := PC
-        }
+        val pcPort = pcPorts(slotId)
+        pcPort.valid := fixIt
+        pcPort.pc := PC
+        pcPort.laneAge := slotId
       }
     }
 

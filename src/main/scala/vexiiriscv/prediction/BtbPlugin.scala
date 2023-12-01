@@ -18,6 +18,8 @@ import vexiiriscv.execute.BranchPlugin
 import scala.util.Random
 
 class BtbPlugin(var entries : Int,
+                var forceNotTaken: Boolean = false, //For debug/simulation purposes
+                var forceTaken : Boolean = false, //For debug/simulation purposes
                 var hashWidth : Int = 16,
                 var readAt : Int = 0,
                 var hitAt : Int = 1,
@@ -97,15 +99,18 @@ class BtbPlugin(var entries : Int,
 //        case None => True
 //      }
 
-      val skipTrigger = host[DecodePredictionPlugin].logic.flushPort
+
+
       val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
         val skip = RegInit(False)
       }
       when(up.isMoving) {
         harts.onSel(HART_ID)(_.skip := False)
       }
-      when(skipTrigger.valid){
-        harts.onSel(skipTrigger.hartId)(_.skip := True)
+      for(skipTrigger <- host[DecodePredictionPlugin].logic.flushPorts) {
+        when(skipTrigger.valid) {
+          harts.onSel(skipTrigger.hartId)(_.skip := True)
+        }
       }
 
       val gotSkip = harts.map(_.skip).read(HART_ID)
@@ -131,6 +136,9 @@ class BtbPlugin(var entries : Int,
 //      BRANCH_HISTORY_PUSH_VALID := setup.historyPush.flush
 //      BRANCH_HISTORY_PUSH_SLICE := ENTRY.slice
 //      BRANCH_HISTORY_PUSH_VALUE := prediction
+
+      if(forceTaken) prediction.removeAssignments() := True
+      if(forceNotTaken) prediction.removeAssignments() := False
     }
   }
 }

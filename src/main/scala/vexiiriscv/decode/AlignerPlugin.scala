@@ -7,7 +7,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.PipelineService
-import vexiiriscv.prediction.Prediction
+import vexiiriscv.prediction.{FetchWordPrediction, Prediction}
 import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv}
 
 import scala.collection.mutable.ArrayBuffer
@@ -32,7 +32,7 @@ class AlignerPlugin(fetchAt : Int,
     assert(!Riscv.RVC)
     assert(isPow2(Decode.LANES.get))
 
-
+    val withBtb = host.get[FetchWordPrediction].nonEmpty
 
     val up = fpp.fetch(fetchAt).down
     val downCtrl = dpp.ctrl(0)
@@ -55,6 +55,7 @@ class AlignerPlugin(fetchAt : Int,
         val lane = downCtrl.lane(laneId)
         val pcLaneLow = log2Up(Decode.INSTRUCTION_WIDTH/8)
         val pcLaneRange = pcLaneLow + log2Up(Decode.LANES) -1 downto pcLaneLow
+
         lane.up(lane.LANE_SEL)       := up.valid && up(Fetch.WORD_PC)(pcLaneRange) <= laneId
         lane(Decode.INSTRUCTION)     := instructionSlices(laneId)
         lane(Global.PC)              := up(Fetch.WORD_PC)
@@ -65,13 +66,15 @@ class AlignerPlugin(fetchAt : Int,
           case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1).isValid.asUInt
         })
 
-
-        val predictionSliceHit = up(Prediction.WORD_JUMP_SLICE) <= lane(Global.PC)(Fetch.SLICE_RANGE)
-        lane(Prediction.ALIGNED_JUMPED) := up(Prediction.WORD_JUMPED) && predictionSliceHit
-        lane(Prediction.ALIGNED_JUMPED_PC) := up(Prediction.WORD_JUMP_PC)
-
+        val onBtb = withBtb generate new Area{
+          assert(!Riscv.RVC)
+          val afterPrediction = lane(Global.PC)(Fetch.SLICE_RANGE) > up(Prediction.WORD_JUMP_SLICE)
+          val didPrediction = !afterPrediction && lane(Global.PC)(Fetch.SLICE_RANGE) + lane(Decode.INSTRUCTION_SLICE_COUNT) >= up(Prediction.WORD_JUMP_SLICE) //TODO take care of : what's about the prediction landed on a slice which map nobody ?
+          lane(Prediction.ALIGNED_JUMPED) := up(Prediction.WORD_JUMPED) && didPrediction
+          lane(Prediction.ALIGNED_JUMPED_PC) := up(Prediction.WORD_JUMP_PC)
+          lane.up(lane.LANE_SEL) clearWhen(up(Prediction.WORD_JUMPED) && afterPrediction)
+        }
       }
-
     }
   }
 }
