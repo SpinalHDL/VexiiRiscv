@@ -61,7 +61,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val executes = for (eu <- host.list[ExecuteLaneService]) yield new Area {
       val c = eu.ctrl(eu.executeAt)
-      val fire = wrap(c.down.isFiring)
+      val fire = wrap(c.down.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
       val microOpId = wrap(c(Decode.UOP_ID))
     }
