@@ -140,13 +140,13 @@ class TestOptions{
         for(hartId <- probe.hartsIds) probe.backends.foreach(_.setPc(hartId, pc))
       })
 
-      if (elf.getELFSymbol("pass") != null && elf.getELFSymbol("fail") != null) {
-        val passSymbol = elf.getSymbolAddress("pass")
-        val failSymbol = elf.getSymbolAddress("fail")
+      val withPass = elf.getELFSymbol("pass") != null
+      val withFail = elf.getELFSymbol("fail") != null
+      if (withPass || withFail) {
+        val passSymbol = if(withPass) elf.getSymbolAddress("pass") else -1
+        val failSymbol = if(withFail) elf.getSymbolAddress("fail") else -1
         probe.commitsCallbacks += { (hartId, pc) =>
-          if (pc == passSymbol) delayed(1) {
-            simSuccess()
-          }
+          if (pc == passSymbol) delayed(1)(simSuccess())
           if (pc == failSymbol) delayed(1)(simFailure("Software reach the fail symbole :("))
         }
       }
