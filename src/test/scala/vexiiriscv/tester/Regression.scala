@@ -11,6 +11,7 @@ import java.io.{BufferedWriter, File, FileWriter}
 import java.nio.file.{Files, Paths}
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.ExecutionContext
+import scala.reflect.io.Path.jfile2path
 
 class Regression(compiled : SimCompiled[VexiiRiscv]){
   val dut = compiled.dut
@@ -29,30 +30,32 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
   val riscvTestsFile = new File(nsf, "riscv-tests")
   val riscvTests = riscvTestsFile.list().sorted
   val rvi = riscvTests.filter(t => t.startsWith(s"rv${xlen}ui-p-") && !t.contains(".")).map(new File(riscvTestsFile, _))
-  for(elf <- rvi) {
-    val t = newTest()
-    t.elfs += elf
-    t.failAfter = Some(100000)
-    t.startSymbol = Some("test_2")
-    t.testName = Some(elf.getName)
-    tests += t
-  }
-
   val rvm = riscvTests.filter(t => t.startsWith(s"rv${xlen}um-p-") && !t.contains(".")).map(new File(riscvTestsFile, _))
-  for (elf <- rvm) {
+  for(elf <- rvi ++ rvm) {
     val t = newTest()
     t.elfs += elf
     t.failAfter = Some(100000)
     t.startSymbol = Some("test_2")
-    t.testName = Some(elf.getName)
+    t.testName = Some("riscv-tests/" + elf.getName)
     tests += t
   }
 
-  {
+  val archTests = new File(nsf, "riscv-arch-test/rv32i_m/I").listFiles().filter(_.getName.endsWith(".elf"))
+  for (elf <- archTests) {
     val t = newTest()
-    t.elfs += new File(nsf, "baremetal/dhrystone/build/rv32ima/dhrystone.elf")
+    t.elfs += elf
     t.failAfter = Some(10000000)
-    t.testName = Some("dhrystone")
+    t.testName = Some("riscv-arch-test/I/" + elf.getName.replace(".elf",""))
+    tests += t
+  }
+
+
+  val regulars = List("dhrystone", "coremark")
+  for(name <- regulars){
+    val t = newTest()
+    t.elfs += new File(nsf, s"baremetal/$name/build/rv32ima/$name.elf")
+    t.failAfter = Some(300000000)
+    t.testName = Some(name)
     tests += t
   }
 
