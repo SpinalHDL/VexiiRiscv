@@ -16,7 +16,6 @@ import scala.collection.mutable.ArrayBuffer
 class WriteBackPlugin(val laneName : String,
                       val rf : RegfileSpec,
                       var writeAt : Int,
-                      var writeBackKey : Any = null,
                       var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin with RegFileWriterService{
   withPrefix(laneName + "_" + rf.getName())
 
@@ -86,7 +85,7 @@ class WriteBackPlugin(val laneName : String,
 
     val writeCtrl = eu.execute(writeAt)
     val write = new writeCtrl.Area{
-      val port = rfp.newWrite(false, sharingKey = writeBackKey)
+      val port = rfp.newWrite(false, sharingKey = laneName)
       port.valid := isValid && rfa.ENABLE && SEL
       port.address := HART_ID @@ rfa.PHYS
       port.data := DATA

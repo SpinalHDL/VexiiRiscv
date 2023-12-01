@@ -59,6 +59,8 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
 //  def fenceOlder(op : MicroOp) = fenceOlderOps += op
 
   val logic = during build new Area{
+    Execute.LANE_AGE_WIDTH.set(log2Up(Decode.LANES))
+
     elaborationLock.await()
     val dispatchCtrl = dpp.ctrl(dispatchAt)
 

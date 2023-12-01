@@ -95,9 +95,9 @@ class ParamSimple(){
     plugins += new RsUnsignedPlugin("lane0")
     plugins += new MulPlugin("lane0")
     plugins += new DivPlugin("lane0")
-    plugins += new CsrAccessPlugin("lane0", writeBackKey = intRegFileRelaxedPort)
+    plugins += new CsrAccessPlugin("lane0", writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(PrivilegedConfig.full)
-    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = if(lanes == 1) intRegFileRelaxedPort else null)
+    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
     if(lanes >= 2) {
       plugins += newExecuteLanePlugin("lane1", priority = 1)
@@ -106,9 +106,9 @@ class ParamSimple(){
       plugins += new BarrelShifterPlugin("lane1", formatAt = 0)
       plugins += new IntFormatPlugin("lane1")
 //      plugins += new BranchPlugin("lane1")
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = intRegFileRelaxedPort)
+      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
     }
-    
+
 
     plugins += new WhiteboxerPlugin()
 
