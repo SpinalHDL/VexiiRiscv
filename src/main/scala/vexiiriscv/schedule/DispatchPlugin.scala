@@ -30,7 +30,7 @@ Schedule euristic :
 - If the slot can't be schedule, disable all following ones with same HART_ID
 */
 
-class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
+class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
   lazy val dpp = host[DecodePipelinePlugin]
   lazy val dp = host[DecoderService]
   lazy val eupp = host[ExecutePipelinePlugin]
@@ -158,6 +158,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       val ctx = MicroOpCtx()
       val fire = Bool()
       val flushHazard = Bool()
+      val cancel = Bool()
 
       val eusReady = Bits(eus.size bits)
       //TODO merge duplicated logic using signal cache
@@ -204,7 +205,9 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
     dispatchCtrl.link.down.ready := True
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
       val c = candidates(slotsCount + lane)
-      val sent = RegInit(False) setWhen(c.fire) clearWhen(ctrlLink.up.isMoving)
+      val sending = CombInit(c.fire)
+      val sent = RegInit(False) setWhen(sending) clearWhen(ctrlLink.up.isMoving)
+      c.cancel := dispatchCtrl.lane(lane).cancel
       c.ctx.valid := dispatchCtrl.link.isValid && LANE_SEL && !sent
       c.ctx.compatibility := EU_COMPATIBILITY.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
@@ -239,7 +242,7 @@ class DispatchPlugin(dispatchAt : Int) extends FiberPlugin{
       import insertNode._
       val oh = B(scheduler.layer.map(l => l.doIt && l.eusOh(id)))
       val mux = candidates.reader(oh, true)
-      insertNode(CtrlLaneApi.LANE_SEL) := oh.orR
+      insertNode(CtrlLaneApi.LANE_SEL) := oh.orR && !mux(_.cancel)
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.UOP := mux(_.ctx.microOp)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
