@@ -60,13 +60,14 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
     val flushes = for(ctrlId <- flushRange) yield new Area {
       val age = getAge(ctrlId, true)
       val c = idToCtrl(ctrlId)
-      val doIt = rp.isFlushedAt(age, c.link(Global.HART_ID), U(0))
-      doIt.foreach(v => c.link.throwWhen(v, usingReady = false))
+//      val doIt = rp.isFlushedAt(age, c.link(Global.HART_ID), U(0))
+//      doIt.foreach(v => c.link.throwWhen(v, usingReady = false))
 
-      for (laneId <- 0 until Decode.LANES) {
+      //TODO throw whole pipeline when all lanes are dead ? probably not that usefull
+      val onLanes = for (laneId <- 0 until Decode.LANES) yield {
         val l = c.lane(laneId)
         if (ctrlId != 0) l.up(l.LANE_SEL).setAsReg().init(False)
-
+        val doIt = rp.isFlushedAt(age, c.link(Global.HART_ID), laneId)
         doIt match {
           case Some(cond) =>
             l.cancel := cond

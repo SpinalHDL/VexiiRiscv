@@ -11,7 +11,7 @@ import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.PipelineBuilderPlugin
 import vexiiriscv.regfile.RegFileWriterService
 import vexiiriscv.riscv.{Const, Riscv}
-import vexiiriscv.schedule.ReschedulePlugin
+import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
 class WhiteboxerPlugin extends FiberPlugin{
   buildBefore(host[PipelineBuilderPlugin].elaborationLock)
@@ -39,9 +39,12 @@ class WhiteboxerPlugin extends FiberPlugin{
     }
 
     val serializeds = for(laneId <- 0 until Decode.LANES) yield new Area {
-      val c = dpp.ctrl(host[DecoderPlugin].decodeAt).lane(laneId)
+      val decodeAt = host[DecoderPlugin].decodeAt
+      val c = dpp.ctrl(decodeAt).lane(laneId)
+
       host[DecoderPlugin].logic.await()
-      val fire = wrap(c.down.isFiring)
+//      val fire = wrap(c.down.isFiring)
+      val fire = wrap(c.up.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
       val decodeId = wrap(c(Decode.DOP_ID))
       val microOpId = wrap(c(Decode.UOP_ID))
@@ -57,7 +60,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
 
     val executes = for (eu <- host.list[ExecuteLaneService]) yield new Area {
-      val c = eu.ctrl(eu.executeAt - 1)
+      val c = eu.ctrl(eu.executeAt)
       val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID))
       val microOpId = wrap(c(Decode.UOP_ID))

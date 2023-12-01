@@ -12,7 +12,7 @@ trait DecoderService {
 
 //  def addEuOp(fu: ExecuteUnitService, microOp : MicroOp) : Unit
 //  def addResourceDecoding(resource : Resource, stageable : Stageable[Bool])
-//  def covers() : Seq[Masked] //List of all instruction implemented
+  def covers() : Seq[Masked] //List of all instruction implemented
 //  def euGroups : Seq[EuGroup]
 
   def addMicroOpDecoding[T <: BaseType](microOp: MicroOp, key : Payload[T], value: T) : Unit = addMicroOpDecoding(microOp, DecodeList(key -> value))

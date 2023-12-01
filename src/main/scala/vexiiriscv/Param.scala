@@ -34,6 +34,17 @@ class ParamSimple(){
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
 
+    plugins += new prediction.BtbPlugin(
+//      forceTaken = true, //TODO keep me commented
+      entries = 256,
+      hashWidth = 16,
+      jumpAt = 1
+    )
+    plugins += new prediction.DecodePredictionPlugin(
+      decodeAt = 1,
+      jumpAt   = 1
+    )
+
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
     plugins += new fetch.CachelessPlugin(
@@ -51,7 +62,7 @@ class ParamSimple(){
       decodeAt = 1
     )
     plugins += new schedule.DispatchPlugin(
-      dispatchAt = 2
+      dispatchAt = 1
     )
 
     plugins += new regfile.RegFilePlugin(

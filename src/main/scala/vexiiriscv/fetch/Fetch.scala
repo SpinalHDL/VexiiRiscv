@@ -20,4 +20,6 @@ object Fetch extends AreaObject {
   val WORD_PC = Payload(Global.PC)
 
   val ID = Payload(UInt(ID_WIDTH bits))
+
+  val SLICE_ID = Payload(UInt(log2Up(SLICE_COUNT) bits))
 }
