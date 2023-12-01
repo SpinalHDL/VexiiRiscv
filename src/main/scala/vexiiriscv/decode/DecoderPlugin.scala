@@ -103,8 +103,8 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
     val decodeCtrl = dpp.ctrl(decodeAt)
     val harts = for (hartId <- Global.hartsIds) yield new Area {
       val uopId = Reg(Decode.UOP_ID) init (0)
-      when(decodeCtrl.link.down.isFiring && decodeCtrl.link(Global.HART_ID) === hartId) {
-        uopId := uopId + CountOne(laneIds.map(decodeCtrl.lane).map(_.down.isFiring))//decodeCtrl.lane(Decode.LANES - 1)(Decode.UOP_ID) + 1
+      when(decodeCtrl.link.up.isMoving && decodeCtrl.link(Global.HART_ID) === hartId) {
+        uopId := uopId + Decode.LANES.get
       }
     }
 
@@ -139,10 +139,8 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
 
       Decode.UOP := Decode.INSTRUCTION
 
-      Decode.UOP_ID := (laneId match {
-        case 0 => harts.map(_.uopId).read(decodeCtrl.link(Global.HART_ID))
-        case _ => decodeCtrl.lane(laneId-1)(Decode.UOP_ID) + decodeCtrl.lane(laneId-1).isValid.asUInt
-      })
+      val uopIdBase = harts.map(_.uopId).read(decodeCtrl.link(Global.HART_ID))
+      Decode.UOP_ID := uopIdBase + laneId
     }
   }
 }

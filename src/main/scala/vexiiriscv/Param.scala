@@ -62,7 +62,7 @@ class ParamSimple(){
       decodeAt = 1
     )
     plugins += new schedule.DispatchPlugin(
-      dispatchAt = 2
+      dispatchAt = 1
     )
 
     plugins += new regfile.RegFilePlugin(

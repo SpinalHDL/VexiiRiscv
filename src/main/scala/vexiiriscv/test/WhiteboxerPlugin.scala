@@ -41,23 +41,14 @@ class WhiteboxerPlugin extends FiberPlugin{
     val serializeds = for(laneId <- 0 until Decode.LANES) yield new Area {
       val decodeAt = host[DecoderPlugin].decodeAt
       val c = dpp.ctrl(decodeAt).lane(laneId)
-      val dp = host[DispatchPlugin]
 
       host[DecoderPlugin].logic.await()
-      val fire = wrap(
-        if (dp.dispatchAt != decodeAt) {
-          c.down.isFiring
-        } else {
-          val feed = dp.logic.feeds(laneId)
-          feed.sending && !feed.c.cancel
-        }
-      )
+//      val fire = wrap(c.down.isFiring)
+      val fire = wrap(c.up.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
       val decodeId = wrap(c(Decode.DOP_ID))
       val microOpId = wrap(c(Decode.UOP_ID))
       val microOp = wrap(c(Decode.UOP))
-
-
     }
 
     val dispatches = for (eu <- host.list[ExecuteLaneService]) yield new Area {
@@ -69,7 +60,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
 
     val executes = for (eu <- host.list[ExecuteLaneService]) yield new Area {
-      val c = eu.ctrl(eu.executeAt - 1)
+      val c = eu.ctrl(eu.executeAt)
       val fire = wrap(c.down.isFiring)
       val hartId = wrap(c(Global.HART_ID))
       val microOpId = wrap(c(Decode.UOP_ID))

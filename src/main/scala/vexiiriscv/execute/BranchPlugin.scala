@@ -127,7 +127,7 @@ class BranchPlugin(val laneName : String,
 
       flushPort.valid := doIt
       flushPort.hartId := Global.HART_ID
-      flushPort.uopId :=  Decode.UOP_ID + 1
+      flushPort.uopId :=  Decode.UOP_ID
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
 

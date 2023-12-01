@@ -54,8 +54,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     val fetch = Array.fill(1 << fetchIdWidth)(new FetchCtx())
     val decode = Array.fill(1 << decodeIdWidth)(new DecodeCtx())
     val microOp = Array.fill(1 << microOpIdWidth)(new MicroOpCtx())
+    val uopPendings = mutable.Queue[Int]()
+    var lastUopId = -1l
 
-    var microOpRetirePtr, microOpAllocPtr = 0
+//    var microOpRetirePtr, microOpAllocPtr = 0
     var lastCommitAt = 0l
 
     val konataThread = kb.map(_.newThread())
@@ -231,7 +233,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       ctx.decodeId = decodeId
       ctx.instruction = serialized.microOp.toLong
       ctx.spawnAt = cycle
-      hart.microOpAllocPtr = microOpId
+      hart.uopPendings += microOpId
     }
 
     for (dispatch <- dispatches) if (dispatch.fire.toBoolean) {
@@ -310,7 +312,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         trace.hartId = bus.cmd.hartId.toInt
         val offset = trace.address.toInt & (trace.size - 1)
         trace.data = bus.cmd.data.toLong
-        pendingIo.enqueue(trace)
+        pendingIo += trace
       }
 
       if (bus.rsp.valid.toBoolean) {
@@ -339,13 +341,18 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     for(port <- reschedules.flushes) if(port.valid.toBoolean){
       val hart = harts(port.hartId.toInt)
       if(port.withUopId){
+        val self = port.self.toBoolean
         val uopId = port.uopId.toInt
-        var ptr = uopId
-        val until = (hart.microOpAllocPtr + 1) & microOpIdMask
-        while(ptr != until){
-          val opCtx = hart.microOp(ptr)
-          if(opCtx.spawned && opCtx.flushAt == -1) opCtx.flushAt = cycle
-          ptr = (ptr + 1) & microOpIdMask
+        var younger = false
+        for(ptr <- hart.uopPendings){
+          if(ptr == uopId && self) younger = true
+          if(younger) {
+            val opCtx = hart.microOp(ptr)
+            if(opCtx.flushAt == -1){
+              opCtx.flushAt = cycle
+            }
+          }
+          if (ptr == uopId) younger = true
         }
       }
     }
@@ -355,14 +362,18 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   def checkCommits(): Unit = {
     for(hart <- harts){
       if(hart.lastCommitAt + 100l < cycle){
-        simFailure(f"Vexii didn't commited anything since too long, waiting on uop 0x${hart.microOpRetirePtr}%X")
+        val status = if(hart.uopPendings.nonEmpty) f"waiting on uop 0x${hart.uopPendings.head}%X" else f"last uop id 0x${hart.lastUopId}%X"
+        simFailure(f"Vexii didn't commited anything since too long, $status")
       }
 
-      while(hart.microOp(hart.microOpRetirePtr).done){
+      while(hart.uopPendings.nonEmpty && hart.microOp(hart.uopPendings.head).done){
         import hart._
-        val uop = hart.microOp(hart.microOpRetirePtr)
+        val uopId = hart.uopPendings.dequeue()
+        val uop = hart.microOp(uopId)
         val fetch = hart.fetch(uop.fetchId)
         val decode = hart.decode(uop.decodeId)
+
+        hart.lastUopId = uopId
 
         hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
         lastCommitAt = cycle
@@ -387,12 +398,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           }
           backends.foreach(_.commit(hartId, decode.pc))
           if(uop.storeValid){
-            backends.foreach(_.storeBroadcast(hartId, hart.microOpRetirePtr & 0xF))
+            backends.foreach(_.storeBroadcast(hartId, uopId & 0xF))
           }
           commitsCallbacks.foreach(_(hartId, decode.pc))
         }
         uop.clear()
-        hart.microOpRetirePtr = (hart.microOpRetirePtr + 1) % hart.microOp.size
       }
     }
   }
