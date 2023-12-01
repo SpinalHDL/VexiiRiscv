@@ -118,3 +118,35 @@ class ParamSimple(){
   }
 }
 
+/*
+dual issue, btb, no gshare =>
+
+1.74 Dhrystone/MHz
+3.66 Coremark/MHz
+aha-mont64           1.41
+crc32                1.00
+cubic                0.60
+edn                  1.08
+huffbench            1.46
+matmult-int          1.01
+md5sum               1.82
+minver               0.81
+nbody                1.01
+nettle-aes           1.53
+nettle-sha256        1.61
+nsichneu             0.79
+picojpeg             1.14
+primecount           1.46
+qrduino              1.41
+sglib-combined       1.21
+slre                 1.54
+st                   1.21
+statemate            1.96
+tarfind              2.05
+ud                   1.15
+wikisort             1.78
+---------           -----
+Geometric mean       1.26
+
+ */
+
