@@ -5,8 +5,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.fetch.Fetch
 
-// Used just to signal the functionality presence
-trait FetchWordPrediction
+
 
 object Prediction extends AreaObject{
   //Used by fetch based instruction to inform the aligner plugin about predictions done
@@ -29,6 +28,16 @@ object Prediction extends AreaObject{
 //  val IS_BRANCH = Stageable(Bool())
 }
 
+
+// Used just to signal the functionality presence
+trait FetchWordPrediction
+trait FetchConditionalPrediction{
+  def useHistoryAt : Int
+  def getPredictionAt(stageId : Int) : Seq[Bool]
+}
+trait HistoryUser {
+  def historyWidthUsed : Int
+}
 
 case class LearnCmd() extends Bundle{
   val pcOnLastSlice = Global.PC()
