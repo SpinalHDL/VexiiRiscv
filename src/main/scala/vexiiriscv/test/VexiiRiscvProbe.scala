@@ -15,6 +15,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : Boolean){
   var enabled = true
+  var trace = true
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
 
@@ -133,6 +134,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       case v => v.toString
     }
     def toKonata(hart : HartCtx): Unit = {
+      if(!trace) return
       val fetch = hart.fetch(fetchId)
       val decode = hart.decode(decodeId)
       val instruction = if(withRvls) rvls.jni.Frontend.disassemble(disass, this.instruction) else "? rvls disabled ?"
