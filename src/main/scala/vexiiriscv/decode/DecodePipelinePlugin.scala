@@ -41,6 +41,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
     idToCtrl.getOrElseUpdate(id, new Ctrl().setCompositeName(this, "ctrls_" + id.toString))
   }
 
+  class LaneArea(ctrlId : Int, laneId : Int) extends CtrlLaneMirror(ctrl(ctrlId).lane(laneId))
 
   val logic = during build new Area{
     elaborationLock.await()

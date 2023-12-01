@@ -85,6 +85,10 @@ class ParamSimple(){
     plugins += new BranchPlugin("lane0")
     plugins += new LsuCachelessPlugin(
       laneName = "lane0",
+      addressAt = 0,
+      forkAt    = 0,
+      joinAt    = 1,
+      wbAt      = 2,
       translationStorageParameter = null,
       translationPortParameter = null
     )
