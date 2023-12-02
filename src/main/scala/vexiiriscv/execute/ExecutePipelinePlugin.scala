@@ -40,7 +40,6 @@ class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
   }
 
   val logic = during build new Area {
-    Execute.LANE_AGE_WIDTH.set(log2Up(host.list[ExecuteLaneService].size))
     pipelineLock.await()
 
     // Interconnect the pipeline ctrls

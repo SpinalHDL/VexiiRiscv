@@ -72,12 +72,12 @@ class ParamSimple(){
       syncRead = regFileSync
     )
 
-    def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(name, priority = 0, rfReadAt = 0, decodeAt = regFileSync.toInt, executeAt = regFileSync.toInt + 1)
+    def newExecuteLanePlugin(name : String, priority : Int) = new execute.ExecuteLanePlugin(name, priority = priority, rfReadAt = 0, decodeAt = regFileSync.toInt, executeAt = regFileSync.toInt + 1)
 
     plugins += new execute.ExecutePipelinePlugin()
     val intRegFileRelaxedPort = "intShared" //Used by out of pip units to write stuff into the pipeline, //TODO ensure some sort of fairness between no ready and with ready
 
-    plugins += newExecuteLanePlugin("lane0")
+    plugins += newExecuteLanePlugin("lane0", priority = 0)
     plugins += new SrcPlugin("lane0")
     plugins += new IntAluPlugin("lane0", formatAt = 0)
     plugins += new BarrelShifterPlugin("lane0", formatAt = 0)
@@ -95,21 +95,19 @@ class ParamSimple(){
     plugins += new RsUnsignedPlugin("lane0")
     plugins += new MulPlugin("lane0")
     plugins += new DivPlugin("lane0")
-    plugins += new CsrAccessPlugin("lane0", writeBackKey = intRegFileRelaxedPort)
+    plugins += new CsrAccessPlugin("lane0", writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(PrivilegedConfig.full)
-    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = if(lanes == 1) intRegFileRelaxedPort else null)
+    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
     if(lanes >= 2) {
-      plugins += newExecuteLanePlugin("lane1")
+      plugins += newExecuteLanePlugin("lane1", priority = 1)
       plugins += new SrcPlugin("lane1")
       plugins += new IntAluPlugin("lane1", formatAt = 0)
       plugins += new BarrelShifterPlugin("lane1", formatAt = 0)
       plugins += new IntFormatPlugin("lane1")
 //      plugins += new BranchPlugin("lane1")
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0, writeBackKey = intRegFileRelaxedPort)
+      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
     }
-
-
 
 
     plugins += new WhiteboxerPlugin()
@@ -117,4 +115,50 @@ class ParamSimple(){
     plugins
   }
 }
+
+/*
+dual issue, btb, no gshare =>
+
+1.74 Dhrystone/MHz
+3.66 Coremark/MHz
+aha-mont64           1.41
+crc32                1.00
+cubic                0.60
+edn                  1.08
+huffbench            1.46
+matmult-int          1.01
+md5sum               1.82
+minver               0.81
+nbody                1.01
+nettle-aes           1.53
+nettle-sha256        1.61
+nsichneu             0.79
+picojpeg             1.14
+primecount           1.46
+qrduino              1.41
+sglib-combined       1.21
+slre                 1.54
+st                   1.21
+statemate            1.96
+tarfind              2.05
+ud                   1.15
+wikisort             1.78
+---------           -----
+Geometric mean       1.26
+
+
+vexii_1i ->
+Artix 7 -> 90 Mhz 1466 LUT 907 FF
+Artix 7 -> 189 Mhz 1946 LUT 960 FF
+vexii_2i ->
+Artix 7 -> 90 Mhz 2596 LUT 1153 FF
+Artix 7 -> 135 Mhz 3136 LUT 1207 FF
+
+vexii_1i ->
+Artix 7 -> 90 Mhz 1054 LUT 737 FF
+Artix 7 -> 193 Mhz 1498 LUT 789 FF
+vexii_2i ->
+Artix 7 -> 90 Mhz 2271 LUT 980 FF
+Artix 7 -> 133 Mhz 2777 LUT 1033 FF 
+ */
 

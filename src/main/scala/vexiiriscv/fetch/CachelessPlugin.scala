@@ -48,7 +48,7 @@ class CachelessPlugin(var wordWidth : Int,
   val logic = during build new Area{
     Fetch.WORD_WIDTH.set(wordWidth)
 
-    val idCount = joinAt - forkAt + 1 //TODO we need more of it
+    val idCount = joinAt - forkAt + 1
     val p = CachelessBusParam(MIXED_WIDTH, Fetch.WORD_WIDTH, idCount, false)
     val bus = master(CachelessBus(p))
 

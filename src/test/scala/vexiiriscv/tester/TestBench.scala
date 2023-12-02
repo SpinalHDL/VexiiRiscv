@@ -10,11 +10,14 @@ import vexiiriscv._
 import vexiiriscv.fetch.PcService
 import vexiiriscv.riscv.Riscv
 
-import java.io.File
+import java.io.{File, IOException, InputStream, OutputStream, OutputStreamWriter, PrintStream, PrintWriter}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import vexiiriscv.test.konata.Backend
 import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
+
+import java.net.{ServerSocket, Socket}
+import java.util.Scanner
 
 
 class TestOptions{
@@ -45,6 +48,7 @@ class TestOptions{
 
   def addOptions(parser : scopt.OptionParser[Unit]): Unit = {
     import parser._
+    opt[String]("name") action { (v, c) => testName = Some(v) }
     opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
     opt[Unit]("with-wave") action { (v, c) => traceWave = true }
     opt[Unit]("with-konata") action { (v, c) => traceKonata = true }
@@ -93,12 +97,14 @@ class TestOptions{
     val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
     if (withRvlsCheck) probe.add(rvls)
     probe.enabled = withProbe
+    probe.trace = false
 
     // Things to enable when we want to collect traces
     val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath, "tracer.log")))
     onTrace {
       enableSimWave()
       if (withRvlsCheck && traceSpikeLog) rvls.debug()
+      probe.trace = true
 
       tracerFile.foreach{f =>
         f.spinalSimFlusher(10 * 10000)
@@ -247,4 +253,58 @@ object TestBench extends App{
   val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
   testOpt.test(compiled)
   Thread.sleep(100)
+}
+
+//echo '--load-elf ext/NaxSoftware/baremetal/dhrystone/build/rv32ima/dhrystone.elf   --with-all' | nc localhost  8189
+object TestBenchServer extends App{
+
+  val simConfig = SpinalSimConfig()
+  simConfig.withFstWave
+  simConfig.withTestFolder
+
+  val param = new ParamSimple()
+  val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
+  val serverSocket = new ServerSocket(8189)
+  var i = 0
+  while (true) {
+    val incoming = serverSocket.accept
+    new TestBenchServerConnection(incoming, compiled)
+    i += 1
+  }
+}
+
+
+class TestBenchServerConnection(incoming: Socket, compiled : SimCompiled[VexiiRiscv]) extends Thread {
+  this.start()
+  override def run() = {
+    try try {
+      val inputStream = incoming.getInputStream
+      val outputStream = incoming.getOutputStream
+      val in = new Scanner(inputStream)
+      val out = new PrintWriter(outputStream, true) /* autoFlush */
+      var command = ""
+      command = in.nextLine
+      out.println("got " + command)
+      println("got " + command)
+      val args = command.split("\\s+")
+      Console.withOut(outputStream) {
+        Console.withErr(outputStream) {
+          val testOpt = new TestOptions()
+          assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+            help("help").text("prints this usage text")
+            testOpt.addOptions(this)
+          }.parse(args, Unit).nonEmpty)
+          testOpt.test(compiled)
+          Thread.sleep(100)
+        }
+      }
+    } catch {
+      case e: InterruptedException =>
+        throw new RuntimeException(e)
+    } finally incoming.close()
+    catch {
+      case ex: IOException =>
+        ex.printStackTrace()
+    }
+  }
 }

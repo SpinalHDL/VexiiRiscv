@@ -29,6 +29,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool) {
       addressPatched.toInt match {
         case PUTC => print(data(0).toChar)
         case PUT_HEX => print(data.reverse.map(v => f"$v%02x").mkString(""))
+        case PUT_DEC => print(f"${BigInt(data.map(_.toByte).reverse.toArray)}%d")
         case MACHINE_EXTERNAL_INTERRUPT_CTRL => mei #= data(0).toBoolean
         case SUPERVISOR_EXTERNAL_INTERRUPT_CTRL => sei #= data(0).toBoolean
         case IO_FAULT_ADDRESS => {
