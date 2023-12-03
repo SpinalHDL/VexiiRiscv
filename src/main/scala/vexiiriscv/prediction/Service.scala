@@ -48,7 +48,7 @@ case class LearnCmd() extends Bundle{
   val pcOnLastSlice = Global.PC()
   val pcTarget = Global.PC()
   val taken = Bool()
-  val isBranch = Bool()
+  val isBranch, isPush, isPop = Bool()
   val wasWrong = Bool()
   val history = Prediction.BRANCH_HISTORY()
   val uopId = Decode.UOP_ID()

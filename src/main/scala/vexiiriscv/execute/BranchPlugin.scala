@@ -5,8 +5,9 @@
 package vexiiriscv.execute
 
 import spinal.core._
+import spinal.lib._
 import spinal.lib.misc.pipeline._
-import vexiiriscv.riscv.{IMM, RD, Riscv, Rvi}
+import vexiiriscv.riscv.{Const, IMM, RD, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
@@ -154,12 +155,20 @@ class BranchPlugin(val laneName : String,
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
 
+      val IS_JAL = insert(BRANCH_CTRL === BranchCtrlEnum.JAL)
+      val IS_JALR = insert(BRANCH_CTRL === BranchCtrlEnum.JALR)
+      val rdLink  = List[Bits](1,5).map(UOP(Const.rdRange) === _).orR
+      val rs1Link = List[Bits](1,5).map(UOP(Const.rs1Range) === _).orR
+      val rdEquRs1 = UOP(Const.rdRange) === UOP(Const.rs1Range)
+
       val learn = Flow(LearnCmd())
       learn.valid := up.isFiring && SEL
       learn.taken := alu.COND
       learn.pcTarget := alu.PC_TRUE
       learn.pcOnLastSlice := PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
       learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
+      learn.isPush := (IS_JAL || IS_JALR) && rdLink
+      learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
       learn.wasWrong := needFix
       learn.history := history.fetched
       learn.uopId := Decode.UOP_ID

@@ -18,6 +18,7 @@ import vexiiriscv.execute.BranchPlugin
 import scala.util.Random
 
 class BtbPlugin(var entries : Int,
+                var rasDepth : Int = 4,
                 var forceNotTaken: Boolean = false, //For debug/simulation purposes
                 var forceTaken : Boolean = false, //For debug/simulation purposes
                 var hashWidth : Int = 16,
@@ -49,6 +50,39 @@ class BtbPlugin(var entries : Int,
     hp.elaborationLock.release()
 
 
+
+    val ras = new Area{
+      assert(HART_COUNT.get == 1)
+      val mem = new Area{
+        val stack = Mem.fill(rasDepth)(PC)
+        if(GenerationFlags.simulation){
+          stack.initBigInt(List.fill(stack.wordCount)(BigInt(0)))
+        }
+      }
+      val ptr = new Area{
+        val push = Reg(UInt(log2Up(rasDepth) bits)) init(0)
+        val pop = Reg(UInt(log2Up(rasDepth) bits)) init(rasDepth-1)
+        val pushIt, popIt = False
+
+        push := push + U(pushIt) - U(popIt)
+        pop  := pop + U(pushIt) - U(popIt)
+      }
+      val read = mem.stack.readAsync(ptr.pop)
+      val write = mem.stack.writePort
+      write.valid := ptr.pushIt
+      write.address := ptr.push
+      write.data.assignDontCare()
+
+      //Restore the RAS ptr on reschedules
+//      val reschedule = commit.reschedulingPort(onCommit = false)
+//      val healPush = rob.readAsyncSingle(RAS_PUSH_PTR, reschedule.robId)
+//      val healPop  = healPush-1
+//      when(reschedule.valid){
+//        ptr.push := healPush
+//        ptr.pop  := healPop
+//      }
+    }
+
     val wordBytesWidth = log2Up(Fetch.WORD_WIDTH/8)
 
     def getHash(value : UInt) = value(wordBytesWidth + log2Up(entries), hashWidth bits) //TODO better hash
@@ -56,7 +90,7 @@ class BtbPlugin(var entries : Int,
       val hash = UInt(hashWidth bits)
       val slice  = UInt(log2Up(Fetch.SLICE_COUNT) bits)
       val pcTarget = PC()
-      val isBranch = Bool()
+      val isBranch, isPush, isPop = Bool()
       val taken = Bool() //TODO remove
     }
 
@@ -79,15 +113,19 @@ class BtbPlugin(var entries : Int,
       port.data.slice := (cmd.pcOnLastSlice >> SLICE_RANGE_LOW).resized
       port.data.pcTarget := cmd.pcTarget
       port.data.isBranch := cmd.isBranch
+      port.data.isPush := cmd.isPush
+      port.data.isPop := cmd.isPop
       port.data.taken := cmd.taken
     }
 
+    val readPort = mem.readSyncPort()  //TODO , readUnderWrite = readFirst
     val readCmd = new fpp.Fetch(readAt){
-      val entryAddress = (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
+      readPort.cmd.valid := isReady
+      readPort.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
     }
 
     val readRsp = new fpp.Fetch(readAt+1){
-      ENTRY := mem.readSync(readCmd.entryAddress, readCmd.isReady) //TODO , readUnderWrite = readFirst
+      ENTRY := readPort.rsp
       KeepAttribute(this(ENTRY))
     }
 
@@ -122,20 +160,32 @@ class BtbPlugin(var entries : Int,
       val needIt = isValid && !gotSkip && HIT && !(ENTRY.isBranch && !prediction)
       val correctionSent = RegInit(False) setWhen(isValid) clearWhen(up.ready || up.cancel)
       val doIt = needIt && !correctionSent
+      val pcTarget = ENTRY.isPop.mux(ras.read, ENTRY.pcTarget)
+
+      println("!!!!!!!!!!!!!!! OPTIMIZE ME !!!!!!!!!!!!")
+      val pushPc = CombInit(this(WORD_PC))
+      pushPc(SLICE_RANGE) := ENTRY.slice
+      val pushValue = pushPc + SLICE_BYTES.get
+
+      ras.write.data := pushValue
+      when(isValid && !gotSkip && HIT){
+        ras.ptr.pushIt := ENTRY.isPush
+        ras.ptr.popIt := ENTRY.isPop
+      }
 
       flushPort.valid := doIt
       flushPort.self := False
       flushPort.hartId := HART_ID
 
       pcPort.valid := doIt
-      pcPort.pc := ENTRY.pcTarget
+      pcPort.pc := pcTarget
 
       historyPort.valid := isValid && !gotSkip && HIT && ENTRY.isBranch
       historyPort.history := (Prediction.BRANCH_HISTORY ## prediction).resized
 
       WORD_JUMPED := needIt
       WORD_JUMP_SLICE := ENTRY.slice
-      WORD_JUMP_PC := ENTRY.pcTarget
+      WORD_JUMP_PC := pcTarget
 //
 //      setup.historyPush.flush    := isValid && HIT && ENTRY.isBranch && !correctionSent
 //      setup.historyPush.mask(0)  := setup.historyPush.flush

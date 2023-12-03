@@ -155,7 +155,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     var isSc = false
     var scFailure = false
 
-    var isBranch = false
+    var isJumpBranch = false
     var predictionWasWrong = false
 
 
@@ -216,7 +216,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       loadValid = false
       storeValid = false
       isSc = false
-      isBranch = false
+      isJumpBranch = false
       predictionWasWrong = false
     }
 
@@ -367,7 +367,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     if(learn.valid.toBoolean){
       val hart = harts(learn.hartId.toInt)
       val ctx = hart.microOp(learn.uopId.toInt)
-      ctx.isBranch = learn.isBranch.toBoolean
+      ctx.isJumpBranch = true
       ctx.predictionWasWrong = learn.wasWrong.toBoolean
     }
 
@@ -420,7 +420,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
           uop.toKonata(hart)
           if (uop.didCommit) {
-            if(uop.isBranch){
+            if(uop.isJumpBranch){
               val stats = branchStats.getOrElseUpdate(decode.pc, new BranchStats)
               stats.count += 1
               stats.failed += uop.predictionWasWrong.toInt
