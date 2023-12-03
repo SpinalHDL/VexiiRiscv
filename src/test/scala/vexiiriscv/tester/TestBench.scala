@@ -69,7 +69,7 @@ class TestOptions{
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
       case true => DualSimTracer.withCb(compiled, window = 50000 * 10, seed = 2)(test)
-      case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => if (traceWave) f) }
+      case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
 
@@ -102,9 +102,9 @@ class TestOptions{
     // Things to enable when we want to collect traces
     val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath, "tracer.log")))
     onTrace {
-      enableSimWave()
+      if(traceWave) enableSimWave()
       if (withRvlsCheck && traceSpikeLog) rvls.debug()
-      probe.trace = true
+      if(traceKonata) probe.trace = true
 
       tracerFile.foreach{f =>
         f.spinalSimFlusher(10 * 10000)

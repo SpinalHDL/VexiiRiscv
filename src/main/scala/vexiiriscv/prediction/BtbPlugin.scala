@@ -28,21 +28,25 @@ class BtbPlugin(var entries : Int,
   lazy val pcp = host[PcService]
   lazy val rp = host[ReschedulePlugin]
   lazy val dp = host[DispatchPlugin]
+  lazy val hp = host[HistoryPlugin]
   buildBefore(fpp.elaborationLock)
   buildBefore(pcp.elaborationLock)
   setupRetain(rp.elaborationLock)
   setupRetain(dp.elaborationLock)
+  setupRetain(hp.elaborationLock)
 
   val logic = during build new Area{
     val age = fpp.getAge(jumpAt, true)
     val pcPort = pcp.createJumpInterface(age,0, (jumpAt < 2).toInt)
     val flushPort = rp.newFlushPort(age, 0, false)
+    val historyPort = hp.createPort(age)
 
     dp.hmKeys += Prediction.ALIGNED_JUMPED
     dp.hmKeys += Prediction.ALIGNED_JUMPED_PC
 
     dp.elaborationLock.release()
     rp.elaborationLock.release()
+    hp.elaborationLock.release()
 
 
     val wordBytesWidth = log2Up(Fetch.WORD_WIDTH/8)
@@ -124,6 +128,9 @@ class BtbPlugin(var entries : Int,
 
       pcPort.valid := doIt
       pcPort.pc := ENTRY.pcTarget
+
+      historyPort.valid := isValid && !gotSkip && HIT && ENTRY.isBranch
+      historyPort.history := (Prediction.BRANCH_HISTORY ## prediction).resized
 
       WORD_JUMPED := needIt
       WORD_JUMP_SLICE := ENTRY.slice

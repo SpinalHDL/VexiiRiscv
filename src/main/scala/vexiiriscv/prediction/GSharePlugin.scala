@@ -1,30 +1,30 @@
-//package vexiiriscv.prediction
-//
-//import spinal.core._
-//import spinal.lib.KeepAttribute
-//import spinal.lib.misc.plugin.FiberPlugin
-//import spinal.lib.misc.pipeline._
-//import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin, PcService}
-//import Fetch._
-//import vexiiriscv.Global._
-//import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
-//import Prediction._
-//import vexiiriscv.execute.BranchPlugin
-//
-//class GSharePlugin(var historyWidth : Int,
-//                   var entries : Int = 0,
-//                   var memBytes : BigInt = null,
-//                   var readAt : Int = 0,
-//                   var counterWidth : Int = 2,
-//                   var readAsync : Boolean = false) extends FiberPlugin with FetchConditionalPrediction with HistoryUser{
-//  lazy val fpp = host[FetchPipelinePlugin]
-//  buildBefore(fpp.elaborationLock)
-//
-//  override def useHistoryAt = readAt
-//  override def historyWidthUsed = historyWidth
-//  override def getPredictionAt(stageId: Int) = getService[FetchPlugin].getStage(stageId)(setup.GSHARE_COUNTER).map(_.msb)
-//
-//  val GSHARE_COUNTER = Payload(Vec.fill(SLICE_COUNT)(UInt(counterWidth bits)))
+package vexiiriscv.prediction
+
+import spinal.core._
+import spinal.lib.KeepAttribute
+import spinal.lib.misc.plugin.FiberPlugin
+import spinal.lib.misc.pipeline._
+import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin, PcService}
+import Fetch._
+import vexiiriscv.Global._
+import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
+import Prediction._
+import vexiiriscv.execute.BranchPlugin
+
+class GSharePlugin(var historyWidth : Int,
+                   var entries : Int = 0,
+                   var memBytes : BigInt = null,
+                   var readAt : Int = 0,
+                   var counterWidth : Int = 2,
+                   var readAsync : Boolean = false) extends FiberPlugin with FetchConditionalPrediction with HistoryUser{
+  lazy val fpp = host[FetchPipelinePlugin]
+  buildBefore(fpp.elaborationLock)
+
+  override def useHistoryAt = readAt
+  override def historyWidthUsed = historyWidth
+  override def getPredictionAt(stageId: Int) = fpp.fetch(stageId)(GSHARE_COUNTER).map(_.msb)
+
+  val GSHARE_COUNTER = Payload(Vec.fill(SLICE_COUNT)(UInt(counterWidth bits)))
 //
 //  val logic = during build new Area{
 ////    val fetch = getService[FetchPlugin]
@@ -123,4 +123,4 @@
 //    frontend.release()
 //    branchContext.release()
 //  }
-//}
+}

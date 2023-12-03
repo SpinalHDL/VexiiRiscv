@@ -13,7 +13,7 @@ import Global._
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
-import vexiiriscv.prediction.{FetchWordPrediction, LearnCmd, Prediction}
+import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, LearnCmd, Prediction}
 import vexiiriscv.schedule.ReschedulePlugin
 
 object BranchPlugin extends AreaObject {
@@ -31,9 +31,11 @@ class BranchPlugin(val laneName : String,
   lazy val wbp = host.find[WriteBackPlugin](_.laneName == laneName)
   lazy val sp = host[ReschedulePlugin]
   lazy val pcp = host[PcPlugin]
+  lazy val hp = host[HistoryPlugin]
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)
   setupRetain(pcp.elaborationLock)
+  setupRetain(hp.elaborationLock)
 
   val logic = during build new Logic{
     import SrcKeys._
@@ -59,6 +61,7 @@ class BranchPlugin(val laneName : String,
 
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
+    val historyPort = hp.createPort(age)
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     //    val trapPort = if XXX sp.newTrapPort(age)
 
@@ -67,6 +70,7 @@ class BranchPlugin(val laneName : String,
     sp.elaborationLock.release()
     srcp.elaborationLock.release()
     pcp.elaborationLock.release()
+    hp.elaborationLock.release()
 
     // Without prediction, the plugin can assume that there is no correction to do if no branch is needed
     // leading to a simpler design.
@@ -121,9 +125,23 @@ class BranchPlugin(val laneName : String,
       val doIt = isValid && SEL && needFix
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
 
+      val history = new Area{
+        assert(host.list[BranchPlugin].size == 1, "Assume the plugin is the only point on which branches are solved, so we can build the history here")
+        val state = Reg(Prediction.BRANCH_HISTORY) init(0)
+        val shifted = (state ## alu.COND).dropHigh(1)
+        val next = (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
+        when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B){
+          state := shifted
+        }
+      }
+
+
       pcPort.valid := doIt
       pcPort.pc := pcTarget
       pcPort.laneAge := Execute.LANE_AGE
+
+      historyPort.valid := doIt
+      historyPort.history := history.next
 
       flushPort.valid := doIt
       flushPort.hartId := Global.HART_ID
