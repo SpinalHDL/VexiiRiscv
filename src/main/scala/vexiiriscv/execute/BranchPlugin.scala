@@ -13,7 +13,8 @@ import Global._
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
-import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, LearnCmd, Prediction}
+import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
+import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, Prediction}
 import vexiiriscv.schedule.ReschedulePlugin
 
 object BranchPlugin extends AreaObject {
@@ -39,6 +40,8 @@ class BranchPlugin(val laneName : String,
 
   val logic = during build new Logic{
     import SrcKeys._
+
+    BRANCH_HISTORY_WIDTH.set((0 +: host.list[HistoryUser].map(_.historyWidthUsed)).max)
 
     val wb = wbp.createPort(wbAt)
     wbp.addMicroOp(wb, Rvi.JAL, Rvi.JALR)
@@ -126,8 +129,10 @@ class BranchPlugin(val laneName : String,
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
 
       val history = new Area{
+        assert(Global.HART_COUNT.get == 1)
         assert(host.list[BranchPlugin].size == 1, "Assume the plugin is the only point on which branches are solved, so we can build the history here")
         val state = Reg(Prediction.BRANCH_HISTORY) init(0)
+        def fetched = state //Assume it for now, but not always right when fetching multiple instruction per cycles
         val shifted = (state ## alu.COND).dropHigh(1)
         val next = (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
         when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B){
@@ -149,15 +154,16 @@ class BranchPlugin(val laneName : String,
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
 
-      val btb = withBtb generate new Area{
-        val learn = Flow(LearnCmd())
-
-        learn.valid := up.isFiring && SEL
-        learn.taken := alu.COND
-        learn.pcTarget := alu.PC_TRUE
-        learn.pcOnLastSlice := PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
-        learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
-      }
+      val learn = Flow(LearnCmd())
+      learn.valid := up.isFiring && SEL
+      learn.taken := alu.COND
+      learn.pcTarget := alu.PC_TRUE
+      learn.pcOnLastSlice := PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
+      learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
+      learn.wasWrong := needFix
+      learn.history := history.fetched
+      learn.uopId := Decode.UOP_ID
+      learn.hartId := Global.HART_ID
     }
 
     val wbLogic = new eu.Execute(wbAt){

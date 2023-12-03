@@ -28,7 +28,6 @@ class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin
 
   val elaborationLock = Lock()
   val logic = during build new Area{
-    BRANCH_HISTORY_WIDTH.set((0 +: host.list[HistoryUser].map(_.historyWidthUsed)).max)
     elaborationLock.await()
 
     val fetchUsages = host.list[FetchConditionalPrediction]

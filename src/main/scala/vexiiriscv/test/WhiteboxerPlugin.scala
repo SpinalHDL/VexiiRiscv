@@ -9,6 +9,7 @@ import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.PipelineBuilderPlugin
+import vexiiriscv.prediction.LearnCmd
 import vexiiriscv.regfile.{RegFileWrite, RegFileWriter, RegFileWriterService}
 import vexiiriscv.riscv.{Const, Riscv}
 import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
@@ -101,6 +102,11 @@ class WhiteboxerPlugin extends FiberPlugin{
       val flushes = rp.flushPorts.map(wrap)
     }
 
+    val prediction = new Area{
+      val bp = host[BranchPlugin]
+      val learn = wrap(bp.logic.jumpLogic.learn)
+    }
+
     val loadExecute = new Area {
       val fire = Bool()
       val hartId = Global.HART_ID()
@@ -172,7 +178,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val loadExecute = new LoadExecuteProxy()
       val storeCommit = new StoreCommitProxy()
       val storeBroadcast = new storeBroadcastProxy()
-
+      val learn = new LearnProxy(self.prediction.learn)
     }
 
     class FetchProxy {
@@ -269,6 +275,18 @@ class WhiteboxerPlugin extends FiberPlugin{
       val fire = storeCommit.fire.simProxy()
       val hartId = storeBroadcast.hartId.simProxy()
       val uopId = storeBroadcast.uopId.simProxy()
+    }
+
+    class LearnProxy(port: Flow[LearnCmd]) {
+      val valid = port.valid.simProxy()
+      val pcOnLastSlice = port.pcOnLastSlice.simProxy()
+      val pcTarget = port.pcTarget.simProxy()
+      val taken = port.taken.simProxy()
+      val isBranch = port.isBranch.simProxy()
+      val wasWrong = port.wasWrong.simProxy()
+      val history = port.history.simProxy()
+      val uopId = port.uopId.simProxy()
+      val hartId = port.hartId.simProxy()
     }
   }
 }

@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib.misc.database.Database.blocking
 import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
+import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
 
 
@@ -48,4 +49,8 @@ case class LearnCmd() extends Bundle{
   val pcTarget = Global.PC()
   val taken = Bool()
   val isBranch = Bool()
+  val wasWrong = Bool()
+  val history = Prediction.BRANCH_HISTORY()
+  val uopId = Decode.UOP_ID()
+  val hartId = Global.HART_ID()
 }

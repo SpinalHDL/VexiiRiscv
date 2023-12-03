@@ -37,13 +37,13 @@ class ParamSimple(){
     plugins += new prediction.HistoryPlugin()
     plugins += new prediction.BtbPlugin(
 //      forceTaken = true, //TODO keep me commented
-      entries = 256,
+      entries = 256*16,
       hashWidth = 16,
       jumpAt = 1
     )
     plugins += new prediction.GSharePlugin (
-      memBytes = 4 KiB,
-      historyWidth = 12,
+      memBytes = 32 KiB,
+      historyWidth = 16,
       readAt = 0
     )
     plugins += new prediction.DecodePredictionPlugin(
@@ -123,6 +123,12 @@ class ParamSimple(){
 }
 
 /*
+1.51
+3.11
+
+1.51
+3.20
+
 dual issue, btb, no gshare =>
 
 1.74 Dhrystone/MHz

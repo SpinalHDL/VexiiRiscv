@@ -51,7 +51,7 @@ class BtbPlugin(var entries : Int,
 
     val wordBytesWidth = log2Up(Fetch.WORD_WIDTH/8)
 
-    def getHash(value : UInt) = value(wordBytesWidth, hashWidth bits) //TODO better hash
+    def getHash(value : UInt) = value(wordBytesWidth + log2Up(entries), hashWidth bits) //TODO better hash
     case class BtbEntry() extends Bundle {
       val hash = UInt(hashWidth bits)
       val slice  = UInt(log2Up(Fetch.SLICE_COUNT) bits)
@@ -69,7 +69,7 @@ class BtbPlugin(var entries : Int,
     }
 
     val onLearn = new Area{
-      val cmd = host[BranchPlugin].logic.jumpLogic.btb.learn
+      val cmd = host[BranchPlugin].logic.jumpLogic.learn
       val hash = getHash(cmd.pcOnLastSlice)
 
       val port = mem.writePort
@@ -97,11 +97,12 @@ class BtbPlugin(var entries : Int,
     }
 
     val applyIt = new fpp.Fetch(jumpAt){
-      val prediction = !ENTRY.isBranch || ENTRY.taken//TODO
-//      val prediction = getServiceOption[FetchConditionalPrediction] match {
-//        case Some(s) => s.getPredictionAt(jumpAt)(ENTRY.slice)
-//        case None => True
-//      }
+//      val prediction = True
+//      val prediction = !ENTRY.isBranch || ENTRY.taken //TODO
+      val prediction = host.get[FetchConditionalPrediction] match {
+        case Some(s) => s.getPredictionAt(jumpAt)(ENTRY.slice)
+        case None => True
+      }
 
 
 
