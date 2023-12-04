@@ -67,7 +67,8 @@ class BtbPlugin(var entries : Int,
         push := push + U(pushIt) - U(popIt)
         pop  := pop + U(pushIt) - U(popIt)
       }
-      val read = mem.stack.readAsync(ptr.pop)
+      val readIt = Bool()
+      val read = RegNextWhen(mem.stack.readAsync(ptr.pop.getAheadValue()), readIt)
       val write = mem.stack.writePort
       write.valid := ptr.pushIt
       write.address := ptr.push
@@ -134,6 +135,7 @@ class BtbPlugin(var entries : Int,
       HIT := ENTRY.hash === getHash(WORD_PC) && !postPcPrediction
     }
 
+    ras.readIt := fpp.fetch(jumpAt-1).isReady
     val applyIt = new fpp.Fetch(jumpAt){
 //      val prediction = True
 //      val prediction = !ENTRY.isBranch || ENTRY.taken //TODO
@@ -141,8 +143,6 @@ class BtbPlugin(var entries : Int,
         case Some(s) => s.getPredictionAt(jumpAt)(ENTRY.slice)
         case None => True
       }
-
-
 
       val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
         val skip = RegInit(False)

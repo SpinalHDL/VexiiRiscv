@@ -49,6 +49,7 @@ class GSharePlugin(var historyWidth : Int,
 //      GSHARE_COUNTER
 //    )
 
+    assert(readAsync == false, "The issue with read async is that it may change while btb stage is stuck, producing transiants => missmatch between pc correction and announced prediction done to BranchPlugin")
 
     var words = entries/SLICE_COUNT
     if(memBytes != null) words = (1 <<(log2Up(memBytes.toInt*8/counterWidth+1)-1)) / SLICE_COUNT

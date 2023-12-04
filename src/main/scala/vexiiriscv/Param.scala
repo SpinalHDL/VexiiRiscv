@@ -38,6 +38,7 @@ class ParamSimple(){
     plugins += new prediction.BtbPlugin(
 //      forceTaken = true, //TODO keep me commented
       entries = 256*16,
+//      ways = decoders,
       hashWidth = 16,
       jumpAt = 1
     )
