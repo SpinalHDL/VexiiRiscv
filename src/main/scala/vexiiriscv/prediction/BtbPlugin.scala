@@ -17,7 +17,8 @@ import vexiiriscv.execute.BranchPlugin
 
 import scala.util.Random
 
-class BtbPlugin(var entries : Int,
+class BtbPlugin(var sets : Int,
+                var ways : Int,
                 var rasDepth : Int = 4,
                 var forceNotTaken: Boolean = false, //For debug/simulation purposes
                 var forceTaken : Boolean = false, //For debug/simulation purposes
@@ -48,8 +49,6 @@ class BtbPlugin(var entries : Int,
     dp.elaborationLock.release()
     rp.elaborationLock.release()
     hp.elaborationLock.release()
-
-
 
     val ras = new Area{
       assert(HART_COUNT.get == 1)
@@ -86,7 +85,7 @@ class BtbPlugin(var entries : Int,
 
     val wordBytesWidth = log2Up(Fetch.WORD_WIDTH/8)
 
-    def getHash(value : UInt) = value(wordBytesWidth + log2Up(entries), hashWidth bits) //TODO better hash
+    def getHash(value : UInt) = value(wordBytesWidth + log2Up(sets), hashWidth bits) //TODO better hash
     case class BtbEntry() extends Bundle {
       val hash = UInt(hashWidth bits)
       val slice  = UInt(log2Up(Fetch.SLICE_COUNT) bits)
@@ -95,9 +94,9 @@ class BtbPlugin(var entries : Int,
       val taken = Bool() //TODO remove
     }
 
-    val ENTRY = Payload(BtbEntry())
-    val HIT = Payload(Bool())
-    val mem = Mem.fill(entries)(BtbEntry()) //TODO bypass read durring write ?
+    val ENTRIES = Payload(Vec.fill(ways)(BtbEntry()))
+    val HITS = Payload(Bits(ways bits))
+    val mem = Mem.fill(sets)(Vec.fill(ways)(BtbEntry())) //TODO bypass read durring write ?
     val rand = new Random(42)
     if(GenerationFlags.simulation){
       mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
@@ -107,16 +106,19 @@ class BtbPlugin(var entries : Int,
       val cmd = host[BranchPlugin].logic.jumpLogic.learn
       val hash = getHash(cmd.pcOnLastSlice)
 
-      val port = mem.writePort
+      val port = mem.writePortWithMask(ways)
       port.valid := cmd.valid
       port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
-      port.data.hash := hash
-      port.data.slice := (cmd.pcOnLastSlice >> SLICE_RANGE_LOW).resized
-      port.data.pcTarget := cmd.pcTarget
-      port.data.isBranch := cmd.isBranch
-      port.data.isPush := cmd.isPush
-      port.data.isPop := cmd.isPop
-      port.data.taken := cmd.taken
+      port.mask := ???
+      for(data <- port.data) {
+        data.hash := hash
+        data.slice := (cmd.pcOnLastSlice >> SLICE_RANGE_LOW).resized
+        data.pcTarget := cmd.pcTarget
+        data.isBranch := cmd.isBranch
+        data.isPush := cmd.isPush
+        data.isPop := cmd.isPop
+        data.taken := cmd.taken
+      }
     }
 
     val readPort = mem.readSyncPort()  //TODO , readUnderWrite = readFirst
@@ -126,8 +128,8 @@ class BtbPlugin(var entries : Int,
     }
 
     val readRsp = new fpp.Fetch(readAt+1){
-      ENTRY := readPort.rsp
-      KeepAttribute(this(ENTRY))
+      this(ENTRIES) := readPort.rsp
+      KeepAttribute(this(ENTRIES))
     }
 
     val hitCalc = new fpp.Fetch(hitAt){
@@ -186,14 +188,6 @@ class BtbPlugin(var entries : Int,
       WORD_JUMPED := needIt
       WORD_JUMP_SLICE := ENTRY.slice
       WORD_JUMP_PC := pcTarget
-//
-//      setup.historyPush.flush    := isValid && HIT && ENTRY.isBranch && !correctionSent
-//      setup.historyPush.mask(0)  := setup.historyPush.flush
-//      setup.historyPush.taken(0) := prediction
-//
-//      BRANCH_HISTORY_PUSH_VALID := setup.historyPush.flush
-//      BRANCH_HISTORY_PUSH_SLICE := ENTRY.slice
-//      BRANCH_HISTORY_PUSH_VALUE := prediction
 
       if(forceTaken) prediction.removeAssignments() := True
       if(forceNotTaken) prediction.removeAssignments() := False
