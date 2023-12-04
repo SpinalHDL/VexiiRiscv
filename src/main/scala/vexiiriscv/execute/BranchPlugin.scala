@@ -129,19 +129,25 @@ class BranchPlugin(val laneName : String,
       val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond)
       val doIt = isValid && SEL && needFix
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
+      val pcOnLastSlice = PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
 
       val history = new Area{
         assert(Global.HART_COUNT.get == 1)
         assert(host.list[BranchPlugin].size == 1, "Assume the plugin is the only point on which branches are solved, so we can build the history here")
         val state = Reg(Prediction.BRANCH_HISTORY) init(0)
-        def fetched = Prediction.BRANCH_HISTORY //state //Assume it for now, but not always right when fetching multiple instruction per cycles
         val shifted = (state ## alu.COND).dropHigh(1)
         val next = (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
         when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B){
           state := shifted
         }
-      }
 
+        val fetched = CombInit(
+          Fetch.SLICE_COUNT.get match {
+            case 1 => state //State will always reflect what the fetch stages will use, so let's use it as that little area
+            case _ => apply(Prediction.BRANCH_HISTORY) //While the BRANCH_HISTORY may take some more time to wormup, it seems to have little effect in practice (coremark 9.1 miss rate vs 9.0)
+          }                                            //We can't use state there, as if there multiple branch instruction on the same Fetch.WORD it won't reflect the btb branch history
+        )
+      }
 
       pcPort.valid := doIt
       pcPort.pc := pcTarget
@@ -166,7 +172,7 @@ class BranchPlugin(val laneName : String,
       learn.valid := up.isFiring && SEL
       learn.taken := alu.COND
       learn.pcTarget := alu.PC_TRUE
-      learn.pcOnLastSlice := PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
+      learn.pcOnLastSlice := pcOnLastSlice
       learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
       learn.isPush := (IS_JAL || IS_JALR) && rdLink
       learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
