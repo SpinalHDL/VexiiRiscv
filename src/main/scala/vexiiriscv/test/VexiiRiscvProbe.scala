@@ -45,20 +45,20 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     harts.foreach(_.close())
     if(withRvls) rvls.jni.Frontend.deleteDisassemble(disass)
 
-    for(hart <- harts){
-      val stats = hart.jbStats.toArray.sortBy(_._2.failed)
-      val total = new JbStats()
-      for((pc, data) <- stats){
-        total.count += data.count
-        total.failed += data.failed
-      }
-      for((pc, data) <- stats){
-        println(f"- 0x${pc}%08X : ${data.toString()}")
-      }
-
-      println(f"Total  : ${total.toString()}")
-      println(f"Branch : ${hart.branchStats.toString()}")
-    }
+//    for(hart <- harts){
+//      val stats = hart.jbStats.toArray.sortBy(_._2.failed)
+//      val total = new JbStats()
+//      for((pc, data) <- stats){
+//        total.count += data.count
+//        total.failed += data.failed
+//      }
+//      for((pc, data) <- stats){
+//        println(f"- 0x${pc}%08X : ${data.toString()}")
+//      }
+//
+//      println(f"Total  : ${total.toString()}")
+//      println(f"Branch : ${hart.branchStats.toString()}")
+//    }
   }
 
   onSimEnd(close())
