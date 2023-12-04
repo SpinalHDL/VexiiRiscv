@@ -46,8 +46,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     if(withRvls) rvls.jni.Frontend.deleteDisassemble(disass)
 
     for(hart <- harts){
-      val stats = hart.branchStats.toArray.sortBy(_._2.failed)
-      val total = new BranchStats()
+      val stats = hart.jbStats.toArray.sortBy(_._2.failed)
+      val total = new JbStats()
       for((pc, data) <- stats){
         total.count += data.count
         total.failed += data.failed
@@ -57,6 +57,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
 
       println(f"Total  : ${total.toString()}")
+      println(f"Branch : ${hart.branchStats.toString()}")
     }
   }
 
@@ -65,7 +66,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   def pcExtends(pc: Long) = if (xlen == 32) (pc << 32) >> 32 else pc
   def xlenExtends(value: Long) = if (xlen == 32) (value << 32) >> 32 else value
 
-  class BranchStats(){
+  class JbStats(){
     var count = 0l
     var failed = 0l
 
@@ -85,7 +86,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     var lastCommitAt = 0l
 
 
-    val branchStats = mutable.HashMap[Long, BranchStats]()
+    val jbStats = mutable.HashMap[Long, JbStats]()
+    val branchStats = new JbStats()
 
     val konataThread = kb.map(_.newThread())
 
@@ -155,6 +157,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     var isSc = false
     var scFailure = false
 
+    var isBranch = false
     var isJumpBranch = false
     var predictionWasWrong = false
 
@@ -368,6 +371,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       val hart = harts(learn.hartId.toInt)
       val ctx = hart.microOp(learn.uopId.toInt)
       ctx.isJumpBranch = true
+      ctx.isBranch = learn.isBranch.toBoolean
       ctx.predictionWasWrong = learn.wasWrong.toBoolean
     }
 
@@ -421,9 +425,13 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           uop.toKonata(hart)
           if (uop.didCommit) {
             if(uop.isJumpBranch){
-              val stats = branchStats.getOrElseUpdate(decode.pc, new BranchStats)
+              val stats = jbStats.getOrElseUpdate(decode.pc, new JbStats)
               stats.count += 1
               stats.failed += uop.predictionWasWrong.toInt
+              if(uop.isBranch){
+                branchStats.count += 1
+                branchStats.failed += uop.predictionWasWrong.toInt
+              }
             }
             if (uop.loadValid) {
               backends.foreach(_.loadCommit(hartId, uop.loadLqId))

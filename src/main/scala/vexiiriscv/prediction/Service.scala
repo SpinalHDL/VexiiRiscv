@@ -14,6 +14,7 @@ object Prediction extends AreaObject{
   val WORD_JUMPED = Payload(Bool())
   val WORD_JUMP_SLICE = Payload(Fetch.SLICE_ID)
   val WORD_JUMP_PC = Payload(Global.PC)
+//  val WORD_SLICE_JB = Payload(Vec.fill(Fetch.SLICE_COUNT)(Bool()))
 
   //Used by decoder based prediction to know the fetch based prediction modified the flow of future instructions
   val ALIGNED_JUMPED = Payload(Bool())

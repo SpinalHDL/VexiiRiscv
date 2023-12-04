@@ -16,7 +16,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
 import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, Prediction}
-import vexiiriscv.schedule.ReschedulePlugin
+import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
 object BranchPlugin extends AreaObject {
   val BranchCtrlEnum = new SpinalEnum(binarySequential) {
@@ -41,6 +41,7 @@ class BranchPlugin(val laneName : String,
 
   val logic = during build new Logic{
     import SrcKeys._
+    host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
 
     BRANCH_HISTORY_WIDTH.set((0 +: host.list[HistoryUser].map(_.historyWidthUsed)).max)
 
@@ -133,7 +134,7 @@ class BranchPlugin(val laneName : String,
         assert(Global.HART_COUNT.get == 1)
         assert(host.list[BranchPlugin].size == 1, "Assume the plugin is the only point on which branches are solved, so we can build the history here")
         val state = Reg(Prediction.BRANCH_HISTORY) init(0)
-        def fetched = state //Assume it for now, but not always right when fetching multiple instruction per cycles
+        def fetched = Prediction.BRANCH_HISTORY //state //Assume it for now, but not always right when fetching multiple instruction per cycles
         val shifted = (state ## alu.COND).dropHigh(1)
         val next = (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
         when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B){
