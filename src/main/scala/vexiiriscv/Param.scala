@@ -16,8 +16,8 @@ class ParamSimple(){
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
-  var decoders = 2
-  var lanes = 2
+  var decoders = 1
+  var lanes = 1
   var regFileSync = false
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
@@ -34,11 +34,18 @@ class ParamSimple(){
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
 
+    plugins += new prediction.HistoryPlugin()
     plugins += new prediction.BtbPlugin(
 //      forceTaken = true, //TODO keep me commented
-      entries = 256,
+      sets = 512 / decoders,
+      ways = decoders,
       hashWidth = 16,
       jumpAt = 1
+    )
+    plugins += new prediction.GSharePlugin (
+      memBytes = 4 KiB,
+      historyWidth = 12,
+      readAt = 0
     )
     plugins += new prediction.DecodePredictionPlugin(
       decodeAt = 1,
@@ -117,6 +124,16 @@ class ParamSimple(){
 }
 
 /*
+1l btb gshare ras => 1.64 dhrystone 3.21 coremark 1.03 embench
+2l btb gshare ras => 1.91 dhrystone 3.83 coremark 1.32 embench
+
+
+1.51
+3.11
+
+1.51
+3.20
+
 dual issue, btb, no gshare =>
 
 1.74 Dhrystone/MHz

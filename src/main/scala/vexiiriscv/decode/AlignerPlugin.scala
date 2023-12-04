@@ -65,6 +65,7 @@ class AlignerPlugin(fetchAt : Int,
           case 0 => harts.map(_.dopId).read(up(Global.HART_ID))
           case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1).isValid.asUInt
         })
+        lane(Prediction.BRANCH_HISTORY) := up(Prediction.BRANCH_HISTORY)
 
         val onBtb = withBtb generate new Area{
           assert(!Riscv.RVC)

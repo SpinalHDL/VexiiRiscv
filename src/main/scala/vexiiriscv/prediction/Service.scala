@@ -1,8 +1,10 @@
 package vexiiriscv.prediction
 
 import spinal.core._
+import spinal.lib.misc.database.Database.blocking
 import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
+import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
 
 
@@ -12,12 +14,16 @@ object Prediction extends AreaObject{
   val WORD_JUMPED = Payload(Bool())
   val WORD_JUMP_SLICE = Payload(Fetch.SLICE_ID)
   val WORD_JUMP_PC = Payload(Global.PC)
+//  val WORD_SLICE_JB = Payload(Vec.fill(Fetch.SLICE_COUNT)(Bool()))
 
-//  //Used by decoder based prediction to know the fetch based prediction modified the flow of future instructions
+  //Used by decoder based prediction to know the fetch based prediction modified the flow of future instructions
   val ALIGNED_JUMPED = Payload(Bool())
   val ALIGNED_JUMPED_PC = Payload(Global.PC)
-//
-//  //Used by decode predictor to correct the history
+
+  //Used by decode predictor to correct the history
+  val BRANCH_HISTORY_WIDTH = blocking[Int]
+  val BRANCH_HISTORY = Payload(Bits(BRANCH_HISTORY_WIDTH bits))
+
 //  val BRANCH_HISTORY_PUSH_VALID = Stageable(Bool())
 //  val BRANCH_HISTORY_PUSH_SLICE = Stageable(UInt(log2Up(SLICE_COUNT) bits))
 //  val BRANCH_HISTORY_PUSH_VALUE = Stageable(Bool())
@@ -43,5 +49,9 @@ case class LearnCmd() extends Bundle{
   val pcOnLastSlice = Global.PC()
   val pcTarget = Global.PC()
   val taken = Bool()
-  val isBranch = Bool()
+  val isBranch, isPush, isPop = Bool()
+  val wasWrong = Bool()
+  val history = Prediction.BRANCH_HISTORY()
+  val uopId = Decode.UOP_ID()
+  val hartId = Global.HART_ID()
 }

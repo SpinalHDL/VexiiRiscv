@@ -5,16 +5,18 @@
 package vexiiriscv.execute
 
 import spinal.core._
+import spinal.lib._
 import spinal.lib.misc.pipeline._
-import vexiiriscv.riscv.{IMM, RD, Riscv, Rvi}
+import vexiiriscv.riscv.{Const, IMM, RD, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
-import vexiiriscv.prediction.{FetchWordPrediction, LearnCmd, Prediction}
-import vexiiriscv.schedule.ReschedulePlugin
+import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
+import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, Prediction}
+import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
 object BranchPlugin extends AreaObject {
   val BranchCtrlEnum = new SpinalEnum(binarySequential) {
@@ -31,12 +33,17 @@ class BranchPlugin(val laneName : String,
   lazy val wbp = host.find[WriteBackPlugin](_.laneName == laneName)
   lazy val sp = host[ReschedulePlugin]
   lazy val pcp = host[PcPlugin]
+  lazy val hp = host[HistoryPlugin]
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)
   setupRetain(pcp.elaborationLock)
+  setupRetain(hp.elaborationLock)
 
   val logic = during build new Logic{
     import SrcKeys._
+    host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
+
+    BRANCH_HISTORY_WIDTH.set((0 +: host.list[HistoryUser].map(_.historyWidthUsed)).max)
 
     val wb = wbp.createPort(wbAt)
     wbp.addMicroOp(wb, Rvi.JAL, Rvi.JALR)
@@ -59,6 +66,7 @@ class BranchPlugin(val laneName : String,
 
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
+    val historyPort = hp.createPort(age)
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     //    val trapPort = if XXX sp.newTrapPort(age)
 
@@ -67,6 +75,7 @@ class BranchPlugin(val laneName : String,
     sp.elaborationLock.release()
     srcp.elaborationLock.release()
     pcp.elaborationLock.release()
+    hp.elaborationLock.release()
 
     // Without prediction, the plugin can assume that there is no correction to do if no branch is needed
     // leading to a simpler design.
@@ -121,9 +130,25 @@ class BranchPlugin(val laneName : String,
       val doIt = isValid && SEL && needFix
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
 
+      val history = new Area{
+        assert(Global.HART_COUNT.get == 1)
+        assert(host.list[BranchPlugin].size == 1, "Assume the plugin is the only point on which branches are solved, so we can build the history here")
+        val state = Reg(Prediction.BRANCH_HISTORY) init(0)
+        def fetched = Prediction.BRANCH_HISTORY //state //Assume it for now, but not always right when fetching multiple instruction per cycles
+        val shifted = (state ## alu.COND).dropHigh(1)
+        val next = (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
+        when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B){
+          state := shifted
+        }
+      }
+
+
       pcPort.valid := doIt
       pcPort.pc := pcTarget
       pcPort.laneAge := Execute.LANE_AGE
+
+      historyPort.valid := doIt
+      historyPort.history := history.next
 
       flushPort.valid := doIt
       flushPort.hartId := Global.HART_ID
@@ -131,15 +156,24 @@ class BranchPlugin(val laneName : String,
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
 
-      val btb = withBtb generate new Area{
-        val learn = Flow(LearnCmd())
+      val IS_JAL = insert(BRANCH_CTRL === BranchCtrlEnum.JAL)
+      val IS_JALR = insert(BRANCH_CTRL === BranchCtrlEnum.JALR)
+      val rdLink  = List[Bits](1,5).map(UOP(Const.rdRange) === _).orR
+      val rs1Link = List[Bits](1,5).map(UOP(Const.rs1Range) === _).orR
+      val rdEquRs1 = UOP(Const.rdRange) === UOP(Const.rs1Range)
 
-        learn.valid := up.isFiring && SEL
-        learn.taken := alu.COND
-        learn.pcTarget := alu.PC_TRUE
-        learn.pcOnLastSlice := PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
-        learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
-      }
+      val learn = Flow(LearnCmd())
+      learn.valid := up.isFiring && SEL
+      learn.taken := alu.COND
+      learn.pcTarget := alu.PC_TRUE
+      learn.pcOnLastSlice := PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
+      learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
+      learn.isPush := (IS_JAL || IS_JALR) && rdLink
+      learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
+      learn.wasWrong := needFix
+      learn.history := history.fetched
+      learn.uopId := Decode.UOP_ID
+      learn.hartId := Global.HART_ID
     }
 
     val wbLogic = new eu.Execute(wbAt){

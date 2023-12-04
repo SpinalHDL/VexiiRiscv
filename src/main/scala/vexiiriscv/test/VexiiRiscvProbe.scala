@@ -44,12 +44,37 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   def close(): Unit = {
     harts.foreach(_.close())
     if(withRvls) rvls.jni.Frontend.deleteDisassemble(disass)
+
+//    for(hart <- harts){
+//      val stats = hart.jbStats.toArray.sortBy(_._2.failed)
+//      val total = new JbStats()
+//      for((pc, data) <- stats){
+//        total.count += data.count
+//        total.failed += data.failed
+//      }
+//      for((pc, data) <- stats){
+//        println(f"- 0x${pc}%08X : ${data.toString()}")
+//      }
+//
+//      println(f"Total  : ${total.toString()}")
+//      println(f"Branch : ${hart.branchStats.toString()}")
+//    }
   }
 
   onSimEnd(close())
 
   def pcExtends(pc: Long) = if (xlen == 32) (pc << 32) >> 32 else pc
   def xlenExtends(value: Long) = if (xlen == 32) (value << 32) >> 32 else value
+
+  class JbStats(){
+    var count = 0l
+    var failed = 0l
+
+    override def toString(): String ={
+      val rate = (1000f*failed/count).toInt
+      f"${count}%5d ${failed}%5d ${rate/10}%3d.${rate%10}%%"
+    }
+  }
 
   class HartCtx(val hartId : Int) {
     val fetch = Array.fill(1 << fetchIdWidth)(new FetchCtx())
@@ -59,6 +84,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
     var microOpRetirePtr, microOpAllocPtr = 0
     var lastCommitAt = 0l
+
+
+    val jbStats = mutable.HashMap[Long, JbStats]()
+    val branchStats = new JbStats()
 
     val konataThread = kb.map(_.newThread())
 
@@ -128,6 +157,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     var isSc = false
     var scFailure = false
 
+    var isBranch = false
+    var isJumpBranch = false
+    var predictionWasWrong = false
+
 
     def traceT2s(cycle : Long) = cycle match {
       case 0l => ""
@@ -147,7 +180,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
       if (decode.spawnAt != -1) {
         i += new Stage(decode.spawnAt, "D")
-        i += new Comment(decode.spawnAt, f"${decode.pc}%x : $instruction")
+        i += new Comment(decode.spawnAt, f"${decode.pc}%X : $instruction")
       }
       if (issueAt != -1) i += new Stage(issueAt, "I")
       if (executeAt != -1) i += new Stage(executeAt, "E")
@@ -186,6 +219,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       loadValid = false
       storeValid = false
       isSc = false
+      isJumpBranch = false
+      predictionWasWrong = false
     }
 
     clear()
@@ -332,6 +367,14 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
     }
 
+    if(learn.valid.toBoolean){
+      val hart = harts(learn.hartId.toInt)
+      val ctx = hart.microOp(learn.uopId.toInt)
+      ctx.isJumpBranch = true
+      ctx.isBranch = learn.isBranch.toBoolean
+      ctx.predictionWasWrong = learn.wasWrong.toBoolean
+    }
+
     for(port <- completions) if(port.valid.toBoolean){
       val hart = harts(port.hartId.toInt)
       val microOpId = port.uopId.toInt
@@ -381,6 +424,15 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
           uop.toKonata(hart)
           if (uop.didCommit) {
+            if(uop.isJumpBranch){
+              val stats = jbStats.getOrElseUpdate(decode.pc, new JbStats)
+              stats.count += 1
+              stats.failed += uop.predictionWasWrong.toInt
+              if(uop.isBranch){
+                branchStats.count += 1
+                branchStats.failed += uop.predictionWasWrong.toInt
+              }
+            }
             if (uop.loadValid) {
               backends.foreach(_.loadCommit(hartId, uop.loadLqId))
             }
