@@ -111,7 +111,7 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       val valid = Bool()
       val compatibility = Bits(eus.size bits)
       val hartId = Global.HART_ID()
-      val microOp = Decode.UOP()
+      val uop = Decode.UOP()
       val hm = new HardMap()
       hmKeys.foreach(e => hm.add(e))
     }
@@ -136,7 +136,7 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       }
       val checkRange = euToCheckRange(eu)
       val decs = checkRange.map(_ -> new DecodingSpec(Bool()).setDefault(Masked.zero)).toMapLinked()
-      val node = eu.ctrl(1) //TODO May be done earlier to improve FMax
+      val node = eu.ctrl(0) //TODO May be done earlier to improve FMax
       for (spec <- eu.getMicroOpSpecs()) {
         val key = Masked(spec.op.key)
         spec.rd match {
@@ -213,7 +213,7 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       c.ctx.valid := dispatchCtrl.link.isValid && LANE_SEL && !sent
       c.ctx.compatibility := EU_COMPATIBILITY.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
-      c.ctx.microOp := Decode.UOP
+      c.ctx.uop := Decode.UOP
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
       dispatchCtrl.link.down.ready clearWhen(LANE_SEL && !sent && !c.fire)
     }
@@ -246,7 +246,7 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       val mux = candidates.reader(oh, true)
       insertNode(CtrlLaneApi.LANE_SEL) := oh.orR && !mux(_.cancel)
       Global.HART_ID := mux(_.ctx.hartId)
-      Decode.UOP := mux(_.ctx.microOp)
+      Decode.UOP := mux(_.ctx.uop)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
       when(!CtrlLaneApi.LANE_SEL){
         //Allow to avoid having to check the valid down the pipeline

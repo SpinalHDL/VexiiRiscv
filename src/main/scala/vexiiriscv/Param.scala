@@ -206,6 +206,17 @@ Artix 7 -> 90 Mhz 1054 LUT 737 FF
 Artix 7 -> 193 Mhz 1498 LUT 789 FF
 vexii_2i ->
 Artix 7 -> 90 Mhz 2271 LUT 980 FF
-Artix 7 -> 133 Mhz 2777 LUT 1033 FF 
+Artix 7 -> 133 Mhz 2777 LUT 1033 FF
+
+
+
+
+lane micro op spec
+- For each impl
+  - readRsFrom
+  - rd bypass from (executeId)
+  - completion at (probe)
+  - mayFlushUpTo
+  - dontFlushFrom
  */
 

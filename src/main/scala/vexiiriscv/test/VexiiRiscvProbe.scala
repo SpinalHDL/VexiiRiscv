@@ -30,6 +30,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
   val disass = withRvls generate rvls.jni.Frontend.newDisassemble(xlen)
   val harts = hartsIds.map(new HartCtx(_)).toArray
+  val wbp = cpu.host[WhiteboxerPlugin].logic.get
+  val proxies = new wbp.Proxies()
 
   def add(tracer: TraceBackend): this.type = {
     backends += tracer
@@ -48,6 +50,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
   def getStats(): String = {
     val str = new StringBuilder()
+    str ++= "### Stats ###\n"
     for (hart <- harts) {
       val stats = hart.jbStats.toArray.sortBy(_._2.failed)
       val total = new JbStats()
@@ -55,13 +58,28 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         total.count += data.count
         total.failed += data.failed
       }
-      for ((pc, data) <- stats) {
-        str ++= f"- 0x${pc}%08X : ${data.toString()}\n"
-      }
-
-      str ++= f"Total  : ${total.toString()}\n"
-      str ++= f"Branch : ${hart.branchStats.toString()}\n"
+//      for ((pc, data) <- stats) {
+//        str ++= f"- 0x${pc}%08X : ${data.toString()}\n"
+//      }
+      str ++= f"kind :  miss / times   miss-rate\n"
+      str ++= f"J/B  : ${total.toString()}\n"
+      str ++= f"  B  : ${hart.branchStats.toString()}\n"
     }
+
+    def cycleRatio(times: Long) = {
+      val rate = (1000f * times / cycle).toInt
+      f"${times}%7d / ${cycle}%7d ${rate / 10}%3d.${rate % 10}%%"
+    }
+
+    for ((hw, i) <- wbp.perf.dispatchFeedCounters.zipWithIndex) {
+      str ++= f"Dispatch  $i   : ${cycleRatio(hw.toLong)}\n"
+    }
+    for ((hw, i) <- wbp.perf.candidatesCountCounters.zipWithIndex) {
+      str ++= f"Candidate $i   : ${cycleRatio(hw.toLong)}\n"
+    }
+    str ++= f"Dispatch halt : ${cycleRatio(wbp.perf.dispatchHazardsCounter.toLong)}\n"
+    str ++= f"Execute  halt : ${cycleRatio(wbp.perf.executeFreezedCounter.toLong)}\n"
+    str ++= f"IPC           : ${cycleRatio(harts.map(_.commits).sum)}\n"
     str.toString()
   }
 
@@ -88,6 +106,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
     var microOpRetirePtr, microOpAllocPtr = 0
     var lastCommitAt = 0l
+
+    var commits = 0l
 
 
     val jbStats = mutable.HashMap[Long, JbStats]()
@@ -233,7 +253,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
   val sizeMask = Array(0xFFl, 0xFFFFl, 0xFFFFFFFFl, -1l)
 
-  val wbp = cpu.host[WhiteboxerPlugin].logic.get
   val lsuClpb = cpu.host.get[LsuCachelessPlugin].map(_.logic.get.bus)
   val pendingIo = mutable.Queue[ProbeTraceIo]()
 
@@ -243,8 +262,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     var hartId = 0
   }
 
-
-  val proxies = new wbp.Proxies()
 
   def checkPipelines(): Unit = {
     import proxies._
@@ -428,6 +445,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
           uop.toKonata(hart)
           if (uop.didCommit) {
+            hart.commits += 1
             if(uop.isJumpBranch){
               val stats = jbStats.getOrElseUpdate(decode.pc, new JbStats)
               stats.count += 1

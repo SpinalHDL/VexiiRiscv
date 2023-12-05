@@ -163,6 +163,19 @@ class WhiteboxerPlugin extends FiberPlugin{
       })
     }
 
+    val perf = new Area{
+      val dispatch = host[DispatchPlugin]
+      val executeFreezed = wrap(host[ExecutePipelinePlugin].isFreezed())
+      val dispatchHazards = wrap(dispatch.logic.candidates.map(c => c.ctx.valid && !c.fire).orR)
+      val candidatesCount = wrap(CountOne(dispatch.logic.candidates.map(_.ctx.valid)))
+      val dispatchFeedCount = CountOne(dispatch.logic.feeds.map(_.isValid))
+
+      val executeFreezedCounter = wrap(Counter(1 << 60l, executeFreezed).value)
+      val dispatchHazardsCounter = wrap(Counter(1 << 60l, dispatchHazards).value)
+      val candidatesCountCounters = (0 to dispatch.logic.candidates.size).map(id => wrap(Counter(1 << 60l, candidatesCount === id).value))
+      val dispatchFeedCounters = (0 to dispatch.logic.feeds.size).map(id => wrap(Counter(1 << 60l, dispatchFeedCount === id).value))
+    }
+
 
     def self = this
     class Proxies {
@@ -177,8 +190,9 @@ class WhiteboxerPlugin extends FiberPlugin{
       val flushes = self.reschedules.flushes.map(new FlushProxy(_)).toArray
       val loadExecute = new LoadExecuteProxy()
       val storeCommit = new StoreCommitProxy()
-      val storeBroadcast = new storeBroadcastProxy()
+      val storeBroadcast = new StoreBroadcastProxy()
       val learn = new LearnProxy(self.prediction.learn)
+      val perf = new PerfProxy()
     }
 
     class FetchProxy {
@@ -271,7 +285,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val data = storeCommit.data.simProxy()
     }
 
-    class storeBroadcastProxy {
+    class StoreBroadcastProxy {
       val fire = storeCommit.fire.simProxy()
       val hartId = storeBroadcast.hartId.simProxy()
       val uopId = storeBroadcast.uopId.simProxy()
@@ -287,6 +301,13 @@ class WhiteboxerPlugin extends FiberPlugin{
       val history = port.history.simProxy()
       val uopId = port.uopId.simProxy()
       val hartId = port.hartId.simProxy()
+    }
+
+    class PerfProxy() {
+      val candidatesMax = perf.dispatch.logic.candidates.size
+      val executeFreezed = perf.executeFreezed.simProxy()
+      val dispatchHazards = perf.dispatchHazards.simProxy()
+      val candidatesCount = perf.candidatesCount.simProxy()
     }
   }
 }
