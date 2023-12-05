@@ -56,7 +56,7 @@ class TestOptions{
     opt[Unit]("with-rvls-log") action { (v, c) => traceRvlsLog = true }
     opt[Unit]("with-spike-log") action { (v, c) => traceSpikeLog = true }
     opt[Unit]("print-stats") action { (v, c) => printStats = true }
-    opt[Unit]("with-all") action { (v, c) => traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true }
+    opt[Unit]("with-all") action { (v, c) => traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true; printStats = true }
     opt[Unit]("no-probe") action { (v, c) => withProbe = false; }
     opt[Unit]("no-rvls-check") action { (v, c) => withRvlsCheck = false;  }
     opt[Long]("fail-after") action { (v, c) => failAfter = Some(v) }

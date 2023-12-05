@@ -64,22 +64,22 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       str ++= f"kind :  miss / times   miss-rate\n"
       str ++= f"J/B  : ${total.toString()}\n"
       str ++= f"  B  : ${hart.branchStats.toString()}\n"
-
-      def cycleRatio(times : Long) = {
-        val rate = (1000f * times / cycle).toInt
-        f"${times}%7d / ${cycle}%7d ${rate / 10}%3d.${rate % 10}%%"
-      }
-
-      for ((hw, i) <- wbp.perf.dispatchFeedCounters.zipWithIndex) {
-        str ++= f"Dispatch  $i   : ${cycleRatio(hw.toLong)}\n"
-      }
-      for ((hw, i) <- wbp.perf.candidatesCountCounters.zipWithIndex) {
-        str ++= f"Candidate $i   : ${cycleRatio(hw.toLong)}\n"
-      }
-      str ++= f"Dispatch halt : ${cycleRatio(wbp.perf.dispatchHazardsCounter.toLong)}\n"
-      str ++= f"Execute  halt : ${cycleRatio(wbp.perf.executeFreezedCounter.toLong)}\n"
-
     }
+
+    def cycleRatio(times: Long) = {
+      val rate = (1000f * times / cycle).toInt
+      f"${times}%7d / ${cycle}%7d ${rate / 10}%3d.${rate % 10}%%"
+    }
+
+    for ((hw, i) <- wbp.perf.dispatchFeedCounters.zipWithIndex) {
+      str ++= f"Dispatch  $i   : ${cycleRatio(hw.toLong)}\n"
+    }
+    for ((hw, i) <- wbp.perf.candidatesCountCounters.zipWithIndex) {
+      str ++= f"Candidate $i   : ${cycleRatio(hw.toLong)}\n"
+    }
+    str ++= f"Dispatch halt : ${cycleRatio(wbp.perf.dispatchHazardsCounter.toLong)}\n"
+    str ++= f"Execute  halt : ${cycleRatio(wbp.perf.executeFreezedCounter.toLong)}\n"
+    str ++= f"IPC           : ${cycleRatio(harts.map(_.commits).sum)}\n"
     str.toString()
   }
 
@@ -106,6 +106,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
     var microOpRetirePtr, microOpAllocPtr = 0
     var lastCommitAt = 0l
+
+    var commits = 0l
 
 
     val jbStats = mutable.HashMap[Long, JbStats]()
@@ -443,6 +445,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
           uop.toKonata(hart)
           if (uop.didCommit) {
+            hart.commits += 1
             if(uop.isJumpBranch){
               val stats = jbStats.getOrElseUpdate(decode.pc, new JbStats)
               stats.count += 1
