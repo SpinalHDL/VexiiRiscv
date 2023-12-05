@@ -263,7 +263,6 @@ object TestBench extends App{
 
 //echo '--load-elf ext/NaxSoftware/baremetal/dhrystone/build/rv32ima/dhrystone.elf   --with-all' | nc localhost  8189
 object TestBenchServer extends App{
-
   val simConfig = SpinalSimConfig()
   simConfig.withFstWave
   simConfig.withTestFolder
@@ -272,6 +271,7 @@ object TestBenchServer extends App{
   val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
   val serverSocket = new ServerSocket(8189)
   var i = 0
+  println("Waiting for connections")
   while (true) {
     val incoming = serverSocket.accept
     new TestBenchServerConnection(incoming, compiled)

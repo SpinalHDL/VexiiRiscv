@@ -46,6 +46,8 @@ class ParamSimple(){
         ways = decoders,
         rasDepth = if(withRas) 4 else 0,
         hashWidth = 16,
+        readAt = 0,
+        hitAt = 1,
         jumpAt = 1
       )
       plugins += new prediction.DecodePredictionPlugin(
@@ -138,6 +140,22 @@ class ParamSimple(){
 1l btb gshare ras => 1.64 dhrystone 3.21 coremark 1.03 embench
 2l btb gshare ras => 1.91 dhrystone 3.83 coremark 1.32 embench
  coremark 2l => Branch : 523630 47815   9.1%
+
+btb ras gshare at 1 :
+vexii_1i ->
+Artix 7 -> 90 Mhz 1619 LUT 1038 FF
+Artix 7 -> 166 Mhz 2423 LUT 1091 FF
+vexii_2i ->
+Artix 7 -> 90 Mhz 2658 LUT 1314 FF
+Artix 7 -> 134 Mhz 3136 LUT 1370 FF
+
+btb ras gshare at 2 :
+vexii_1i ->
+Artix 7 -> 90 Mhz 1554 LUT 1045 FF
+Artix 7 -> 196 Mhz 1705 LUT 1045 FF
+vexii_2i -> embench 1.21
+Artix 7 -> 90 Mhz 2808 LUT 1349 FF
+Artix 7 -> 137 Mhz 2949 LUT 1352 FF
 
   -mtune=sifive-7-series
 1.51
