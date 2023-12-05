@@ -20,8 +20,6 @@ import scala.util.Random
 class BtbPlugin(var sets : Int,
                 var ways : Int,
                 var rasDepth : Int = 4,
-//                var forceNotTaken: Boolean = false, //For debug/simulation purposes
-//                var forceTaken : Boolean = false, //For debug/simulation purposes
                 var hashWidth : Int = 16,
                 var readAt : Int = 0,
                 var hitAt : Int = 1,
@@ -52,7 +50,8 @@ class BtbPlugin(var sets : Int,
     rp.elaborationLock.release()
     hp.foreach(_.elaborationLock.release())
 
-    val ras = new Area{
+    val withRas = rasDepth > 0
+    val ras = withRas generate new Area{
       assert(HART_COUNT.get == 1)
       val mem = new Area{
         val stack = Mem.fill(rasDepth)(PC)
@@ -135,13 +134,9 @@ class BtbPlugin(var sets : Int,
     }
 
 
-    val predictions = Bits(SLICE_COUNT bits)
-    new fpp.Fetch(jumpAt) {
-      host.get[FetchConditionalPrediction] match {
-        case Some(s) => predictions := B((0 until SLICE_COUNT).map(s.getPredictionAt(jumpAt)(_)))
-        case None => predictions.setAll()
-      }
-    }
+    val predictions = host.get[FetchConditionalPrediction].map(s =>
+      B((0 until SLICE_COUNT).map(s.getPredictionAt(jumpAt)(_)))
+    )
 
     val waysLogic = for (wayId <- waysRange) yield new Area {
       val readRsp = new fpp.Fetch(readAt + 1) {
@@ -152,13 +147,15 @@ class BtbPlugin(var sets : Int,
         val HIT = insert(readRsp.ENTRY.hash === getHash(WORD_PC) && getSlice(wayId, readRsp.ENTRY.sliceLow) >= WORD_PC(SLICE_RANGE.get))
       }
       val predict = new fpp.Fetch(jumpAt) {
-//      val prediction = True
-//      val prediction = !readRsp.ENTRY.isBranch || readRsp.ENTRY.taken
-        val TAKEN = insert(!readRsp.ENTRY.isBranch || predictions(getSlice(wayId, readRsp.ENTRY.sliceLow)))
+        def pred = host.get[FetchConditionalPrediction] match {
+          case Some(x) => predictions.get(getSlice(wayId, readRsp.ENTRY.sliceLow))
+          case None => readRsp.ENTRY.taken
+        }
+        val TAKEN = insert(!readRsp.ENTRY.isBranch || pred)
       }
     }
 
-    ras.readIt := fpp.fetch(jumpAt-1).isReady
+    if(withRas) ras.readIt := fpp.fetch(jumpAt-1).isReady
     val applyIt = new fpp.Fetch(jumpAt) {
       // Find the first way which predicted a PC disruption
       val waysMask = B(for (self <- waysLogic) yield self.hitCalc.HIT && waysLogic.takeWhile(_ != self).map(other => other.hitCalc.HIT && other.predict.TAKEN).norR)
@@ -182,7 +179,8 @@ class BtbPlugin(var sets : Int,
       val correctionSent = RegInit(False) setWhen (isValid) clearWhen (up.ready || up.cancel)
       val doIt = needIt && !correctionSent
       val entry = OHMux.or(waysTakenOh, waysLogic.map(_.readRsp.ENTRY).map(this (_)), bypassIfSingle = true)
-      val pcTarget = entry.isPop.mux(ras.read, entry.pcTarget)
+      val pcTarget = CombInit(entry.pcTarget)
+      if(withRas) when(entry.isPop){ pcTarget := ras.read }
       val doItSlice = OHToUInt(waysTakenOh) @@ entry.sliceLow
 
       println("!!!!!!!!!!!!!!! OPTIMIZE ME !!!!!!!!!!!!")
@@ -190,10 +188,12 @@ class BtbPlugin(var sets : Int,
       pushPc(SLICE_RANGE) := doItSlice
       val pushValue = pushPc + SLICE_BYTES.get
 
-      ras.write.data := pushValue
-      when(needIt) {
-        ras.ptr.pushIt := entry.isPush
-        ras.ptr.popIt := entry.isPop
+      if(withRas) {
+        ras.write.data := pushValue
+        when(needIt) {
+          ras.ptr.pushIt := entry.isPush
+          ras.ptr.popIt := entry.isPop
+        }
       }
 
       flushPort.valid := doIt

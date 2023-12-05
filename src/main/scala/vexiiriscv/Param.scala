@@ -23,6 +23,7 @@ class ParamSimple(){
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
   var withGShare = true
   var withBtb = true
+  var withRas = true
 
   def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
@@ -40,6 +41,7 @@ class ParamSimple(){
       plugins += new prediction.BtbPlugin(
         sets = 512 / decoders,
         ways = decoders,
+        rasDepth = if(withRas) 4 else 0,
         hashWidth = 16,
         jumpAt = 1
       )
