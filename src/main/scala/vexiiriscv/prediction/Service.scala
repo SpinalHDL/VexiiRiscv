@@ -1,6 +1,7 @@
 package vexiiriscv.prediction
 
 import spinal.core._
+import spinal.core.fiber.Lock
 import spinal.lib.misc.database.Database.blocking
 import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
@@ -47,7 +48,7 @@ trait HistoryUser {
   def historyWidthUsed : Int
 }
 
-case class LearnCmd() extends Bundle{
+case class LearnCmd(hmElements : Seq[NamedType[_ <: Data]]) extends Bundle{
   val pcOnLastSlice = Global.PC()
   val pcTarget = Global.PC()
   val taken = Bool()
@@ -56,4 +57,11 @@ case class LearnCmd() extends Bundle{
   val history = Prediction.BRANCH_HISTORY()
   val uopId = Decode.UOP_ID()
   val hartId = Global.HART_ID()
+  val ctx = new HardMap()
+  hmElements.foreach(e => ctx.add(e))
+}
+
+trait LearnService{
+  val learnLock = Lock()
+  def addLearnCtx[T <: Data](that : NamedType[T]) : Unit
 }

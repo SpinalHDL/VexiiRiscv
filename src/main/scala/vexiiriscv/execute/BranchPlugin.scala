@@ -15,8 +15,10 @@ import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
-import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, Prediction}
+import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
+
+import scala.collection.mutable
 
 object BranchPlugin extends AreaObject {
   val BranchCtrlEnum = new SpinalEnum(binarySequential) {
@@ -28,7 +30,7 @@ object BranchPlugin extends AreaObject {
 class BranchPlugin(val laneName : String,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
-                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(laneName)  {
+                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(laneName) with LearnService {
   import BranchPlugin._
   lazy val wbp = host.find[WriteBackPlugin](_.laneName == laneName)
   lazy val sp = host[ReschedulePlugin]
@@ -37,8 +39,10 @@ class BranchPlugin(val laneName : String,
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)
   setupRetain(pcp.elaborationLock)
-
   during setup(hp.foreach(_.elaborationLock.retain))
+
+  val learnCtxElements = mutable.LinkedHashSet[NamedType[_ <: Data]]()
+  override def addLearnCtx[T <: Data](that: Payload[T]): Unit = learnCtxElements += that
 
   val logic = during build new Logic{
     import SrcKeys._
@@ -172,7 +176,8 @@ class BranchPlugin(val laneName : String,
       val rs1Link = List[Bits](1,5).map(UOP(Const.rs1Range) === _).orR
       val rdEquRs1 = UOP(Const.rdRange) === UOP(Const.rs1Range)
 
-      val learn = Flow(LearnCmd())
+      learnLock.await()
+      val learn = Flow(LearnCmd(learnCtxElements.toSeq))
       learn.valid := up.isFiring && SEL
       learn.taken := alu.COND
       learn.pcTarget := alu.PC_TRUE
@@ -184,6 +189,9 @@ class BranchPlugin(val laneName : String,
       learn.history := history.fetched
       learn.uopId := Decode.UOP_ID
       learn.hartId := Global.HART_ID
+      for(e <- learnCtxElements) {
+        learn.ctx(e).assignFrom(apply(e))
+      }
     }
 
     val wbLogic = new eu.Execute(wbAt){
