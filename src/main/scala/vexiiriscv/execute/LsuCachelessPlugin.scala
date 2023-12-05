@@ -138,7 +138,7 @@ class LsuCachelessPlugin(var laneName : String,
     }
 
     val onJoin = new joinCtrl.Area{
-      val buffer = bus.rsp.toStream.queueLowLatency(joinAt-forkAt).combStage
+      val buffer = bus.rsp.toStream.queueLowLatency(joinAt-forkAt+1).combStage
       val READ_DATA = insert(buffer.data)
       elp.freezeWhen(isValid && SEL && !buffer.valid)
       buffer.ready := isReady && SEL
