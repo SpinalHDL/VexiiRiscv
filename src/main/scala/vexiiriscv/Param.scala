@@ -37,6 +37,9 @@ class ParamSimple(){
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
 
+
+    if(withRas) assert(withBtb)
+    if(withGShare) assert(withBtb)
     if(withBtb) {
       plugins += new prediction.BtbPlugin(
         sets = 512 / decoders,
@@ -51,7 +54,6 @@ class ParamSimple(){
       )
     }
     if(withGShare) {
-      assert(withBtb)
       plugins += new prediction.GSharePlugin (
         memBytes = 4 KiB,
         historyWidth = 12,

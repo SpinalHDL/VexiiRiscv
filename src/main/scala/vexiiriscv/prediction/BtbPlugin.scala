@@ -183,18 +183,27 @@ class BtbPlugin(var sets : Int,
       if(withRas) when(entry.isPop){ pcTarget := ras.read }
       val doItSlice = OHToUInt(waysTakenOh) @@ entry.sliceLow
 
-      println("!!!!!!!!!!!!!!! OPTIMIZE ME !!!!!!!!!!!!")
-      val pushPc = CombInit(this (WORD_PC))
-      pushPc(SLICE_RANGE) := doItSlice
-      val pushValue = pushPc + SLICE_BYTES.get
-
-      if(withRas) {
-        ras.write.data := pushValue
-        when(needIt) {
-          ras.ptr.pushIt := entry.isPush
-          ras.ptr.popIt := entry.isPop
-        }
+      val rasLogic = withRas generate new Area {
+        val pushValid = (doIt && entry.isPush)
+        val pushPc = CombInit(apply(WORD_PC))
+        pushPc(SLICE_RANGE) := doItSlice
+        ras.write.data := pushPc + SLICE_BYTES.get
+        ras.ptr.pushIt setWhen (pushValid)
+        ras.ptr.popIt setWhen(doIt && entry.isPop)
       }
+
+//      val pushPc = CombInit(this (WORD_PC))
+//      pushPc(SLICE_RANGE) := doItSlice
+//      val pushValue = pushPc + SLICE_BYTES.get
+//
+//      if (withRas) {
+//        ras.write.data := pushValue
+//        when(doIt) {
+//          ras.ptr.pushIt := entry.isPush
+//          ras.ptr.popIt := entry.isPop
+//        }
+//      }
+
 
       flushPort.valid := doIt
       flushPort.self := False
