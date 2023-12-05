@@ -26,6 +26,7 @@ class TestOptions{
   var traceKonata = false
   var traceRvlsLog = false
   var traceSpikeLog = false
+  var printStats = false
   var withProbe = true
   var simSpeedPrinter = Option.empty[Double]
   var withRvls = new File("ext/rvls/build/apps/rvls.so").exists()
@@ -54,6 +55,7 @@ class TestOptions{
     opt[Unit]("with-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("with-rvls-log") action { (v, c) => traceRvlsLog = true }
     opt[Unit]("with-spike-log") action { (v, c) => traceSpikeLog = true }
+    opt[Unit]("print-stats") action { (v, c) => printStats = true }
     opt[Unit]("with-all") action { (v, c) => traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true }
     opt[Unit]("no-probe") action { (v, c) => withProbe = false; }
     opt[Unit]("no-rvls-check") action { (v, c) => withRvlsCheck = false;  }
@@ -234,6 +236,10 @@ class TestOptions{
       cmdReady.setFactor(2.0f)
       rspDriver.setFactor(2.0f)
     }
+
+    if(printStats) onSimEnd{
+      println(probe.getStats())
+    }
   }
 }
 
@@ -257,7 +263,6 @@ object TestBench extends App{
 
 //echo '--load-elf ext/NaxSoftware/baremetal/dhrystone/build/rv32ima/dhrystone.elf   --with-all' | nc localhost  8189
 object TestBenchServer extends App{
-
   val simConfig = SpinalSimConfig()
   simConfig.withFstWave
   simConfig.withTestFolder
@@ -266,6 +271,7 @@ object TestBenchServer extends App{
   val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
   val serverSocket = new ServerSocket(8189)
   var i = 0
+  println("Waiting for connections")
   while (true) {
     val incoming = serverSocket.accept
     new TestBenchServerConnection(incoming, compiled)

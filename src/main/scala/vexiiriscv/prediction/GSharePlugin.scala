@@ -11,6 +11,7 @@ import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 import Prediction._
 import vexiiriscv.execute.BranchPlugin
 import Fetch._
+import vexiiriscv.decode.AlignerPlugin
 
 class GSharePlugin(var historyWidth : Int,
                    var entries : Int = 0,
@@ -19,7 +20,13 @@ class GSharePlugin(var historyWidth : Int,
                    var counterWidth : Int = 2,
                    var readAsync : Boolean = false) extends FiberPlugin with FetchConditionalPrediction with HistoryUser{
   lazy val fpp = host[FetchPipelinePlugin]
+  lazy val ls = host[LearnService]
+  lazy val dp = host[DispatchPlugin]
+  lazy val ap = host[AlignerPlugin]
   buildBefore(fpp.elaborationLock)
+  setupRetain(ls.learnLock)
+  setupRetain(dp.elaborationLock)
+  setupRetain(ap.elaborationLock)
 
   override def useHistoryAt = readAt
   override def historyWidthUsed = historyWidth
@@ -28,28 +35,16 @@ class GSharePlugin(var historyWidth : Int,
   val GSHARE_COUNTER = Payload(Vec.fill(SLICE_COUNT)(UInt(counterWidth bits)))
 
   val logic = during build new Area{
-//    val fetch = getService[FetchPlugin]
-//    val frontend = getService[FrontendPlugin]
-//    val branchContext = getService[BranchContextPlugin]
-//    val aligner = getService[AlignerPlugin]
-//
-//    fetch.retain()
-//    frontend.retain()
-//    branchContext.retain()
-//
-//
-//    val keys = new AreaRoot {
-//      val GSHARE_COUNTER = Stageable(Vec.fill(SLICE_COUNT)(UInt(counterWidth bits)))
-//    }
-//
-//    aligner.addLastWordContext(
-//      GSHARE_COUNTER
-//    )
-//    branchContext.dispatchWrite(
-//      GSHARE_COUNTER
-//    )
-
     assert(readAsync == false, "The issue with read async is that it may change while btb stage is stuck, producing transiants => missmatch between pc correction and announced prediction done to BranchPlugin")
+
+    ls.addLearnCtx(GSHARE_COUNTER)
+    ls.learnLock.release()
+
+    dp.hmKeys += GSHARE_COUNTER
+    dp.elaborationLock.release()
+
+    ap.lastSliceData += GSHARE_COUNTER
+    ap.elaborationLock.release()
 
     var words = entries/SLICE_COUNT
     if(memBytes != null) words = (1 <<(log2Up(memBytes.toInt*8/counterWidth+1)-1)) / SLICE_COUNT
@@ -93,9 +88,9 @@ class GSharePlugin(var historyWidth : Int,
       val cmd = host[BranchPlugin].logic.jumpLogic.learn
       val hash = gshareHash(cmd.pcOnLastSlice, cmd.history)
 
-      println("!!!!!!!!!!!! REMOVE THAT READ ASYNC <3 !!!!!!!!!!!!")
-//      val counters = branchContext.learnRead(GSHARE_COUNTER) //TODO !!
-      val counters = mem.counter.readAsync(hash)
+
+      //val counters = mem.counter.readAsync(hash); println("!!!!!!!!!!!! REMOVE THAT READ ASYNC <3 !!!!!!!!!!!!") //This is a 100% accurate implementation
+      val counters = cmd.ctx(GSHARE_COUNTER)
       val updated = GSHARE_COUNTER()
       val incrValue = cmd.taken ? U(1) | U((1 << counterWidth)-1)
       val overflow = False

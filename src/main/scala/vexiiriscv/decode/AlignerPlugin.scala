@@ -1,6 +1,7 @@
 package vexiiriscv.decode
 
 import spinal.core._
+import spinal.core.fiber.Lock
 import spinal.lib._
 import spinal.lib.misc.pipeline.{CtrlLink, Link}
 import spinal.lib.misc.plugin.FiberPlugin
@@ -10,6 +11,7 @@ import vexiiriscv.misc.PipelineService
 import vexiiriscv.prediction.{FetchWordPrediction, Prediction}
 import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv}
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 class AlignerPlugin(fetchAt : Int,
@@ -22,6 +24,9 @@ class AlignerPlugin(fetchAt : Int,
 
   override def getLinks(): Seq[Link] = logic.connectors
 
+  val lastSliceData = mutable.LinkedHashSet[NamedType[_ <: Data]]()
+
+  val elaborationLock = Lock()
   val logic = during build new Area{
     val connectors = ArrayBuffer[Link]()
     Decode.LANES.set(lanes)
@@ -31,6 +36,8 @@ class AlignerPlugin(fetchAt : Int,
     assert(Decode.INSTRUCTION_WIDTH.get*Decode.LANES == Fetch.WORD_WIDTH.get)
     assert(!Riscv.RVC)
     assert(isPow2(Decode.LANES.get))
+
+    elaborationLock.await()
 
     val withBtb = host.get[FetchWordPrediction].nonEmpty
 
@@ -66,6 +73,7 @@ class AlignerPlugin(fetchAt : Int,
           case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1).isValid.asUInt
         })
         lane(Prediction.BRANCH_HISTORY) := up(Prediction.BRANCH_HISTORY)
+        for(e <- lastSliceData) lane(e).assignFrom(up.apply(e))
 
         val onBtb = withBtb generate new Area{
           assert(!Riscv.RVC)

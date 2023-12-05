@@ -15,8 +15,10 @@ import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
-import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, Prediction}
+import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
+
+import scala.collection.mutable
 
 object BranchPlugin extends AreaObject {
   val BranchCtrlEnum = new SpinalEnum(binarySequential) {
@@ -28,20 +30,23 @@ object BranchPlugin extends AreaObject {
 class BranchPlugin(val laneName : String,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
-                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(laneName)  {
+                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(laneName) with LearnService {
   import BranchPlugin._
   lazy val wbp = host.find[WriteBackPlugin](_.laneName == laneName)
   lazy val sp = host[ReschedulePlugin]
   lazy val pcp = host[PcPlugin]
-  lazy val hp = host[HistoryPlugin]
+  lazy val hp = host.get[HistoryPlugin]
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)
   setupRetain(pcp.elaborationLock)
-  setupRetain(hp.elaborationLock)
+  during setup(hp.foreach(_.elaborationLock.retain))
+
+  val learnCtxElements = mutable.LinkedHashSet[NamedType[_ <: Data]]()
+  override def addLearnCtx[T <: Data](that: Payload[T]): Unit = learnCtxElements += that
 
   val logic = during build new Logic{
     import SrcKeys._
-    host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
+    if(hp.nonEmpty) host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
 
     BRANCH_HISTORY_WIDTH.set((0 +: host.list[HistoryUser].map(_.historyWidthUsed)).max)
 
@@ -66,7 +71,7 @@ class BranchPlugin(val laneName : String,
 
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
-    val historyPort = hp.createPort(age)
+    val historyPort = hp.map(_.createPort(age))
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     //    val trapPort = if XXX sp.newTrapPort(age)
 
@@ -75,7 +80,7 @@ class BranchPlugin(val laneName : String,
     sp.elaborationLock.release()
     srcp.elaborationLock.release()
     pcp.elaborationLock.release()
-    hp.elaborationLock.release()
+    hp.foreach(_.elaborationLock.release())
 
     // Without prediction, the plugin can assume that there is no correction to do if no branch is needed
     // leading to a simpler design.
@@ -129,26 +134,35 @@ class BranchPlugin(val laneName : String,
       val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond)
       val doIt = isValid && SEL && needFix
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
+      val pcOnLastSlice = PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
 
       val history = new Area{
         assert(Global.HART_COUNT.get == 1)
         assert(host.list[BranchPlugin].size == 1, "Assume the plugin is the only point on which branches are solved, so we can build the history here")
         val state = Reg(Prediction.BRANCH_HISTORY) init(0)
-        def fetched = Prediction.BRANCH_HISTORY //state //Assume it for now, but not always right when fetching multiple instruction per cycles
         val shifted = (state ## alu.COND).dropHigh(1)
         val next = (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
         when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B){
           state := shifted
         }
-      }
 
+        val fetched = CombInit(
+          Fetch.SLICE_COUNT.get match {
+            case 1 => state //State will always reflect what the fetch stages will use, so let's use it as that little area
+            case _ => apply(Prediction.BRANCH_HISTORY) //While the BRANCH_HISTORY may take some more time to wormup, it seems to have little effect in practice (coremark 9.1 miss rate vs 9.0)
+          }                                            //We can't use state there, as if there multiple branch instruction on the same Fetch.WORD it won't reflect the btb branch history
+        )
+      }
 
       pcPort.valid := doIt
       pcPort.pc := pcTarget
       pcPort.laneAge := Execute.LANE_AGE
 
-      historyPort.valid := doIt
-      historyPort.history := history.next
+      historyPort.foreach{ port =>
+        port.valid := doIt
+        port.history := history.next
+      }
+
 
       flushPort.valid := doIt
       flushPort.hartId := Global.HART_ID
@@ -162,11 +176,12 @@ class BranchPlugin(val laneName : String,
       val rs1Link = List[Bits](1,5).map(UOP(Const.rs1Range) === _).orR
       val rdEquRs1 = UOP(Const.rdRange) === UOP(Const.rs1Range)
 
-      val learn = Flow(LearnCmd())
+      learnLock.await()
+      val learn = Flow(LearnCmd(learnCtxElements.toSeq))
       learn.valid := up.isFiring && SEL
       learn.taken := alu.COND
       learn.pcTarget := alu.PC_TRUE
-      learn.pcOnLastSlice := PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
+      learn.pcOnLastSlice := pcOnLastSlice
       learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
       learn.isPush := (IS_JAL || IS_JALR) && rdLink
       learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
@@ -174,6 +189,9 @@ class BranchPlugin(val laneName : String,
       learn.history := history.fetched
       learn.uopId := Decode.UOP_ID
       learn.hartId := Global.HART_ID
+      for(e <- learnCtxElements) {
+        learn.ctx(e).assignFrom(apply(e))
+      }
     }
 
     val wbLogic = new eu.Execute(wbAt){

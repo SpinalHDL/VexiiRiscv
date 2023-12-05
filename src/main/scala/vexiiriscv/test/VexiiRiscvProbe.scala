@@ -44,21 +44,25 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   def close(): Unit = {
     harts.foreach(_.close())
     if(withRvls) rvls.jni.Frontend.deleteDisassemble(disass)
+  }
 
-//    for(hart <- harts){
-//      val stats = hart.jbStats.toArray.sortBy(_._2.failed)
-//      val total = new JbStats()
-//      for((pc, data) <- stats){
-//        total.count += data.count
-//        total.failed += data.failed
-//      }
-//      for((pc, data) <- stats){
-//        println(f"- 0x${pc}%08X : ${data.toString()}")
-//      }
-//
-//      println(f"Total  : ${total.toString()}")
-//      println(f"Branch : ${hart.branchStats.toString()}")
-//    }
+  def getStats(): String = {
+    val str = new StringBuilder()
+    for (hart <- harts) {
+      val stats = hart.jbStats.toArray.sortBy(_._2.failed)
+      val total = new JbStats()
+      for ((pc, data) <- stats) {
+        total.count += data.count
+        total.failed += data.failed
+      }
+      for ((pc, data) <- stats) {
+        str ++= f"- 0x${pc}%08X : ${data.toString()}\n"
+      }
+
+      str ++= f"Total  : ${total.toString()}\n"
+      str ++= f"Branch : ${hart.branchStats.toString()}\n"
+    }
+    str.toString()
   }
 
   onSimEnd(close())
@@ -72,7 +76,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
     override def toString(): String ={
       val rate = (1000f*failed/count).toInt
-      f"${count}%5d ${failed}%5d ${rate/10}%3d.${rate%10}%%"
+      f"${failed}%5d / ${count}%5d ${rate/10}%3d.${rate%10}%%"
     }
   }
 

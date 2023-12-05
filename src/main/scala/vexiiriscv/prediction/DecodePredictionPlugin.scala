@@ -22,19 +22,19 @@ class DecodePredictionPlugin(var decodeAt: Int,
   lazy val pcp = host[PcService]
   lazy val rp = host[ReschedulePlugin]
   lazy val dp = host[DecoderService]
-  lazy val hp = host[HistoryPlugin]
+  lazy val hp = host.get[HistoryPlugin]
   buildBefore(dpp.elaborationLock)
   buildBefore(pcp.elaborationLock)
   setupRetain(rp.elaborationLock)
-  setupRetain(hp.elaborationLock)
+  during setup(hp.foreach(_.elaborationLock.retain()))
 
   val logic = during build new Area{
     val age = dpp.getAge(jumpAt, true)
     val pcPorts = List.fill(Decode.LANES)(pcp.createJumpInterface(age, log2Up(Decode.LANES), 0))
     val flushPorts = List.fill(Decode.LANES)(rp.newFlushPort(age, log2Up(Decode.LANES), true))
-    val historyPorts = List.tabulate(Decode.LANES)(i => hp.createPort(age + i))
+    val historyPorts = hp.map(hp => List.tabulate(Decode.LANES)(i => hp.createPort(age + i)))
     rp.elaborationLock.release()
-    hp.elaborationLock.release()
+    hp.foreach(_.elaborationLock.release())
 
     val decodeSpec = new Area{
       val branchKeys = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU).map(e => Masked(e.key))
@@ -65,9 +65,11 @@ class DecodePredictionPlugin(var decodeAt: Int,
         pcPort.pc := PC
         pcPort.laneAge := slotId
 
-        val historyPort = historyPorts(slotId)
-        historyPort.valid := fixIt
-        historyPort.history := Prediction.BRANCH_HISTORY
+        if(hp.nonEmpty) {
+          val historyPort = historyPorts.get(slotId)
+          historyPort.valid := fixIt
+          historyPort.history := Prediction.BRANCH_HISTORY
+        }
       }
     }
   }
