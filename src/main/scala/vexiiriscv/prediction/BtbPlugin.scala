@@ -30,12 +30,12 @@ class BtbPlugin(var sets : Int,
   lazy val pcp = host[PcService]
   lazy val rp = host[ReschedulePlugin]
   lazy val dp = host[DispatchPlugin]
-  lazy val hp = host[HistoryPlugin]
+  lazy val hp = host.get[HistoryPlugin]
   buildBefore(fpp.elaborationLock)
   buildBefore(pcp.elaborationLock)
   setupRetain(rp.elaborationLock)
   setupRetain(dp.elaborationLock)
-  setupRetain(hp.elaborationLock)
+  during setup(hp.map(_.elaborationLock.retain()))
 
   def waysRange = 0 until ways
 
@@ -43,14 +43,14 @@ class BtbPlugin(var sets : Int,
     val age = fpp.getAge(jumpAt, true)
     val pcPort = pcp.createJumpInterface(age,0, (jumpAt < 2).toInt)
     val flushPort = rp.newFlushPort(age, 0, false)
-    val historyPort = hp.createPort(age)
+    val historyPort = hp.map(_.createPort(age))
 
     dp.hmKeys += Prediction.ALIGNED_JUMPED
     dp.hmKeys += Prediction.ALIGNED_JUMPED_PC
 
     dp.elaborationLock.release()
     rp.elaborationLock.release()
-    hp.elaborationLock.release()
+    hp.foreach(_.elaborationLock.release())
 
     val ras = new Area{
       assert(HART_COUNT.get == 1)
@@ -159,19 +159,19 @@ class BtbPlugin(var sets : Int,
     }
 
     ras.readIt := fpp.fetch(jumpAt-1).isReady
-    val applyIt = new fpp.Fetch(jumpAt){
+    val applyIt = new fpp.Fetch(jumpAt) {
       // Find the first way which predicted a PC disruption
-      val waysMask =  B(for(self <- waysLogic) yield self.hitCalc.HIT && waysLogic.takeWhile(_ != self).map(other => other.hitCalc.HIT && other.predict.TAKEN).norR)
-      val waysTakenOh = B(for(self <- waysLogic) yield apply(self.predict.TAKEN)) & waysMask
+      val waysMask = B(for (self <- waysLogic) yield self.hitCalc.HIT && waysLogic.takeWhile(_ != self).map(other => other.hitCalc.HIT && other.predict.TAKEN).norR)
+      val waysTakenOh = B(for (self <- waysLogic) yield apply(self.predict.TAKEN)) & waysMask
 
 
-      val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
+      val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
         val skip = RegInit(False)
       }
       when(up.isMoving) {
         harts.onSel(HART_ID)(_.skip := False)
       }
-      for(skipTrigger <- host[DecodePredictionPlugin].logic.flushPorts) {
+      for (skipTrigger <- host[DecodePredictionPlugin].logic.flushPorts) {
         when(skipTrigger.valid) {
           harts.onSel(skipTrigger.hartId)(_.skip := True)
         }
@@ -179,19 +179,19 @@ class BtbPlugin(var sets : Int,
 
       val gotSkip = harts.map(_.skip).read(HART_ID)
       val needIt = isValid && !gotSkip && waysTakenOh.orR
-      val correctionSent = RegInit(False) setWhen(isValid) clearWhen(up.ready || up.cancel)
+      val correctionSent = RegInit(False) setWhen (isValid) clearWhen (up.ready || up.cancel)
       val doIt = needIt && !correctionSent
-      val entry = OHMux.or(waysTakenOh, waysLogic.map(_.readRsp.ENTRY).map(this(_)), bypassIfSingle = true)
+      val entry = OHMux.or(waysTakenOh, waysLogic.map(_.readRsp.ENTRY).map(this (_)), bypassIfSingle = true)
       val pcTarget = entry.isPop.mux(ras.read, entry.pcTarget)
       val doItSlice = OHToUInt(waysTakenOh) @@ entry.sliceLow
 
       println("!!!!!!!!!!!!!!! OPTIMIZE ME !!!!!!!!!!!!")
-      val pushPc = CombInit(this(WORD_PC))
+      val pushPc = CombInit(this (WORD_PC))
       pushPc(SLICE_RANGE) := doItSlice
       val pushValue = pushPc + SLICE_BYTES.get
 
       ras.write.data := pushValue
-      when(needIt){
+      when(needIt) {
         ras.ptr.pushIt := entry.isPush
         ras.ptr.popIt := entry.isPop
       }
@@ -203,25 +203,30 @@ class BtbPlugin(var sets : Int,
       pcPort.valid := doIt
       pcPort.pc := pcTarget
 
-      val layers = List.fill(ways+1)(new Area{
-        val history = Prediction.BRANCH_HISTORY()
-        val valid = Bool()
-      })
-      layers(0).history := Prediction.BRANCH_HISTORY
-
-      val layersLogic = for(i <- 0 until ways) yield new Area {
-        def e = waysLogic(i)
-        val doIt = waysMask(i) && e.readRsp.ENTRY.isBranch
-        val shifted = layers(i).history.dropHigh(1) ## e.predict.TAKEN
-        layers(i+1).history := doIt.mux(shifted, layers(i).history)
-      }
-
-      historyPort.valid := isValid && !gotSkip && !correctionSent && waysLogic.map(e => apply(e.hitCalc.HIT)).orR
-      historyPort.history := layers.last.history
-
       WORD_JUMPED := needIt
       WORD_JUMP_SLICE := doItSlice
       WORD_JUMP_PC := pcTarget
+
+      val history = historyPort.map { port =>
+        new Area {
+          val layers = List.fill(ways + 1)(new Area {
+            val history = Prediction.BRANCH_HISTORY()
+            val valid = Bool()
+          })
+          layers(0).history := Prediction.BRANCH_HISTORY
+
+          val layersLogic = for (i <- 0 until ways) yield new Area {
+            def e = waysLogic(i)
+
+            val doIt = waysMask(i) && e.readRsp.ENTRY.isBranch
+            val shifted = layers(i).history.dropHigh(1) ## e.predict.TAKEN
+            layers(i + 1).history := doIt.mux(shifted, layers(i).history)
+          }
+
+          port.valid := isValid && !gotSkip && !correctionSent && waysLogic.map(e => apply(e.hitCalc.HIT)).orR
+          port.history := layers.last.history
+        }
+      }
     }
   }
 }

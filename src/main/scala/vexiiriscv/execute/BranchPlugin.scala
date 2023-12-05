@@ -33,15 +33,16 @@ class BranchPlugin(val laneName : String,
   lazy val wbp = host.find[WriteBackPlugin](_.laneName == laneName)
   lazy val sp = host[ReschedulePlugin]
   lazy val pcp = host[PcPlugin]
-  lazy val hp = host[HistoryPlugin]
+  lazy val hp = host.get[HistoryPlugin]
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)
   setupRetain(pcp.elaborationLock)
-  setupRetain(hp.elaborationLock)
+
+  during setup(hp.foreach(_.elaborationLock.retain))
 
   val logic = during build new Logic{
     import SrcKeys._
-    host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
+    if(hp.nonEmpty) host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
 
     BRANCH_HISTORY_WIDTH.set((0 +: host.list[HistoryUser].map(_.historyWidthUsed)).max)
 
@@ -66,7 +67,7 @@ class BranchPlugin(val laneName : String,
 
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
-    val historyPort = hp.createPort(age)
+    val historyPort = hp.map(_.createPort(age))
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     //    val trapPort = if XXX sp.newTrapPort(age)
 
@@ -75,7 +76,7 @@ class BranchPlugin(val laneName : String,
     sp.elaborationLock.release()
     srcp.elaborationLock.release()
     pcp.elaborationLock.release()
-    hp.elaborationLock.release()
+    hp.foreach(_.elaborationLock.release())
 
     // Without prediction, the plugin can assume that there is no correction to do if no branch is needed
     // leading to a simpler design.
@@ -153,8 +154,11 @@ class BranchPlugin(val laneName : String,
       pcPort.pc := pcTarget
       pcPort.laneAge := Execute.LANE_AGE
 
-      historyPort.valid := doIt
-      historyPort.history := history.next
+      historyPort.foreach{ port =>
+        port.valid := doIt
+        port.history := history.next
+      }
+
 
       flushPort.valid := doIt
       flushPort.hartId := Global.HART_ID

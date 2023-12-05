@@ -24,6 +24,8 @@ object Prediction extends AreaObject{
   val BRANCH_HISTORY_WIDTH = blocking[Int]
   val BRANCH_HISTORY = Payload(Bits(BRANCH_HISTORY_WIDTH bits))
 
+  def withHistory = BRANCH_HISTORY_WIDTH.get != 0
+
 //  val BRANCH_HISTORY_PUSH_VALID = Stageable(Bool())
 //  val BRANCH_HISTORY_PUSH_SLICE = Stageable(UInt(log2Up(SLICE_COUNT) bits))
 //  val BRANCH_HISTORY_PUSH_VALUE = Stageable(Bool())
