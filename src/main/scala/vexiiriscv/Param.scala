@@ -95,13 +95,10 @@ class ParamSimple(){
     def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(name, rfReadAt = 0, decodeAt = regFileSync.toInt, executeAt = regFileSync.toInt + 1)
 
     plugins += new execute.ExecutePipelinePlugin()
-    val intRegFileRelaxedPort = "intShared" //Used by out of pip units to write stuff into the pipeline, //TODO ensure some sort of fairness between no ready and with ready
-
 
     val lane0 = newExecuteLanePlugin("lane0")
-    plugins += lane0
-
     val earlyLane0 = new LaneLayer("early", lane0, priority = 0)
+    plugins += lane0
 
     plugins += new SrcPlugin("lane0")
     plugins += new IntAluPlugin(earlyLane0, formatAt = 0)
@@ -124,18 +121,18 @@ class ParamSimple(){
     plugins += new PrivilegedPlugin(PrivilegedConfig.full)
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
-//    if(lanes >= 2) {
-//      val earlyLane0 = new LaneLayer("early")
-//      earlyLane0.priority = 10
-//
-//      plugins += newExecuteLanePlugin("lane1")
-//      plugins += new SrcPlugin("lane1")
-//      plugins += new IntAluPlugin("lane1", earlyLane0, formatAt = 0)
-////      plugins += new BarrelShifterPlugin("lane1", formatAt = 0)
-//      plugins += new IntFormatPlugin("lane1")
-//////      plugins += new BranchPlugin("lane1")
-//      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
-//    }
+    if(lanes >= 2) {
+      val lane1 = newExecuteLanePlugin("lane1")
+      val earlyLane1 = new LaneLayer("early", lane1, priority = 10)
+      plugins += lane1
+
+      plugins += new SrcPlugin("lane1")
+      plugins += new IntAluPlugin(earlyLane1, formatAt = 0)
+//      plugins += new BarrelShifterPlugin("lane1", formatAt = 0)
+      plugins += new IntFormatPlugin("lane1")
+////      plugins += new BranchPlugin("lane1")
+      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+    }
 
 
     plugins += new WhiteboxerPlugin()
