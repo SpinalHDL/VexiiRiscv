@@ -6,6 +6,7 @@ import spinal.core.sim._
 import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.LsuCachelessPlugin
+//import vexiiriscv.execute.LsuCachelessPlugin
 import vexiiriscv.fetch.Fetch
 import vexiiriscv.riscv.{IntRegFile, Riscv}
 import vexiiriscv.test.konata.{Comment, Flush, Retire, Spawn, Stage}
@@ -71,14 +72,14 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       f"${times}%7d / ${cycle}%7d ${rate / 10}%3d.${rate % 10}%%"
     }
 
-    for ((hw, i) <- wbp.perf.dispatchFeedCounters.zipWithIndex) {
-      str ++= f"Dispatch  $i   : ${cycleRatio(hw.toLong)}\n"
-    }
-    for ((hw, i) <- wbp.perf.candidatesCountCounters.zipWithIndex) {
-      str ++= f"Candidate $i   : ${cycleRatio(hw.toLong)}\n"
-    }
-    str ++= f"Dispatch halt : ${cycleRatio(wbp.perf.dispatchHazardsCounter.toLong)}\n"
-    str ++= f"Execute  halt : ${cycleRatio(wbp.perf.executeFreezedCounter.toLong)}\n"
+//    for ((hw, i) <- wbp.perf.dispatchFeedCounters.zipWithIndex) {
+//      str ++= f"Dispatch  $i   : ${cycleRatio(hw.toLong)}\n"
+//    }
+//    for ((hw, i) <- wbp.perf.candidatesCountCounters.zipWithIndex) {
+//      str ++= f"Candidate $i   : ${cycleRatio(hw.toLong)}\n"
+//    }
+//    str ++= f"Dispatch halt : ${cycleRatio(wbp.perf.dispatchHazardsCounter.toLong)}\n"
+//    str ++= f"Execute  halt : ${cycleRatio(wbp.perf.executeFreezedCounter.toLong)}\n"
     str ++= f"IPC           : ${cycleRatio(harts.map(_.commits).sum)}\n"
     str.toString()
   }
@@ -360,7 +361,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
     }
 
-
+//
     for(bus <- lsuClpb) {
       if(bus.cmd.valid.toBoolean && bus.cmd.ready.toBoolean){
         val trace = new ProbeTraceIo

@@ -17,11 +17,11 @@ object BarrelShifterPlugin extends AreaObject {
   val SHIFT_RESULT = Payload(Bits(Riscv.XLEN bits))
 }
 
-class BarrelShifterPlugin(val laneName : String,
+class BarrelShifterPlugin(val layer : LaneLayer,
                           var shiftAt : Int = 0,
-                          var formatAt : Int = 0) extends ExecutionUnitElementSimple(laneName)  {
+                          var formatAt : Int = 0) extends ExecutionUnitElementSimple(layer)  {
   import BarrelShifterPlugin._
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == laneName)
+  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.el.laneName)
   buildBefore(ifp.elaborationLock)
 
   val logic = during build new Logic{
@@ -39,7 +39,7 @@ class BarrelShifterPlugin(val laneName : String,
 
     if (Riscv.XLEN.get == 64) {
       for (op <- List(Rvi.SLL, Rvi.SRL, Rvi.SRA, Rvi.SLLI, Rvi.SRLI, Rvi.SRAI)) {
-        eu.addDecoding(op, IS_W -> False, IS_W_RIGHT -> False)
+        layer(op).addDecoding(IS_W -> False, IS_W_RIGHT -> False)
       }
       add(Rvi.SLLW ).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True , SIGNED -> False, IS_W -> True, IS_W_RIGHT -> False )
       add(Rvi.SRLW ).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, SIGNED -> False, IS_W -> True, IS_W_RIGHT -> True )
@@ -48,7 +48,7 @@ class BarrelShifterPlugin(val laneName : String,
       add(Rvi.SRLIW).srcs(SRC1.RF, SRC2.I ).decode(LEFT -> False, SIGNED -> False, IS_W -> True, IS_W_RIGHT -> True )
       add(Rvi.SRAIW).srcs(SRC1.RF, SRC2.I ).decode(LEFT -> False, SIGNED -> True , IS_W -> True, IS_W_RIGHT -> True )
       for (op <- List(Rvi.SLLW, Rvi.SRLW, Rvi.SRAW, Rvi.SLLIW, Rvi.SRLIW, Rvi.SRAIW)) {
-        ifp.signExtend(wb, op, 32)
+        ifp.signExtend(wb, layer(op), 32)
       }
     }
 

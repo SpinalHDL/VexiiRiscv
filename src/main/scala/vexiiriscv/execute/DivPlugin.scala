@@ -17,12 +17,12 @@ object DivPlugin extends AreaObject {
   val DIV_REVERT_RESULT = Payload(Bool())
 }
 
-class DivPlugin(val laneName : String,
+class DivPlugin(val layer : LaneLayer,
                 var divAt: Int = 0,
-                val writebackAt : Int = 0) extends ExecutionUnitElementSimple(laneName){
+                val writebackAt : Int = 0) extends ExecutionUnitElementSimple(layer){
   import DivPlugin._
 
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == laneName)
+  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
   setupRetain(ifp.elaborationLock)
 
   val logic = during build new Logic {
@@ -41,12 +41,12 @@ class DivPlugin(val laneName : String,
       add(Rvi.REMUW).decode(REM -> True , RS1_SIGNED -> False, RS2_SIGNED -> False)
 
       for (op <- List(Rvi.DIVW, Rvi.DIVUW, Rvi.REMW, Rvi.REMUW)) {
-        ifp.signExtend(formatBus, op, 32)
-        eu.addDecoding(op, IS_W -> True)
+        ifp.signExtend(formatBus, layer(op), 32)
+        layer(op).addDecoding(IS_W -> True)
       }
 
       for (op <- List(Rvi.DIV, Rvi.DIVU, Rvi.REM, Rvi.REMU)) {
-        eu.addDecoding(op, IS_W -> True)
+        layer(op).addDecoding(IS_W -> True)
       }
     }
 

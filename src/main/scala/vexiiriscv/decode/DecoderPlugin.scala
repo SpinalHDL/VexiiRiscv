@@ -38,7 +38,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
 
   override def covers() =  {
     elaborationLock.await()
-    host.list[ExecuteLaneService].flatMap(_.getMicroOp()).map(e => Masked(e.key))
+    host.list[ExecuteLaneService].flatMap(_.getUops()).map(e => Masked(e.key))
   }
 
   val logic = during build new Area{
@@ -47,7 +47,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
     Decode.INSTRUCTION_WIDTH.set(32)
 
     val eus = host.list[ExecuteLaneService]
-    val microOps = eus.flatMap(_.getMicroOp())
+    val microOps = eus.flatMap(_.getUops())
     val resources = microOps.flatMap(_.resources).distinctLinked
     val rfAccesses = mutable.LinkedHashSet[RfAccess]()
     resources.foreach{

@@ -42,6 +42,5 @@ class RsUnsignedPlugin(val laneName : String) extends FiberPlugin{
     def twoComplement(that: Bits, enable: Bool): UInt = (Mux(enable, ~that, that).asUInt + enable.asUInt)
     RS1_UNSIGNED := twoComplement(RS1_FORMATED, RS1_REVERT)
     RS2_UNSIGNED := twoComplement(RS2_FORMATED, RS2_REVERT)
-
   }
 }

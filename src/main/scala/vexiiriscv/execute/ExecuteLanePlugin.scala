@@ -17,9 +17,36 @@ import vexiiriscv.schedule.{Ages, DispatchPlugin, ReschedulePlugin}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+case class UopImplKey(uop : MicroOp, name : LaneLayer)
+
+//class DecodingFromUopImpls(val target: Payload[_ <: BaseType]) {
+//  var default = Option.empty[Masked]
+//  val needs = mutable.LinkedHashMap[UopImplKey, Masked]()
+//
+//  def setDefault(value: Masked) = {
+//    default match {
+//      case Some(x) => ???
+//      case None => default = Some(value)
+//    }
+//    this
+//  }
+//
+//  def addNeeds(key: UopImplKey, value: Masked): this.type = {
+//    needs.get(key) match {
+//      case Some(x) => assert(needs(key) == value)
+//      case None => needs(key) = value
+//    }
+//    this
+//  }
+//
+//  def addNeeds(keys: Seq[UopImplKey], value: Masked): this.type = {
+//    keys.foreach(addNeeds(_, value))
+//    this
+//  }
+//}
+
 
 class ExecuteLanePlugin(override val laneName : String,
-                        val priority : Int,
                         override val rfReadAt : Int,
                         val decodeAt : Int,
                         override val executeAt : Int) extends FiberPlugin with ExecuteLaneService with CompletionService{
@@ -34,71 +61,74 @@ class ExecuteLanePlugin(override val laneName : String,
   val readLatencyMax = Handle[Int]
   override def rfReadLatencyMax: Int = readLatencyMax.get
 
-  override def dispatchPriority: Int = priority
-  override def getMicroOp(): Seq[MicroOp] = {
+  val layers = ArrayBuffer[LaneLayer]()
+  override def add(layer: LaneLayer): Unit = layers += layer
+
+  //  override def getMicroOp(): Seq[MicroOp] = {
+//    uopLock.await()
+//    microOps.keys.toSeq
+//  }
+  override def getUopLayerSpec(): Iterable[UopLayerSpec] = {
     uopLock.await()
-    microOps.keys.toSeq
+    layers.flatMap(_.uops.values)
   }
-  override def getMicroOpSpecs(): Iterable[MicroOpSpec] = {
+
+  override def getUops(): Iterable[MicroOp] = {
     uopLock.await()
-    microOps.values
+    layers.flatMap(_.uops.values.map(_.uop)).distinctLinked
   }
 
-  val microOps = mutable.LinkedHashMap[MicroOp, MicroOpSpec]()
-  def addMicroOp(op : MicroOp): Unit = {
-    microOps.getOrElseUpdate(op, new MicroOpSpec(op))
-  }
-
-  def setRdSpec(op : MicroOp, data : Payload[Bits], rfReadableAt : Int, bypassesAt : Seq[Int]): Unit = {
-    assert(microOps(op).rd.isEmpty)
-    microOps(op).rd = Some(RdSpec(data, rfReadableAt + executeAt, bypassesAt.map(_ + executeAt)))
-  }
-
-  def setRdOutOfPip(op: MicroOp): Unit = {
-    assert(microOps(op).rd.isEmpty)
-    microOps(op).rd = None
-  }
-
-  def setCompletion(executeCtrlId: Int, head : MicroOp, tail : MicroOp*): Unit = setCompletion(executeCtrlId, head +: tail)
-  def setCompletion(executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
-    uops.foreach(microOps(_).completion = Some(executeCtrlId + executeAt))
-  }
-
-  def mayFlushUpTo(executeCtrlId: Int, head: MicroOp, tail: MicroOp*): Unit = mayFlushUpTo(executeCtrlId, head +: tail)
-  def mayFlushUpTo(executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
-    uops.foreach(microOps(_).mayFlushUpTo = Some(executeCtrlId + executeAt))
-  }
-
-  def dontFlushFrom(executeCtrlId: Int, head: MicroOp, tail: MicroOp*): Unit = dontFlushFrom(executeCtrlId, head +: tail)
-  def dontFlushFrom(executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
-    uops.foreach(microOps(_).dontFlushFrom = Some(executeCtrlId + executeAt))
+  override def getLayers(): Iterable[LaneLayer] = {
+    uopLock.await()
+    layers
   }
 
 
-  override def getSpec(op: MicroOp): MicroOpSpec = microOps(op)
+//  def addUopImpl(op : MicroOp, name : LaneLayer): UopLayerSpec = {
+//    uopImpls.getOrElseUpdate(UopImplKey(op, name), new UopLayerSpec(op, name, this))
+//  }
+
+
+
+//  def setRdSpec(op : MicroOp, implId : String, data : Payload[Bits], rfReadableAt : Int, bypassesAt : Seq[Int]): Unit = {
+//    val impl = getUopImpl(op, implId)
+//    assert(impl.rd.isEmpty)
+//    impl.rd = Some(RdSpec(data, rfReadableAt + executeAt, bypassesAt.map(_ + executeAt)))
+//  }
+
+//  def setRdOutOfPip(op: MicroOp, implId : LaneLayer): Unit = {
+//    val impl = getUopImpl(op, implId)
+//    assert(impl.rd.isEmpty)
+//    impl.rd = None
+//  }
+
+//  def setCompletion(implId : String, executeCtrlId: Int, head : UopImplKey, tail : UopImplKey*): Unit = setCompletion(implId, executeCtrlId, head +: tail)
+//  def setCompletion(implId : String, executeCtrlId: Int, uops: Seq[UopImplKey]): Unit = {
+//    uops.foreach(getUopImpl(_, implId).completion = Some(executeCtrlId + executeAt))
+//  }
+//
+//  def mayFlushUpTo(implId : String, executeCtrlId: Int, head: MicroOp, tail: MicroOp*): Unit = mayFlushUpTo(implId, executeCtrlId, head +: tail)
+//  def mayFlushUpTo(implId : String, executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
+//    uops.foreach(getUopImpl(_, implId).mayFlushUpTo = Some(executeCtrlId + executeAt))
+//  }
+//
+//  def dontFlushFrom(implId : String, executeCtrlId: Int, head: MicroOp, tail: MicroOp*): Unit = dontFlushFrom(implId, executeCtrlId, head +: tail)
+//  def dontFlushFrom(implId : String, executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
+//    uops.foreach(getUopImpl(_, implId).dontFlushFrom = Some(executeCtrlId + executeAt))
+//  }
 
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType): Unit = {
-    getDecodingSpec(key).setDefault(Masked(value))
-  }
-
-  def addDecoding(microOp: MicroOp, values: Seq[(Payload[_ <: BaseType], Any)]): Unit = {
-    val op = Masked(microOp.key)
-    for ((key, value) <- values) {
-      getDecodingSpec(key).addNeeds(op, Masked(value))
+    val masked = Masked(value)
+    decodingDefaults.get(key) match {
+      case None => decodingDefaults(key) = masked
+      case Some(x) => assert(x == masked)
     }
   }
 
-  def addDecoding(microOp: MicroOp, head : (Payload[_ <: BaseType], Any), tail : (Payload[_ <: BaseType], Any)*): Unit = {
-    addDecoding(microOp, head :: tail.toList)
-  }
-
-  def getDecodingSpec(key: Payload[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
-  val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
+  val decodingDefaults = mutable.LinkedHashMap[Payload[_ <: BaseType], Masked]()
 
   val rfStageables = mutable.LinkedHashMap[RfResource, Payload[Bits]]()
 
-  def apply(rf: RegfileSpec, access: RfAccess) = getStageable(rf -> access)
-  def apply(r: RfResource) = getStageable(r)
   def getStageable(r: RfResource): Payload[Bits] = {
     rfStageables.getOrElseUpdate(r, Payload(Bits(r.rf.width bits)).setName(s"${r.rf.getName()}_${r.access.getName()}"))
   }
@@ -119,8 +149,7 @@ class ExecuteLanePlugin(override val laneName : String,
     ctrl(id + executeAt)
   }
 
-  def getExecuteAge(at : Int) = getAge(at + executeAt, false)
-  def getAge(at: Int, prediction: Boolean): Int = Ages.EU + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
+
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.completions.onCtrl.map(_.port).toSeq
 
   val logic = during build new Area {
@@ -153,22 +182,22 @@ class ExecuteLanePlugin(override val laneName : String,
         case class BypassSpec(eu: ExecuteLaneService, nodeId: Int, payload: Payload[Bits])
         val bypassSpecs = mutable.LinkedHashSet[BypassSpec]()
         val eus = host.list[ExecuteLaneService]
-        for (eu <- eus; ops = eu.getMicroOp();
-             op <- ops; opSpec = eu.getSpec(op)) {
-          eu.pipelineLock.await() // Ensure that the eu specification is done
-          val sameRf = opSpec.op.resources.exists {
-            case RfResource(spec.rf, RD) => true
-            case _ => false
-          }
-          if (sameRf) opSpec.rd match {
-            case Some(rd) =>
-              for (nodeId <- rd.bypassesAt) {
-                val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
-                bypassSpecs += bypassSpec
-              }
-            case None =>
-          }
-        }
+//        for (eu <- eus; ops = eu.getMicroOp();
+//             op <- ops; opSpec = eu.getSpec(op)) {
+//          eu.pipelineLock.await() // Ensure that the eu specification is done
+//          val sameRf = opSpec.op.resources.exists {
+//            case RfResource(spec.rf, RD) => true
+//            case _ => false
+//          }
+//          if (sameRf) opSpec.rd match {
+//            case Some(rd) =>
+//              for (nodeId <- rd.bypassesAt) {
+//                val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
+//                bypassSpecs += bypassSpec
+//              }
+//            case None =>
+//          }
+//        }
 
         assert(rfReadAt + rfPlugin.readLatency + 1 == executeAt, "as for now the bypass isn't implemented to udpate the data on the read latency + 1 until execute at")
         // Implement the bypass hardware
@@ -188,13 +217,13 @@ class ExecuteLanePlugin(override val laneName : String,
 
     // Implement completion logic
     val completions = new Area{
-      val groups = getMicroOpSpecs().groupBy(_.completion)
+      val groups = getUopLayerSpec().groupBy(_.completion)
 
-      val onCtrl = for((at, uops) <- groups if at.exists(_ != -1)) yield new Area {
+      val onCtrl = for((at, impls) <- groups if at.exists(_ != -1)) yield new Area {
         val c = ctrl(at.get)
         val ENABLE = Payload(Bool())
         setDecodingDefault(ENABLE, False)
-        for(uop <- uops) addDecoding(uop.op, ENABLE -> True)
+        for(impl <- impls) impl.addDecoding(ENABLE -> True)
         val port = Flow(CompletionPayload())
         port.valid := c.down.isFiring && c(ENABLE)
         port.hartId := c(Global.HART_ID)
@@ -204,16 +233,30 @@ class ExecuteLanePlugin(override val laneName : String,
 
     // Implement some UOP decoding for the execute's plugin usages
     val decodeCtrl = ctrl(decodeAt)
+    val implSelMask = ((BigInt(1) << log2Up(layers.size))-1) << Decode.UOP_WIDTH
     val decoding = new decodeCtrl.Area {
-      val coverAll = getMicroOp().map(e => Masked(e.key))
+      def implToMasked(impl : UopLayerSpec) = {
+        val uop = Masked(impl.uop.key)
+        val sel = Masked(BigInt(getLayerId(impl.elImpl)) << Decode.UOP_WIDTH, implSelMask)
+        uop fuse sel
+      }
+      val coverAll = getUopLayerSpec().map(implToMasked)
+      val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
+      def ds(key : Payload[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
+      for((key, default) <- decodingDefaults) ds(key).setDefault(default)
+      for(impl <- getUopLayerSpec()){
+        for((key, value) <- impl.decodings) ds(key).addNeeds(implToMasked(impl), value)
+      }
+      val decodingBits = apply(LAYER_SEL) ## apply(Decode.UOP)
       for ((key, spec) <- decodingSpecs) {
-        key.assignFromBits(spec.build(Decode.UOP, coverAll).asBits)
+        key.assignFromBits(spec.build(decodingBits, coverAll).asBits)
       }
     }
 
     // Handle SEL initialisation and flushes
     val rp = host[ReschedulePlugin]
     for(ctrlId <- 0 until idToCtrl.keys.max){
+      ctrl(ctrlId) //Ensure creation
       val c = idToCtrl(ctrlId)
       if(ctrlId != 0) c.up(c.LANE_SEL).setAsReg().init(False)
 
@@ -236,6 +279,4 @@ class ExecuteLanePlugin(override val laneName : String,
 
   def freezeWhen(cond: Bool)(implicit loc: Location) = eupp.freezeWhen(cond)
   def isFreezed(): Bool = eupp.isFreezed()
-  class Execute(id : Int) extends CtrlLaneMirror(execute(id))
-  class Ctrl(id : Int) extends CtrlLaneMirror(ctrl(id))
 }

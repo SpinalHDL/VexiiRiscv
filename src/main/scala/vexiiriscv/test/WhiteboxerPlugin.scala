@@ -124,7 +124,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
         address := c(SrcStageables.ADD_SUB).asUInt
-        data := host.find[IntFormatPlugin](_.laneName == p.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
+        data := host.find[IntFormatPlugin](_.laneName == p.layer.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
       })
     }
 

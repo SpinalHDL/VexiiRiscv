@@ -3,8 +3,8 @@ package vexiiriscv
 import spinal.core._
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
-import vexiiriscv.execute.{AguPlugin, BarrelShifterPlugin, BranchPlugin, CsrAccessPlugin, DivPlugin, IntAluPlugin, IntFormatPlugin, LsuCachelessPlugin, MulPlugin, RsUnsignedPlugin, SrcPlugin, WriteBackPlugin}
-import vexiiriscv.misc.{PrivilegedConfig, PrivilegedPlugin}
+import vexiiriscv.execute._
+import vexiiriscv.misc._
 import vexiiriscv.riscv.IntRegFile
 import vexiiriscv.test.WhiteboxerPlugin
 
@@ -16,14 +16,14 @@ class ParamSimple(){
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
-  var decoders = 2
-  var lanes = 2
+  var decoders = 1
+  var lanes = 1
   var regFileSync = false
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
-  var withGShare = true
-  var withBtb = true
-  var withRas = true
+  var withGShare = false
+  var withBtb = false
+  var withRas = false
 
   def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
@@ -92,19 +92,24 @@ class ParamSimple(){
       syncRead = regFileSync
     )
 
-    def newExecuteLanePlugin(name : String, priority : Int) = new execute.ExecuteLanePlugin(name, priority = priority, rfReadAt = 0, decodeAt = regFileSync.toInt, executeAt = regFileSync.toInt + 1)
+    def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(name, rfReadAt = 0, decodeAt = regFileSync.toInt, executeAt = regFileSync.toInt + 1)
 
     plugins += new execute.ExecutePipelinePlugin()
     val intRegFileRelaxedPort = "intShared" //Used by out of pip units to write stuff into the pipeline, //TODO ensure some sort of fairness between no ready and with ready
 
-    plugins += newExecuteLanePlugin("lane0", priority = 0)
+
+    val lane0 = newExecuteLanePlugin("lane0")
+    plugins += lane0
+
+    val earlyLane0 = new LaneLayer("early", lane0, priority = 0)
+
     plugins += new SrcPlugin("lane0")
-    plugins += new IntAluPlugin("lane0", formatAt = 0)
-    plugins += new BarrelShifterPlugin("lane0", formatAt = 0)
+    plugins += new IntAluPlugin(earlyLane0, formatAt = 0)
+    plugins += new BarrelShifterPlugin(earlyLane0, formatAt = 0)
     plugins += new IntFormatPlugin("lane0")
-    plugins += new BranchPlugin("lane0")
+    plugins += new BranchPlugin(earlyLane0)
     plugins += new LsuCachelessPlugin(
-      laneName = "lane0",
+      layer     = earlyLane0,
       addressAt = 0,
       forkAt    = 0,
       joinAt    = 1,
@@ -113,21 +118,24 @@ class ParamSimple(){
       translationPortParameter = null
     )
     plugins += new RsUnsignedPlugin("lane0")
-    plugins += new MulPlugin("lane0")
-    plugins += new DivPlugin("lane0")
-    plugins += new CsrAccessPlugin("lane0", writeBackKey =  if(lanes == 1) "lane0" else "lane1")
+    plugins += new MulPlugin(earlyLane0)
+    plugins += new DivPlugin(earlyLane0)
+    plugins += new CsrAccessPlugin(earlyLane0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(PrivilegedConfig.full)
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
 
-    if(lanes >= 2) {
-      plugins += newExecuteLanePlugin("lane1", priority = 1)
-      plugins += new SrcPlugin("lane1")
-      plugins += new IntAluPlugin("lane1", formatAt = 0)
-      plugins += new BarrelShifterPlugin("lane1", formatAt = 0)
-      plugins += new IntFormatPlugin("lane1")
-//      plugins += new BranchPlugin("lane1")
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
-    }
+//    if(lanes >= 2) {
+//      val earlyLane0 = new LaneLayer("early")
+//      earlyLane0.priority = 10
+//
+//      plugins += newExecuteLanePlugin("lane1")
+//      plugins += new SrcPlugin("lane1")
+//      plugins += new IntAluPlugin("lane1", earlyLane0, formatAt = 0)
+////      plugins += new BarrelShifterPlugin("lane1", formatAt = 0)
+//      plugins += new IntFormatPlugin("lane1")
+//////      plugins += new BranchPlugin("lane1")
+//      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassOn = _ >= 0)
+//    }
 
 
     plugins += new WhiteboxerPlugin()

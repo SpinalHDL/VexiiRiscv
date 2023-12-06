@@ -21,17 +21,17 @@ object AguPlugin extends AreaObject{
 }
 
 class AguFrontend(
-    laneName: String,
+    layer: LaneLayer,
     host: PluginHost
   ) extends ExecuteUnitElementSimple.Api(
-    host.find[ExecuteLanePlugin](_.laneName == laneName),
-    host.find[SrcPlugin](_.laneName == laneName),
+    layer,
+    host.find[SrcPlugin](_.laneName == layer.laneName),
     AguPlugin.SEL
   ) with Area {
   import AguPlugin._
   val sk = SrcKeys
 
-  eu.setDecodingDefault(SEL, False)
+  layer.el.setDecodingDefault(SEL, False)
 
   val loads = ArrayBuffer(Rvi.LB, Rvi.LH, Rvi.LW, Rvi.LBU, Rvi.LHU)
   if (XLEN.get == 64) loads ++= List(Rvi.LD, Rvi.LWU)

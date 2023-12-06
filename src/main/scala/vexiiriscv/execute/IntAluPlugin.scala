@@ -24,11 +24,11 @@ object IntAluPlugin extends AreaObject {
   val ALU_RESULT = Payload(Bits(Riscv.XLEN bits))
 }
 
-class IntAluPlugin(val laneName : String,
+class IntAluPlugin(var implName: LaneLayer,
                    var aluAt : Int = 0,
-                   var formatAt : Int = 0) extends ExecutionUnitElementSimple(laneName)  {
+                   var formatAt : Int = 0) extends ExecutionUnitElementSimple(implName)  {
   import IntAluPlugin._
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == laneName)
+  lazy val ifp = host.find[IntFormatPlugin](_.laneName == implName.el.laneName)
   setupRetain(ifp.elaborationLock)
 
   val logic = during build new Logic{
@@ -64,7 +64,7 @@ class IntAluPlugin(val laneName : String,
       add(Rvi.ADDIW).srcs(Op.ADD   , SRC1.RF, SRC2.I ).decode(ALU_CTRL -> ace.ADD_SUB)
 
       for(op <- List(Rvi.ADDW, Rvi.SUBW, Rvi.ADDIW)){
-        ifp.signExtend(formatBus, op, 32)
+        ifp.signExtend(formatBus, implName(op), 32)
       }
     }
 

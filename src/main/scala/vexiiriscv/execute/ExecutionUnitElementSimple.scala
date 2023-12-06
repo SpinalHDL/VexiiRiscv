@@ -9,29 +9,29 @@ import vexiiriscv.riscv.{MicroOp, RD, RfResource}
 
 
 object ExecuteUnitElementSimple{
-  class Api(val eu : ExecuteLanePlugin, val srcPlugin: SrcPlugin, val SEL : Payload[Bool]){
+  class Api(implName : LaneLayer, val srcPlugin: SrcPlugin, val SEL : Payload[Bool]){
     def add(microOp: MicroOp)(implicit iifpp: (IntFormatPlugin, Flow[Bits]) = null,
-                                                             iwbpp: (WriteBackPlugin, Flow[Bits]) = null) = new {
-      eu.addMicroOp(microOp)
+                                       iwbpp: (WriteBackPlugin, Flow[Bits]) = null) = new {
+      val impl = implName.add(microOp)
+
       decode(SEL -> True)
 
-      eu.addMicroOp(microOp)
-      if (iifpp != null) iifpp._1.addMicroOp(iifpp._2, microOp)
-      if (iwbpp != null) iwbpp._1.addMicroOp(iwbpp._2, microOp)
+      if (iifpp != null) iifpp._1.addMicroOp(iifpp._2, impl)
+      if (iwbpp != null) iwbpp._1.addMicroOp(iwbpp._2, impl)
 
       def decode(decoding: DecodeListType = Nil): this.type = {
-        eu.addDecoding(microOp, decoding)
+        impl.addDecoding(decoding)
         this
       }
 
       def decode(head: (Payload[_ <: BaseType], Any), tail: (Payload[_ <: BaseType], Any)*): this.type = {
-        eu.addDecoding(microOp, head +: tail)
+        impl.addDecoding(head +: tail)
         this
       }
 
 
       def srcs(srcKeys: Seq[SrcKeys]): this.type = {
-        if (srcKeys.nonEmpty) srcPlugin.specify(microOp, srcKeys)
+        if (srcKeys.nonEmpty) srcPlugin.specify(impl, srcKeys)
         this
       }
 
@@ -44,17 +44,17 @@ object ExecuteUnitElementSimple{
 }
 
 //This is a simple skeleton to ease the implementation of simple ExecutionUnit elements. It assume a single writeback and a single completion
-abstract class ExecutionUnitElementSimple(euId : String) extends FiberPlugin {
-  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == euId)
-  lazy val srcp = host.find[SrcPlugin](_.laneName == euId)
+abstract class ExecutionUnitElementSimple(implName : LaneLayer) extends FiberPlugin {
+  val eu = implName.el
+  lazy val srcp = host.find[SrcPlugin](_.laneName == eu.laneName)
   buildBefore(eu.pipelineLock)
   setupRetain(eu.uopLock)
   setupRetain(srcp.elaborationLock)
-  withPrefix(euId)
+  withPrefix(eu.laneName)
 
   val SEL = Payload(Bool())
 
-  class Logic extends ExecuteUnitElementSimple.Api(eu, srcp, SEL) with Area {
+  class Logic extends ExecuteUnitElementSimple.Api(implName, srcp, SEL) with Area {
     eu.setDecodingDefault(SEL, False)
   }
 }

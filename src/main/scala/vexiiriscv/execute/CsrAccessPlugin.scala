@@ -19,13 +19,13 @@ object CsrFsm{
   val CSR_VALUE = Payload(Bits(XLEN bits))
 }
 
-class CsrAccessPlugin(laneName : String,
+class CsrAccessPlugin(layer : LaneLayer,
                       writeBackKey : Any,
                       integrated : Boolean = true,
                       injectAt : Int = 0) extends FiberPlugin with CsrService with CompletionService {
-  lazy val elp = host.find[ExecuteLanePlugin](_.laneName == laneName)
+  lazy val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
   lazy val irf = host.find[RegfileService](_.rfSpec == IntRegFile)
-  lazy val iwb = host.find[IntFormatPlugin](_.laneName == laneName)
+  lazy val iwb = host.find[IntFormatPlugin](_.laneName == layer.laneName)
   lazy val dp = host[DispatchPlugin]
   setupRetain(dp.elaborationLock)
   setupRetain(iwb.elaborationLock)
@@ -91,7 +91,7 @@ class CsrAccessPlugin(laneName : String,
   val logic = during build new Area {
     elp.setDecodingDefault(SEL, False)
 
-    val add = new ExecuteUnitElementSimple.Api(elp, null, SEL).add(_)
+    val add = new ExecuteUnitElementSimple.Api(layer, null, SEL).add(_)
     add(Rvi.CSRRW).decode(CSR_IMM -> False, CSR_MASK -> False)
     add(Rvi.CSRRS).decode(CSR_IMM -> False, CSR_MASK -> True, CSR_CLEAR -> False)
     add(Rvi.CSRRC).decode(CSR_IMM -> False, CSR_MASK -> True, CSR_CLEAR -> True)
@@ -99,16 +99,15 @@ class CsrAccessPlugin(laneName : String,
     add(Rvi.CSRRSI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> False)
     add(Rvi.CSRRCI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> True)
 
-    elp.dontFlushFrom(injectAt, Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI)
-
     val wbWi = integrated generate iwb.access(injectAt)
-
-    for (op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI)) {
-      if(!integrated) elp.setRdOutOfPip(op)
-      if(integrated) iwb.addMicroOp(wbWi, op)
-//      dp.fenceYounger(op)
-//      dp.fenceOlder(op)
+    for(op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI).map(layer(_))){
+      op.dontFlushFrom(injectAt)
+      if (!integrated) ??? //elp.setRdOutOfPip(op)
+      if (integrated) iwb.addMicroOp(wbWi, op)
+      //      dp.fenceYounger(op)
+      //      dp.fenceOlder(op)
     }
+
 
     iwb.elaborationLock.release()
     elp.uopLock.release()

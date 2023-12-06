@@ -43,16 +43,16 @@ case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave 
   }
 }
 
-class LsuCachelessPlugin(var laneName : String,
+class LsuCachelessPlugin(var layer : LaneLayer,
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
                          var addressAt: Int = 0,
                          var forkAt: Int = 0,
                          var joinAt: Int = 1,
                          var wbAt: Int = 2) extends FiberPlugin{
-  lazy val elp = host.find[ExecuteLanePlugin](_.laneName == laneName)
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == laneName)
-  lazy val srcp = host.find[SrcPlugin](_.laneName == laneName)
+  lazy val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
+  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
+  lazy val srcp = host.find[SrcPlugin](_.laneName == layer.laneName)
   lazy val ats = host[AddressTranslationService]
   buildBefore(elp.pipelineLock)
   setupRetain(elp.uopLock)
@@ -61,28 +61,29 @@ class LsuCachelessPlugin(var laneName : String,
   setupRetain(ats.elaborationLock)
 
   val logic = during build new Area{
-    val frontend = new AguFrontend(laneName, host)
+    val frontend = new AguFrontend(layer, host)
 
     // IntFormatPlugin specification
     val iwb = ifp.access(wbAt)
     for(load <- frontend.loads){
       val spec = Rvi.loadSpec(load)
-      ifp.addMicroOp(iwb, load)
+      val op = layer(load)
+      ifp.addMicroOp(iwb, op)
       spec.signed match {
-        case false => ifp.zeroExtend(iwb, load, spec.width)
-        case true  => ifp.signExtend(iwb, load, spec.width)
+        case false => ifp.zeroExtend(iwb, op, spec.width)
+        case true  => ifp.signExtend(iwb, op, spec.width)
       }
     }
 
 
     for (uop <- frontend.loads ++ frontend.stores) {
-      elp.dontFlushFrom(forkAt+1, uop) //+1 as the fork doesn't happen on cancel request
+      layer(uop).dontFlushFrom(forkAt+1) //+1 as the fork doesn't happen on cancel request
     }
 
-    elp.addMicroOp(Rvi.FENCE) //TODO
+    layer.add(Rvi.FENCE) //TODO
 
-    elp.setCompletion(joinAt, List(Rvi.FENCE))
-    elp.setCompletion(joinAt, frontend.stores)
+    layer(Rvi.FENCE).setCompletion(joinAt)
+    for(uop <- frontend.stores) layer(uop).setCompletion(joinAt)
 
     elp.uopLock.release()
     srcp.elaborationLock.release()

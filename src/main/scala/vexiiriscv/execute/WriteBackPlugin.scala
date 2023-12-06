@@ -29,7 +29,7 @@ class WriteBackPlugin(val laneName : String,
   buildBefore(rfp.elaborationLock)
 
   case class Spec(port : Flow[Bits], ctrlAt : Int){
-    val microOps = ArrayBuffer[MicroOp]()
+    val impls = ArrayBuffer[UopLayerSpec]()
   }
   val portToSpec = mutable.LinkedHashMap[Flow[Bits],Spec]()
   def createPort(at : Int): Flow[Bits] = {
@@ -37,15 +37,13 @@ class WriteBackPlugin(val laneName : String,
     portToSpec(port) = Spec(port, at)
     port
   }
-
-  def addMicroOp(port: Flow[Bits], microOp: Seq[MicroOp]): Unit = {
+  def addMicroOp(port: Flow[Bits], layer : LaneLayer, uop: Seq[MicroOp]): Unit = addMicroOp(port, uop.map(layer.apply))
+  def addMicroOp(port: Flow[Bits], head: UopLayerSpec, tail: UopLayerSpec*): Unit = addMicroOp(port, head +: tail)
+  def addMicroOp(port: Flow[Bits], impls: Seq[UopLayerSpec]): Unit = {
     val spec = portToSpec(port)
-    spec.microOps ++= microOp
+    spec.impls ++= impls
   }
 
-  def addMicroOp(port: Flow[Bits], head: MicroOp, tail : MicroOp*): Unit = {
-    addMicroOp(port, head +: tail)
-  }
 
   val SEL = Payload(Bool())
 
@@ -60,9 +58,9 @@ class WriteBackPlugin(val laneName : String,
     for (group <- sorted) {
       val ctrlId = group.head.ctrlAt
       for (spec <- group) {
-        for (op <- spec.microOps) {
-          eu.setRdSpec(op, DATA, writeAt + rfp.writeLatency, (ctrlId to writeAt + rfp.writeLatency - 1 + rfp.readLatency).filter(bypassOn))
-          eu.addDecoding(op, SEL -> True)
+        for (impl <- spec.impls) {
+          impl.setRdSpec(DATA, writeAt + rfp.writeLatency, (ctrlId to writeAt + rfp.writeLatency - 1 + rfp.readLatency).filter(bypassOn))
+          impl.addDecoding(SEL -> True)
         }
       }
     }

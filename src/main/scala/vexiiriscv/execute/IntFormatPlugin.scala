@@ -19,10 +19,10 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
   buildBefore(wbp.elaborationLock)
   val elaborationLock = Lock()
 
-  case class ExtendsSpec(op: MicroOp, bitId: Int)
+  case class ExtendsSpec(op: UopLayerSpec, bitId: Int)
   case class Spec(port : Flow[Bits],
                   ctrlId : Int){
-    val microOps = mutable.LinkedHashSet[MicroOp]()
+    val impls = mutable.LinkedHashSet[UopLayerSpec]()
     val signExtends = ArrayBuffer[ExtendsSpec]()
     val zeroExtends = ArrayBuffer[ExtendsSpec]()
     def extendSpecs = (signExtends ++ zeroExtends)
@@ -35,22 +35,22 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
     port
   }
 
-  def signExtend(port: Flow[Bits], microOp: MicroOp, bitId: Int) = {
+  def signExtend(port: Flow[Bits], impl: UopLayerSpec, bitId: Int) = {
     val spec = portToSpec(port)
-    spec.signExtends += ExtendsSpec(microOp, bitId)
-    spec.microOps += microOp
+    spec.signExtends += ExtendsSpec(impl, bitId)
+    spec.impls += impl
   }
 
-  def zeroExtend(port: Flow[Bits], microOp: MicroOp, bitId: Int) = {
+  def zeroExtend(port: Flow[Bits], impl: UopLayerSpec, bitId: Int) = {
     val spec = portToSpec(port)
-    spec.zeroExtends += ExtendsSpec(microOp, bitId)
-    spec.microOps += microOp
+    spec.zeroExtends += ExtendsSpec(impl, bitId)
+    spec.impls += impl
   }
 
-  def addMicroOp(port: Flow[Bits], microOp: MicroOp) : Unit = {
+  def addMicroOp(port: Flow[Bits], impl: UopLayerSpec) : Unit = {
     val spec = portToSpec(port)
-    spec.microOps += microOp
-    eu.setCompletion(portToSpec(port).ctrlId, microOp)
+    spec.impls += impl
+    impl.setCompletion(portToSpec(port).ctrlId)
   }
 
   val logic = during build new Area{
@@ -59,7 +59,7 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
     val grouped = specs.groupByLinked(_.ctrlId)
 
     for(spec <- specs){
-      val fullwidths = spec.microOps.toSet -- spec.extendSpecs.map(_.op)
+      val fullwidths = spec.impls.toSet -- spec.extendSpecs.map(_.op)
       spec.zeroExtends ++= fullwidths.map(uop => ExtendsSpec(uop, IntRegFile.width))
     }
 
@@ -72,17 +72,17 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
 
     for(spec <- specs) {
       for(ext <- spec.signExtends){
-        eu.addDecoding(ext.op, SIGNED -> True, WIDTH_ID ->  U(widthsToId(ext.bitId), wiw bits))
+        ext.op.addDecoding(SIGNED -> True, WIDTH_ID ->  U(widthsToId(ext.bitId), wiw bits))
       }
       for (ext <- spec.zeroExtends) {
-        eu.addDecoding(ext.op, SIGNED -> False, WIDTH_ID -> U(widthsToId(ext.bitId), wiw bits))
+        ext.op.addDecoding(SIGNED -> False, WIDTH_ID -> U(widthsToId(ext.bitId), wiw bits))
       }
     }
 
 
     val stages = for(group <- grouped.values; stageId = group.head.ctrlId) yield new eu.Execute(stageId){
       val wb = wbp.createPort(stageId)
-      for(spec <- group) wbp.addMicroOp(wb, spec.microOps.toSeq)
+      for(spec <- group) wbp.addMicroOp(wb, spec.impls.toSeq)
 
       val hits = B(group.map(_.port.valid))
       wb.valid := isValid && hits.orR

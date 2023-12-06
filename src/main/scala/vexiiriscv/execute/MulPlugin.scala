@@ -16,7 +16,7 @@ object MulPlugin extends AreaObject {
   val RESULT_IS_SIGNED = Payload(Bool())
 }
 
-class MulPlugin(val laneName : String,
+class MulPlugin(val layer : LaneLayer,
                 var srcAt : Int = 0,
                 var mulAt: Int = 0,
                 var sumAt: Int = 1,
@@ -26,10 +26,10 @@ class MulPlugin(val laneName : String,
                 var splitWidthA : Int = 17,
                 var splitWidthB : Int = 17,
                 var useRsUnsignedPlugin : Boolean = false,
-                var bufferedHigh : Option[Boolean] = None) extends ExecutionUnitElementSimple(laneName){
+                var bufferedHigh : Option[Boolean] = None) extends ExecutionUnitElementSimple(layer){
   import MulPlugin._
 
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == laneName)
+  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
   setupRetain(ifp.elaborationLock)
 
   val logic = during build new Logic {
@@ -50,7 +50,7 @@ class MulPlugin(val laneName : String,
     if (XLEN.get == 64) {
       add(Rvi.MULW).decode(HIGH -> False, RS1_SIGNED -> True, RS2_SIGNED -> True)
       for (op <- List(Rvi.MULW)) {
-        ifp.signExtend(formatBus, op, 32)
+        ifp.signExtend(formatBus, layer(op), 32)
       }
     }
 

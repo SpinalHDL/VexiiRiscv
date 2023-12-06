@@ -53,16 +53,16 @@ class SrcPlugin(val laneName : String) extends FiberPlugin{
   setupRetain(eu.pipelineLock)
   withPrefix(laneName)
 
-  val spec = mutable.LinkedHashMap[MicroOp, mutable.LinkedHashSet[SrcKeys]]()
-  def specify(microOp: MicroOp, keys: Seq[SrcKeys]) = {
-    val e = spec.getOrElseUpdate(microOp, mutable.LinkedHashSet[SrcKeys]())
+  val spec = mutable.LinkedHashMap[UopLayerSpec, mutable.LinkedHashSet[SrcKeys]]()
+  def specify(impl : UopLayerSpec, keys: Seq[SrcKeys]) = {
+    val e = spec.getOrElseUpdate(impl, mutable.LinkedHashSet[SrcKeys]())
     for(k <- keys){
       assert(!e.contains(k))
       e += k
     }
   }
 
-  def specify(microOp: MicroOp, head: SrcKeys, tail : SrcKeys*) : Unit = specify(microOp, head +: tail)
+  def specify(impl : UopLayerSpec, head: SrcKeys, tail : SrcKeys*) : Unit = specify(impl, head +: tail)
 
   val logic = during build new Area{
     elaborationLock.await()
@@ -83,11 +83,9 @@ class SrcPlugin(val laneName : String) extends FiberPlugin{
 
     def has(keys : SrcKeys*) = keys.exists(keys.contains)
 
-    for((op, keys) <- spec){
-
+    for((impl, keys) <- spec){
       val REVERT, ZERO = Payload(Bool())
-      eu.addDecoding(
-        op,
+      impl.addDecoding(
         keys.toSeq.flatMap{
           case sk.Op.SRC1     => List(ss.REVERT -> False, ss.ZERO   -> True)
           case sk.Op.ADD      => List(ss.REVERT -> False, ss.ZERO   -> False)

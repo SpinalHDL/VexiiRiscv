@@ -27,12 +27,12 @@ object BranchPlugin extends AreaObject {
   val BRANCH_CTRL =  Payload(BranchCtrlEnum())
 }
 
-class BranchPlugin(val laneName : String,
+class BranchPlugin(val layer : LaneLayer,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
-                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(laneName) with LearnService {
+                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) with LearnService {
   import BranchPlugin._
-  lazy val wbp = host.find[WriteBackPlugin](_.laneName == laneName)
+  lazy val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
   lazy val sp = host[ReschedulePlugin]
   lazy val pcp = host[PcPlugin]
   lazy val hp = host.get[HistoryPlugin]
@@ -50,9 +50,6 @@ class BranchPlugin(val laneName : String,
 
     BRANCH_HISTORY_WIDTH.set((0 +: host.list[HistoryUser].map(_.historyWidthUsed)).max)
 
-    val wb = wbp.createPort(wbAt)
-    wbp.addMicroOp(wb, Rvi.JAL, Rvi.JALR)
-
     add(Rvi.JAL ).decode(BRANCH_CTRL -> BranchCtrlEnum.JAL )
     add(Rvi.JALR).decode(BRANCH_CTRL -> BranchCtrlEnum.JALR).srcs(SRC1.RF)
     add(Rvi.BEQ ).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF)
@@ -65,9 +62,16 @@ class BranchPlugin(val laneName : String,
     val jList = List(Rvi.JAL, Rvi.JALR)
     val bList = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU)
 
-    eu.setCompletion(Math.max(jumpAt, wbAt), jList)
-    eu.setCompletion(jumpAt, bList)
-    eu.mayFlushUpTo(jumpAt, jList ++ bList)
+    val wb = wbp.createPort(wbAt)
+    for(j <- jList; spec = layer(j)) {
+      wbp.addMicroOp(wb, spec)
+      spec.setCompletion(Math.max(jumpAt, wbAt))
+      spec.mayFlushUpTo(jumpAt)
+    }
+    for (j <- bList; spec = layer(j)) {
+      spec.setCompletion(jumpAt)
+      spec.mayFlushUpTo(jumpAt)
+    }
 
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
