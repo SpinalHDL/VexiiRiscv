@@ -76,9 +76,9 @@ class IntAluPlugin(var implName: LaneLayer,
       val ss = SrcStageables
 
       val bitwise = ALU_BITWISE_CTRL.mux(
-        AluBitwiseCtrlEnum.AND  -> (ss.SRC1 & ss.SRC2),
-        AluBitwiseCtrlEnum.OR   -> (ss.SRC1 | ss.SRC2),
-        AluBitwiseCtrlEnum.XOR  -> (ss.SRC1 ^ ss.SRC2)
+        AluBitwiseCtrlEnum.AND  -> (srcp.SRC1 & srcp.SRC2),
+        AluBitwiseCtrlEnum.OR   -> (srcp.SRC1 | srcp.SRC2),
+        AluBitwiseCtrlEnum.XOR  -> (srcp.SRC1 ^ srcp.SRC2)
       )
 
       val result = ALU_CTRL.mux(

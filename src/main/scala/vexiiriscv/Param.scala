@@ -105,7 +105,9 @@ class ParamSimple(){
 
     val lane0 = newExecuteLanePlugin("lane0")
     val early0 = new LaneLayer("early", lane0, priority = 0)
+    val late0 = new LaneLayer("late", lane0, priority = -5)
     plugins += lane0
+
 
     plugins += new SrcPlugin("lane0", executeAt = 0)
     plugins += new IntAluPlugin(early0, formatAt = 0)
@@ -126,7 +128,6 @@ class ParamSimple(){
       translationStorageParameter = null,
       translationPortParameter = null
     )
-//TODO specify RS1 / RS2 read from which stage for following plugins
     plugins += new RsUnsignedPlugin("lane0")
     plugins += new MulPlugin(early0)
     plugins += new DivPlugin(early0)

@@ -17,7 +17,6 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 object SrcStageables extends AreaObject {
-  val SRC1, SRC2 = Payload(SInt(Riscv.XLEN bits))
   val ADD_SUB = Payload(SInt(Riscv.XLEN bits))
   val LESS = Payload(Bool())
   val REVERT, ZERO, UNSIGNED = Payload(Bool())
@@ -70,6 +69,7 @@ class SrcPlugin(val laneName : String,
 
   def specify(impl : UopLayerSpec, head: SrcKeys, tail : SrcKeys*) : Unit = specify(impl, head +: tail)
 
+  val SRC1, SRC2 = Payload(SInt(Riscv.XLEN bits))
   val logic = during build new Area{
     elaborationLock.await()
 
@@ -106,12 +106,12 @@ class SrcPlugin(val laneName : String,
 
     val src = new eu.Execute(executeAt){
       val imm = new IMM(Decode.UOP)
-      if(src1Keys.nonEmpty) ss.SRC1 := SRC1_CTRL.muxListDc[SInt](src1Keys.map {
+      if(src1Keys.nonEmpty) SRC1 := SRC1_CTRL.muxListDc[SInt](src1Keys.map {
         case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(this(eu(IntRegFile, RS1)))
         case sk.SRC1.U  => src1ToEnum(sk.SRC1.U ) -> S(imm.u).resize(Riscv.XLEN)
       })
 
-      if(src2Keys.nonEmpty) ss.SRC2 := SRC2_CTRL.muxListDc[SInt](src2Keys.map {
+      if(src2Keys.nonEmpty) SRC2 := SRC2_CTRL.muxListDc[SInt](src2Keys.map {
         case sk.SRC2.RF => src2ToEnum(sk.SRC2.RF) -> S(this(eu(IntRegFile, RS2)))
         case sk.SRC2.I  => src2ToEnum(sk.SRC2.I ) -> imm.i_sext
         case sk.SRC2.S  => src2ToEnum(sk.SRC2.S ) -> imm.s_sext
@@ -131,14 +131,14 @@ class SrcPlugin(val laneName : String,
 
       def ifElseMap[T](cond : Boolean)(value : T)(body : T => T) : T = if(cond) value else body(value)
 
-      val rs2Patched =  CombInit(ifElseMap(!alwaysSub)(this(ss.SRC2))(~_))
-      if(withRevert) when(ss.REVERT){ rs2Patched :=  ~ss.SRC2  }
+      val rs2Patched =  CombInit(ifElseMap(!alwaysSub)(this(SRC2))(~_))
+      if(withRevert) when(ss.REVERT){ rs2Patched :=  ~SRC2  }
       if(has(sk.Op.SRC1)) when(ss.ZERO){ rs2Patched := 0 }
-      ss.ADD_SUB := carryIn(ss.SRC1 + rs2Patched)
+      ss.ADD_SUB := carryIn(SRC1 + rs2Patched)
 
       // SLT, SLTU, branches
       if(has(sk.Op.LESS, sk.Op.LESS_U)) {
-        ss.LESS := (ss.SRC1.msb === ss.SRC2.msb) ? ss.ADD_SUB.msb | Mux(ss.UNSIGNED, ss.SRC2.msb, ss.SRC1.msb)
+        ss.LESS := (SRC1.msb === SRC2.msb) ? ss.ADD_SUB.msb | Mux(ss.UNSIGNED, SRC2.msb, SRC1.msb)
       }
     }
     eu.pipelineLock.release()

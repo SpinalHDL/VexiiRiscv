@@ -58,14 +58,14 @@ class BarrelShifterPlugin(val layer : LaneLayer,
 
     val shift = new eu.Execute(shiftAt) {
       val ss = SrcStageables
-      val amplitude = ss.SRC2(log2Up(Riscv.XLEN.get) - 1 downto 0).asUInt
-      val reversed = Mux[SInt](LEFT, ss.SRC1.reversed, ss.SRC1)
-      val shifted = (S((SIGNED & ss.SRC1.msb) ## reversed) >> amplitude).resize(Riscv.XLEN bits)
+      val amplitude = srcp.SRC2(log2Up(Riscv.XLEN.get) - 1 downto 0).asUInt
+      val reversed = Mux[SInt](LEFT, srcp.SRC1.reversed, srcp.SRC1)
+      val shifted = (S((SIGNED & srcp.SRC1.msb) ## reversed) >> amplitude).resize(Riscv.XLEN bits)
       val patched = LEFT ? shifted.reversed | shifted
 
       if (Riscv.XLEN.get == 64) {
         when(IS_W_RIGHT) {
-          reversed(63 downto 32) := (default -> (SIGNED & ss.SRC1(31)))
+          reversed(63 downto 32) := (default -> (SIGNED & srcp.SRC1(31)))
         }
         when(IS_W) {
           amplitude(5) := False

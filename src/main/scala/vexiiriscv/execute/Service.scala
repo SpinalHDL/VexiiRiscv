@@ -88,7 +88,7 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   }
 }
 
-trait ExecuteLaneService {
+trait ExecuteLaneService extends Area{
   val uopLock = Lock()
   val pipelineLock = Lock()
 

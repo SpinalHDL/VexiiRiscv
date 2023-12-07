@@ -92,7 +92,7 @@ class BranchPlugin(val layer : LaneLayer,
 
     val alu = new eu.Execute(aluAt) {
       val ss = SrcStageables
-      val EQ = insert(ss.SRC1 === ss.SRC2)
+      val EQ = insert(srcp.SRC1 === srcp.SRC2)
 
       val COND = insert(BRANCH_CTRL.mux(
         BranchCtrlEnum.JALR -> True,
@@ -108,7 +108,7 @@ class BranchPlugin(val layer : LaneLayer,
       val imm = IMM(UOP)
       val target_a = BRANCH_CTRL.mux(
         default -> S(PC),
-        BranchCtrlEnum.JALR -> ss.SRC1.resize(PC_WIDTH)
+        BranchCtrlEnum.JALR -> srcp.SRC1.resize(PC_WIDTH)
       )
 
       val target_b = BRANCH_CTRL.mux(
