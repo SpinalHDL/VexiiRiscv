@@ -108,6 +108,10 @@ class CsrAccessPlugin(layer : LaneLayer,
       //      dp.fenceOlder(op)
     }
 
+    for (op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC).map(layer(_))) {
+      op.addRsSpec(RS1, injectAt)
+    }
+
 
     iwb.elaborationLock.release()
     elp.uopLock.release()

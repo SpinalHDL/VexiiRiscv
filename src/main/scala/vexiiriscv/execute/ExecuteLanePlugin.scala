@@ -113,6 +113,8 @@ class ExecuteLanePlugin(override val laneName : String,
   }
 
 
+  override def rfReadHazardFrom(usedAt : Int) : Int = if(withBypasses) usedAt-1 else rfReadAt   //-1 because the bypass happen 1 stage earlier
+
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.completions.onCtrl.map(_.port).toSeq
 
   val logic = during build new Area {
@@ -148,28 +150,26 @@ class ExecuteLanePlugin(override val laneName : String,
         val bypassSpecs = mutable.LinkedHashSet[BypassSpec]()
         val useRsUntil = mutable.LinkedHashMap[RfRead, Int]()
         val eus = host.list[ExecuteLaneService]
-        if(withBypasses) {
-          for (eu <- eus; opSpec <- eu.getUopLayerSpec()) {
-            eu.pipelineLock.await() // Ensure that the eu specification is done
-            val sameRf = opSpec.uop.resources.exists {
-              case RfResource(spec.rf, RD) => true
-              case _ => false
-            }
-            if (sameRf) opSpec.rd match {
-              case Some(rd) =>
-                for (nodeId <- rd.broadcastedFrom until rd.rfReadableAt) {
-                  val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
-                  bypassSpecs += bypassSpec
-                }
-              case None =>
-            }
+        for (eu <- eus; opSpec <- eu.getUopLayerSpec()) {
+          eu.pipelineLock.await() // Ensure that the eu specification is done
+          val sameRf = opSpec.uop.resources.exists {
+            case RfResource(spec.rf, RD) => true
+            case _ => false
           }
+          if (sameRf) opSpec.rd match {
+            case Some(rd) =>
+              for (nodeId <- rd.broadcastedFrom until rd.rfReadableFrom) {
+                val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
+                bypassSpecs += bypassSpec
+              }
+            case None =>
+          }
+        }
 
-          for(opSpec <- getUopLayerSpec()){
-            opSpec.uop.resources.foreach {
-              case RfResource(spec.rf, rsX : RfRead) => useRsUntil(rsX) = useRsUntil.getOrElse(rsX, -100) max opSpec.rs(rsX).from
-              case _ =>
-            }
+        for(opSpec <- getUopLayerSpec()){
+          opSpec.uop.resources.foreach {
+            case RfResource(spec.rf, rsX : RfRead) => useRsUntil(rsX) = useRsUntil.getOrElse(rsX, -100) max opSpec.rs(rsX).from
+            case _ =>
           }
         }
 

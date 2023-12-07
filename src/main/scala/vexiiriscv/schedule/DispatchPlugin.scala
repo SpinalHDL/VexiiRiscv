@@ -165,35 +165,15 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       val rsHazards = Bits(lanesLayers.size bits)
       val flushHazards = Bits(lanesLayers.size bits)
       flushHazards := 0 //TODO
-      //TODO merge duplicated logic using signal cache
-//      val euLogic = for((readEu, euId) <- eus.zipWithIndex) yield new Area{
-//        val readAt = readEu.rfReadAt
-//
-//        // Identify which RS are used by the pipeline
-//        val readEuRessources = readEu.getMicroOp().flatMap(_.resources).distinctLinked
-//        val rfaReads = Decode.rfaKeys.filter(_._1.isInstanceOf[RfRead])
-//        val rfaReadsFiltered = rfaReads.filter(e => readEuRessources.exists{
-//          case RfResource(_, e) => true
-//          case _ => false
-//        }).values
-//
-//        // Check hazard for each rs in the whole cpu
-//        val rsLogic = for (rs <- rfaReadsFiltered) yield new Area {
-//          val hazards = ArrayBuffer[Bool]()
-//          for(writeEu <- eus) {
-//            val range = (1 until writeEu.getRdReadableAtMax() + readEu.rfReadLatencyMax - readAt)
-//            for(id <- range) {
-//              val node = writeEu.ctrl(id)
-//              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === ctx.hm(rs.PHYS) && !node(Execute.BYPASSED, id)
-//            }
-//          }
-//          val hazard = ctx.hm(rs.ENABLE) && hazards.orR
-//        }
-//        layersReady(layerId) :=  !rsLogic.map(_.hazard).orR
-//      }
 
 //      val counter = CounterFreeRun(10)
 //      rsHazards := (default -> !counter.willOverflow)
+    }
+
+    case class BypassedSpec(el: ExecuteLaneService, at: Int, value : Bool)
+    val bypassedSpecs = mutable.LinkedHashMap[(ExecuteLaneService, Int), BypassedSpec]()
+    def getBypassed(el: ExecuteLaneService, at: Int): Bool = {
+      bypassedSpecs.getOrElseUpdate(el -> at, BypassedSpec(el, at, Bool())).value
     }
 
     val rfaReads = Decode.rfaKeys.filter(_._1.isInstanceOf[RfRead])
@@ -209,18 +189,30 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
         val onRs = for (rs <- readAccess) yield new Area {
           val hazards = ArrayBuffer[Bool]()
           for(writeEu <- eus) {
-            val hazardFrom = if(ll.el.withBypasses) ll.getRsUseAtMin()-1 else ll.el.rfReadAt
-            val hazardUntil = if(ll.el.withBypasses) writeEu.getRdBroadcastedFromMax() else writeEu.getRfReadableAtMax()
+            val hazardFrom = ll.el.rfReadHazardFrom(ll.getRsUseAtMin())
+            val hazardUntil = writeEu.getRdBroadcastedFromMax()
             val checksCount = hazardUntil - 1 - hazardFrom
             val range = (1 to checksCount)
             for(id <- range) {
               val node = writeEu.ctrl(id)
-              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS)// && !node(Execute.BYPASSED, id) //TODO filter if the uop actualy read rs at that point or later on execute stages, here we are pessimistic (getRsUseAtMin)
+              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && !getBypassed(writeEu, id) //TODO filter if the uop actualy read rs at that point or later on execute stages, here we are pessimistic (getRsUseAtMin)
             }
           }
           val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR
         }
         c.rsHazards(llId) := onRs.map(_.hazard).orR
+      }
+    }
+
+    val bypassDecoding = for(spec <- bypassedSpecs.values){
+      val BYPASSED = Payload(Bool())
+      spec.value := spec.el.ctrl(spec.at)(BYPASSED)
+
+      //TODO this is a very clean implementation, but would need to move it in part before the dispatch to improve timings
+      for(l <- spec.el.getLayers(); uop <- l.uops.values){
+        uop.rd.foreach{rd =>
+          uop.addDecoding(BYPASSED -> Bool(rd.broadcastedFrom <= spec.at))
+        }
       }
     }
 

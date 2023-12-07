@@ -21,9 +21,9 @@ class ParamSimple(){
   var regFileSync = false
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
-  var withGShare = false
-  var withBtb = false
-  var withRas = false
+  var withGShare = true
+  var withBtb = true
+  var withRas = true
 
   def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
@@ -111,7 +111,12 @@ class ParamSimple(){
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += new BarrelShifterPlugin(early0, formatAt = 0)
     plugins += new IntFormatPlugin("lane0")
-    plugins += new BranchPlugin(early0)
+    plugins += new BranchPlugin(
+      layer = early0,
+      aluAt  = 0,
+      jumpAt = 0,
+      wbAt   = 0
+    )
     plugins += new LsuCachelessPlugin(
       layer     = early0,
       addressAt = 0,
@@ -125,8 +130,8 @@ class ParamSimple(){
     plugins += new RsUnsignedPlugin("lane0")
     plugins += new MulPlugin(early0)
     plugins += new DivPlugin(early0)
-//    plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-//    plugins += new PrivilegedPlugin(PrivilegedConfig.full)
+    plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
+    plugins += new PrivilegedPlugin(PrivilegedConfig.full)
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
 
     if(lanes >= 2) {
@@ -150,8 +155,8 @@ class ParamSimple(){
 }
 
 /*
-1l btb gshare ras => 1.64 dhrystone 3.21 coremark 1.03 embench
-2l btb gshare ras => 1.91 dhrystone 3.83 coremark 1.32 embench
+1l btb gshare ras => 1.64 dhrystone 3.26 coremark 1.04 embench
+2l btb gshare ras => 1.92 dhrystone 3.93 coremark 1.34 embench
  coremark 2l => Branch : 523630 47815   9.1%
 
 btb ras gshare at 1 :

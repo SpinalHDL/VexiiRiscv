@@ -17,7 +17,7 @@ import scala.collection.mutable.ArrayBuffer
 
 case class RdSpec(DATA: Payload[Bits],
                   broadcastedFrom : Int,
-                  rfReadableAt : Int)
+                  rfReadableFrom : Int)
 
 case class RsSpec(rs : RfRead){
   var from = 0
@@ -60,9 +60,9 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
     val rsSpec = rs.getOrElseUpdate(rfRead, new RsSpec(rfRead))
     rsSpec.from = executeAt + el.executeAt
   }
-  def setRdSpec(data: Payload[Bits], broadcastedFrom : Int, rfReadableAt : Int): Unit = {
+  def setRdSpec(data: Payload[Bits], broadcastedFrom : Int, rfReadableFrom : Int): Unit = {
     assert(rd.isEmpty)
-    rd = Some(RdSpec(data, broadcastedFrom + el.executeAt, rfReadableAt + el.executeAt))
+    rd = Some(RdSpec(data, broadcastedFrom + el.executeAt, rfReadableFrom + el.executeAt))
   }
 
   def addDecoding(head: (Payload[_ <: BaseType], Any), tail: (Payload[_ <: BaseType], Any)*): Unit = addDecoding(head :: tail.toList)
@@ -108,6 +108,7 @@ trait ExecuteLaneService {
   def add(layer : LaneLayer) : Unit
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType)
   def withBypasses : Boolean
+  def rfReadHazardFrom(usedAt : Int) : Int
 
   def getStageable(r: RfResource): Payload[Bits]
   def apply(rf: RegfileSpec, access: RfAccess) = getStageable(rf -> access)
@@ -115,7 +116,7 @@ trait ExecuteLaneService {
 //  def getSpec(op : MicroOp) : MicroOpSpec
 
   def getRdBroadcastedFromMax() = getUopLayerSpec().flatMap(s => s.rd.map(v => v.broadcastedFrom)).max
-  def getRfReadableAtMax() = getUopLayerSpec().flatMap(s => s.rd.map(v => v.rfReadableAt)).max
+  def getRfReadableAtMax() = getUopLayerSpec().flatMap(s => s.rd.map(v => v.rfReadableFrom)).max
 
   val LAYER_SEL = Payload(Bits(log2Up(getLayers.size) bits))
   def getLayerId(ll : LaneLayer) = getLayers().toSeq.sortBy(_.priority).indexOf(ll)
