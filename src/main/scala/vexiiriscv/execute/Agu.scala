@@ -25,7 +25,7 @@ class AguFrontend(
     host: PluginHost
   ) extends ExecuteUnitElementSimple.Api(
     layer,
-    host.find[SrcPlugin](_.laneName == layer.laneName),
+    host.find[SrcPlugin](_.layer == layer),
     AguPlugin.SEL
   ) with Area {
   import AguPlugin._

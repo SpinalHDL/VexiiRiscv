@@ -48,9 +48,9 @@ object ExecuteUnitElementSimple{
 }
 
 //This is a simple skeleton to ease the implementation of simple ExecutionUnit elements. It assume a single writeback and a single completion
-abstract class ExecutionUnitElementSimple(implName : LaneLayer) extends FiberPlugin {
-  val eu = implName.el
-  lazy val srcp = host.find[SrcPlugin](_.laneName == eu.laneName)
+abstract class ExecutionUnitElementSimple(layer : LaneLayer) extends FiberPlugin {
+  val eu = layer.el
+  lazy val srcp = host.find[SrcPlugin](_.layer == layer)
   buildBefore(eu.pipelineLock)
   setupRetain(eu.uopLock)
   setupRetain(srcp.elaborationLock)
@@ -58,7 +58,7 @@ abstract class ExecutionUnitElementSimple(implName : LaneLayer) extends FiberPlu
 
   val SEL = Payload(Bool())
 
-  class Logic extends ExecuteUnitElementSimple.Api(implName, srcp, SEL, rsUnsignedPlugin = host.get[RsUnsignedPlugin].getOrElse(null)) with Area {
+  class Logic extends ExecuteUnitElementSimple.Api(layer, srcp, SEL, rsUnsignedPlugin = host.get[RsUnsignedPlugin].getOrElse(null)) with Area {
     eu.setDecodingDefault(SEL, False)
   }
 }

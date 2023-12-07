@@ -46,12 +46,12 @@ object SrcKeys extends AreaObject {
   }
 }
 
-class SrcPlugin(val laneName : String,
+class SrcPlugin(val layer : LaneLayer,
                 var executeAt : Int) extends FiberPlugin{
   val elaborationLock = Lock()
-  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
+  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
   setupRetain(eu.pipelineLock)
-  withPrefix(laneName)
+  withPrefix(layer.name)
 
   val spec = mutable.LinkedHashMap[UopLayerSpec, mutable.LinkedHashSet[SrcKeys]]()
   def specify(impl : UopLayerSpec, keys: Seq[SrcKeys]) = {

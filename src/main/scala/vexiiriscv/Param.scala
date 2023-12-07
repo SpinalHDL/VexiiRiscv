@@ -109,7 +109,7 @@ class ParamSimple(){
     plugins += lane0
 
 
-    plugins += new SrcPlugin("lane0", executeAt = 0)
+    plugins += new SrcPlugin(early0, executeAt = 0)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += new BarrelShifterPlugin(early0, formatAt = 0)
     plugins += new IntFormatPlugin("lane0")
@@ -140,7 +140,7 @@ class ParamSimple(){
       val early1 = new LaneLayer("early", lane1, priority = 10)
       plugins += lane1
 
-      plugins += new SrcPlugin("lane1", executeAt = 0)
+      plugins += new SrcPlugin(early1, executeAt = 0)
       plugins += new IntAluPlugin(early1, formatAt = 0)
       plugins += new BarrelShifterPlugin(early1, formatAt = 0)
       plugins += new IntFormatPlugin("lane1")

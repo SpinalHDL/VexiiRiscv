@@ -52,7 +52,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var wbAt: Int = 2) extends FiberPlugin{
   lazy val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
   lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
-  lazy val srcp = host.find[SrcPlugin](_.laneName == layer.laneName)
+  lazy val srcp = host.find[SrcPlugin](_.layer == layer)
   lazy val ats = host[AddressTranslationService]
   buildBefore(elp.pipelineLock)
   setupRetain(elp.uopLock)
