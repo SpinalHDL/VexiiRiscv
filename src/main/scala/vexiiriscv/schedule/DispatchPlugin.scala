@@ -160,10 +160,11 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
-      val flushHazard = Bool()
       val cancel = Bool()
 
-      val layersReady = Bits(lanesLayers.size bits)
+      val rsHazards = Bits(lanesLayers.size bits)
+      val flushHazards = Bits(lanesLayers.size bits)
+      flushHazards := 0 //TODO
       //TODO merge duplicated logic using signal cache
 //      val euLogic = for((readEu, euId) <- eus.zipWithIndex) yield new Area{
 //        val readAt = readEu.rfReadAt
@@ -192,22 +193,42 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
 //      }
 
       val counter = CounterFreeRun(10)
-      layersReady := (default -> counter.willOverflow)
+      rsHazards := (default -> counter.willOverflow)
     }
+
+    val rfaReads = Decode.rfaKeys.filter(_._1.isInstanceOf[RfRead])
+    val rsHazardChecker = for(c <- candidates) yield new Area {
+      val onLl = for(ll <- lanesLayers) yield new Area {
+        // Identify which RS are used by the pipeline
+        val resources = ll.uops.keySet.flatMap(_.resources).distinctLinked
+        val readAccess = rfaReads.filter(e => resources.exists{
+          case RfResource(_, e) => true
+          case _ => false
+        }).values
+
+        val onRs = for (rs <- readAccess) yield new Area {
+          for(writeEu <- eus) {
+            val checksCount = writeEu.getRdBroadcastedFromMax() - 1 - ll.getRsUseAtMin()
+            val range = (1 to checksCount)
+          }
+        }
+      }
+    }
+
 //
 //    //TODO flushChecker is pessimistic, would need to improve by checking hazard depending from were the current op can't be flushed any more from (LSU)
-    val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
-      val c = candidates(cId)
-//      val executeCheck = for (elp <- eus) yield new Area {
-//        val flushUpTo = elp.getMicroOpSpecs().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
-//        val ctrlRange = 1 to flushUpTo - dontFlushFrom
-//        val hits = ctrlRange.map(i => elp.ctrl(i)(MAY_FLUSH) && elp.ctrl(i)(Global.HART_ID) === c.ctx.hartId)
-//      }
-//      val olders = candidates.take(cId)
-//      val oldersHazard = olders.map(o => o.ctx.valid && o.ctx.hm(MAY_FLUSH)).orR
-//      c.flushHazard := c.ctx.hm(DONT_FLUSH) && executeCheck.flatMap(_.hits).orR || c.ctx.hm(DONT_FLUSH_FROM_LANES) && oldersHazard
-      c.flushHazard := False //TODO
-    }
+//    val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
+//      val c = candidates(cId)
+////      val executeCheck = for (elp <- eus) yield new Area {
+////        val flushUpTo = elp.getMicroOpSpecs().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
+////        val ctrlRange = 1 to flushUpTo - dontFlushFrom
+////        val hits = ctrlRange.map(i => elp.ctrl(i)(MAY_FLUSH) && elp.ctrl(i)(Global.HART_ID) === c.ctx.hartId)
+////      }
+////      val olders = candidates.take(cId)
+////      val oldersHazard = olders.map(o => o.ctx.valid && o.ctx.hm(MAY_FLUSH)).orR
+////      c.flushHazard := c.ctx.hm(DONT_FLUSH) && executeCheck.flatMap(_.hits).orR || c.ctx.hm(DONT_FLUSH_FROM_LANES) && oldersHazard
+//      c.flushHazard := False //TODO
+//    }
 
     dispatchCtrl.link.down.ready := True
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
@@ -240,10 +261,10 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
           val hit = doWrite && rfas.orR
         }
         val candHazard = candHazards.map(_.hit).orR
-        val layersHits = c.ctx.laneLayerHits & c.layersReady & eusToLayers(eusFree(id))
+        val layersHits = c.ctx.laneLayerHits & ~c.rsHazards & ~c.flushHazards & eusToLayers(eusFree(id))
         val layerOh = OHMasking.firstV2(layersHits)
         val eusOh = layersToEus(layerOh)
-        val doIt = c.ctx.valid && !c.flushHazard && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
+        val doIt = c.ctx.valid && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
         eusFree(id + 1) := eusFree(id) & (~eusOh).orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(!c.ctx.valid || doIt)
         c.fire := doIt && !eupp.isFreezed()

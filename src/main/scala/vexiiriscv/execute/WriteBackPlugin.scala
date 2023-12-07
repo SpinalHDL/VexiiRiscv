@@ -16,7 +16,7 @@ import scala.collection.mutable.ArrayBuffer
 class WriteBackPlugin(val laneName : String,
                       val rf : RegfileSpec,
                       var writeAt : Int,
-                      var bypassOn: (Int) => Boolean = (ctrlId: Int) => true) extends FiberPlugin with RegFileWriterService{
+                      var bypassFrom : Int) extends FiberPlugin with RegFileWriterService{
   withPrefix(laneName + "_" + rf.getName())
 
   val elaborationLock = Lock()
@@ -54,12 +54,13 @@ class WriteBackPlugin(val laneName : String,
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
     val DATA = Payload(Bits(rf.width bits))
+    val broadcastMin = Math.min(writeAt + rfp.writeLatency, bypassFrom)
     eu.setDecodingDefault(SEL, False)
     for (group <- sorted) {
       val ctrlId = group.head.ctrlAt
       for (spec <- group) {
         for (impl <- spec.impls) {
-          impl.setRdSpec(DATA, writeAt + rfp.writeLatency, (ctrlId to writeAt + rfp.writeLatency - 1 + rfp.readLatency).filter(bypassOn))
+          impl.setRdSpec(DATA, Math.max(ctrlId, broadcastMin))
           impl.addDecoding(SEL -> True)
         }
       }

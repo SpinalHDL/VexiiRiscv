@@ -16,8 +16,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 case class RdSpec(DATA: Payload[Bits],
-                  rfReadableAt: Int,
-                  bypassesAt : Seq[Int])
+                  broadcastedFrom : Int)
 
 case class RsSpec(rs : RfRead, from : Int)
 
@@ -28,20 +27,23 @@ class LaneLayer(val name : String, val el : ExecuteLaneService, var priority : I
   def apply(uop: MicroOp) = uops(uop)
   def add(uop: MicroOp) = uops.getOrElseUpdate(uop, new UopLayerSpec(uop, this, el))
   def laneName = el.laneName
+  def getRsUseAtMin(): Int = {
+    uops.flatMap(_._2.rs.map(_._2.from)).fold(100)(_ min _)
+  }
 }
 
 class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLaneService) {
   var rd = Option.empty[RdSpec]
-  var rs = ArrayBuffer[RsSpec]()
+  var rs = mutable.LinkedHashMap[RfRead, RsSpec]()
   var completion = Option.empty[Int]
   var mayFlushUpTo = Option.empty[Int]
   var dontFlushFrom = Option.empty[Int]
 
   val decodings = mutable.LinkedHashMap[Payload[_ <: BaseType], Masked]()
 
-  def setRdSpec(data: Payload[Bits], rfReadableAt: Int, bypassesAt: Seq[Int]): Unit = {
+  def setRdSpec(data: Payload[Bits], broadcastedFrom : Int): Unit = {
     assert(rd.isEmpty)
-    rd = Some(RdSpec(data, rfReadableAt + el.executeAt, bypassesAt.map(_ + el.executeAt)))
+    rd = Some(RdSpec(data, broadcastedFrom + el.executeAt))
   }
 
   def addDecoding(head: (Payload[_ <: BaseType], Any), tail: (Payload[_ <: BaseType], Any)*): Unit = addDecoding(head :: tail.toList)
@@ -92,10 +94,7 @@ trait ExecuteLaneService {
   def apply(r: RfResource) = getStageable(r)
 //  def getSpec(op : MicroOp) : MicroOpSpec
 
-//  def getRdReadableAtMax() = getMicroOpSpecs().filter(_.op.resources.exists{
-//    case RfResource(_, `RD`) => true
-//    case _ => false
-//  }).map(_.rd.get.rfReadableAt).max
+  def getRdBroadcastedFromMax() = getUopLayerSpec().flatMap(s => s.rd.map(v => v.broadcastedFrom)).max
 
   val LAYER_SEL = Payload(Bits(log2Up(getLayers.size) bits))
   def getLayerId(ll : LaneLayer) = getLayers().toSeq.sortBy(_.priority).indexOf(ll)
