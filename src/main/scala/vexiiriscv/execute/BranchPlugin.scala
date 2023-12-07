@@ -100,8 +100,8 @@ class BranchPlugin(val layer : LaneLayer,
         BranchCtrlEnum.B -> UOP(14 downto 12).mux[Bool](
           B"000" ->  EQ,
           B"001" -> !EQ,
-          M"1-1" -> !ss.LESS,
-          default -> ss.LESS
+          M"1-1" -> !srcp.LESS,
+          default -> srcp.LESS
         )
       ))
 

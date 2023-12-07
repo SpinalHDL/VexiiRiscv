@@ -32,8 +32,8 @@ class RsUnsignedPlugin(val laneName : String, executeAt : Int = 0) extends Fiber
 
 
   val logic = during build new elp.Execute(executeAt){
-    val rs1 = this(elp(IntRegFile, RS1))
-    val rs2 = this(elp(IntRegFile, RS2))
+    val rs1 = up(elp(IntRegFile, RS1))
+    val rs2 = up(elp(IntRegFile, RS2))
 
     RS1_FORMATED := CombInit(rs1)
     RS2_FORMATED := CombInit(rs2)

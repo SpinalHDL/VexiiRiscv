@@ -137,6 +137,7 @@ class ExecuteLanePlugin(override val laneName : String,
       val rfPlugins = rfSpecs.map(spec => host.find[RegfileService](_.rfSpec == spec))
 
       val readCtrl = ctrl(rfReadAt)
+
       val reads = for ((spec, payload) <- rfStageables) yield new Area {
         // Implement the register file read
         val rfa = Decode.rfaKeys.get(spec.access)
@@ -148,7 +149,6 @@ class ExecuteLanePlugin(override val laneName : String,
         // Generate a bypass specification for the regfile readed data
         case class BypassSpec(eu: ExecuteLaneService, nodeId: Int, payload: Payload[Bits])
         val bypassSpecs = mutable.LinkedHashSet[BypassSpec]()
-        val useRsUntil = mutable.LinkedHashMap[RfRead, Int]()
         val eus = host.list[ExecuteLaneService]
         for (eu <- eus; opSpec <- eu.getUopLayerSpec()) {
           eu.pipelineLock.await() // Ensure that the eu specification is done
@@ -163,13 +163,6 @@ class ExecuteLanePlugin(override val laneName : String,
                 bypassSpecs += bypassSpec
               }
             case None =>
-          }
-        }
-
-        for(opSpec <- getUopLayerSpec()){
-          opSpec.uop.resources.foreach {
-            case RfResource(spec.rf, rsX : RfRead) => useRsUntil(rsX) = useRsUntil.getOrElse(rsX, -100) max opSpec.rs(rsX).from
-            case _ =>
           }
         }
 
@@ -190,10 +183,28 @@ class ExecuteLanePlugin(override val laneName : String,
         val sel = OHMasking.firstV2(bypassEnables)
         dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b => b.eu.ctrl(b.nodeId)(b.payload)) :+ port.data, true)
 
+
         //Update the RSx values along the pipeline
-        for((rs, useUntil) <- useRsUntil){
-          for(ctrlId <- mainBypassAt+1 until useUntil){
-            ???
+        val along = new Area {
+          var useRsUntil = -100
+          for (opSpec <- getUopLayerSpec()) {
+            opSpec.uop.resources.foreach {
+              case RfResource(spec.rf, spec.access) => useRsUntil = useRsUntil max opSpec.rs(spec.access.asInstanceOf[RfRead]).from
+              case _ =>
+            }
+          }
+
+          val groups = bypassSpecs.groupBy(_.eu).map(_._2).toSeq
+          val groupMaxes = groups.map(_.map(_.nodeId).max)
+          val filtred = (0 until groups.size).flatMap(i => groups(i).filter(_.nodeId == groupMaxes(i)))
+          for (ctrlId <- mainBypassAt + 1 until useRsUntil) {
+            val on = ctrl(ctrlId)
+            val hits = filtred.map{ f =>
+              val node = f.eu.ctrl(f.nodeId)
+              node.isValid && node(rfaRd.ENABLE) && node(rfaRd.PHYS) === on(rfa.PHYS) && node(rfaRd.RFID) === on(rfa.RFID)
+            }.asBits
+
+            on.bypass(apply(spec)) := OHMux.or(Cat(hits, !hits.orR), on.up(apply(spec)) +: filtred.map(f => f.eu.ctrl(f.nodeId)(f.payload)), true)
           }
         }
       }

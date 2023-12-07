@@ -67,8 +67,8 @@ class MulPlugin(val layer : LaneLayer,
     import keys._
 
     val src = new eu.Execute(srcAt) {
-      val rs1 = eu(IntRegFile, RS1)
-      val rs2 = eu(IntRegFile, RS2)
+      val rs1 = up(eu(IntRegFile, RS1))
+      val rs2 = up(eu(IntRegFile, RS2))
       useRsUnsignedPlugin match {
         case false => {
           MUL_SRC1 := (RS1_SIGNED && rs1.msb) ## (rs1)

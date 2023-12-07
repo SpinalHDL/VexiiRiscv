@@ -14,7 +14,6 @@ object BarrelShifterPlugin extends AreaObject {
   val LEFT = Payload(Bool())
   val IS_W = Payload(Bool())
   val IS_W_RIGHT = Payload(Bool())
-  val SHIFT_RESULT = Payload(Bits(Riscv.XLEN bits))
 }
 
 class BarrelShifterPlugin(val layer : LaneLayer,
@@ -23,6 +22,8 @@ class BarrelShifterPlugin(val layer : LaneLayer,
   import BarrelShifterPlugin._
   lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.el.laneName)
   buildBefore(ifp.elaborationLock)
+
+  val SHIFT_RESULT = Payload(Bits(Riscv.XLEN bits))
 
   val logic = during build new Logic{
     import SrcKeys._

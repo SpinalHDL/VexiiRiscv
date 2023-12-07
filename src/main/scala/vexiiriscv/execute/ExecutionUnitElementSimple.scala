@@ -54,7 +54,7 @@ abstract class ExecutionUnitElementSimple(layer : LaneLayer) extends FiberPlugin
   buildBefore(eu.pipelineLock)
   setupRetain(eu.uopLock)
   setupRetain(srcp.elaborationLock)
-  withPrefix(eu.laneName)
+  withPrefix(layer.name)
 
   val SEL = Payload(Bool())
 

@@ -18,18 +18,18 @@ object IntAluPlugin extends AreaObject {
   val AluCtrlEnum = new SpinalEnum(binarySequential) {
     val ADD_SUB, SLT_SLTU, BITWISE = newElement()
   }
+}
+
+class IntAluPlugin(var layer: LaneLayer,
+                   var aluAt : Int = 0,
+                   var formatAt : Int = 0) extends ExecutionUnitElementSimple(layer)  {
+  import IntAluPlugin._
+  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.el.laneName)
+  setupRetain(ifp.elaborationLock)
 
   val ALU_BITWISE_CTRL = Payload(AluBitwiseCtrlEnum())
   val ALU_CTRL = Payload(AluCtrlEnum())
   val ALU_RESULT = Payload(Bits(Riscv.XLEN bits))
-}
-
-class IntAluPlugin(var implName: LaneLayer,
-                   var aluAt : Int = 0,
-                   var formatAt : Int = 0) extends ExecutionUnitElementSimple(implName)  {
-  import IntAluPlugin._
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == implName.el.laneName)
-  setupRetain(ifp.elaborationLock)
 
   val logic = during build new Logic{
     import SrcKeys._
@@ -64,7 +64,7 @@ class IntAluPlugin(var implName: LaneLayer,
       add(Rvi.ADDIW).srcs(Op.ADD   , SRC1.RF, SRC2.I ).decode(ALU_CTRL -> ace.ADD_SUB)
 
       for(op <- List(Rvi.ADDW, Rvi.SUBW, Rvi.ADDIW)){
-        ifp.signExtend(formatBus, implName(op), 32)
+        ifp.signExtend(formatBus, layer(op), 32)
       }
     }
 
@@ -83,8 +83,8 @@ class IntAluPlugin(var implName: LaneLayer,
 
       val result = ALU_CTRL.mux(
         AluCtrlEnum.BITWISE  -> bitwise,
-        AluCtrlEnum.SLT_SLTU -> S(U(ss.LESS, Riscv.XLEN bits)),
-        AluCtrlEnum.ADD_SUB  -> this(ss.ADD_SUB)
+        AluCtrlEnum.SLT_SLTU -> S(U(srcp.LESS, Riscv.XLEN bits)),
+        AluCtrlEnum.ADD_SUB  -> this(srcp.ADD_SUB)
       )
 
       ALU_RESULT := result.asBits

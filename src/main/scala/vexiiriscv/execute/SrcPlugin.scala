@@ -17,8 +17,6 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 object SrcStageables extends AreaObject {
-  val ADD_SUB = Payload(SInt(Riscv.XLEN bits))
-  val LESS = Payload(Bool())
   val REVERT, ZERO, UNSIGNED = Payload(Bool())
 }
 
@@ -70,6 +68,9 @@ class SrcPlugin(val layer : LaneLayer,
   def specify(impl : UopLayerSpec, head: SrcKeys, tail : SrcKeys*) : Unit = specify(impl, head +: tail)
 
   val SRC1, SRC2 = Payload(SInt(Riscv.XLEN bits))
+  val ADD_SUB = Payload(SInt(Riscv.XLEN bits))
+  val LESS = Payload(Bool())
+
   val logic = during build new Area{
     elaborationLock.await()
 
@@ -107,12 +108,12 @@ class SrcPlugin(val layer : LaneLayer,
     val src = new eu.Execute(executeAt){
       val imm = new IMM(Decode.UOP)
       if(src1Keys.nonEmpty) SRC1 := SRC1_CTRL.muxListDc[SInt](src1Keys.map {
-        case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(this(eu(IntRegFile, RS1)))
+        case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(this.up(eu(IntRegFile, RS1)))
         case sk.SRC1.U  => src1ToEnum(sk.SRC1.U ) -> S(imm.u).resize(Riscv.XLEN)
       })
 
       if(src2Keys.nonEmpty) SRC2 := SRC2_CTRL.muxListDc[SInt](src2Keys.map {
-        case sk.SRC2.RF => src2ToEnum(sk.SRC2.RF) -> S(this(eu(IntRegFile, RS2)))
+        case sk.SRC2.RF => src2ToEnum(sk.SRC2.RF) -> S(this.up(eu(IntRegFile, RS2)))
         case sk.SRC2.I  => src2ToEnum(sk.SRC2.I ) -> imm.i_sext
         case sk.SRC2.S  => src2ToEnum(sk.SRC2.S ) -> imm.s_sext
         case sk.SRC2.PC => src2ToEnum(sk.SRC2.PC) -> S(this(Global.PC)).resize(Riscv.XLEN bits)
@@ -120,7 +121,7 @@ class SrcPlugin(val layer : LaneLayer,
     }
 
 
-    val addsub = opKeys.nonEmpty generate new eu.Execute(0){
+    val addsub = opKeys.nonEmpty generate new eu.Execute(executeAt){
       val alwaysAdd = !has(sk.Op.SUB, sk.Op.LESS, sk.Op.LESS_U)
       val alwaysSub = !has(sk.Op.ADD)
       val withRevert = !alwaysAdd && !alwaysSub
@@ -134,11 +135,11 @@ class SrcPlugin(val layer : LaneLayer,
       val rs2Patched =  CombInit(ifElseMap(!alwaysSub)(this(SRC2))(~_))
       if(withRevert) when(ss.REVERT){ rs2Patched :=  ~SRC2  }
       if(has(sk.Op.SRC1)) when(ss.ZERO){ rs2Patched := 0 }
-      ss.ADD_SUB := carryIn(SRC1 + rs2Patched)
+      ADD_SUB := carryIn(SRC1 + rs2Patched)
 
       // SLT, SLTU, branches
       if(has(sk.Op.LESS, sk.Op.LESS_U)) {
-        ss.LESS := (SRC1.msb === SRC2.msb) ? ss.ADD_SUB.msb | Mux(ss.UNSIGNED, SRC2.msb, SRC1.msb)
+        LESS := (SRC1.msb === SRC2.msb) ? ADD_SUB.msb | Mux(ss.UNSIGNED, SRC2.msb, SRC1.msb)
       }
     }
     eu.pipelineLock.release()

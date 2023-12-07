@@ -16,8 +16,8 @@ class ParamSimple(){
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
-  var decoders = 1
-  var lanes = 1
+  var decoders = 2
+  var lanes = 2
   var regFileSync = false
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
@@ -104,8 +104,8 @@ class ParamSimple(){
     plugins += new execute.ExecutePipelinePlugin()
 
     val lane0 = newExecuteLanePlugin("lane0")
-    val early0 = new LaneLayer("early", lane0, priority = 0)
-    val late0 = new LaneLayer("late", lane0, priority = -5)
+    val early0 = new LaneLayer("early0", lane0, priority = 0)
+    val late0 = new LaneLayer("late0", lane0, priority = -5)
     plugins += lane0
 
 
@@ -113,12 +113,7 @@ class ParamSimple(){
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += new BarrelShifterPlugin(early0, formatAt = 0)
     plugins += new IntFormatPlugin("lane0")
-    plugins += new BranchPlugin(
-      layer = early0,
-      aluAt  = 0,
-      jumpAt = 0,
-      wbAt   = 0
-    )
+    plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=0, wbAt=0)
     plugins += new LsuCachelessPlugin(
       layer     = early0,
       addressAt = 0,
@@ -133,11 +128,18 @@ class ParamSimple(){
     plugins += new DivPlugin(early0)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(PrivilegedConfig.full)
+
+    plugins += new SrcPlugin(late0, executeAt=2)
+    plugins += new IntAluPlugin(late0, aluAt=2, formatAt=2)
+    plugins += new BarrelShifterPlugin(late0, shiftAt=2, formatAt=2)
+
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
+
 
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
-      val early1 = new LaneLayer("early", lane1, priority = 10)
+      val early1 = new LaneLayer("early1", lane1, priority = 10)
+      val late1 = new LaneLayer("late1", lane1, priority = -3)
       plugins += lane1
 
       plugins += new SrcPlugin(early1, executeAt = 0)
@@ -145,6 +147,12 @@ class ParamSimple(){
       plugins += new BarrelShifterPlugin(early1, formatAt = 0)
       plugins += new IntFormatPlugin("lane1")
 //      plugins += new BranchPlugin("lane1")
+
+      plugins += new SrcPlugin(late1, executeAt = 2)
+      plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
+      plugins += new BarrelShifterPlugin(late1, shiftAt = 2, formatAt = 2)
+
+
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
     }
 

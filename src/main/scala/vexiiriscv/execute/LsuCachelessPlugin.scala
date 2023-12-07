@@ -109,7 +109,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val bus = master(CachelessBus(busParam))
 
     val onAddress = new addressCtrl.Area{
-      val RAW_ADDRESS = insert(SrcStageables.ADD_SUB.asUInt)
+      val RAW_ADDRESS = insert(srcp.ADD_SUB.asUInt)
 
       val translationPort = ats.newTranslationPort(
         nodes = Seq(forkCtrl.down),
@@ -131,7 +131,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>
         val w = (1 << size) * 8
-        size -> RS2(0, w bits).#*(Riscv.LSLEN / w)
+        size -> up(RS2)(0, w bits).#*(Riscv.LSLEN / w)
       }
       bus.cmd.data := bus.cmd.size.muxListDc(mapping)
       bus.cmd.size := SIZE.resized
@@ -162,7 +162,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         val srcZipped = rspSplits.zipWithIndex.filter { case (v, b) => b % (wordBytes / srcSize) == i }
         val src = srcZipped.map(_._1)
         val range = log2Up(wordBytes)-1 downto log2Up(wordBytes) - log2Up(srcSize)
-        val sel = SrcStageables.ADD_SUB(range).asUInt
+        val sel = srcp.ADD_SUB(range).asUInt
         rspShifted(i * 8, 8 bits) := src.read(sel)
       }
 

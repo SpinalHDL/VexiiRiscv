@@ -188,7 +188,7 @@ class CsrAccessPlugin(layer : LaneLayer,
           regs.uopId := Decode.UOP_ID
           regs.write := SEL && !trap && csrWrite
           regs.read := SEL && !trap && csrRead
-          regs.rs1 := elp(IntRegFile, RS1)
+          regs.rs1 := up(elp(IntRegFile, RS1))
           regs.uop := UOP
           regs.doImm := CSR_IMM
           regs.doMask := CSR_MASK
