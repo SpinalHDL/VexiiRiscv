@@ -9,7 +9,7 @@ import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.PipelineBuilderPlugin
-import vexiiriscv.prediction.LearnCmd
+import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.regfile.{RegFileWrite, RegFileWriter, RegFileWriterService}
 import vexiiriscv.riscv.{Const, Riscv}
 import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
@@ -104,8 +104,8 @@ class WhiteboxerPlugin extends FiberPlugin{
     }
 
     val prediction = new Area{
-      val bp = host[BranchPlugin]
-      val learn = wrap(bp.logic.jumpLogic.learn)
+      val lp = host[LearnPlugin]
+      val learns = lp.logic.ups.map(e => wrap(e.asFlow))
     }
 
     val loadExecute = new Area {
@@ -192,7 +192,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val loadExecute = new LoadExecuteProxy()
       val storeCommit = new StoreCommitProxy()
       val storeBroadcast = new StoreBroadcastProxy()
-      val learn = new LearnProxy(self.prediction.learn)
+      val learns = self.prediction.learns.map(learn => new LearnProxy(learn))
       val perf = new PerfProxy()
     }
 

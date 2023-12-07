@@ -109,7 +109,7 @@ class BtbPlugin(var sets : Int,
     }
 
     val onLearn = new Area{
-      val cmd = host[BranchPlugin].logic.jumpLogic.learn
+      val cmd = host[LearnPlugin].getLearnPort()
       val hash = getHash(cmd.pcOnLastSlice)
 
       val port = mem.writePortWithMask(ways)

@@ -5,6 +5,7 @@ import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
 import vexiiriscv.execute._
 import vexiiriscv.misc._
+import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.riscv.IntRegFile
 import vexiiriscv.test.WhiteboxerPlugin
 
@@ -37,7 +38,7 @@ class ParamSimple(){
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
 
-
+    plugins += new LearnPlugin()
     if(withRas) assert(withBtb)
     if(withGShare) assert(withBtb)
     if(withBtb) {
@@ -132,6 +133,7 @@ class ParamSimple(){
     plugins += new SrcPlugin(late0, executeAt=2)
     plugins += new IntAluPlugin(late0, aluAt=2, formatAt=2)
     plugins += new BarrelShifterPlugin(late0, shiftAt=2, formatAt=2)
+    plugins += new BranchPlugin(layer=late0, aluAt = 2, jumpAt = 2, wbAt = 2)
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
 
@@ -151,6 +153,7 @@ class ParamSimple(){
       plugins += new SrcPlugin(late1, executeAt = 2)
       plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
       plugins += new BarrelShifterPlugin(late1, shiftAt = 2, formatAt = 2)
+//      plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2, wbAt = 2)
 
 
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)

@@ -85,7 +85,7 @@ class GSharePlugin(var historyWidth : Int,
     }
 
     val onLearn = new Area{
-      val cmd = host[BranchPlugin].logic.jumpLogic.learn
+      val cmd = host[LearnService].getLearnPort()
       val hash = gshareHash(cmd.pcOnLastSlice, cmd.history)
 
 

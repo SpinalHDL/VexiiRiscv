@@ -30,25 +30,21 @@ object BranchPlugin extends AreaObject {
 class BranchPlugin(val layer : LaneLayer,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
-                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) with LearnService {
+                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
   import BranchPlugin._
   lazy val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
   lazy val sp = host[ReschedulePlugin]
   lazy val pcp = host[PcPlugin]
   lazy val hp = host.get[HistoryPlugin]
+  lazy val ls = host[LearnService]
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)
   setupRetain(pcp.elaborationLock)
   during setup(hp.foreach(_.elaborationLock.retain))
 
-  val learnCtxElements = mutable.LinkedHashSet[NamedType[_ <: Data]]()
-  override def addLearnCtx[T <: Data](that: Payload[T]): Unit = learnCtxElements += that
-
   val logic = during build new Logic{
     import SrcKeys._
     if(hp.nonEmpty) host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
-
-    BRANCH_HISTORY_WIDTH.set((0 +: host.list[HistoryUser].map(_.historyWidthUsed)).max)
 
     add(Rvi.JAL ).decode(BRANCH_CTRL -> BranchCtrlEnum.JAL )
     add(Rvi.JALR).decode(BRANCH_CTRL -> BranchCtrlEnum.JALR).srcs(SRC1.RF)
@@ -142,7 +138,6 @@ class BranchPlugin(val layer : LaneLayer,
 
       val history = new Area{
         assert(Global.HART_COUNT.get == 1)
-        assert(host.list[BranchPlugin].size == 1, "Assume the plugin is the only point on which branches are solved, so we can build the history here")
         val state = Reg(Prediction.BRANCH_HISTORY) init(0)
         val shifted = (state ## alu.COND).dropHigh(1)
         val next = (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
@@ -151,9 +146,9 @@ class BranchPlugin(val layer : LaneLayer,
         }
 
         val fetched = CombInit(
-          Fetch.SLICE_COUNT.get match {
-            case 1 => state //State will always reflect what the fetch stages will use, so let's use it as that little area
-            case _ => apply(Prediction.BRANCH_HISTORY) //While the BRANCH_HISTORY may take some more time to wormup, it seems to have little effect in practice (coremark 9.1 miss rate vs 9.0)
+          (Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1) match {
+            case true  => state //State will always reflect what the fetch stages will use, so let's use it as that little area
+            case false => apply(Prediction.BRANCH_HISTORY) //While the BRANCH_HISTORY may take some more time to wormup, it seems to have little effect in practice (coremark 9.1 miss rate vs 9.0)
           }                                            //We can't use state there, as if there multiple branch instruction on the same Fetch.WORD it won't reflect the btb branch history
         )
       }
@@ -180,8 +175,9 @@ class BranchPlugin(val layer : LaneLayer,
       val rs1Link = List[Bits](1,5).map(UOP(Const.rs1Range) === _).orR
       val rdEquRs1 = UOP(Const.rdRange) === UOP(Const.rs1Range)
 
-      learnLock.await()
-      val learn = Flow(LearnCmd(learnCtxElements.toSeq))
+      ls.learnLock.await()
+
+      val learn = Stream(LearnCmd(ls.learnCtxElements.toSeq))
       learn.valid := up.isFiring && SEL
       learn.taken := alu.COND
       learn.pcTarget := alu.PC_TRUE
@@ -193,7 +189,7 @@ class BranchPlugin(val layer : LaneLayer,
       learn.history := history.fetched
       learn.uopId := Decode.UOP_ID
       learn.hartId := Global.HART_ID
-      for(e <- learnCtxElements) {
+      for (e <- ls.learnCtxElements) {
         learn.ctx(e).assignFrom(apply(e))
       }
     }

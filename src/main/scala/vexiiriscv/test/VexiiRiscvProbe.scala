@@ -389,7 +389,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
     }
 
-    if(learn.valid.toBoolean){
+    for(learn <- learns) if(learn.valid.toBoolean){
       val hart = harts(learn.hartId.toInt)
       val ctx = hart.microOp(learn.uopId.toInt)
       ctx.isJumpBranch = true
