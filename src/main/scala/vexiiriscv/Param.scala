@@ -155,8 +155,14 @@ class ParamSimple(){
 }
 
 /*
+jump at 0 :
 1l btb gshare ras => 1.64 dhrystone 3.26 coremark 1.04 embench
 2l btb gshare ras => 1.92 dhrystone 3.93 coremark 1.34 embench
+
+jump at 1
+1l btb gshare ras => 1.64 dhrystone 3.21 coremark 1.03 embench
+2l btb gshare ras => 1.91 dhrystone 3.83 coremark 1.32 embench
+
  coremark 2l => Branch : 523630 47815   9.1%
 
 btb ras gshare at 1 :

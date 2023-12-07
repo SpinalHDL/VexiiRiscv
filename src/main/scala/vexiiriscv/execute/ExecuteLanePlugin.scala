@@ -239,7 +239,7 @@ class ExecuteLanePlugin(override val laneName : String,
 
     // Handle SEL initialisation and flushes
     val rp = host[ReschedulePlugin]
-    for(ctrlId <- 0 until idToCtrl.keys.max){
+    for(ctrlId <- 0 to idToCtrl.keys.max){
       ctrl(ctrlId) //Ensure creation
       val c = idToCtrl(ctrlId)
       if(ctrlId != 0) c.up(c.LANE_SEL).setAsReg().init(False)

@@ -81,21 +81,20 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
     dp.addMicroOpDecodingDefault(MAY_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH_FROM_LANES, False)
-//    val flushesUpTo = eus.flatMap(_.getMicroOpSpecs().map(_.mayFlushUpTo.getOrElse(-1))).max
-//    for (eu <- eus; spec <- eu.getMicroOpSpecs()) {
-//      spec.mayFlushUpTo match {
-//        case Some(x) => dp.addMicroOpDecoding(spec.op, MAY_FLUSH, True)
-//        case None =>
-//      }
-//      spec.dontFlushFrom match {
-//        case Some(x) =>
-//          dp.addMicroOpDecoding(spec.op, DONT_FLUSH_FROM_LANES, True)
-//          if (x < flushesUpTo) {
-//            dp.addMicroOpDecoding(spec.op, DONT_FLUSH, True)
-//          }
-//        case None =>
-//      }
-//    }
+    val mayFlushUpToMax = eus.flatMap(_.getUopLayerSpec().map(_.mayFlushUpTo.getOrElse(-1))).max
+    val dontFlushFromMin = eus.flatMap(_.getUopLayerSpec().map(_.dontFlushFrom.getOrElse(100))).min
+    val mayFlushUops, dontFlushUops, dontFlushFromLanesUops = mutable.LinkedHashSet[MicroOp]()
+    for (eu <- eus; spec <- eu.getUopLayerSpec()) {
+      spec.mayFlushUpTo foreach( x => mayFlushUops += spec.uop )
+      spec.dontFlushFrom foreach { x =>
+        dontFlushFromLanesUops += spec.uop
+        if (x < mayFlushUpToMax) dontFlushUops += spec.uop
+      }
+    }
+
+    for (uop <- mayFlushUops) dp.addMicroOpDecoding(uop, MAY_FLUSH, True)
+    for (uop <- dontFlushUops) dp.addMicroOpDecoding(uop, DONT_FLUSH, True)
+    for (uop <- dontFlushFromLanesUops) dp.addMicroOpDecoding(uop, DONT_FLUSH_FROM_LANES, True)
 
     dp.elaborationLock.release()
     val slotsCount = 0
@@ -116,58 +115,18 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       val hm = new HardMap()
       hmKeys.foreach(e => hm.add(e))
     }
-//
+
     val rdKeys = Decode.rfaKeys.get(RD)
-//    val euToCheckRange = eus.map{eu =>
-//      val opSpecs = eu.getMicroOp().map(eu.getSpec)
-//      val opWithRd = opSpecs.filter(spec => spec.op.resources.exists {
-//        case RfResource(_, RD) => true
-//        case _ => false
-//      })
-//      val readableAt = opWithRd.flatMap(_.rd.map(_.rfReadableAt)).max
-//      val range = 1 to readableAt
-//      eu -> range
-//    }.toMapLinked()
-//
-//    // Will generate the Execute.BYPASSED decoder in each EU for their respective euToCheckRange
-//    for(eu <- eus){
-//      val all = ArrayBuffer[Masked]()
-//      for(op <- eu.getMicroOp()){
-//        all += Masked(op.key)
-//      }
-//      val checkRange = euToCheckRange(eu)
-//      val decs = checkRange.map(_ -> new DecodingSpec(Bool()).setDefault(Masked.zero)).toMapLinked()
-//      val node = eu.ctrl(0) //TODO May be done earlier to improve FMax
-//      for (spec <- eu.getMicroOpSpecs()) {
-//        val key = Masked(spec.op.key)
-//        spec.rd match {
-//          case Some(rd) => rd.bypassesAt.foreach { id =>
-//            decs(id).addNeeds(key, Masked.one)
-//          }
-//          case None =>
-//        }
-//      }
-//
-//      for (id <- checkRange) {
-//        node(Execute.BYPASSED, id) := decs(id).build(node(Decode.UOP), all)
-//      }
-//    }
-//
-//    assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
-//    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
-//
-//    val dontFlushFrom = eus.flatMap(_.getMicroOpSpecs().map(_.dontFlushFrom.getOrElse(100))).min
+    assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
+    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
+
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
       val cancel = Bool()
 
       val rsHazards = Bits(lanesLayers.size bits)
-      val flushHazards = Bits(lanesLayers.size bits)
-      flushHazards := 0 //TODO
-
-//      val counter = CounterFreeRun(10)
-//      rsHazards := (default -> !counter.willOverflow)
+      val flushHazards = Bool() //Pessimistic, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
     }
 
     case class BypassedSpec(el: ExecuteLaneService, at: Int, value : Bool)
@@ -204,32 +163,47 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       }
     }
 
-    val bypassDecoding = for(spec <- bypassedSpecs.values){
+    case class MayFlushSpec(el: ExecuteLaneService, at: Int, value: Bool)
+    val mayFlushSpecs = mutable.LinkedHashMap[(ExecuteLaneService, Int), MayFlushSpec]()
+    def getMayFlush(el: ExecuteLaneService, at: Int): Bool = {
+      mayFlushSpecs.getOrElseUpdate(el -> at, MayFlushSpec(el, at, Bool())).value
+    }
+    //TODO flushChecker is pessimistic, would need to improve by checking hazard depending from were the current op can't be flushed any more from (LSU)
+    val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
+      val c = candidates(cId)
+      val executeCheck = for (elp <- eus) yield new Area {
+        val flushUpTo = elp.getUopLayerSpec().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
+        val ctrlRange = 1 to flushUpTo - dontFlushFromMin
+        val hits = ctrlRange.map(i => getMayFlush(elp, i) && elp.ctrl(i)(Global.HART_ID) === c.ctx.hartId)
+      }
+      val olders = candidates.take(cId)
+      val oldersHazard = olders.map(o => o.ctx.valid && o.ctx.hm(MAY_FLUSH)).orR
+      c.flushHazards := c.ctx.hm(DONT_FLUSH) && executeCheck.flatMap(_.hits).orR || c.ctx.hm(DONT_FLUSH_FROM_LANES) && oldersHazard
+//      c.flushHazards := False //TODO
+    }
+
+    //TODO this is a very clean implementation, but would need to move it in part before the dispatch to improve timings
+    val bypassDecoding = for (spec <- bypassedSpecs.values) yield new Area{
       val BYPASSED = Payload(Bool())
       spec.value := spec.el.ctrl(spec.at)(BYPASSED)
-
-      //TODO this is a very clean implementation, but would need to move it in part before the dispatch to improve timings
-      for(l <- spec.el.getLayers(); uop <- l.uops.values){
-        uop.rd.foreach{rd =>
+      for (l <- spec.el.getLayers(); uop <- l.uops.values) {
+        uop.rd.foreach { rd =>
           uop.addDecoding(BYPASSED -> Bool(rd.broadcastedFrom <= spec.at))
         }
       }
     }
 
-//
-//    //TODO flushChecker is pessimistic, would need to improve by checking hazard depending from were the current op can't be flushed any more from (LSU)
-//    val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
-//      val c = candidates(cId)
-////      val executeCheck = for (elp <- eus) yield new Area {
-////        val flushUpTo = elp.getMicroOpSpecs().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
-////        val ctrlRange = 1 to flushUpTo - dontFlushFrom
-////        val hits = ctrlRange.map(i => elp.ctrl(i)(MAY_FLUSH) && elp.ctrl(i)(Global.HART_ID) === c.ctx.hartId)
-////      }
-////      val olders = candidates.take(cId)
-////      val oldersHazard = olders.map(o => o.ctx.valid && o.ctx.hm(MAY_FLUSH)).orR
-////      c.flushHazard := c.ctx.hm(DONT_FLUSH) && executeCheck.flatMap(_.hits).orR || c.ctx.hm(DONT_FLUSH_FROM_LANES) && oldersHazard
-//      c.flushHazard := False //TODO
-//    }
+    //TODO this is a very clean implementation, but would need to move it in part before the dispatch to improve timings
+    val mayFlushDecoding = for (spec <- mayFlushSpecs.values) yield new Area{
+      val MAY_FLUSH_PRECISE = Payload(Bool())
+      val ctrl = spec.el.ctrl(spec.at)
+      spec.value := ctrl.isValid && ctrl(MAY_FLUSH_PRECISE)
+      for (l <- spec.el.getLayers(); uop <- l.uops.values) {
+        val v = uop.mayFlushUpTo.getOrElse(-100)
+        uop.addDecoding(MAY_FLUSH_PRECISE -> Bool(v >= spec.at))
+      }
+    }
+
 
     dispatchCtrl.link.down.ready := True
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
@@ -262,10 +236,10 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
           val hit = doWrite && rfas.orR
         }
         val candHazard = candHazards.map(_.hit).orR
-        val layersHits = c.ctx.laneLayerHits & ~c.rsHazards & ~c.flushHazards & eusToLayers(eusFree(id))
+        val layersHits = c.ctx.laneLayerHits & ~c.rsHazards & eusToLayers(eusFree(id))
         val layerOh = OHMasking.firstV2(layersHits)
         val eusOh = layersToEus(layerOh)
-        val doIt = c.ctx.valid && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
+        val doIt = c.ctx.valid && !c.flushHazards && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
         eusFree(id + 1) := eusFree(id) & (~eusOh).orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(!c.ctx.valid || doIt)
         c.fire := doIt && !eupp.isFreezed()

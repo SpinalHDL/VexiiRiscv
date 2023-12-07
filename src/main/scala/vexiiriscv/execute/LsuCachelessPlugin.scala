@@ -148,7 +148,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val READ_DATA = insert(buffer.data)
       elp.freezeWhen(isValid && SEL && !buffer.valid)
       buffer.ready := isReady && SEL
-      assert(!(up.isCanceling && SEL))
+      assert(!(isValid && hasCancelRequest && SEL))
     }
 
     val onWb = new wbCtrl.Area{
