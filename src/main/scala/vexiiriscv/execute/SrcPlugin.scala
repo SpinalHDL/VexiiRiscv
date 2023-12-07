@@ -47,7 +47,8 @@ object SrcKeys extends AreaObject {
   }
 }
 
-class SrcPlugin(val laneName : String) extends FiberPlugin{
+class SrcPlugin(val laneName : String,
+                var executeAt : Int) extends FiberPlugin{
   val elaborationLock = Lock()
   lazy val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
   setupRetain(eu.pipelineLock)
@@ -58,6 +59,11 @@ class SrcPlugin(val laneName : String) extends FiberPlugin{
     val e = spec.getOrElseUpdate(impl, mutable.LinkedHashSet[SrcKeys]())
     for(k <- keys){
       assert(!e.contains(k))
+      k match {
+        case SrcKeys.SRC1.RF => impl.addRsSpec(RS1, executeAt)
+        case SrcKeys.SRC2.RF => impl.addRsSpec(RS2, executeAt)
+        case _ =>
+      }
       e += k
     }
   }
@@ -98,7 +104,7 @@ class SrcPlugin(val laneName : String) extends FiberPlugin{
       )
     }
 
-    val src = new eu.Execute(0){
+    val src = new eu.Execute(executeAt){
       val imm = new IMM(Decode.UOP)
       if(src1Keys.nonEmpty) ss.SRC1 := SRC1_CTRL.muxListDc[SInt](src1Keys.map {
         case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(this(eu(IntRegFile, RS1)))

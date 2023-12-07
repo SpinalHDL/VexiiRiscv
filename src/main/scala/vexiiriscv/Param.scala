@@ -92,7 +92,14 @@ class ParamSimple(){
       syncRead = regFileSync
     )
 
-    def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(name, rfReadAt = 0, decodeAt = regFileSync.toInt, executeAt = regFileSync.toInt + 1)
+    val allowBypassFrom = 0 //100 => disabled
+    def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(
+      name,
+      rfReadAt = 0,
+      decodeAt = regFileSync.toInt,
+      executeAt = regFileSync.toInt + 1,
+      withBypasses = allowBypassFrom<100
+    )
 
     plugins += new execute.ExecutePipelinePlugin()
 
@@ -100,7 +107,7 @@ class ParamSimple(){
     val early0 = new LaneLayer("early", lane0, priority = 0)
     plugins += lane0
 
-    plugins += new SrcPlugin("lane0")
+    plugins += new SrcPlugin("lane0", executeAt = 0)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += new BarrelShifterPlugin(early0, formatAt = 0)
     plugins += new IntFormatPlugin("lane0")
@@ -114,24 +121,25 @@ class ParamSimple(){
       translationStorageParameter = null,
       translationPortParameter = null
     )
+//TODO specify RS1 / RS2 read from which stage for following plugins
     plugins += new RsUnsignedPlugin("lane0")
     plugins += new MulPlugin(early0)
     plugins += new DivPlugin(early0)
-    plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(PrivilegedConfig.full)
-    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, bypassFrom = 9)
+//    plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
+//    plugins += new PrivilegedPlugin(PrivilegedConfig.full)
+    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
 
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
       val early1 = new LaneLayer("early", lane1, priority = 10)
       plugins += lane1
 
-      plugins += new SrcPlugin("lane1")
+      plugins += new SrcPlugin("lane1", executeAt = 0)
       plugins += new IntAluPlugin(early1, formatAt = 0)
       plugins += new BarrelShifterPlugin(early1, formatAt = 0)
       plugins += new IntFormatPlugin("lane1")
 //      plugins += new BranchPlugin("lane1")
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, bypassFrom = 9)
+      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
     }
 
 

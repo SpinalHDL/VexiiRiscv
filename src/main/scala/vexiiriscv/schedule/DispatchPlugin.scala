@@ -192,13 +192,13 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
 //        layersReady(layerId) :=  !rsLogic.map(_.hazard).orR
 //      }
 
-      val counter = CounterFreeRun(10)
-      rsHazards := (default -> counter.willOverflow)
+//      val counter = CounterFreeRun(10)
+//      rsHazards := (default -> !counter.willOverflow)
     }
 
     val rfaReads = Decode.rfaKeys.filter(_._1.isInstanceOf[RfRead])
     val rsHazardChecker = for(c <- candidates) yield new Area {
-      val onLl = for(ll <- lanesLayers) yield new Area {
+      val onLl = for((ll, llId) <- lanesLayers.zipWithIndex) yield new Area {
         // Identify which RS are used by the pipeline
         val resources = ll.uops.keySet.flatMap(_.resources).distinctLinked
         val readAccess = rfaReads.filter(e => resources.exists{
@@ -207,11 +207,20 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
         }).values
 
         val onRs = for (rs <- readAccess) yield new Area {
+          val hazards = ArrayBuffer[Bool]()
           for(writeEu <- eus) {
-            val checksCount = writeEu.getRdBroadcastedFromMax() - 1 - ll.getRsUseAtMin()
+            val hazardFrom = if(ll.el.withBypasses) ll.getRsUseAtMin()-1 else ll.el.rfReadAt
+            val hazardUntil = if(ll.el.withBypasses) writeEu.getRdBroadcastedFromMax() else writeEu.getRfReadableAtMax()
+            val checksCount = hazardUntil - 1 - hazardFrom
             val range = (1 to checksCount)
+            for(id <- range) {
+              val node = writeEu.ctrl(id)
+              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS)// && !node(Execute.BYPASSED, id) //TODO filter if the uop actualy read rs at that point or later on execute stages, here we are pessimistic (getRsUseAtMin)
+            }
           }
+          val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR
         }
+        c.rsHazards(llId) := onRs.map(_.hazard).orR
       }
     }
 

@@ -29,16 +29,16 @@ class DivPlugin(val layer : LaneLayer,
     val formatBus = ifp.access(writebackAt)
     implicit val _ = ifp -> formatBus
 
-    add(Rvi.DIV ).decode(REM -> False, RS1_SIGNED -> True , RS2_SIGNED -> True )
-    add(Rvi.DIVU).decode(REM -> False, RS1_SIGNED -> False, RS2_SIGNED -> False)
-    add(Rvi.REM ).decode(REM -> True , RS1_SIGNED -> True , RS2_SIGNED -> True )
-    add(Rvi.REMU).decode(REM -> True , RS1_SIGNED -> False, RS2_SIGNED -> False)
+    add(Rvi.DIV ).decode(REM -> False).rsUnsigned(true  , true )
+    add(Rvi.DIVU).decode(REM -> False).rsUnsigned(false , false)
+    add(Rvi.REM ).decode(REM -> True ).rsUnsigned(true  , true )
+    add(Rvi.REMU).decode(REM -> True ).rsUnsigned(false , false)
 
     if (XLEN.get == 64) {
-      add(Rvi.DIVW ).decode(REM -> False, RS1_SIGNED -> True , RS2_SIGNED -> True )
-      add(Rvi.DIVUW).decode(REM -> False, RS1_SIGNED -> False, RS2_SIGNED -> False)
-      add(Rvi.REMW ).decode(REM -> True , RS1_SIGNED -> True , RS2_SIGNED -> True )
-      add(Rvi.REMUW).decode(REM -> True , RS1_SIGNED -> False, RS2_SIGNED -> False)
+      add(Rvi.DIVW ).decode(REM -> False).rsUnsigned(true  , true )
+      add(Rvi.DIVUW).decode(REM -> False).rsUnsigned(false , false)
+      add(Rvi.REMW ).decode(REM -> True ).rsUnsigned(true  , true )
+      add(Rvi.REMUW).decode(REM -> True ).rsUnsigned(false , false)
 
       for (op <- List(Rvi.DIVW, Rvi.DIVUW, Rvi.REMW, Rvi.REMUW)) {
         ifp.signExtend(formatBus, layer(op), 32)

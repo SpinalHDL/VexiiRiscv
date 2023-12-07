@@ -49,7 +49,8 @@ case class UopImplKey(uop : MicroOp, name : LaneLayer)
 class ExecuteLanePlugin(override val laneName : String,
                         override val rfReadAt : Int,
                         val decodeAt : Int,
-                        override val executeAt : Int) extends FiberPlugin with ExecuteLaneService with CompletionService{
+                        override val executeAt : Int,
+                        override val withBypasses : Boolean) extends FiberPlugin with ExecuteLaneService with CompletionService{
   lazy val eupp = host[ExecutePipelinePlugin]
   setupRetain(eupp.pipelineLock)
   setName("execute_" + laneName)
@@ -64,10 +65,6 @@ class ExecuteLanePlugin(override val laneName : String,
   val layers = ArrayBuffer[LaneLayer]()
   override def add(layer: LaneLayer): Unit = layers += layer
 
-  //  override def getMicroOp(): Seq[MicroOp] = {
-//    uopLock.await()
-//    microOps.keys.toSeq
-//  }
   override def getUopLayerSpec(): Iterable[UopLayerSpec] = {
     uopLock.await()
     layers.flatMap(_.uops.values)
@@ -82,40 +79,6 @@ class ExecuteLanePlugin(override val laneName : String,
     uopLock.await()
     layers
   }
-
-
-//  def addUopImpl(op : MicroOp, name : LaneLayer): UopLayerSpec = {
-//    uopImpls.getOrElseUpdate(UopImplKey(op, name), new UopLayerSpec(op, name, this))
-//  }
-
-
-
-//  def setRdSpec(op : MicroOp, implId : String, data : Payload[Bits], rfReadableAt : Int, bypassesAt : Seq[Int]): Unit = {
-//    val impl = getUopImpl(op, implId)
-//    assert(impl.rd.isEmpty)
-//    impl.rd = Some(RdSpec(data, rfReadableAt + executeAt, bypassesAt.map(_ + executeAt)))
-//  }
-
-//  def setRdOutOfPip(op: MicroOp, implId : LaneLayer): Unit = {
-//    val impl = getUopImpl(op, implId)
-//    assert(impl.rd.isEmpty)
-//    impl.rd = None
-//  }
-
-//  def setCompletion(implId : String, executeCtrlId: Int, head : UopImplKey, tail : UopImplKey*): Unit = setCompletion(implId, executeCtrlId, head +: tail)
-//  def setCompletion(implId : String, executeCtrlId: Int, uops: Seq[UopImplKey]): Unit = {
-//    uops.foreach(getUopImpl(_, implId).completion = Some(executeCtrlId + executeAt))
-//  }
-//
-//  def mayFlushUpTo(implId : String, executeCtrlId: Int, head: MicroOp, tail: MicroOp*): Unit = mayFlushUpTo(implId, executeCtrlId, head +: tail)
-//  def mayFlushUpTo(implId : String, executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
-//    uops.foreach(getUopImpl(_, implId).mayFlushUpTo = Some(executeCtrlId + executeAt))
-//  }
-//
-//  def dontFlushFrom(implId : String, executeCtrlId: Int, head: MicroOp, tail: MicroOp*): Unit = dontFlushFrom(implId, executeCtrlId, head +: tail)
-//  def dontFlushFrom(implId : String, executeCtrlId: Int, uops: Seq[MicroOp]): Unit = {
-//    uops.foreach(getUopImpl(_, implId).dontFlushFrom = Some(executeCtrlId + executeAt))
-//  }
 
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType): Unit = {
     val masked = Masked(value)
@@ -155,6 +118,8 @@ class ExecuteLanePlugin(override val laneName : String,
   val logic = during build new Area {
     uopLock.await()
 
+    getLayers().foreach(_.doChecks())
+
     var readLatencyMax = 0
     val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked
     val reads = for ((spec, payload) <- rfStageables) yield new Area { //IMPROVE Bit pessimistic as it also trigger on rd
@@ -181,27 +146,39 @@ class ExecuteLanePlugin(override val laneName : String,
         // Generate a bypass specification for the regfile readed data
         case class BypassSpec(eu: ExecuteLaneService, nodeId: Int, payload: Payload[Bits])
         val bypassSpecs = mutable.LinkedHashSet[BypassSpec]()
+        val useRsUntil = mutable.LinkedHashMap[RfRead, Int]()
         val eus = host.list[ExecuteLaneService]
-//        for (eu <- eus; ops = eu.getMicroOp();
-//             op <- ops; opSpec = eu.getSpec(op)) {
-//          eu.pipelineLock.await() // Ensure that the eu specification is done
-//          val sameRf = opSpec.op.resources.exists {
-//            case RfResource(spec.rf, RD) => true
-//            case _ => false
-//          }
-//          if (sameRf) opSpec.rd match {
-//            case Some(rd) =>
-//              for (nodeId <- rd.bypassesAt) {
-//                val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
-//                bypassSpecs += bypassSpec
-//              }
-//            case None =>
-//          }
-//        }
+        if(withBypasses) {
+          for (eu <- eus; opSpec <- eu.getUopLayerSpec()) {
+            eu.pipelineLock.await() // Ensure that the eu specification is done
+            val sameRf = opSpec.uop.resources.exists {
+              case RfResource(spec.rf, RD) => true
+              case _ => false
+            }
+            if (sameRf) opSpec.rd match {
+              case Some(rd) =>
+                for (nodeId <- rd.broadcastedFrom until rd.rfReadableAt) {
+                  val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
+                  bypassSpecs += bypassSpec
+                }
+              case None =>
+            }
+          }
+
+          for(opSpec <- getUopLayerSpec()){
+            opSpec.uop.resources.foreach {
+              case RfResource(spec.rf, rsX : RfRead) => useRsUntil(rsX) = useRsUntil.getOrElse(rsX, -100) max opSpec.rs(rsX).from
+              case _ =>
+            }
+          }
+        }
+
 
         assert(rfReadAt + rfPlugin.readLatency + 1 == executeAt, "as for now the bypass isn't implemented to udpate the data on the read latency + 1 until execute at")
+
         // Implement the bypass hardware
-        val dataCtrl = ctrl(rfReadAt + rfPlugin.readLatency)
+        val mainBypassAt = rfReadAt + rfPlugin.readLatency
+        val dataCtrl = ctrl(mainBypassAt)
         val rfaRd = Decode.rfaKeys.get(RD)
         val bypassSorted = bypassSpecs.toSeq.sortBy(_.nodeId)
         val bypassEnables = Bits(bypassSorted.size + 1 bits)
@@ -212,6 +189,13 @@ class ExecuteLanePlugin(override val laneName : String,
         bypassEnables.msb := True
         val sel = OHMasking.firstV2(bypassEnables)
         dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b => b.eu.ctrl(b.nodeId)(b.payload)) :+ port.data, true)
+
+        //Update the RSx values along the pipeline
+        for((rs, useUntil) <- useRsUntil){
+          for(ctrlId <- mainBypassAt+1 until useUntil){
+            ???
+          }
+        }
       }
     }
 

@@ -42,13 +42,13 @@ class MulPlugin(val layer : LaneLayer,
 
     val formatBus = ifp.access(writebackAt)
     implicit val _ = ifp -> formatBus
-    add(Rvi.MUL   ).decode(HIGH -> False, RS1_SIGNED -> True , RS2_SIGNED -> True )
-    add(Rvi.MULH  ).decode(HIGH -> True , RS1_SIGNED -> True , RS2_SIGNED -> True )
-    add(Rvi.MULHSU).decode(HIGH -> True , RS1_SIGNED -> True , RS2_SIGNED -> False)
-    add(Rvi.MULHU ).decode(HIGH -> True , RS1_SIGNED -> False, RS2_SIGNED -> False)
+    add(Rvi.MUL   ).decode(HIGH -> False).rsUnsigned(true , true )
+    add(Rvi.MULH  ).decode(HIGH -> True ).rsUnsigned(true , true )
+    add(Rvi.MULHSU).decode(HIGH -> True ).rsUnsigned(true , false)
+    add(Rvi.MULHU ).decode(HIGH -> True ).rsUnsigned(false, false)
 
     if (XLEN.get == 64) {
-      add(Rvi.MULW).decode(HIGH -> False, RS1_SIGNED -> True, RS2_SIGNED -> True)
+      add(Rvi.MULW).decode(HIGH -> False).rsUnsigned(true , true )
       for (op <- List(Rvi.MULW)) {
         ifp.signExtend(formatBus, layer(op), 32)
       }

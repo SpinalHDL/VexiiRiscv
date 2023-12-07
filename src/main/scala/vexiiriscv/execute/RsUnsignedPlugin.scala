@@ -15,7 +15,7 @@ object RsUnsignedPlugin extends AreaObject {
   val RS1_UNSIGNED, RS2_UNSIGNED = Payload(UInt(XLEN bits))
 }
 
-class RsUnsignedPlugin(val laneName : String) extends FiberPlugin{
+class RsUnsignedPlugin(val laneName : String, executeAt : Int = 0) extends FiberPlugin{
   import RsUnsignedPlugin._
   withPrefix(laneName)
 
@@ -24,7 +24,14 @@ class RsUnsignedPlugin(val laneName : String) extends FiberPlugin{
 
   buildBefore(elp.pipelineLock)
 
-  val logic = during build new elp.Execute(0){
+  def addUop(uop : UopLayerSpec, rs1Signed : Boolean, rs2Signed : Boolean) : Unit = {
+    uop.addDecoding(RS1_SIGNED -> Bool(rs1Signed) , RS2_SIGNED -> Bool(rs2Signed))
+    uop.addRsSpec(RS1, executeAt)
+    uop.addRsSpec(RS2, executeAt)
+  }
+
+
+  val logic = during build new elp.Execute(executeAt){
     val rs1 = this(elp(IntRegFile, RS1))
     val rs2 = this(elp(IntRegFile, RS2))
 

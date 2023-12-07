@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.{Global, riscv}
-import vexiiriscv.riscv.{Const, IntRegFile, MicroOp, RS1, Riscv, Rvi}
+import vexiiriscv.riscv.{Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
 import vexiiriscv.decode.Decode
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
@@ -73,6 +73,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         case false => ifp.zeroExtend(iwb, op, spec.width)
         case true  => ifp.signExtend(iwb, op, spec.width)
       }
+    }
+
+    for(store <- frontend.stores){
+      val op = layer(store)
+      op.addRsSpec(RS2, forkAt)
     }
 
 

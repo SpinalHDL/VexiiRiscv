@@ -9,7 +9,7 @@ import vexiiriscv.riscv.{MicroOp, RD, RfResource}
 
 
 object ExecuteUnitElementSimple{
-  class Api(implName : LaneLayer, val srcPlugin: SrcPlugin, val SEL : Payload[Bool]){
+  class Api(implName : LaneLayer, val srcPlugin: SrcPlugin, val SEL : Payload[Bool], val rsUnsignedPlugin: RsUnsignedPlugin = null){
     def add(microOp: MicroOp)(implicit iifpp: (IntFormatPlugin, Flow[Bits]) = null,
                                        iwbpp: (WriteBackPlugin, Flow[Bits]) = null) = new {
       val impl = implName.add(microOp)
@@ -38,6 +38,11 @@ object ExecuteUnitElementSimple{
         this.srcs(head +: tail)
         this
       }
+
+      def rsUnsigned(rs1Signed : Boolean, rs2Signed : Boolean) : this.type = {
+        rsUnsignedPlugin.addUop(impl, rs1Signed, rs2Signed)
+        this
+      }
     }
   }
 }
@@ -53,7 +58,7 @@ abstract class ExecutionUnitElementSimple(implName : LaneLayer) extends FiberPlu
 
   val SEL = Payload(Bool())
 
-  class Logic extends ExecuteUnitElementSimple.Api(implName, srcp, SEL) with Area {
+  class Logic extends ExecuteUnitElementSimple.Api(implName, srcp, SEL, rsUnsignedPlugin = host.get[RsUnsignedPlugin].getOrElse(null)) with Area {
     eu.setDecodingDefault(SEL, False)
   }
 }

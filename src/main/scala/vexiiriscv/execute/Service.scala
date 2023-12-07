@@ -8,7 +8,7 @@ import spinal.lib.logic.Masked
 import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
-import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
+import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource, RfWrite}
 import vexiiriscv.schedule.Ages
 
 import scala.collection.mutable
@@ -16,9 +16,12 @@ import scala.collection.mutable.ArrayBuffer
 
 
 case class RdSpec(DATA: Payload[Bits],
-                  broadcastedFrom : Int)
+                  broadcastedFrom : Int,
+                  rfReadableAt : Int)
 
-case class RsSpec(rs : RfRead, from : Int)
+case class RsSpec(rs : RfRead){
+  var from = 0
+}
 
 class LaneLayer(val name : String, val el : ExecuteLaneService, var priority : Int){
   val uops = mutable.LinkedHashMap[MicroOp, UopLayerSpec]()
@@ -30,6 +33,10 @@ class LaneLayer(val name : String, val el : ExecuteLaneService, var priority : I
   def getRsUseAtMin(): Int = {
     uops.flatMap(_._2.rs.map(_._2.from)).fold(100)(_ min _)
   }
+
+  def doChecks(): Unit = {
+    for(uop <- uops.values) uop.doCheck()
+  }
 }
 
 class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLaneService) {
@@ -38,12 +45,24 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   var completion = Option.empty[Int]
   var mayFlushUpTo = Option.empty[Int]
   var dontFlushFrom = Option.empty[Int]
-
   val decodings = mutable.LinkedHashMap[Payload[_ <: BaseType], Masked]()
 
-  def setRdSpec(data: Payload[Bits], broadcastedFrom : Int): Unit = {
+  def doCheck(): Unit = {
+    uop.resources.foreach{
+      case RfResource(_, rfRead: RfRead) => assert(rs.contains(rfRead), s"$elImpl $uop doesn't has the $rfRead specification set")
+      case RfResource(_, rfWrite: RfWrite) => assert(rd.nonEmpty, s"$elImpl $uop doesn't has the rd specification set")
+      case _ =>
+    }
+  }
+
+  def addRsSpec(rfRead : RfRead, executeAt : Int) = {
+    assert(!rs.contains(rfRead))
+    val rsSpec = rs.getOrElseUpdate(rfRead, new RsSpec(rfRead))
+    rsSpec.from = executeAt + el.executeAt
+  }
+  def setRdSpec(data: Payload[Bits], broadcastedFrom : Int, rfReadableAt : Int): Unit = {
     assert(rd.isEmpty)
-    rd = Some(RdSpec(data, broadcastedFrom + el.executeAt))
+    rd = Some(RdSpec(data, broadcastedFrom + el.executeAt, rfReadableAt + el.executeAt))
   }
 
   def addDecoding(head: (Payload[_ <: BaseType], Any), tail: (Payload[_ <: BaseType], Any)*): Unit = addDecoding(head :: tail.toList)
@@ -88,6 +107,7 @@ trait ExecuteLaneService {
   def getLayers(): Iterable[LaneLayer]
   def add(layer : LaneLayer) : Unit
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType)
+  def withBypasses : Boolean
 
   def getStageable(r: RfResource): Payload[Bits]
   def apply(rf: RegfileSpec, access: RfAccess) = getStageable(rf -> access)
@@ -95,6 +115,7 @@ trait ExecuteLaneService {
 //  def getSpec(op : MicroOp) : MicroOpSpec
 
   def getRdBroadcastedFromMax() = getUopLayerSpec().flatMap(s => s.rd.map(v => v.broadcastedFrom)).max
+  def getRfReadableAtMax() = getUopLayerSpec().flatMap(s => s.rd.map(v => v.rfReadableAt)).max
 
   val LAYER_SEL = Payload(Bits(log2Up(getLayers.size) bits))
   def getLayerId(ll : LaneLayer) = getLayers().toSeq.sortBy(_.priority).indexOf(ll)

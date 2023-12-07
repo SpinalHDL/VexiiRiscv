@@ -67,7 +67,8 @@ class WhiteboxerPlugin extends FiberPlugin{
       val microOpId = wrap(c(Decode.UOP_ID))
     }
 
-    val csr = new Area {
+    val withCsr = host.get[CsrAccessPlugin].nonEmpty
+    val csr = withCsr.option(new Area {
       val p = host[CsrAccessPlugin].logic
       val port = Verilator.public(Flow(new Bundle {
         val hartId = Global.HART_ID()
@@ -86,7 +87,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       port.read := p.fsm.regs.csrValue
       port.writeDone := p.fsm.regs.write
       port.readDone := p.fsm.regs.read
-    }
+    })
 
     val rfWrites = new Area {
       val ports = host.list[RegFileWriterService].flatMap(_.getRegFileWriters()).map(wrap)
@@ -184,7 +185,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val serializeds = self.serializeds.indices.map(new SerializedProxy(_)).toArray
       val dispatches = self.dispatches.indices.map(new DispatchProxy(_)).toArray
       val executes = self.executes.indices.map(new ExecuteProxy(_)).toArray
-      val csr = new CsrProxy()
+      val csr = self.csr.map(_ => new CsrProxy())
       val rfWrites = self.rfWrites.ports.map(new RfWriteProxy(_)).toArray
       val completions = self.completions.ports.map(new CompletionProxy(_)).toArray
       val flushes = self.reschedules.flushes.map(new FlushProxy(_)).toArray
@@ -235,14 +236,15 @@ class WhiteboxerPlugin extends FiberPlugin{
 
 
     class CsrProxy{
-      val valid = self.csr.port.valid.simProxy()
-      val hartId = self.csr.port.hartId.simProxy()
-      val uopId = self.csr.port.uopId.simProxy()
-      val address = self.csr.port.address.simProxy()
-      val write = self.csr.port.write.simProxy()
-      val read = self.csr.port.read.simProxy()
-      val writeDone = self.csr.port.writeDone.simProxy()
-      val readDone = self.csr.port.readDone.simProxy()
+      val csr = self.csr.get
+      val valid = csr.port.valid.simProxy()
+      val hartId = csr.port.hartId.simProxy()
+      val uopId = csr.port.uopId.simProxy()
+      val address = csr.port.address.simProxy()
+      val write = csr.port.write.simProxy()
+      val read = csr.port.read.simProxy()
+      val writeDone = csr.port.writeDone.simProxy()
+      val readDone = csr.port.readDone.simProxy()
     }
 
     class RfWriteProxy(val port : Flow[RegFileWriter]) {

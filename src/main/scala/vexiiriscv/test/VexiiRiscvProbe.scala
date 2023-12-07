@@ -337,7 +337,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     }
 
 
-    if (csr.valid.toBoolean) {
+    csr.foreach (csr => if (csr.valid.toBoolean) {
       val hartId = csr.hartId.toInt
       val uopId = csr.uopId.toInt
       val hart = harts(hartId)
@@ -348,7 +348,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       uop.csrReadDone = csr.readDone.toBoolean
       uop.csrWriteData = csr.write.toLong
       uop.csrReadData = csr.read.toLong
-    }
+    })
 
     for (port <- rfWrites) if (port.valid.toBoolean) {
       val hart = harts(port.hartId.toInt)
