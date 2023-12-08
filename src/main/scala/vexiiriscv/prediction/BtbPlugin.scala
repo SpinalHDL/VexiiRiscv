@@ -41,7 +41,7 @@ class BtbPlugin(var sets : Int,
     val age = fpp.getAge(jumpAt, true)
     val pcPort = pcp.createJumpInterface(age,0, (jumpAt < 2).toInt)
     val flushPort = rp.newFlushPort(age, 0, false)
-    val historyPort = hp.map(_.createPort(age))
+    val historyPort = hp.map(_.createPort(age, 0))
 
     dp.hmKeys += Prediction.ALIGNED_JUMPED
     dp.hmKeys += Prediction.ALIGNED_JUMPED_PC

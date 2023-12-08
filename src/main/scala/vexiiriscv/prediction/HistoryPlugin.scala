@@ -12,18 +12,19 @@ import vexiiriscv.Global
 import scala.collection.mutable
 
 
-case class HistoryJump() extends Bundle{
+case class HistoryJump(laneAgeWidth : Int) extends Bundle{
   val history = BRANCH_HISTORY()
+  val age = UInt(laneAgeWidth bits)
 }
 
 class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin {
   lazy val fpp = host[FetchPipelinePlugin]
   buildBefore(fpp.elaborationLock)
 
-  case class HistorySpec(priority : Int, port : Flow[HistoryJump])
+  case class HistorySpec(priority : Int, laneAgeWidth : Int, port : Flow[HistoryJump])
   val historySpecs = mutable.ArrayBuffer[HistorySpec]()
-  def createPort(priority : Int): Flow[HistoryJump] = {
-    historySpecs.addRet(HistorySpec(priority, Flow(HistoryJump()))).port
+  def createPort(priority : Int, laneAgeWidth : Int): Flow[HistoryJump] = {
+    historySpecs.addRet(HistorySpec(priority, laneAgeWidth, Flow(HistoryJump(laneAgeWidth)))).port
   }
 
   val elaborationLock = Lock()
@@ -39,11 +40,17 @@ class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin
       val valueNext = CombInit(value)
       value := valueNext
 
-      val ports = historySpecs.sortBy(_.priority)
-      assert(ports.map(_.priority).distinct.size == ports.size)
+      val groups = historySpecs.groupBy(_.priority).toSeq.sortBy(_._1)
+      val ports = for((_, elements) <- groups) yield {
+        val ret = cloneOf(elements.head.port)
+        val valids = for(self <- elements) yield self.port.valid && elements.filter(_ != self).map(other => !(other.port.valid && other.port.age < self.port.age)).andR
+        ret.valid := elements.map(_.port.valid).orR
+        ret.payload := OHMux.or(valids, elements.map(_.port.payload), true)
+        ret
+      }
       val pushes = for(spec <- ports) yield new Area{
-        when(spec.port.valid) {
-          valueNext := spec.port.history
+        when(spec.valid) {
+          valueNext := spec.history
         }
       }
     }

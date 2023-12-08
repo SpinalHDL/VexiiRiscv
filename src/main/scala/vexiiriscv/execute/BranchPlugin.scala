@@ -71,7 +71,7 @@ class BranchPlugin(val layer : LaneLayer,
 
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
-    val historyPort = hp.map(_.createPort(age))
+    val historyPort = hp.map(_.createPort(age, Execute.LANE_AGE_WIDTH))
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     //    val trapPort = if XXX sp.newTrapPort(age)
 
@@ -146,7 +146,7 @@ class BranchPlugin(val layer : LaneLayer,
         }
 
         val fetched = CombInit(
-          (Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1) match {
+          false /*(Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1)*/ match {
             case true  => state //State will always reflect what the fetch stages will use, so let's use it as that little area
             case false => apply(Prediction.BRANCH_HISTORY) //While the BRANCH_HISTORY may take some more time to wormup, it seems to have little effect in practice (coremark 9.1 miss rate vs 9.0)
           }                                            //We can't use state there, as if there multiple branch instruction on the same Fetch.WORD it won't reflect the btb branch history
@@ -160,6 +160,7 @@ class BranchPlugin(val layer : LaneLayer,
       historyPort.foreach{ port =>
         port.valid := doIt
         port.history := history.next
+        port.age := Execute.LANE_AGE
       }
 
 
