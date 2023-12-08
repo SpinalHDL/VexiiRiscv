@@ -13,6 +13,7 @@ import Fetch._
 import vexiiriscv.Global._
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 import Prediction._
+import vexiiriscv.decode.Decode
 import vexiiriscv.execute.BranchPlugin
 
 import scala.util.Random
@@ -45,6 +46,8 @@ class BtbPlugin(var sets : Int,
 
     dp.hmKeys += Prediction.ALIGNED_JUMPED
     dp.hmKeys += Prediction.ALIGNED_JUMPED_PC
+    dp.hmKeys += Prediction.ALIGNED_SLICES_TAKEN
+    dp.hmKeys += Prediction.ALIGNED_SLICES_BRANCH
 
     dp.elaborationLock.release()
     rp.elaborationLock.release()
@@ -235,6 +238,16 @@ class BtbPlugin(var sets : Int,
 
           port.valid := isValid && !gotSkip && !correctionSent && waysLogic.map(e => apply(e.hitCalc.HIT)).orR
           port.history := layers.last.history
+
+          val slicePerWay = SLICE_COUNT/ways
+          for(way <- 0 until ways){
+            for(slice <- 0 until slicePerWay){
+              val i = slice + way*slicePerWay
+              WORD_SLICES_BRANCH(i) := waysLogic(i).hitCalc.HIT && waysLogic(i).readRsp.ENTRY.isBranch && waysLogic(i).readRsp.ENTRY.sliceLow === slice
+              WORD_SLICES_TAKEN(i) := waysLogic(i).predict.TAKEN
+            }
+          }
+
         }
       }
     }

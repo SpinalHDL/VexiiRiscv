@@ -84,9 +84,9 @@ class GSharePlugin(var historyWidth : Int,
         this(GSHARE_COUNTER) := this(BYPASS).data
       }
 
-      when(WORD_PC === 0x800063A8l && down.isFiring && this(GSHARE_COUNTER)(1) =/= 3){
-        report(L"# ${this(BRANCH_HISTORY)} ${this(GSHARE_COUNTER)(1)}")
-      }
+//      when(WORD_PC === 0x800063A8l && down.isFiring && this(GSHARE_COUNTER)(1) =/= 3){
+//        report(L"# ${this(BRANCH_HISTORY)} ${this(GSHARE_COUNTER)(1)}")
+//      }
       KeepAttribute(this(GSHARE_COUNTER))
     }
 
@@ -95,8 +95,8 @@ class GSharePlugin(var historyWidth : Int,
       val hash = gshareHash(cmd.pcOnLastSlice, cmd.history)
 
 
-      val counters = mem.counter.readAsync(hash); println("!!!!!!!!!!!! REMOVE THAT READ ASYNC <3 !!!!!!!!!!!!") //This is a 100% accurate implementation
-//      val counters = cmd.ctx(GSHARE_COUNTER)
+//      val counters = mem.counter.readAsync(hash); println("!!!!!!!!!!!! REMOVE THAT READ ASYNC <3 !!!!!!!!!!!!") //This is a 100% accurate implementation
+      val counters = cmd.ctx(GSHARE_COUNTER)
       val updated = GSHARE_COUNTER()
       val incrValue = cmd.taken ? U(1) | U((1 << counterWidth)-1)
       val overflow = False

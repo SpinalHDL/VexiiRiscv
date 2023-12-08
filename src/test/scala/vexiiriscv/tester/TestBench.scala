@@ -83,6 +83,15 @@ class TestOptions{
     failAfter.map(delayed(_)(simFailure("Reached Timeout")))
     passAfter.map(delayed(_)(simSuccess()))
 
+    fork{
+      while(true){
+        enableSimWave()
+        sleep(1000)
+        disableSimWave()
+        sleep(100000)
+      }
+    }
+
     val xlen = dut.database(Riscv.XLEN)
 
     // Rvls will check that the CPUs are doing things right

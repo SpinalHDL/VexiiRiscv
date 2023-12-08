@@ -153,13 +153,26 @@ class BranchPlugin(val layer : LaneLayer,
         )
       }
 
+      //TODO
+      println("!!! REPLACE THE OLD IMPL WITH THE BELLOW ONE !!!")
+      val historyV2 = new Area{
+        val slice = PC(Fetch.SLICE_RANGE.get)
+        var next = CombInit(apply(Prediction.BRANCH_HISTORY))
+        for(sliceId <- 0 until Fetch.SLICE_COUNT-1){
+          when(slice < sliceId && Prediction.ALIGNED_SLICES_BRANCH(sliceId)){
+            next \= (next ## Prediction.ALIGNED_SLICES_TAKEN(sliceId)).dropHigh(1)
+          }
+        }
+        next \= (next ## alu.COND).dropHigh(1)
+      }
+
       pcPort.valid := doIt
       pcPort.pc := pcTarget
       pcPort.laneAge := Execute.LANE_AGE
 
       historyPort.foreach{ port =>
         port.valid := doIt
-        port.history := history.next
+        port.history := historyV2.next
         port.age := Execute.LANE_AGE
       }
 

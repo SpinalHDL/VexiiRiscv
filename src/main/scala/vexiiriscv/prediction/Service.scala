@@ -17,11 +17,15 @@ object Prediction extends AreaObject{
   val WORD_JUMPED = Payload(Bool())
   val WORD_JUMP_SLICE = Payload(Fetch.SLICE_ID)
   val WORD_JUMP_PC = Payload(Global.PC)
+  val WORD_SLICES_BRANCH = Payload(Bits(Fetch.SLICE_COUNT bits))
+  val WORD_SLICES_TAKEN = Payload(Bits(Fetch.SLICE_COUNT bits))
 //  val WORD_SLICE_JB = Payload(Vec.fill(Fetch.SLICE_COUNT)(Bool()))
 
   //Used by decoder based prediction to know the fetch based prediction modified the flow of future instructions
   val ALIGNED_JUMPED = Payload(Bool())
   val ALIGNED_JUMPED_PC = Payload(Global.PC)
+  val ALIGNED_SLICES_BRANCH = Payload(Bits(Fetch.SLICE_COUNT bits))
+  val ALIGNED_SLICES_TAKEN = Payload(Bits(Fetch.SLICE_COUNT bits))
 
   //Used by decode predictor to correct the history
   val BRANCH_HISTORY_WIDTH = blocking[Int]

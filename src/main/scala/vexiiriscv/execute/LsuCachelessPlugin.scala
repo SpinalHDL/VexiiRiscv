@@ -7,6 +7,7 @@ import vexiiriscv.{Global, riscv}
 import vexiiriscv.riscv.{Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
 import vexiiriscv.decode.Decode
+import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
 import vexiiriscv.misc.AddressToMask
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
@@ -153,7 +154,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       val speculLoad = withSpeculativeLoadFlush generate new Area {
         val tooRisky = isValid && SEL && LOAD && (tpk.IO && elp.atRiskOfFlush(forkAt) || MISS_ALIGNED) //TODO remove that MISS_ALIGNED management
-        redoPort := tooRisky
+        val delay = RegNext(tooRisky)
+        redoPort := tooRisky && delay
+        host[FetchPipelinePlugin].fetch(0).haltWhen(delay)
+        //TODO remove delay
+        println("Remove delay hack!!")
       }
     }
 

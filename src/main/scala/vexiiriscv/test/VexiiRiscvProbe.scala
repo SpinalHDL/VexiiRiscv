@@ -60,9 +60,9 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         total.failed += data.failed
         total.taken += data.taken
       }
-      for ((pc, data) <- stats) {
-        str ++= f"- 0x${pc}%08X : ${data.toString()}\n"
-      }
+//      for ((pc, data) <- stats) {
+//        str ++= f"- 0x${pc}%08X : ${data.toString()}\n"
+//      }
       str ++= f"kind :  miss / times   miss-rate taken-rate\n"
       str ++= f"J/B  : ${total.toString()}\n"
       str ++= f"  B  : ${hart.branchStats.toString()}\n"

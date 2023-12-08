@@ -135,7 +135,7 @@ class ParamSimple(){
     plugins += new SrcPlugin(late0, executeAt=2)
     plugins += new IntAluPlugin(late0, aluAt=2, formatAt=2)
     plugins += new BarrelShifterPlugin(late0, shiftAt=2, formatAt=2)
-    plugins += new BranchPlugin(layer=late0, aluAt = 2, jumpAt = 2, wbAt = 2)
+    plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2, wbAt = 2)
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
 
@@ -150,13 +150,12 @@ class ParamSimple(){
       plugins += new IntAluPlugin(early1, formatAt = 0)
       plugins += new BarrelShifterPlugin(early1, formatAt = 0)
       plugins += new IntFormatPlugin("lane1")
-//      plugins += new BranchPlugin("lane1")
+      plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = 0, wbAt = 0)
 
       plugins += new SrcPlugin(late1, executeAt = 2)
       plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
       plugins += new BarrelShifterPlugin(late1, shiftAt = 2, formatAt = 2)
-//      plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2, wbAt = 2)
-
+      plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2, wbAt = 2)
 
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
     }
@@ -174,6 +173,7 @@ jump at 0 :
        + late alu => 1.72 dhrystone 3.54 coremark
 2l btb gshare ras => 1.92 dhrystone 3.93 coremark 1.34 embench
        + late alu => 2.09 dhrystone 4.39 coremark
+    + 4b late alu => 2.24 dhrystone 4.39 coremark 1.47 embench
 
 
 

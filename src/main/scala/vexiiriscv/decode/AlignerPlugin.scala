@@ -82,6 +82,8 @@ class AlignerPlugin(fetchAt : Int,
           lane(Prediction.ALIGNED_JUMPED) := up(Prediction.WORD_JUMPED) && didPrediction
           lane(Prediction.ALIGNED_JUMPED_PC) := up(Prediction.WORD_JUMP_PC)
           lane.up(lane.LANE_SEL) clearWhen(up(Prediction.WORD_JUMPED) && afterPrediction)
+          lane(Prediction.ALIGNED_SLICES_BRANCH) := up(Prediction.WORD_SLICES_BRANCH)
+          lane(Prediction.ALIGNED_SLICES_TAKEN) := up(Prediction.WORD_SLICES_TAKEN)
         }
       }
     }
