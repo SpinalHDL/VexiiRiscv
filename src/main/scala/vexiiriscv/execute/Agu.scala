@@ -16,7 +16,7 @@ object AguPlugin extends AreaObject{
   val SC = Payload(Bool())
   val LR = Payload(Bool())
   val LOAD = Payload(Bool())
-  val SIZE = Payload(UInt(3 bits))
+  val SIZE = Payload(UInt(2 bits))
   val FLOAT = Payload(Bool())
 }
 

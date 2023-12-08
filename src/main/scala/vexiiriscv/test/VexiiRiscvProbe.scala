@@ -58,11 +58,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       for ((pc, data) <- stats) {
         total.count += data.count
         total.failed += data.failed
+        total.taken += data.taken
       }
       for ((pc, data) <- stats) {
         str ++= f"- 0x${pc}%08X : ${data.toString()}\n"
       }
-      str ++= f"kind :  miss / times   miss-rate\n"
+      str ++= f"kind :  miss / times   miss-rate taken-rate\n"
       str ++= f"J/B  : ${total.toString()}\n"
       str ++= f"  B  : ${hart.branchStats.toString()}\n"
     }
@@ -92,10 +93,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   class JbStats(){
     var count = 0l
     var failed = 0l
+    var taken = 0l
 
     override def toString(): String ={
       val rate = (1000f*failed/count).toInt
-      f"${failed}%5d / ${count}%5d ${rate/10}%3d.${rate%10}%%"
+      val rate2 = (1000f*taken/count).toInt
+      f"${failed}%5d / ${count}%5d ${rate/10}%3d.${rate%10}%% ${rate2/10}%3d.${rate2%10}%%"
     }
   }
 
@@ -387,14 +390,17 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       val hart = harts(learn.hartId.toInt)
       val ctx = hart.microOp(learn.uopId.toInt)
       val isBranch = learn.isBranch.toBoolean
-      val wasWrong = learn.wasWrong.toBoolean
+      val wasWrong = learn.wasWrong.toBoolean.toInt
+      val taken = learn.taken.toBoolean.toInt
 
       val stats = hart.jbStats.getOrElseUpdate(learn.pcOnLastSlice.toLong, new JbStats)
       stats.count += 1
-      stats.failed += wasWrong.toInt
+      stats.failed += wasWrong
+      stats.taken += taken
       if (isBranch) {
         hart.branchStats.count += 1
-        hart.branchStats.failed += wasWrong.toInt
+        hart.branchStats.failed += wasWrong
+        hart.branchStats.taken += taken
       }
     }
 

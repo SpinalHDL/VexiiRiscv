@@ -32,7 +32,7 @@ class DecodePredictionPlugin(var decodeAt: Int,
     val age = dpp.getAge(jumpAt, true)
     val pcPorts = List.fill(Decode.LANES)(pcp.createJumpInterface(age, log2Up(Decode.LANES), 0))
     val flushPorts = List.fill(Decode.LANES)(rp.newFlushPort(age, log2Up(Decode.LANES), true))
-    val historyPorts = hp.map(hp => List.tabulate(Decode.LANES)(i => hp.createPort(age + i, log2Up(Decode.LANES))))
+    val historyPorts = hp.map(hp => List.tabulate(Decode.LANES)(i => hp.createPort(age + i, 0)))
     rp.elaborationLock.release()
     hp.foreach(_.elaborationLock.release())
 
@@ -69,7 +69,6 @@ class DecodePredictionPlugin(var decodeAt: Int,
           val historyPort = historyPorts.get(slotId)
           historyPort.valid := fixIt
           historyPort.history := Prediction.BRANCH_HISTORY
-          historyPort.age := slotId
         }
       }
     }

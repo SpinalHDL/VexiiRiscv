@@ -102,7 +102,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     val injectCtrl = elp.ctrl(0)
     val inject = new injectCtrl.Area {
-      SIZE := Decode.UOP(Const.funct3Range).asUInt
+      SIZE := Decode.UOP(13 downto 12).asUInt
     }
 
     // Hardware elaboration
@@ -129,10 +129,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     val onFork = new forkCtrl.Area{
       val tpk =  onAddress.translationPort.keys
+      val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && onAddress.RAW_ADDRESS(i - 1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
       val RS2 = elp(IntRegFile, riscv.RS2)
       assert(bus.cmd.ready) // For now
 
-      val MISS_ALIGNED = insert((1 to log2Up(LSLEN/8)).map(i => SIZE === i && onAddress.RAW_ADDRESS(i-1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
+
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(isReady)
       bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest
       bus.cmd.write := ! LOAD

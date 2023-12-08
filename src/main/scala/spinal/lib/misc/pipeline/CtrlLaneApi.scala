@@ -30,7 +30,7 @@ trait CtrlLaneApi{
   class NodeMirror(node : Node) extends NodeBaseApi {
     override def valid = node(LANE_SEL, laneName)
     override def ready = node.ready
-    override def cancel = node.cancel
+    override def cancel = node.cancel //TODO not that great ?
     override def isFiring = valid && ready && !cancel
     override def isMoving = valid && (ready || cancel)
     override def isCanceling = valid && cancel

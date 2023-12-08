@@ -18,6 +18,8 @@ class LearnPlugin extends FiberPlugin with LearnService {
     val ups = host.list[BranchPlugin].flatMap(_.logic.jumpLogic.learn)
     val learn = Flow(LearnCmd(learnCtxElements.toSeq))
 
-    learn << StreamArbiterFactory().noLock.roundRobin.on(ups).toFlow
+    println("REMOVE ME QUEUE")
+    learn << StreamArbiterFactory().noLock.roundRobin.on(ups.map(_.queueLowLatency(8))).toFlow //TODO
+//    learn << StreamArbiterFactory().noLock.roundRobin.on(ups.map(_.pipelined(m2s = ups.size > 1))).toFlow
   }
 }

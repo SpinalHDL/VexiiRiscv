@@ -9,7 +9,7 @@ import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.PipelineBuilderPlugin
-import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
+import vexiiriscv.prediction.{BtbPlugin, LearnCmd, LearnPlugin}
 import vexiiriscv.regfile.{RegFileWrite, RegFileWriter, RegFileWriterService}
 import vexiiriscv.riscv.{Const, Riscv}
 import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
@@ -107,6 +107,12 @@ class WhiteboxerPlugin extends FiberPlugin{
       val lp = host[LearnPlugin]
       val learns = lp.logic.ups.map(e => wrap(e.asFlow))
     }
+
+//    val btb = host.get[BtbPlugin]
+//    val btbHit = btb.foreach(btb => new Area {
+//      val fire    = wrap(btb.logic.applyIt.down.isFiring)
+//      val fetchId = wrap(btb.logic.applyIt(Fetch.ID))
+//    })
 
     val loadExecute = new Area {
       val fire = Bool()

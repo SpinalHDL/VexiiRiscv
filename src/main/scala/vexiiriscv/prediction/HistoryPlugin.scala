@@ -17,6 +17,7 @@ case class HistoryJump(laneAgeWidth : Int) extends Bundle{
   val age = UInt(laneAgeWidth bits)
 }
 
+//TODO a few history port may be removed to save area, as they are corner case  : DecodePredictionPlugin, and eventualy Lsu io missprediction
 class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin {
   lazy val fpp = host[FetchPipelinePlugin]
   buildBefore(fpp.elaborationLock)
