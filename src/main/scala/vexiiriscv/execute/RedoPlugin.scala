@@ -30,14 +30,17 @@ class RedoPlugin(val laneName : String) extends FiberPlugin {
 
     val groups = specs.groupBy(_.ctrlAt)
     val groupsLogic = for((ctrlAt, specs) <- groups) yield new elp.Ctrl(ctrlAt){
-      val pcPort = pcs.createJumpInterface(elp.getAge(ctrlAt), Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
-      val flushPort = sp.newFlushPort(elp.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
+      val age = elp.getAge(ctrlAt)
+      val pcPort = pcs.createJumpInterface(age, Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
+      val flushPort = sp.newFlushPort(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
       val doIt = specs.map(_.request).orR
 
       pcPort.valid := doIt
       pcPort.pc := Global.PC
       pcPort.laneAge := Execute.LANE_AGE
 
+      println("!!!! PATCH HISTORY !!!!!")
+      //TODO
 //      historyPort.foreach { port =>
 //        port.valid := doIt
 //        port.history := history.next

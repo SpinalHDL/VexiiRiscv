@@ -103,18 +103,18 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
     }
     val uopsGrouped = eus.flatMap(_.getUopLayerSpec()).groupByLinked(_.uop)
     val uopsDontFlushFrom = uopsGrouped.map(e => e._1 -> e._2.map(_.dontFlushFrom.getOrElse(100)).min)
-    val eusCheckRange = mutable.LinkedHashMap[ExecuteLaneService, Range]()
+    val dontFlushFromMin = uopsDontFlushFrom.map(_._2).min
+    val eusFlushHazardUpTo = mutable.LinkedHashMap[ExecuteLaneService, Int]()
     for (elp <- eus) yield new Area {
-      val dontFlushFromMin = elp.getUopLayerSpec().map(_.dontFlushFrom.getOrElse(100)).min
       val flushUpTo = elp.getUopLayerSpec().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
-      val ctrlRange = 1 to flushUpTo - dontFlushFromMin
-      for (i <- ctrlRange) hmKeys += getDontFlush(i)
-      eusCheckRange(elp) = ctrlRange
+      val hazardRange = dontFlushFromMin+1 to flushUpTo //+1 because the flush hazard on the same warp are handled somewere else, here we just need to care about past cycles
+      eusFlushHazardUpTo(elp) = flushUpTo
+      for (i <- hazardRange) hmKeys += getDontFlush(i)
       assert(elp.executeAt == 1, "seems to assume it so far, but that need to be fixed")
     }
     val dontFlushDecoding = for (spec <- dontFlushSpecs.values) yield new Area {
       for ((uop, dontFlushFrom) <- uopsDontFlushFrom) {
-        dp.addMicroOpDecoding(uop, spec.value, Bool(dontFlushFrom <= spec.at))
+        dp.addMicroOpDecoding(uop, spec.value, Bool(dontFlushFrom < spec.at)) //Answer the question : For this uop, when it reach the dontFlush point in the pipeline, is it not ok to have another op which emit flushes in the given spec.at stage
       }
     }
 
@@ -185,10 +185,10 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       }
     }
 
-    case class MayFlushSpec(el: ExecuteLaneService, at: Int, value: Bool)
+    case class MayFlushSpec(el: ExecuteLaneService, at: Int, value: Payload[Bool])
     val mayFlushSpecs = mutable.LinkedHashMap[(ExecuteLaneService, Int), MayFlushSpec]()
-    def getMayFlush(el: ExecuteLaneService, at: Int): Bool = {
-      mayFlushSpecs.getOrElseUpdate(el -> at, MayFlushSpec(el, at, Bool())).value
+    def getMayFlush(el: ExecuteLaneService, at: Int): Payload[Bool] = {
+      mayFlushSpecs.getOrElseUpdate(el -> at, MayFlushSpec(el, at, Payload(Bool()).setName("MAY_FLUSH_PRECISE_" + at))).value
     }
 
 
@@ -196,8 +196,17 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
     val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
       val c = candidates(cId)
       val executeCheck = for (elp <- eus) yield new Area {
-        val ctrlRange = eusCheckRange(elp)
-        val hits = ctrlRange.map(i => c.ctx.hm(getDontFlush(i)) && elp.ctrl(i).isValid && getMayFlush(elp, i) && elp.ctrl(i)(Global.HART_ID) === c.ctx.hartId)
+        val ctrlRange = dontFlushFromMin+1 to eusFlushHazardUpTo(elp)
+        val hits = for(from <- ctrlRange) yield {
+          val downstream = for(i <- from to ctrlRange.high) yield {
+            val otherCtrl = elp.ctrl(from - dontFlushFromMin)
+            println(s"ASD $from $i  ${from - dontFlushFromMin}")
+            c.ctx.hm(getDontFlush(i)) && otherCtrl.isValid && otherCtrl(Global.HART_ID) === c.ctx.hartId && otherCtrl(getMayFlush(elp, i))
+          }
+          downstream.orR
+//          val otherCtrl = elp.ctrl(from - dontFlushFromMin)
+//          c.ctx.hm(getDontFlush(from)) && otherCtrl.isValid && otherCtrl(getMayFlush(elp, from)) && otherCtrl(Global.HART_ID) === c.ctx.hartId
+        }
         assert(elp.executeAt == 1, "seems to assume it so far, but that need to be fixed")
       }
       val olders = candidates.take(cId)
@@ -218,12 +227,10 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
 
     //TODO this is a very clean implementation, but would need to move it in part before the dispatch to improve timings
     val mayFlushDecoding = for (spec <- mayFlushSpecs.values) yield new Area {
-      val MAY_FLUSH_PRECISE = Payload(Bool())
       val ctrl = spec.el.ctrl(spec.at)
-      spec.value := ctrl.isValid && ctrl(MAY_FLUSH_PRECISE)
       for (l <- spec.el.getLayers(); uop <- l.uops.values) {
         val v = uop.mayFlushUpTo.getOrElse(-100)
-        uop.addDecoding(MAY_FLUSH_PRECISE -> Bool(v >= spec.at))
+        uop.addDecoding(spec.value -> Bool(v >= spec.at))
       }
     }
 

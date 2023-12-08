@@ -44,7 +44,7 @@ case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave 
 }
 
 class LsuCachelessPlugin(var layer : LaneLayer,
-                         var withSpeculativeLoadFlush : Boolean,
+                         var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
                          var addressAt: Int = 0,
@@ -149,7 +149,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       elp.freezeWhen(bus.cmd.isStall)
 
       val speculLoad = withSpeculativeLoadFlush generate new Area {
-        val tooRisky = isValid && LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)
+        val tooRisky = isValid && SEL && LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)
         redoPort := tooRisky
       }
     }
