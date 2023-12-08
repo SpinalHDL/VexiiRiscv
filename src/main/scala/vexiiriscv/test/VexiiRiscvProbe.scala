@@ -449,10 +449,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           hart.lastUopId = uopId
 
           hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
-          lastCommitAt = cycle
 
           uop.toKonata(hart)
           if (uop.didCommit) {
+            lastCommitAt = cycle
             hart.commits += 1
             if (uop.loadValid) {
               backends.foreach(_.loadCommit(hartId, uop.loadLqId))

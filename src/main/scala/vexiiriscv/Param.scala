@@ -173,7 +173,7 @@ jump at 0 :
        + late alu => 1.72 dhrystone 3.54 coremark
 2l btb gshare ras => 1.92 dhrystone 3.93 coremark 1.34 embench
        + late alu => 2.09 dhrystone 4.39 coremark
-    + 4b late alu => 2.24 dhrystone 4.39 coremark 1.47 embench
+    + 4b late alu => 2.24 dhrystone 4.55 coremark 1.47 embench
 
 
 

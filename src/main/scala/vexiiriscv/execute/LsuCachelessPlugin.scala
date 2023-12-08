@@ -154,11 +154,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       val speculLoad = withSpeculativeLoadFlush generate new Area {
         val tooRisky = isValid && SEL && LOAD && (tpk.IO && elp.atRiskOfFlush(forkAt) || MISS_ALIGNED) //TODO remove that MISS_ALIGNED management
-        val delay = RegNext(tooRisky)
-        redoPort := tooRisky && delay
-        host[FetchPipelinePlugin].fetch(0).haltWhen(delay)
-        //TODO remove delay
-        println("Remove delay hack!!")
+        redoPort := tooRisky
       }
     }
 

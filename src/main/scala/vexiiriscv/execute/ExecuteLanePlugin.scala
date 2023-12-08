@@ -281,7 +281,7 @@ class ExecuteLanePlugin(override val laneName : String,
     for(elp <- elps){
       val upTo = elp.getUopLayerSpec().map(_.mayFlushUpTo.getOrElse(-100)).max
       for(i <- ctrlId + (elp == this).toInt until upTo){
-        hazards += elp.ctrl(i).isValid && elp.ctrl(i)(Global.HART_ID) === ctrl(ctrlId)(Global.HART_ID) //Quite pessimistic
+        hazards += elp.ctrl(i).isValid && elp.ctrl(i)(Global.HART_ID) === ctrl(ctrlId)(Global.HART_ID) && (if(i == ctrlId) elp.ctrl(i)(Execute.LANE_AGE) === ctrl(ctrlId)(Execute.LANE_AGE)  else True) //Quite pessimistic
       }
     }
     hazards.orR
