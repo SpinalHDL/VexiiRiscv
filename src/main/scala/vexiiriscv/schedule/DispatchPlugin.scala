@@ -191,16 +191,14 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       mayFlushSpecs.getOrElseUpdate(el -> at, MayFlushSpec(el, at, Payload(Bool()).setName("MAY_FLUSH_PRECISE_" + at))).value
     }
 
-
-    //TODO flushChecker is pessimistic, would need to improve by checking hazard depending from were the current op can't be flushed any more from (LSU)
     val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
       val c = candidates(cId)
       val executeCheck = for (elp <- eus) yield new Area {
         val ctrlRange = dontFlushFromMin+1 to eusFlushHazardUpTo(elp)
         val hits = for(from <- ctrlRange) yield {
-          val downstream = for(i <- from to ctrlRange.high) yield {
+          val downstream = for(i <- ctrlRange.low to ctrlRange.high-(from-ctrlRange.low)) yield {
             val otherCtrl = elp.ctrl(from - dontFlushFromMin)
-            println(s"ASD $from $i  ${from - dontFlushFromMin}")
+//            println(s"ASD $from $i  ${from - dontFlushFromMin}")
             c.ctx.hm(getDontFlush(i)) && otherCtrl.isValid && otherCtrl(Global.HART_ID) === c.ctx.hartId && otherCtrl(getMayFlush(elp, i))
           }
           downstream.orR

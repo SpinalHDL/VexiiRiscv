@@ -17,8 +17,8 @@ class ParamSimple(){
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
-  var decoders = 1
-  var lanes = 1
+  var decoders = 2
+  var lanes = 2
   var regFileSync = false
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
@@ -171,7 +171,11 @@ class ParamSimple(){
 /*
 jump at 0 :
 1l btb gshare ras => 1.64 dhrystone 3.26 coremark 1.04 embench
+       + late alu => 1.72 dhrystone 3.54 coremark
 2l btb gshare ras => 1.92 dhrystone 3.93 coremark 1.34 embench
+       + late alu => 2.09 dhrystone 4.39 coremark
+
+
 
 jump at 1
 1l btb gshare ras => 1.64 dhrystone 3.21 coremark 1.03 embench

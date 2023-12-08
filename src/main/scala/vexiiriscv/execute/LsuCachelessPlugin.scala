@@ -131,6 +131,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val tpk =  onAddress.translationPort.keys
       val RS2 = elp(IntRegFile, riscv.RS2)
       assert(bus.cmd.ready) // For now
+
+      val MISS_ALIGNED = insert((1 to log2Up(LSLEN/8)).map(i => SIZE === i && onAddress.RAW_ADDRESS(i-1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(isReady)
       bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest
       bus.cmd.write := ! LOAD
@@ -149,7 +151,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       elp.freezeWhen(bus.cmd.isStall)
 
       val speculLoad = withSpeculativeLoadFlush generate new Area {
-        val tooRisky = isValid && SEL && LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)
+        val tooRisky = isValid && SEL && LOAD && (tpk.IO && elp.atRiskOfFlush(forkAt) || MISS_ALIGNED) //TODO remove that MISS_ALIGNED management
         redoPort := tooRisky
       }
     }
