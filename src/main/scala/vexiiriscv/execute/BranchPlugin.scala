@@ -177,22 +177,25 @@ class BranchPlugin(val layer : LaneLayer,
 
       ls.learnLock.await()
 
-      println("!!!!!! OPTIMIZE ME !!!!!!")
-      //TODO should only be present on the last BranchPlugin of the whole ExecuteLane
-      val learn = Stream(LearnCmd(ls.learnCtxElements.toSeq))
-      learn.valid := up.isFiring && SEL
-      learn.taken := alu.COND
-      learn.pcTarget := alu.PC_TRUE
-      learn.pcOnLastSlice := pcOnLastSlice
-      learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
-      learn.isPush := (IS_JAL || IS_JALR) && rdLink
-      learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
-      learn.wasWrong := needFix
-      learn.history := history.fetched
-      learn.uopId := Decode.UOP_ID
-      learn.hartId := Global.HART_ID
-      for (e <- ls.learnCtxElements) {
-        learn.ctx(e).assignFrom(apply(e))
+      val pluginsOnLane = host.list[BranchPlugin].filter(_.layer.el == layer.el)
+      val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last
+      val isLastOfLane = BranchPlugin.this == lastOfLane
+      val learn = isLastOfLane.option(Stream(LearnCmd(ls.learnCtxElements.toSeq)))
+      learn.foreach { learn =>
+        learn.valid := up.isFiring && pluginsOnLane.map(p => apply(p.SEL)).orR
+        learn.taken := alu.COND
+        learn.pcTarget := alu.PC_TRUE
+        learn.pcOnLastSlice := pcOnLastSlice
+        learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
+        learn.isPush := (IS_JAL || IS_JALR) && rdLink
+        learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
+        learn.wasWrong := needFix
+        learn.history := history.fetched
+        learn.uopId := Decode.UOP_ID
+        learn.hartId := Global.HART_ID
+        for (e <- ls.learnCtxElements) {
+          learn.ctx(e).assignFrom(apply(e))
+        }
       }
     }
 

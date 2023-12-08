@@ -82,7 +82,6 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
     dp.addMicroOpDecodingDefault(DONT_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH_FROM_LANES, False)
     val mayFlushUpToMax = eus.flatMap(_.getUopLayerSpec().map(_.mayFlushUpTo.getOrElse(-1))).max
-    val dontFlushFromMin = eus.flatMap(_.getUopLayerSpec().map(_.dontFlushFrom.getOrElse(100))).min
     val mayFlushUops, dontFlushUops, dontFlushFromLanesUops = mutable.LinkedHashSet[MicroOp]()
     for (eu <- eus; spec <- eu.getUopLayerSpec()) {
       spec.mayFlushUpTo foreach( x => mayFlushUops += spec.uop )
@@ -95,6 +94,29 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
     for (uop <- mayFlushUops) dp.addMicroOpDecoding(uop, MAY_FLUSH, True)
     for (uop <- dontFlushUops) dp.addMicroOpDecoding(uop, DONT_FLUSH, True)
     for (uop <- dontFlushFromLanesUops) dp.addMicroOpDecoding(uop, DONT_FLUSH_FROM_LANES, True)
+
+    // Generate upstream up dontFlush precise decoding
+    case class DontFlushSpec(at: Int, value: Payload[Bool])
+    val dontFlushSpecs = mutable.LinkedHashMap[Int, DontFlushSpec]()
+    def getDontFlush(at: Int): Payload[Bool] = {
+      dontFlushSpecs.getOrElseUpdate(at, DontFlushSpec(at, Payload(Bool()).setName(s"DONT_FLUSH_PRECISE_$at"))).value
+    }
+    val uopsGrouped = eus.flatMap(_.getUopLayerSpec()).groupByLinked(_.uop)
+    val uopsDontFlushFrom = uopsGrouped.map(e => e._1 -> e._2.map(_.dontFlushFrom.getOrElse(100)).min)
+    val eusCheckRange = mutable.LinkedHashMap[ExecuteLaneService, Range]()
+    for (elp <- eus) yield new Area {
+      val dontFlushFromMin = elp.getUopLayerSpec().map(_.dontFlushFrom.getOrElse(100)).min
+      val flushUpTo = elp.getUopLayerSpec().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
+      val ctrlRange = 1 to flushUpTo - dontFlushFromMin
+      for (i <- ctrlRange) hmKeys += getDontFlush(i)
+      eusCheckRange(elp) = ctrlRange
+      assert(elp.executeAt == 1, "seems to assume it so far, but that need to be fixed")
+    }
+    val dontFlushDecoding = for (spec <- dontFlushSpecs.values) yield new Area {
+      for ((uop, dontFlushFrom) <- uopsDontFlushFrom) {
+        dp.addMicroOpDecoding(uop, spec.value, Bool(dontFlushFrom <= spec.at))
+      }
+    }
 
     dp.elaborationLock.release()
     val slotsCount = 0
@@ -168,18 +190,19 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
     def getMayFlush(el: ExecuteLaneService, at: Int): Bool = {
       mayFlushSpecs.getOrElseUpdate(el -> at, MayFlushSpec(el, at, Bool())).value
     }
+
+
     //TODO flushChecker is pessimistic, would need to improve by checking hazard depending from were the current op can't be flushed any more from (LSU)
     val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
       val c = candidates(cId)
       val executeCheck = for (elp <- eus) yield new Area {
-        val flushUpTo = elp.getUopLayerSpec().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
-        val ctrlRange = 1 to flushUpTo - dontFlushFromMin
-        val hits = ctrlRange.map(i => getMayFlush(elp, i) && elp.ctrl(i)(Global.HART_ID) === c.ctx.hartId)
+        val ctrlRange = eusCheckRange(elp)
+        val hits = ctrlRange.map(i => c.ctx.hm(getDontFlush(i)) && elp.ctrl(i).isValid && getMayFlush(elp, i) && elp.ctrl(i)(Global.HART_ID) === c.ctx.hartId)
+        assert(elp.executeAt == 1, "seems to assume it so far, but that need to be fixed")
       }
       val olders = candidates.take(cId)
       val oldersHazard = olders.map(o => o.ctx.valid && o.ctx.hm(MAY_FLUSH)).orR
-      c.flushHazards := c.ctx.hm(DONT_FLUSH) && executeCheck.flatMap(_.hits).orR || c.ctx.hm(DONT_FLUSH_FROM_LANES) && oldersHazard
-//      c.flushHazards := False //TODO
+      c.flushHazards := executeCheck.flatMap(_.hits).orR || c.ctx.hm(DONT_FLUSH_FROM_LANES) && oldersHazard
     }
 
     //TODO this is a very clean implementation, but would need to move it in part before the dispatch to improve timings
@@ -194,7 +217,7 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
     }
 
     //TODO this is a very clean implementation, but would need to move it in part before the dispatch to improve timings
-    val mayFlushDecoding = for (spec <- mayFlushSpecs.values) yield new Area{
+    val mayFlushDecoding = for (spec <- mayFlushSpecs.values) yield new Area {
       val MAY_FLUSH_PRECISE = Payload(Bool())
       val ctrl = spec.el.ctrl(spec.at)
       spec.value := ctrl.isValid && ctrl(MAY_FLUSH_PRECISE)
@@ -203,7 +226,6 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
         uop.addDecoding(MAY_FLUSH_PRECISE -> Bool(v >= spec.at))
       }
     }
-
 
     dispatchCtrl.link.down.ready := True
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){

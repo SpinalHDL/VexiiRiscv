@@ -15,7 +15,7 @@ class LearnPlugin extends FiberPlugin with LearnService {
     Prediction.BRANCH_HISTORY_WIDTH.set((0 +: host.list[HistoryUser].map(_.historyWidthUsed)).max)
     learnLock.await()
 
-    val ups = host.list[BranchPlugin].map(_.logic.jumpLogic.learn)
+    val ups = host.list[BranchPlugin].flatMap(_.logic.jumpLogic.learn)
     val learn = Flow(LearnCmd(learnCtxElements.toSeq))
 
     learn << StreamArbiterFactory().noLock.roundRobin.on(ups).toFlow

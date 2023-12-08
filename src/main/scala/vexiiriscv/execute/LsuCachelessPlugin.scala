@@ -44,6 +44,7 @@ case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave 
 }
 
 class LsuCachelessPlugin(var layer : LaneLayer,
+                         var withSpeculativeLoadFlush : Boolean,
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
                          var addressAt: Int = 0,
@@ -73,16 +74,16 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         case false => ifp.zeroExtend(iwb, op, spec.width)
         case true  => ifp.signExtend(iwb, op, spec.width)
       }
+      withSpeculativeLoadFlush match {
+        case true =>  op.mayFlushUpTo(forkAt)
+        case false => op.dontFlushFrom(forkAt + 1)
+      }
     }
 
     for(store <- frontend.stores){
       val op = layer(store)
       op.addRsSpec(RS2, forkAt)
-    }
-
-
-    for (uop <- frontend.loads ++ frontend.stores) {
-      layer(uop).dontFlushFrom(forkAt+1) //+1 as the fork doesn't happen on cancel request
+      op.dontFlushFrom(forkAt+1)
     }
 
     layer.add(Rvi.FENCE) //TODO
@@ -148,7 +149,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val READ_DATA = insert(buffer.data)
       elp.freezeWhen(isValid && SEL && !buffer.valid)
       buffer.ready := isReady && SEL
-      assert(!(isValid && hasCancelRequest && SEL))
+      assert(!(isValid && hasCancelRequest && SEL && !LOAD)) //TODO add tpk.IO and along the way
     }
 
     val onWb = new wbCtrl.Area{

@@ -13,6 +13,8 @@ import vexiiriscv.execute.BranchPlugin
 import Fetch._
 import vexiiriscv.decode.AlignerPlugin
 
+import scala.util.Random
+
 class GSharePlugin(var historyWidth : Int,
                    var entries : Int = 0,
                    var memBytes : BigInt = null,
@@ -58,8 +60,9 @@ class GSharePlugin(var historyWidth : Int,
     val mem = new Area{ //TODO bypass read durring write ?
       val counter = Mem.fill(words)(GSHARE_COUNTER)
       val write = counter.writePort
-      if(GenerationFlags.simulation){
-        counter.initBigInt(List.fill(counter.wordCount)(BigInt(0)))
+      if (GenerationFlags.simulation) {
+        val rand = new Random(42)
+        counter.initBigInt(List.fill(counter.wordCount)(BigInt(counter.width, rand)))
       }
     }
 

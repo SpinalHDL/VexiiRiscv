@@ -246,9 +246,13 @@ class TestOptions{
 object TestBench extends App{
   val testOpt = new TestOptions()
 
+  val genConfig = SpinalConfig()
+  genConfig.includeSimulation
+
   val simConfig = SpinalSimConfig()
   simConfig.withFstWave
   simConfig.withTestFolder
+  simConfig.withConfig(genConfig)
 
   val param = new ParamSimple()
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {

@@ -117,6 +117,7 @@ class ParamSimple(){
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=0, wbAt=0)
     plugins += new LsuCachelessPlugin(
       layer     = early0,
+      withSpeculativeLoadFlush = true,
       addressAt = 0,
       forkAt    = 0,
       joinAt    = 1,

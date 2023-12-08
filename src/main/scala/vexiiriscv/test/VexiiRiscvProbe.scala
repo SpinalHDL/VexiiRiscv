@@ -72,14 +72,14 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       f"${times}%7d / ${cycle}%7d ${rate / 10}%3d.${rate % 10}%%"
     }
 
-//    for ((hw, i) <- wbp.perf.dispatchFeedCounters.zipWithIndex) {
-//      str ++= f"Dispatch  $i   : ${cycleRatio(hw.toLong)}\n"
-//    }
-//    for ((hw, i) <- wbp.perf.candidatesCountCounters.zipWithIndex) {
-//      str ++= f"Candidate $i   : ${cycleRatio(hw.toLong)}\n"
-//    }
-//    str ++= f"Dispatch halt : ${cycleRatio(wbp.perf.dispatchHazardsCounter.toLong)}\n"
-//    str ++= f"Execute  halt : ${cycleRatio(wbp.perf.executeFreezedCounter.toLong)}\n"
+    for ((hw, i) <- wbp.perf.dispatchFeedCounters.zipWithIndex) {
+      str ++= f"Dispatch  $i   : ${cycleRatio(hw.toLong)}\n"
+    }
+    for ((hw, i) <- wbp.perf.candidatesCountCounters.zipWithIndex) {
+      str ++= f"Candidate $i   : ${cycleRatio(hw.toLong)}\n"
+    }
+    str ++= f"Dispatch halt : ${cycleRatio(wbp.perf.dispatchHazardsCounter.toLong)}\n"
+    str ++= f"Execute  halt : ${cycleRatio(wbp.perf.executeFreezedCounter.toLong)}\n"
     str ++= f"IPC           : ${cycleRatio(harts.map(_.commits).sum)}\n"
     str.toString()
   }
@@ -182,10 +182,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     var isSc = false
     var scFailure = false
 
-    var isBranch = false
-    var isJumpBranch = false
-    var predictionWasWrong = false
-
 
     def traceT2s(cycle : Long) = cycle match {
       case 0l => ""
@@ -244,8 +240,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       loadValid = false
       storeValid = false
       isSc = false
-      isJumpBranch = false
-      predictionWasWrong = false
     }
 
     clear()
@@ -392,9 +386,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     for(learn <- learns) if(learn.valid.toBoolean){
       val hart = harts(learn.hartId.toInt)
       val ctx = hart.microOp(learn.uopId.toInt)
-      ctx.isJumpBranch = true
-      ctx.isBranch = learn.isBranch.toBoolean
-      ctx.predictionWasWrong = learn.wasWrong.toBoolean
+      val isBranch = learn.isBranch.toBoolean
+      val wasWrong = learn.wasWrong.toBoolean
+
+      val stats = hart.jbStats.getOrElseUpdate(learn.pcOnLastSlice.toLong, new JbStats)
+      stats.count += 1
+      stats.failed += wasWrong.toInt
+      if (isBranch) {
+        hart.branchStats.count += 1
+        hart.branchStats.failed += wasWrong.toInt
+      }
     }
 
     for(port <- completions) if(port.valid.toBoolean){
@@ -447,15 +448,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           uop.toKonata(hart)
           if (uop.didCommit) {
             hart.commits += 1
-            if(uop.isJumpBranch){
-              val stats = jbStats.getOrElseUpdate(decode.pc, new JbStats)
-              stats.count += 1
-              stats.failed += uop.predictionWasWrong.toInt
-              if(uop.isBranch){
-                branchStats.count += 1
-                branchStats.failed += uop.predictionWasWrong.toInt
-              }
-            }
             if (uop.loadValid) {
               backends.foreach(_.loadCommit(hartId, uop.loadLqId))
             }

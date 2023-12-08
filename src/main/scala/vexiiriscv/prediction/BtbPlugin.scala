@@ -56,7 +56,8 @@ class BtbPlugin(var sets : Int,
       val mem = new Area{
         val stack = Mem.fill(rasDepth)(PC)
         if(GenerationFlags.simulation){
-          stack.initBigInt(List.fill(stack.wordCount)(BigInt(0)))
+          val rand = new Random(42)
+          stack.initBigInt(List.fill(stack.wordCount)(BigInt(stack.width, rand)))
         }
       }
       val ptr = new Area{
@@ -103,8 +104,8 @@ class BtbPlugin(var sets : Int,
     }
 
     val mem = Mem.fill(sets)(Vec.fill(ways)(BtbEntry())) //TODO bypass read durring write ?
-    val rand = new Random(42)
     if(GenerationFlags.simulation){
+      val rand = new Random(42)
       mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
     }
 
