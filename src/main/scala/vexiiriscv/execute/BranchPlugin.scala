@@ -177,6 +177,8 @@ class BranchPlugin(val layer : LaneLayer,
 
       ls.learnLock.await()
 
+      println("!!!!!! OPTIMIZE ME !!!!!!")
+      //TODO should only be present on the last BranchPlugin of the whole ExecuteLane
       val learn = Stream(LearnCmd(ls.learnCtxElements.toSeq))
       learn.valid := up.isFiring && SEL
       learn.taken := alu.COND
