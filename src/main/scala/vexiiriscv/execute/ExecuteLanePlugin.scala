@@ -255,7 +255,7 @@ class ExecuteLanePlugin(override val laneName : String,
       val c = idToCtrl(ctrlId)
       if(ctrlId != 0) c.up(c.LANE_SEL).setAsReg().init(False)
 
-      val age = getAge(ctrlId, false)
+      val age = getAge(ctrlId)
       val doIt = rp.isFlushedAt(age, c(Global.HART_ID), c(Execute.LANE_AGE))
       doIt match {
         case Some(cond) =>
@@ -274,4 +274,16 @@ class ExecuteLanePlugin(override val laneName : String,
 
   def freezeWhen(cond: Bool)(implicit loc: Location) = eupp.freezeWhen(cond)
   def isFreezed(): Bool = eupp.isFreezed()
+  override def atRiskOfFlush(executeId: Int): Bool = {
+    val ctrlId = executeId + executeAt
+    val elps = host.list[ExecuteLaneService]
+    val hazards = ArrayBuffer[Bool]()
+    for(elp <- elps){
+      val upTo = elp.getUopLayerSpec().map(_.mayFlushUpTo.getOrElse(-100)).max
+      for(i <- ctrlId + (elp == this).toInt until upTo){
+        hazards += elp.ctrl(i).isValid && elp.ctrl(i)(Global.HART_ID) === ctrl(ctrlId)(Global.HART_ID) //Quite pessimistic
+      }
+    }
+    hazards.orR
+  }
 }

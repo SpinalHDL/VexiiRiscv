@@ -124,11 +124,12 @@ trait ExecuteLaneService extends Area{
   class Execute(id: Int) extends CtrlLaneMirror(execute(id))
   class Ctrl(id: Int) extends CtrlLaneMirror(ctrl(id))
 
-  def getAge(at: Int, prediction: Boolean): Int = Ages.EU + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
-  def getExecuteAge(at : Int) = getAge(at + executeAt, false)
+  def getAge(at: Int): Int = Ages.EU + at * Ages.STAGE
+  def getExecuteAge(at : Int) = getAge(at + executeAt)
 
   def freezeWhen(cond: Bool)(implicit loc: Location)
   def isFreezed(): Bool
+  def atRiskOfFlush(executeId : Int) : Bool
 }
 
 case class CompletionPayload() extends Bundle{

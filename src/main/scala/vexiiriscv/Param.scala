@@ -17,8 +17,8 @@ class ParamSimple(){
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
-  var decoders = 2
-  var lanes = 2
+  var decoders = 1
+  var lanes = 1
   var regFileSync = false
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
@@ -110,6 +110,7 @@ class ParamSimple(){
     plugins += lane0
 
 
+    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += new BarrelShifterPlugin(early0, formatAt = 0)

@@ -55,13 +55,18 @@ class LsuCachelessPlugin(var layer : LaneLayer,
   lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
   lazy val srcp = host.find[SrcPlugin](_.layer == layer)
   lazy val ats = host[AddressTranslationService]
+  lazy val rp = host[RedoPlugin]
   buildBefore(elp.pipelineLock)
   setupRetain(elp.uopLock)
   setupRetain(srcp.elaborationLock)
   setupRetain(ifp.elaborationLock)
   setupRetain(ats.elaborationLock)
+  setupRetain(rp.elaborationLock)
 
   val logic = during build new Area{
+    val redoPort = withSpeculativeLoadFlush generate rp.newPort(forkAt)
+    rp.elaborationLock.release()
+
     val frontend = new AguFrontend(layer, host)
 
     // IntFormatPlugin specification
@@ -142,6 +147,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       assert(tpk.REDO === False)
 
       elp.freezeWhen(bus.cmd.isStall)
+
+      val speculLoad = withSpeculativeLoadFlush generate new Area {
+        val tooRisky = isValid && LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)
+        redoPort := tooRisky
+      }
     }
 
     val onJoin = new joinCtrl.Area{
