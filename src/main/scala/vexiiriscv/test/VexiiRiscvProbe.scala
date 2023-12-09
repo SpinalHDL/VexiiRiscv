@@ -6,6 +6,7 @@ import spinal.core.sim._
 import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.LsuCachelessPlugin
+import vexiiriscv.fetch.FetchPipelinePlugin
 //import vexiiriscv.execute.LsuCachelessPlugin
 import vexiiriscv.fetch.Fetch
 import vexiiriscv.riscv.{IntRegFile, Riscv}
@@ -28,6 +29,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   val decodeIdWidth = cpu.database(Decode.DOP_ID_WIDTH)
   val microOpIdWidth = cpu.database(Decode.UOP_ID_WIDTH)
   val microOpIdMask = (1 << microOpIdWidth)-1
+  val withFetch = true //cpu.host[FetchPipelinePlugin].idToFetch.keys.max > 1
 
   val disass = withRvls generate rvls.jni.Frontend.newDisassemble(xlen)
   val harts = hartsIds.map(new HartCtx(_)).toArray
@@ -63,7 +65,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 //      for ((pc, data) <- stats) {
 //        str ++= f"- 0x${pc}%08X : ${data.toString()}\n"
 //      }
-      str ++= f"kind :  miss / times   miss-rate taken-rate\n"
+      str ++= f"kind :  miss / times     miss  taken\n"
       str ++= f"J/B  : ${total.toString()}\n"
       str ++= f"  B  : ${hart.branchStats.toString()}\n"
     }
@@ -141,6 +143,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   class DecodeCtx() {
     var fetchId = -1
     var spawnAt = 0l
+    var fireAt = 0l
     var pc = 0l
   }
 
@@ -200,13 +203,15 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       if (fetch.spawnAt != -1) {
         i += new Spawn(fetch.spawnAt, hart.hartId)
         i += new Stage(fetch.spawnAt, "A")
-        i += new Stage(fetch.spawnAt+1, "F")
+        if(withFetch) i += new Stage(fetch.spawnAt+1, "F")
       }
       if (decode.spawnAt != -1) {
-        i += new Stage(decode.spawnAt, "D")
         i += new Comment(decode.spawnAt, f"${decode.pc}%X : $instruction")
       }
-      if (issueAt != -1) i += new Stage(issueAt, "I")
+      if(decode.fireAt != -1){//} && decode.fireAt < issueAt){
+        i += new Stage(decode.fireAt+1, "D")
+      }
+//      if (issueAt != -1) i += new Stage(issueAt, "I")
       if (executeAt != -1) i += new Stage(executeAt, "E")
 //      if (completionAt != -1) i += new Stage(completionAt, "C")
       if (didCommit) {
@@ -267,17 +272,28 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     if (proxies.fetch.fire.toBoolean) {
       val hart = harts(fetch.hartd.toInt)
       val fetchId = fetch.id.toInt
-      hart.fetch(fetchId).spawnAt = cycle - 1
+      hart.fetch(fetchId).spawnAt = cycle
     }
 
-    for(decode <-decodes) if (decode.fire.toBoolean) {
-      val hart = harts(decode.hartId.toInt)
-      val fetchId = decode.fetchId.toInt
-      val decodeId = decode.decodeId.toInt
-      val ctx = hart.decode(decodeId)
-      ctx.pc = pcExtends(decode.pc.toLong)
-      ctx.fetchId = fetchId
-      ctx.spawnAt = cycle
+    for(decode <-decodes) {
+      val spawn = decode.spawn.toBoolean
+      val fire = decode.fire.toBoolean
+
+      if (spawn || fire) {
+        val hart = harts(decode.hartId.toInt)
+        val decodeId = decode.decodeId.toInt
+        val ctx = hart.decode(decodeId)
+        if(spawn){
+          val fetchId = decode.fetchId.toInt
+          ctx.pc = pcExtends(decode.pc.toLong)
+          ctx.fetchId = fetchId
+          ctx.spawnAt = cycle
+          ctx.fireAt = -1
+        }
+        if(fire){
+          ctx.fireAt = cycle
+        }
+      }
     }
 
     for(serialized <- wbp.serializeds) if (serialized.fire.toBoolean) {

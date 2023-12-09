@@ -170,7 +170,7 @@ class ParamSimple(){
 /*
 jump at 0 :
 1l btb gshare ras => 1.64 dhrystone 3.26 coremark 1.04 embench
-       + late alu => 1.72 dhrystone 3.54 coremark
+       + late alu => 1.72 dhrystone 3.54 coremark 1.10
 2l btb gshare ras => 1.92 dhrystone 3.93 coremark 1.34 embench
        + late alu => 2.09 dhrystone 4.39 coremark
     + 4b late alu => 2.24 dhrystone 4.55 coremark 1.47 embench

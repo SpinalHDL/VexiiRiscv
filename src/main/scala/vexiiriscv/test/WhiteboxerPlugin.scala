@@ -33,7 +33,8 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val decodes = for (laneId <- 0 until Decode.LANES) yield new Area {
       val c = dpp.ctrl(0).lane(laneId)
-      val fire = wrap(c.up.transactionSpawn)
+      val fire = wrap(c.up.isFiring)
+      val spawn = wrap(c.up.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
       val pc = wrap(c(Global.PC))
       val fetchId = wrap(c(Fetch.ID))
@@ -210,6 +211,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     class DecodeProxy(laneId: Int) {
       val self = decodes(laneId)
+      val spawn = self.spawn.simProxy()
       val fire = self.fire.simProxy()
       val hartId = self.hartId.simProxy()
       val pc = self.pc.simProxy()
