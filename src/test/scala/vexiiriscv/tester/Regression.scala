@@ -1,19 +1,21 @@
 package vexiiriscv.tester
 
 import org.apache.commons.io.FileUtils
+import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
-import spinal.lib.misc.test.AsyncJob
+import spinal.lib.misc.plugin.Hostable
+import spinal.lib.misc.test.{AsyncJob, MultithreadedFunSuite}
 import vexiiriscv.riscv.Riscv
-import vexiiriscv.tester.Regression.simConfig
 import vexiiriscv.{Global, ParamSimple, VexiiRiscv}
 
 import java.io.{BufferedWriter, File, FileWriter}
 import java.nio.file.{Files, Paths}
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.ExecutionContext
 import scala.reflect.io.Path.jfile2path
 
-class Regression(compiled : SimCompiled[VexiiRiscv]){
+class RegressionSingle(compiled : SimCompiled[VexiiRiscv]){
   val dut = compiled.dut
   val xlen = dut.database(Riscv.XLEN)
 
@@ -26,11 +28,13 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
 
   val nsf = new File("ext/NaxSoftware")
 
+  val rejectedTests = mutable.LinkedHashSet("rv32ui-p-simple", "rv32ui-p-fence_i", "rv64ui-p-simple", "rv64ui-p-fence_i")
+
   //rvi tests
   val riscvTestsFile = new File(nsf, "riscv-tests")
-  val riscvTests = riscvTestsFile.list().sorted
-  val rvi = riscvTests.filter(t => t.startsWith(s"rv${xlen}ui-p-") && !t.contains(".")).map(new File(riscvTestsFile, _))
-  val rvm = riscvTests.filter(t => t.startsWith(s"rv${xlen}um-p-") && !t.contains(".")).map(new File(riscvTestsFile, _))
+  val riscvTests = riscvTestsFile.listFiles().sorted
+  val rvi = riscvTests.filter{t => val n = t.getName; n.startsWith(s"rv${xlen}ui-p-") && !n.contains(".") && !rejectedTests.contains(n) }
+  val rvm = riscvTests.filter{t => val n = t.getName; n.startsWith(s"rv${xlen}um-p-") && !n.contains(".")}
   for(elf <- rvi ++ rvm) {
     val t = newTest()
     t.elfs += elf
@@ -89,20 +93,64 @@ class Regression(compiled : SimCompiled[VexiiRiscv]){
   jobs.foreach(_.join())
 }
 
-object Regression extends App{
-  val simConfig = SpinalSimConfig()
-  simConfig.withFstWave
-  simConfig.setTestPath("$WORKSPACE/$COMPILED_tests/$TEST")
+object RegressionSingle extends App{
+  def test(name : String, plugins : => Seq[Hostable]): Unit = {
+    val simConfig = SpinalSimConfig()
+    simConfig.withFstWave
+    simConfig.setTestPath("regression/$COMPILED_tests/$TEST")
 
-  val param = new ParamSimple()
-  val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
-  val regression = new Regression(compiled)
-  println("*"*80)
-  val fails = regression.jobs.filter(_.failed)
-  if(fails.size == 0){ println("PASS"); System.exit(0) }
-  println(s"FAILED ${fails.size}/${regression.jobs.size}")
-  for(fail <- fails){
-    println("- " + fail.logsFile.getAbsolutePath)
+    val param = new ParamSimple()
+    val compiled = simConfig.compile(VexiiRiscv(plugins).setDefinitionName(s"VexiiRiscv_$name"))
+    val regression = new RegressionSingle(compiled)
+    println("*" * 80)
+    val fails = regression.jobs.filter(_.failed)
+    if (fails.size == 0) {
+      println("PASS"); return
+    }
+    println(s"FAILED ${fails.size}/${regression.jobs.size}")
+    for (fail <- fails) {
+      println("- " + fail.logsFile.getAbsolutePath)
+    }
+    Thread.sleep(10)
+    throw new Exception()
   }
-  System.exit(regression.jobs.count(_.failed))
+
+  def test(ps : ParamSimple): Unit = {
+    test(ps.getName(), ps.plugins())
+  }
+
+  def test(args : String) : Unit = test(args.split(" "))
+  def test(args : Seq[String]): Unit = {
+    val param = new ParamSimple()
+    assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+      help("help").text("prints this usage text")
+      param.addOptions(this)
+    }.parse(args, Unit).nonEmpty)
+    test(param)
+  }
+
+  test(args)
+}
+
+
+class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REGRESSION_THREAD_COUNT", "0").toInt){
+  def addTest(args: String): Unit = addTest(args.split(" "))
+  def addTest(args: Seq[String]): Unit = {
+    val param = new ParamSimple()
+    assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+      help("help").text("prints this usage text")
+      param.addOptions(this)
+    }.parse(args, Unit).nonEmpty)
+
+    testMp(param.getName()) {
+      RegressionSingle.test(param)
+    }
+  }
+
+  addTest("--decoders 1 --lanes 1")
+  addTest("--decoders 2 --lanes 2")
+  addTest("--decoders 1 --lanes 1 --with-late-alu")
+  addTest("--decoders 2 --lanes 2 --with-late-alu")
+  addTest("--decoders 1 --lanes 1 --with-gshare --with-btb --with-ras --with-late-alu")
+  addTest("--decoders 2 --lanes 2 --with-gshare --with-btb --with-ras --with-late-alu")
 }

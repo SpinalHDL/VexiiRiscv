@@ -1,6 +1,7 @@
 package vexiiriscv
 
 import spinal.core._
+import spinal.lib._
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
 import vexiiriscv.execute._
@@ -17,14 +18,40 @@ class ParamSimple(){
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
-  var decoders = 2
-  var lanes = 2
+  var decoders = 1
+  var lanes = 1
   var regFileSync = false
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
-  var withGShare = true
-  var withBtb = true
-  var withRas = true
+  var withGShare = false
+  var withBtb = false
+  var withRas = false
+  var withLateAlu = false
+
+  def getName() : String = {
+    def opt(that : Boolean, v : String) = that.mux(v, "")
+    val r = new ArrayBuffer[String]()
+    r += s"rv${xlen}im"
+    r += s"d${decoders}"
+    r += s"l${lanes}"
+    r += regFileSync.mux("rs","ra")
+    if(withBtb) r += "btb"
+    if(withRas) r += "ras"
+    if(withGShare) r += "gshare"
+    if(withLateAlu) r += "la"
+    r.mkString("_")
+  }
+
+  def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
+    import parser._
+    opt[Int]("decoders") action { (v, c) => decoders = v }
+    opt[Int]("lanes") action { (v, c) => lanes = v }
+    opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
+    opt[Unit]("with-btb") action { (v, c) => withBtb = true }
+    opt[Unit]("with-ras") action { (v, c) => withRas = true }
+    opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true }
+    opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
+  }
 
   def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
@@ -106,7 +133,6 @@ class ParamSimple(){
 
     val lane0 = newExecuteLanePlugin("lane0")
     val early0 = new LaneLayer("early0", lane0, priority = 0)
-    val late0 = new LaneLayer("late0", lane0, priority = -5)
     plugins += lane0
 
 
@@ -132,10 +158,13 @@ class ParamSimple(){
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(PrivilegedConfig.full)
 
-    plugins += new SrcPlugin(late0, executeAt=2)
-    plugins += new IntAluPlugin(late0, aluAt=2, formatAt=2)
-    plugins += new BarrelShifterPlugin(late0, shiftAt=2, formatAt=2)
-    plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2, wbAt = 2)
+    if(withLateAlu) {
+      val late0 = new LaneLayer("late0", lane0, priority = -5)
+      plugins += new SrcPlugin(late0, executeAt = 2)
+      plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
+      plugins += new BarrelShifterPlugin(late0, shiftAt = 2, formatAt = 2)
+      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2, wbAt = 2)
+    }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
 
@@ -143,7 +172,6 @@ class ParamSimple(){
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
       val early1 = new LaneLayer("early1", lane1, priority = 10)
-      val late1 = new LaneLayer("late1", lane1, priority = -3)
       plugins += lane1
 
       plugins += new SrcPlugin(early1, executeAt = 0)
@@ -152,10 +180,13 @@ class ParamSimple(){
       plugins += new IntFormatPlugin("lane1")
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = 0, wbAt = 0)
 
-      plugins += new SrcPlugin(late1, executeAt = 2)
-      plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
-      plugins += new BarrelShifterPlugin(late1, shiftAt = 2, formatAt = 2)
-      plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2, wbAt = 2)
+      if(withLateAlu) {
+        val late1 = new LaneLayer("late1", lane1, priority = -3)
+        plugins += new SrcPlugin(late1, executeAt = 2)
+        plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
+        plugins += new BarrelShifterPlugin(late1, shiftAt = 2, formatAt = 2)
+        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2, wbAt = 2)
+      }
 
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
     }

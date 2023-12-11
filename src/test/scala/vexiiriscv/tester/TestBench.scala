@@ -253,25 +253,35 @@ class TestOptions{
 }
 
 object TestBench extends App{
-  val testOpt = new TestOptions()
+  doIt()
 
-  val genConfig = SpinalConfig()
-  genConfig.includeSimulation
+  def doIt(param : ParamSimple = new ParamSimple()) {
+    val testOpt = new TestOptions()
 
-  val simConfig = SpinalSimConfig()
-  simConfig.withFstWave
-  simConfig.withTestFolder
-  simConfig.withConfig(genConfig)
+    val genConfig = SpinalConfig()
+    genConfig.includeSimulation
 
+    val simConfig = SpinalSimConfig()
+    simConfig.withFstWave
+    simConfig.withTestFolder
+    simConfig.withConfig(genConfig)
+
+    assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+      help("help").text("prints this usage text")
+      testOpt.addOptions(this)
+      param.addOptions(this)
+    }.parse(args, Unit).nonEmpty)
+
+    val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
+    testOpt.test(compiled)
+    Thread.sleep(10)
+  }
+}
+
+object TestBenchDebug extends App{
   val param = new ParamSimple()
-  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
-    help("help").text("prints this usage text")
-    testOpt.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
-
-  val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
-  testOpt.test(compiled)
-  Thread.sleep(100)
+  param.regFileSync = true
+  TestBench.doIt()
 }
 
 //echo '--load-elf ext/NaxSoftware/baremetal/dhrystone/build/rv32ima/dhrystone.elf   --with-all' | nc localhost  8189
