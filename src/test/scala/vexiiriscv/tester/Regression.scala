@@ -147,13 +147,19 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
   }
 
-  for(issues <- 1 to 2; rf <- List("", "--regfile-async")){
-    addTest(s"--decoders $issues --lanes $issues $rf")
-    addTest(s"--decoders $issues --lanes $issues $rf --with-btb")
-    addTest(s"--decoders $issues --lanes $issues $rf --with-btb --with-ras")
-    addTest(s"--decoders $issues --lanes $issues $rf --with-btb --with-ras --with-gshare")
-    addTest(s"--decoders $issues --lanes $issues $rf --with-late-alu")
-    addTest(s"--decoders $issues --lanes $issues $rf --with-btb --with-ras --with-gshare --with-late-alu")
+  val md = "--with-mul --with-div"
+  for(issues <- 1 to 2; rf <- List("", "--regfile-async"); bpf <- List(0,1,2,3,100)){
+    val base = s"--decoders $issues --lanes $issues $md --allow-bypass-from $bpf"
+    addTest(s"$base $rf")
+    if(bpf == 0 || bpf == 100) {
+      addTest(s"$base $rf --with-btb")
+      addTest(s"$base $rf --with-btb --with-ras")
+      addTest(s"$base $rf --with-btb --with-ras --with-gshare")
+    }
+    if(bpf == 0) {
+      addTest(s"$base $rf --with-late-alu")
+      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-late-alu")
+    }
   }
 
 }

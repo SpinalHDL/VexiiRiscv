@@ -27,6 +27,27 @@ class ParamSimple(){
   var withBtb = false
   var withRas = false
   var withLateAlu = false
+  var withMul = true
+  var withDiv = true
+  var relaxedBranch = false
+  var allowBypassFrom = 100 //100 => disabled
+
+  //  Debug modifiers
+  val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
+  if(debugParam) {
+    decoders = 1
+    lanes = 1
+    regFileSync = false
+    withGShare = false
+    withBtb = false
+    withRas = false
+    withLateAlu = false
+    withMul = false
+    withDiv = false
+    relaxedBranch = false
+    allowBypassFrom = 100
+  }
+
 
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
@@ -35,10 +56,14 @@ class ParamSimple(){
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rs","ra")
+    if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
     if (withRas) r += "ras"
     if (withGShare) r += "gshare"
     if (withLateAlu) r += "la"
+    if (withMul) r += "m"
+    if (withDiv) r += "d"
+    if (relaxedBranch) r += "rb"
     r.mkString("_")
   }
 
@@ -46,15 +71,22 @@ class ParamSimple(){
     import parser._
     opt[Int]("decoders") action { (v, c) => decoders = v }
     opt[Int]("lanes") action { (v, c) => lanes = v }
+    opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
+    opt[Unit]("with-mul") action { (v, c) => withMul = true }
+    opt[Unit]("with-div") action { (v, c) => withDiv = true }
+    opt[Unit]("without-mul") action { (v, c) => withMul = false }
+    opt[Unit]("without-div") action { (v, c) => withDiv = false }
     opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true }
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
+    opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
   }
 
   def plugins() = {
     val plugins = ArrayBuffer[Hostable]()
+    if(withLateAlu) assert(allowBypassFrom == 0)
 
     plugins += new riscv.RiscvPlugin(xlen, rvc, hartCount)
     withMmu match {
@@ -120,13 +152,12 @@ class ParamSimple(){
       syncRead = regFileSync
     )
 
-    val allowBypassFrom = 0 //100 => disabled
     def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(
       name,
       rfReadAt = 0,
       decodeAt = regFileSync.toInt,
       executeAt = regFileSync.toInt + 1,
-      withBypasses = allowBypassFrom<100
+      withBypasses = allowBypassFrom == 0
     )
 
     plugins += new execute.ExecutePipelinePlugin()
@@ -141,7 +172,7 @@ class ParamSimple(){
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += new BarrelShifterPlugin(early0, formatAt = 0)
     plugins += new IntFormatPlugin("lane0")
-    plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=0, wbAt=0)
+    plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
     plugins += new LsuCachelessPlugin(
       layer     = early0,
       withSpeculativeLoadFlush = true,
@@ -152,9 +183,14 @@ class ParamSimple(){
       translationStorageParameter = null,
       translationPortParameter = null
     )
-    plugins += new RsUnsignedPlugin("lane0")
-    plugins += new MulPlugin(early0)
-    plugins += new DivPlugin(early0)
+
+    if(withMul) {
+      plugins += new MulPlugin(early0)
+    }
+    if(withDiv) {
+      plugins += new RsUnsignedPlugin("lane0")
+      plugins += new DivPlugin(early0)
+    }
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(PrivilegedConfig.full)
 
@@ -163,7 +199,7 @@ class ParamSimple(){
       plugins += new SrcPlugin(late0, executeAt = 2)
       plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
       plugins += new BarrelShifterPlugin(late0, shiftAt = 2, formatAt = 2)
-      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2, wbAt = 2)
+      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2+relaxedBranch.toInt, wbAt = 2)
     }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
@@ -178,14 +214,14 @@ class ParamSimple(){
       plugins += new IntAluPlugin(early1, formatAt = 0)
       plugins += new BarrelShifterPlugin(early1, formatAt = 0)
       plugins += new IntFormatPlugin("lane1")
-      plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = 0, wbAt = 0)
+      plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
 
       if(withLateAlu) {
         val late1 = new LaneLayer("late1", lane1, priority = -3)
         plugins += new SrcPlugin(late1, executeAt = 2)
         plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
         plugins += new BarrelShifterPlugin(late1, shiftAt = 2, formatAt = 2)
-        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2, wbAt = 2)
+        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2+relaxedBranch.toInt, wbAt = 2)
       }
 
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
