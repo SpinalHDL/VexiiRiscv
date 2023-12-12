@@ -11,6 +11,7 @@ import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
 import vexiiriscv.misc.AddressToMask
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
+import spinal.lib.misc.pipeline._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -64,6 +65,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
   setupRetain(ats.elaborationLock)
   setupRetain(rp.elaborationLock)
 
+  val FENCE_I_SEL = Payload(Bool())
+
   val logic = during build new Area{
     val redoPort = withSpeculativeLoadFlush generate rp.newPort(forkAt)
     rp.elaborationLock.release()
@@ -93,6 +96,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     }
 
     layer.add(Rvi.FENCE) //TODO
+    layer.add(Rvi.FENCE_I) //TODO
 
     layer(Rvi.FENCE).setCompletion(joinAt)
     for(uop <- frontend.stores) layer(uop).setCompletion(joinAt)

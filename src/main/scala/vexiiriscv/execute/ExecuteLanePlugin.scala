@@ -113,7 +113,7 @@ class ExecuteLanePlugin(override val laneName : String,
   }
 
 
-  override def rfReadHazardFrom(usedAt : Int) : Int = if(withBypasses) usedAt-1 else rfReadAt   //-1 because the bypass happen 1 stage earlier
+  override def rfReadHazardFrom(usedAt : Int) : Int = if(withBypasses) usedAt else rfReadAt+1
 
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.completions.onCtrl.map(_.port).toSeq
 
@@ -158,7 +158,7 @@ class ExecuteLanePlugin(override val laneName : String,
           }
           if (sameRf) opSpec.rd match {
             case Some(rd) =>
-              for (nodeId <- rd.broadcastedFrom until rd.rfReadableFrom) {
+              for (nodeId <- rd.broadcastedFrom until rd.rfReadableFrom + rfPlugin.readLatency) {
                 val bypassSpec = BypassSpec(eu, nodeId, rd.DATA)
                 bypassSpecs += bypassSpec
               }
@@ -194,11 +194,25 @@ class ExecuteLanePlugin(override val laneName : String,
             }
           }
 
-          val groups = bypassSpecs.groupBy(_.eu).map(_._2).toSeq
-          val groupMaxes = groups.map(_.map(_.nodeId).max)
-          val filtred = (0 until groups.size).flatMap(i => groups(i).filter(_.nodeId == groupMaxes(i)))
-          for (ctrlId <- mainBypassAt + 1 until useRsUntil) {
+          val updateSpecs = mutable.LinkedHashSet[BypassSpec]()
+          for (eu <- eus; opSpec <- eu.getUopLayerSpec()) {
+            val sameRf = opSpec.uop.resources.exists {
+              case RfResource(spec.rf, RD) => true
+              case _ => false
+            }
+            if (sameRf) opSpec.rd match {
+              case Some(rd) =>
+                val bypassSpec = BypassSpec(eu, rd.broadcastedFrom, rd.DATA)
+                updateSpecs += bypassSpec
+              case None =>
+            }
+          }
+
+
+          val ctrlRange = mainBypassAt + 1 until useRsUntil
+          val bypasses = for (ctrlId <- ctrlRange) yield new Area{
             val on = ctrl(ctrlId)
+            val filtred = updateSpecs.filter(_.nodeId > ctrlId).toSeq
             val hits = filtred.map{ f =>
               val node = f.eu.ctrl(f.nodeId)
               node.isValid && node(rfaRd.ENABLE) && node(rfaRd.PHYS) === on(rfa.PHYS) && node(rfaRd.RFID) === on(rfa.RFID)

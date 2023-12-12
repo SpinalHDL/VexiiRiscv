@@ -110,7 +110,6 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       val hazardRange = dontFlushFromMin+1 to flushUpTo //+1 because the flush hazard on the same warp are handled somewere else, here we just need to care about past cycles
       eusFlushHazardUpTo(elp) = flushUpTo
       for (i <- hazardRange) hmKeys += getDontFlush(i)
-      assert(elp.executeAt == 1, "seems to assume it so far, but that need to be fixed")
     }
     val dontFlushDecoding = for (spec <- dontFlushSpecs.values) yield new Area {
       for ((uop, dontFlushFrom) <- uopsDontFlushFrom) {
@@ -151,10 +150,10 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       val flushHazards = Bool() //Pessimistic, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
     }
 
-    case class BypassedSpec(el: ExecuteLaneService, at: Int, value : Bool)
+    case class BypassedSpec(el: ExecuteLaneService, at: Int, value : Payload[Bool])
     val bypassedSpecs = mutable.LinkedHashMap[(ExecuteLaneService, Int), BypassedSpec]()
-    def getBypassed(el: ExecuteLaneService, at: Int): Bool = {
-      bypassedSpecs.getOrElseUpdate(el -> at, BypassedSpec(el, at, Bool())).value
+    def getBypassed(el: ExecuteLaneService, at: Int): Payload[Bool] = {
+      bypassedSpecs.getOrElseUpdate(el -> at, BypassedSpec(el, at, Payload(Bool()).setName("BYPASSED_AT_" + at))).value
     }
 
     val rfaReads = Decode.rfaKeys.filter(_._1.isInstanceOf[RfRead])
@@ -170,13 +169,12 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
         val onRs = for (rs <- readAccess) yield new Area {
           val hazards = ArrayBuffer[Bool]()
           for(writeEu <- eus) {
-            val hazardFrom = ll.el.rfReadHazardFrom(ll.getRsUseAtMin())
+            val hazardFrom = ll.el.rfReadHazardFrom(ll.getRsUseAtMin()) // This is a pessimistic aproach
             val hazardUntil = writeEu.getRdBroadcastedFromMax()
-            val checksCount = hazardUntil - 1 - hazardFrom
-            val range = (1 to checksCount)
-            for(id <- range) {
-              val node = writeEu.ctrl(id)
-              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && !getBypassed(writeEu, id) //TODO filter if the uop actualy read rs at that point or later on execute stages, here we are pessimistic (getRsUseAtMin)
+            val hazardRange = hazardFrom until hazardUntil
+            for(id <- hazardRange) {
+              val node = writeEu.ctrl(id-hazardFrom+1)
+              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && !node(getBypassed(writeEu, id))
             }
           }
           val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR
@@ -198,14 +196,10 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
         val hits = for(from <- ctrlRange) yield {
           val downstream = for(i <- ctrlRange.low to ctrlRange.high-(from-ctrlRange.low)) yield {
             val otherCtrl = elp.ctrl(from - dontFlushFromMin)
-//            println(s"ASD $from $i  ${from - dontFlushFromMin}")
             c.ctx.hm(getDontFlush(i)) && otherCtrl.isValid && otherCtrl(Global.HART_ID) === c.ctx.hartId && otherCtrl(getMayFlush(elp, i))
           }
           downstream.orR
-//          val otherCtrl = elp.ctrl(from - dontFlushFromMin)
-//          c.ctx.hm(getDontFlush(from)) && otherCtrl.isValid && otherCtrl(getMayFlush(elp, from)) && otherCtrl(Global.HART_ID) === c.ctx.hartId
         }
-        assert(elp.executeAt == 1, "seems to assume it so far, but that need to be fixed")
       }
       val olders = candidates.take(cId)
       val oldersHazard = olders.map(o => o.ctx.valid && o.ctx.hm(MAY_FLUSH)).orR
@@ -214,11 +208,9 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
 
     //TODO this is a very clean implementation, but would need to move it in part before the dispatch to improve timings
     val bypassDecoding = for (spec <- bypassedSpecs.values) yield new Area{
-      val BYPASSED = Payload(Bool())
-      spec.value := spec.el.ctrl(spec.at)(BYPASSED)
       for (l <- spec.el.getLayers(); uop <- l.uops.values) {
         uop.rd.foreach { rd =>
-          uop.addDecoding(BYPASSED -> Bool(rd.broadcastedFrom <= spec.at))
+          uop.addDecoding(spec.value -> Bool(rd.broadcastedFrom <= spec.at))
         }
       }
     }

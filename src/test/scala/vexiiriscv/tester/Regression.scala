@@ -134,7 +134,7 @@ object RegressionSingle extends App{
 
 
 class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REGRESSION_THREAD_COUNT", "0").toInt){
-  def addTest(args: String): Unit = addTest(args.split(" "))
+  def addTest(args: String): Unit = addTest(args.split("\\s+"))
   def addTest(args: Seq[String]): Unit = {
     val param = new ParamSimple()
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
@@ -147,10 +147,13 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
   }
 
-  addTest("--decoders 1 --lanes 1")
-  addTest("--decoders 2 --lanes 2")
-  addTest("--decoders 1 --lanes 1 --with-late-alu")
-  addTest("--decoders 2 --lanes 2 --with-late-alu")
-  addTest("--decoders 1 --lanes 1 --with-gshare --with-btb --with-ras --with-late-alu")
-  addTest("--decoders 2 --lanes 2 --with-gshare --with-btb --with-ras --with-late-alu")
+  for(issues <- 1 to 2; rf <- List("", "--regfile-async")){
+    addTest(s"--decoders $issues --lanes $issues $rf")
+    addTest(s"--decoders $issues --lanes $issues $rf --with-btb")
+    addTest(s"--decoders $issues --lanes $issues $rf --with-btb --with-ras")
+    addTest(s"--decoders $issues --lanes $issues $rf --with-btb --with-ras --with-gshare")
+    addTest(s"--decoders $issues --lanes $issues $rf --with-late-alu")
+    addTest(s"--decoders $issues --lanes $issues $rf --with-btb --with-ras --with-gshare --with-late-alu")
+  }
+
 }
