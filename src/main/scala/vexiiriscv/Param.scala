@@ -20,7 +20,7 @@ class ParamSimple(){
   var resetVector = 0x80000000l
   var decoders = 1
   var lanes = 1
-  var regFileSync = false
+  var regFileSync = true
   var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
   var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
   var withGShare = false
@@ -35,10 +35,10 @@ class ParamSimple(){
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rs","ra")
-    if(withBtb) r += "btb"
-    if(withRas) r += "ras"
-    if(withGShare) r += "gshare"
-    if(withLateAlu) r += "la"
+    if (withBtb) r += "btb"
+    if (withRas) r += "ras"
+    if (withGShare) r += "gshare"
+    if (withLateAlu) r += "la"
     r.mkString("_")
   }
 
