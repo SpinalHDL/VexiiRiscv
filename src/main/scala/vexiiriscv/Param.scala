@@ -207,7 +207,7 @@ class ParamSimple(){
       plugins += new SrcPlugin(late0, executeAt = 2, relaxedRs = relaxedSrc)
       plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
       plugins += new BarrelShifterPlugin(late0, shiftAt = 2, formatAt = 2)
-      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2+relaxedBranch.toInt, wbAt = 2)
+      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2, wbAt = 2) //Note that not relaxed by +relaxedBranch.toInt, as it would push it after the writeback
     }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
@@ -229,7 +229,7 @@ class ParamSimple(){
         plugins += new SrcPlugin(late1, executeAt = 2, relaxedRs = relaxedSrc)
         plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
         plugins += new BarrelShifterPlugin(late1, shiftAt = 2, formatAt = 2)
-        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2+relaxedBranch.toInt, wbAt = 2)
+        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2, wbAt = 2)
       }
 
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
