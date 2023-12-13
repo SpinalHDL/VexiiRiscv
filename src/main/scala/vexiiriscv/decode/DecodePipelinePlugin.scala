@@ -48,14 +48,21 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
     val idMax = idToCtrl.keys.max
     for(i <- 0 to idMax) ctrl(i) //To ensure the creation to all intermediate nodes
     val ctrls = idToCtrl.toList.sortBy(_._1).map(_._2)
-    val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageLink(from.link.down, to.link.up) //.withoutCollapse()
+    val sc = for(ctrlId <- ctrls.indices.dropRight(1);
+                 from = ctrls(ctrlId); to = ctrls(ctrlId+1)) yield new pipeline.StageLink(from.link.down, to.link.up){
+      override def build() = {
+        super.build()
+        // Implement LANE_SEL register clearing
+        for (laneId <- 0 until Decode.LANES){
+          val l = to.lane(laneId)
+          when(!l.up.isReady && l.cancel){
+            l.up(CtrlLaneApi.LANE_SEL) := False
+          }
+        }
+      }
+    }
     val connectors = (sc ++ ctrls.map(_.link)).toSeq
     val rp = host[ReschedulePlugin]
-
-    for(ctrlId <- 0 to idMax) {
-      val c = ctrl(ctrlId)
-
-    }
 
     val flushRange = 0 until ctrls.size
     val flushes = for(ctrlId <- flushRange) yield new Area {
@@ -65,7 +72,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
 //      doIt.foreach(v => c.link.throwWhen(v, usingReady = false))
 
       //TODO throw whole pipeline when all lanes are dead ? probably not that usefull
-      val onLanes = for (laneId <- 0 until Decode.LANES) yield {
+      val onLanes = for (laneId <- 0 until Decode.LANES) yield new Area {
         val l = c.lane(laneId)
         if (ctrlId != 0) l.up(l.LANE_SEL).setAsReg().init(False)
         val doIt = rp.isFlushedAt(age, c.link(Global.HART_ID), laneId)

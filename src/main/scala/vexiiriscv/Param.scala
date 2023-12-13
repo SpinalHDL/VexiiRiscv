@@ -30,22 +30,26 @@ class ParamSimple(){
   var withMul = true
   var withDiv = true
   var relaxedBranch = false
+  var relaxedShift = false
+  var relaxedSrc = false
   var allowBypassFrom = 100 //100 => disabled
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 1
-    lanes = 1
+    decoders = 2
+    lanes = 2
     regFileSync = false
     withGShare = false
     withBtb = false
     withRas = false
-    withLateAlu = false
     withMul = false
     withDiv = false
-    relaxedBranch = false
-    allowBypassFrom = 100
+    withLateAlu = false
+    allowBypassFrom = 0
+    relaxedBranch = true
+    relaxedShift = true
+    relaxedSrc = true
   }
 
 
@@ -55,7 +59,7 @@ class ParamSimple(){
     r += s"rv${xlen}im"
     r += s"d${decoders}"
     r += s"l${lanes}"
-    r += regFileSync.mux("rs","ra")
+    r += regFileSync.mux("rfs","rfa")
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
     if (withRas) r += "ras"
@@ -63,7 +67,9 @@ class ParamSimple(){
     if (withLateAlu) r += "la"
     if (withMul) r += "m"
     if (withDiv) r += "d"
-    if (relaxedBranch) r += "rb"
+    if (relaxedBranch) r += "rbra"
+    if (relaxedShift) r += "rsft"
+    if (relaxedSrc) r += "rsrc"
     r.mkString("_")
   }
 
@@ -72,6 +78,8 @@ class ParamSimple(){
     opt[Int]("decoders") action { (v, c) => decoders = v }
     opt[Int]("lanes") action { (v, c) => lanes = v }
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
+    opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
+    opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
     opt[Unit]("with-mul") action { (v, c) => withMul = true }
     opt[Unit]("with-div") action { (v, c) => withDiv = true }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
@@ -135,7 +143,7 @@ class ParamSimple(){
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = 1,
+      fetchAt = 3,
       lanes = decoders
     )
     plugins += new decode.DecoderPlugin(
@@ -168,9 +176,9 @@ class ParamSimple(){
 
 
     plugins += new RedoPlugin("lane0")
-    plugins += new SrcPlugin(early0, executeAt = 0)
+    plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
-    plugins += new BarrelShifterPlugin(early0, formatAt = 0)
+    plugins += new BarrelShifterPlugin(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
     plugins += new LsuCachelessPlugin(
@@ -196,7 +204,7 @@ class ParamSimple(){
 
     if(withLateAlu) {
       val late0 = new LaneLayer("late0", lane0, priority = -5)
-      plugins += new SrcPlugin(late0, executeAt = 2)
+      plugins += new SrcPlugin(late0, executeAt = 2, relaxedRs = relaxedSrc)
       plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
       plugins += new BarrelShifterPlugin(late0, shiftAt = 2, formatAt = 2)
       plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2+relaxedBranch.toInt, wbAt = 2)
@@ -210,15 +218,15 @@ class ParamSimple(){
       val early1 = new LaneLayer("early1", lane1, priority = 10)
       plugins += lane1
 
-      plugins += new SrcPlugin(early1, executeAt = 0)
+      plugins += new SrcPlugin(early1, executeAt = 0, relaxedRs = relaxedSrc)
       plugins += new IntAluPlugin(early1, formatAt = 0)
-      plugins += new BarrelShifterPlugin(early1, formatAt = 0)
+      plugins += new BarrelShifterPlugin(early1, formatAt = relaxedShift.toInt)
       plugins += new IntFormatPlugin("lane1")
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
 
       if(withLateAlu) {
         val late1 = new LaneLayer("late1", lane1, priority = -3)
-        plugins += new SrcPlugin(late1, executeAt = 2)
+        plugins += new SrcPlugin(late1, executeAt = 2, relaxedRs = relaxedSrc)
         plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
         plugins += new BarrelShifterPlugin(late1, shiftAt = 2, formatAt = 2)
         plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2+relaxedBranch.toInt, wbAt = 2)

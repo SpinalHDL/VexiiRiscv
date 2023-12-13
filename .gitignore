@@ -53,6 +53,7 @@ explor
 nax.h
 
 simWorkspace/
+regression/
 tmp/
 /archive.tar.gz
 *.out32

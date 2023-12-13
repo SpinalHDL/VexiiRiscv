@@ -11,7 +11,7 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
-import vexiiriscv.riscv.{IMM, IntRegFile, MicroOp, RS1, RS2, Riscv}
+import vexiiriscv.riscv.{IMM, IntRegFile, MicroOp, RS1, RS2, RfRead, Riscv}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -45,7 +45,8 @@ object SrcKeys extends AreaObject {
 }
 
 class SrcPlugin(val layer : LaneLayer,
-                var executeAt : Int) extends FiberPlugin{
+                var executeAt : Int,
+                var relaxedRs: Boolean) extends FiberPlugin{
   val elaborationLock = Lock()
   lazy val eu = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
   setupRetain(eu.pipelineLock)
@@ -73,9 +74,10 @@ class SrcPlugin(val layer : LaneLayer,
 
   val logic = during build new Area{
     elaborationLock.await()
-
     val ss = SrcStageables
     val sk = SrcKeys
+
+    assert(executeAt >= 0)
 
     val keys = spec.flatMap(_._2).toSeq.distinctLinked
     val opKeys   = keys.filter(_.isInstanceOf[OpKeys]).toSeq
@@ -105,15 +107,19 @@ class SrcPlugin(val layer : LaneLayer,
       )
     }
 
-    val src = new eu.Execute(executeAt){
+    val src = new eu.Execute(executeAt-relaxedRs.toInt){
+      def get(rs : RfRead) = relaxedRs match {
+        case false => up(eu(IntRegFile, rs))
+        case true  => down(eu(IntRegFile, rs))
+      }
       val imm = new IMM(Decode.UOP)
       if(src1Keys.nonEmpty) SRC1 := SRC1_CTRL.muxListDc[SInt](src1Keys.map {
-        case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(this.up(eu(IntRegFile, RS1)))
+        case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(get(RS1))
         case sk.SRC1.U  => src1ToEnum(sk.SRC1.U ) -> S(imm.u).resize(Riscv.XLEN)
       })
 
       if(src2Keys.nonEmpty) SRC2 := SRC2_CTRL.muxListDc[SInt](src2Keys.map {
-        case sk.SRC2.RF => src2ToEnum(sk.SRC2.RF) -> S(this.up(eu(IntRegFile, RS2)))
+        case sk.SRC2.RF => src2ToEnum(sk.SRC2.RF) -> S(get(RS2))
         case sk.SRC2.I  => src2ToEnum(sk.SRC2.I ) -> imm.i_sext
         case sk.SRC2.S  => src2ToEnum(sk.SRC2.S ) -> imm.s_sext
         case sk.SRC2.PC => src2ToEnum(sk.SRC2.PC) -> S(this(Global.PC)).resize(Riscv.XLEN bits)

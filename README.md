@@ -4,6 +4,7 @@ VexiiRiscv is a from scratch second iteration of VexRiscv. Here are the targets 
 
 - RISCV 32/64 bits IMAFDC
 - Could start around as small as VexRiscv, but could scale further in performance
+- Optional late-alu
 - Optional multi issue
 - Optional multi threading
 - Cleaning implementation, especially the frontend
@@ -81,8 +82,15 @@ cd ../..
 It's currently very very early, but you can run the generation via : 
 
 ```shell
-sbt "test:runMain vexiiriscv.scratchpad.Play1"
+sbt "test:runMain vexiiriscv.Generate"
 ```
+
+You can get a list of the supported parameters via :
+
+```shell
+sbt "test:runMain vexiiriscv.Generate --help"
+```
+
 
 # Run a simulation
 

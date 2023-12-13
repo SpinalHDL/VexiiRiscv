@@ -108,7 +108,6 @@ class ExecuteLanePlugin(override val laneName : String,
     idToCtrl.getOrElseUpdate(id, new CtrlLaneApiImpl(id).setCompositeName(this, "ctrls_" + id.toString))
   }
   def execute(id: Int) : CtrlLaneApi = {
-    assert(id >= 0)
     ctrl(id + executeAt)
   }
 

@@ -230,12 +230,12 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       val sending = CombInit(c.fire)
       val sent = RegInit(False) setWhen(sending) clearWhen(ctrlLink.up.isMoving)
       c.cancel := dispatchCtrl.lane(lane).cancel
-      c.ctx.valid := dispatchCtrl.link.isValid && LANE_SEL && !sent
+      c.ctx.valid := dispatchCtrl.link.isValid && isValid && !sent
       c.ctx.laneLayerHits := LANES_LAYER_HIT.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
       c.ctx.uop := Decode.UOP
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
-      dispatchCtrl.link.down.ready clearWhen(LANE_SEL && !sent && !c.fire)
+      dispatchCtrl.link.down.ready clearWhen(isValid && !sent && !c.fire)
     }
 
     val scheduler = new Area {

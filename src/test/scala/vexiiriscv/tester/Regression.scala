@@ -2,6 +2,7 @@ package vexiiriscv.tester
 
 import org.apache.commons.io.FileUtils
 import org.scalatest.funsuite.AnyFunSuite
+import spinal.core._
 import spinal.core.sim._
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.{AsyncJob, MultithreadedFunSuite}
@@ -100,7 +101,7 @@ object RegressionSingle extends App{
     simConfig.setTestPath("regression/$COMPILED_tests/$TEST")
 
     val param = new ParamSimple()
-    val compiled = simConfig.compile(VexiiRiscv(plugins).setDefinitionName(s"VexiiRiscv_$name"))
+    val compiled = SpinalConfig.synchronized(simConfig.compile(VexiiRiscv(plugins).setDefinitionName(s"VexiiRiscv_$name")))
     val regression = new RegressionSingle(compiled)
     println("*" * 80)
     val fails = regression.jobs.filter(_.failed)
