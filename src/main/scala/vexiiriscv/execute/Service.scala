@@ -83,8 +83,9 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   }
 
   def dontFlushFrom(executeCtrlId: Int): Unit = {
-    assert(dontFlushFrom.isEmpty)
-    dontFlushFrom = Some(executeCtrlId + el.executeAt)
+    var at = executeCtrlId + el.executeAt
+    dontFlushFrom.foreach(v => v min at)
+    dontFlushFrom = Some(at)
   }
 }
 

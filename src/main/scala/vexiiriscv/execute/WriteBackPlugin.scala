@@ -62,6 +62,7 @@ class WriteBackPlugin(val laneName : String,
         for (impl <- spec.impls) {
           impl.setRdSpec(DATA, Math.max(ctrlId, broadcastMin), writeAt + rfp.writeLatency)
           impl.addDecoding(SEL -> True)
+//          impl.dontFlushFrom(writeAt+1)
         }
       }
     }
