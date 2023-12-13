@@ -2,7 +2,9 @@ package vexiiriscv.misc
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.fsm._
 import spinal.lib.misc.plugin.FiberPlugin
+import vexiiriscv.Global
 import vexiiriscv.execute.CsrAccessPlugin
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
@@ -36,12 +38,23 @@ case class PrivilegedConfig(withSupervisor : Boolean,
 
 }
 
+case class Trap() extends Bundle{
+  val tval = Reg(Bits(XLEN bits))
+  val epc = Reg(Global.PC)
+  val cause = Reg(Global.CAUSE)
+}
+
+trait CauseUser{
+  def getCauseWidthMin() : Int
+}
 
 class PrivilegedPlugin(p : PrivilegedConfig) extends FiberPlugin{
   lazy val cap = host[CsrAccessPlugin]
   setupRetain(cap.csrLock)
 
   val logic = during build new Area{
+    val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
+    Global.CAUSE_WIDTH.set((4 +: causesWidthMins).max)
 
     val withFs = RVF || p.withSupervisor
     val mstatus = new Area {
@@ -61,6 +74,19 @@ class PrivilegedPlugin(p : PrivilegedConfig) extends FiberPlugin{
 //    cap.read(CSR.MIP, 11 -> mip.meip, 7 -> mip.mtip, 3 -> mip.msip)
 //    cap.readWrite(CSR.MIE, 11 -> mie.meie, 7 -> mie.mtie, 3 -> mie.msie)
     cap.readWrite(mtval, CSR.MTVAL)
+
+
+//    val fsm = new StateMachine{
+//      val pending = new Area{
+//        val valid = RegInit(False)
+//        val tval = Reg(Bits(XLEN bits))
+//        val epc = Reg(Global.PC)
+//        val cause = Reg(Bits(4 bits))
+//      }
+//      val RUNNING = makeInstantEntry()
+//
+//
+//    }
     cap.csrLock.release()
   }
 }

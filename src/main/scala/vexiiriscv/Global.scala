@@ -14,12 +14,14 @@ object Global extends AreaRoot{
   val PC_WIDTH         = blocking[Int]
   val TVAL_WIDTH       = blocking[Int]
   val HART_COUNT       = blocking[Int]
+  val CAUSE_WIDTH      = blocking[Int]
 
 
   val VIRTUAL_ADDRESS = Payload(UInt(VIRTUAL_WIDTH bits))
   val MIXED_ADDRESS = Payload(UInt(MIXED_WIDTH bits))
   val PHYSICAL_ADDRESS = Payload(UInt(PHYSICAL_WIDTH bits))
   val PC = Payload(UInt(PC_WIDTH bits))
+  val CAUSE = Payload(Bits(CAUSE_WIDTH bits))
 
   def HART_ID_WIDTH = log2Up(HART_COUNT)
   val HART_ID = Payload(UInt(HART_ID_WIDTH bits))
