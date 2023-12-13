@@ -143,7 +143,7 @@ class ParamSimple(){
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = 3,
+      fetchAt = 1,
       lanes = decoders
     )
     plugins += new decode.DecoderPlugin(
