@@ -97,6 +97,7 @@ class CachelessPlugin(var wordWidth : Int,
         haltIt := False
         Fetch.WORD := bus.rsp.word
       }
+      TRAP := False
       haltWhen(haltIt)
     }
   }

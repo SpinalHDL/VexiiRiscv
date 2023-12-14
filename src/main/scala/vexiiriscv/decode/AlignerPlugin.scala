@@ -74,6 +74,7 @@ class AlignerPlugin(fetchAt : Int,
         })
         lane(Prediction.BRANCH_HISTORY) := up(Prediction.BRANCH_HISTORY)
         for(e <- lastSliceData) lane(e).assignFrom(up.apply(e))
+        lane(Global.TRAP) := up(Global.TRAP)
 
         val onBtb = withBtb generate new Area{
           assert(!Riscv.RVC)

@@ -163,6 +163,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     def done = !spawned || retireAt != -1 || flushAt != -1
     def didCommit = done && flushAt == -1
 
+    var trap = false
+
     var integerWriteValid = false
     var integerWriteData = -1l
     var floatWriteValid = false
@@ -239,6 +241,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       flushAt = -1l
       retireAt = -1l
 
+      trap = false
       integerWriteValid = false;
       floatWriteValid = false;
       csrValid = false;
@@ -427,6 +430,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       if(microOp.spawned) {
         microOp.completionAt = cycle
         microOp.retireAt = cycle + 1
+        microOp.trap = port.trap.toBoolean
       }
     }
 
@@ -463,7 +467,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           val decode = hart.decode(uop.decodeId)
 
           hart.lastUopId = uopId
-
           hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
 
           uop.toKonata(hart)
@@ -486,11 +489,14 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
               if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))
               if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
             }
-            backends.foreach(_.commit(hartId, decode.pc))
+            uop.trap match {
+              case false => backends.foreach(_.commit(hartId, decode.pc))
+              case true => //backends.foreach(_.trap(hartId, false, 85))
+            }
             if (uop.storeValid) {
               backends.foreach(_.storeBroadcast(hartId, uopId & 0xF))
             }
-            commitsCallbacks.foreach(_(hartId, decode.pc))
+            if(!uop.trap) commitsCallbacks.foreach(_(hartId, decode.pc))
           }
           uop.clear()
         }
@@ -499,11 +505,18 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     }
   }
 
+  def checkTraps(): Unit = {
+    for(trap <- proxies.trap) if(trap.fire.toBoolean){
+      backends.foreach(_.trap(trap.hartId, false, trap.cause.toInt))
+    }
+  }
+
   var cycle = 1l
   cpu.clockDomain.onSamplings {
     if(enabled) {
       checkPipelines()
       checkCommits()
+      checkTraps()
     }
     cycle += 1l
     if ((cycle & 0x3FFFl) == 0) flush()
