@@ -291,3 +291,19 @@ object AdderAggregator {
 
   }
 }
+
+case class AgedArbiterUp[T <: Data](valid : Bool, payload : T, age : Int, laneAge : UInt)
+class AgedArbiter[T <: Data](ups : Seq[AgedArbiterUp[T]]) extends Area{
+  val groups = ups.groupBy(_.age).toSeq.sortBy(_._1).toSeq.reverse
+  val ports = for ((_, elements) <- groups) yield {
+    val ret = Flow(elements.head.payload)
+    val valids = B(for (self <- elements) yield self.valid && elements.filter(_ != self).map(other => !(other.valid && other.laneAge < self.laneAge)).andR)
+    ret.valid := elements.map(_.valid).orR
+    ret.payload := OHMux.or(valids, elements.map(_.payload), true)
+    ret
+  }
+  val oh = B(OHMasking.firstV2(B(ports.map(_.valid))))
+  val down = Flow(ups.head.payload)
+  down.valid := ups.map(_.valid).orR
+  down.payload := OHMux.or(oh, ports.map(_.payload))
+}

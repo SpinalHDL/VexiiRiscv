@@ -47,8 +47,8 @@ class ParamSimple(){
 //    withDiv = false
     withLateAlu = true
     allowBypassFrom = 0
-    relaxedBranch = true
-    relaxedShift = true
+    relaxedBranch = false
+    relaxedShift = false
     relaxedSrc = true
   }
 

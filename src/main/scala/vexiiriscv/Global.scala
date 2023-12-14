@@ -3,6 +3,7 @@ package vexiiriscv
 import spinal.core._
 import spinal.lib.misc.database.Database.blocking
 import spinal.lib.misc.pipeline.Payload
+import vexiiriscv.fetch.Fetch
 
 /**
  * Define global variables for plugin to share in very non-verbose ways
@@ -21,6 +22,7 @@ object Global extends AreaRoot{
   val MIXED_ADDRESS = Payload(UInt(MIXED_WIDTH bits))
   val PHYSICAL_ADDRESS = Payload(UInt(PHYSICAL_WIDTH bits))
   val PC = Payload(UInt(PC_WIDTH bits))
+  val PC_TARGET = Payload(UInt(PC_WIDTH-Fetch.SLICE_RANGE_LOW bits))
   val CAUSE = Payload(Bits(CAUSE_WIDTH bits))
 
   def HART_ID_WIDTH = log2Up(HART_COUNT)

@@ -57,7 +57,7 @@ class BtbPlugin(var sets : Int,
     val ras = withRas generate new Area{
       assert(HART_COUNT.get == 1)
       val mem = new Area{
-        val stack = Mem.fill(rasDepth)(PC)
+        val stack = Mem.fill(rasDepth)(PC_TARGET)
         if(GenerationFlags.simulation){
           val rand = new Random(42)
           stack.initBigInt(List.fill(stack.wordCount)(BigInt(stack.width, rand)))
@@ -101,7 +101,7 @@ class BtbPlugin(var sets : Int,
     case class BtbEntry() extends Bundle {
       val hash = UInt(hashWidth bits)
       val sliceLow  = SLICE_LOW()
-      val pcTarget = PC()
+      val pcTarget = PC_TARGET()
       val isBranch, isPush, isPop = Bool()
       val taken = Bool() //TODO remove
     }
@@ -123,7 +123,7 @@ class BtbPlugin(var sets : Int,
       for(data <- port.data) {
         data.hash := hash
         data.sliceLow := cmd.pcOnLastSlice(SLICE_LOW_RANGE)
-        data.pcTarget := cmd.pcTarget
+        data.pcTarget := cmd.pcTarget >> Fetch.SLICE_RANGE_LOW
         data.isBranch := cmd.isBranch
         data.isPush := cmd.isPush
         data.isPop := cmd.isPop
@@ -191,7 +191,7 @@ class BtbPlugin(var sets : Int,
         val pushValid = (doIt && entry.isPush)
         val pushPc = CombInit(apply(WORD_PC))
         pushPc(SLICE_RANGE) := doItSlice
-        ras.write.data := pushPc + SLICE_BYTES.get
+        ras.write.data := (pushPc + SLICE_BYTES.get) >> Fetch.SLICE_RANGE_LOW
         ras.ptr.pushIt setWhen (pushValid)
         ras.ptr.popIt setWhen(doIt && entry.isPop)
       }
@@ -214,11 +214,11 @@ class BtbPlugin(var sets : Int,
       flushPort.hartId := HART_ID
 
       pcPort.valid := doIt
-      pcPort.pc := pcTarget
+      pcPort.pc := pcTarget << Fetch.SLICE_RANGE_LOW
 
       WORD_JUMPED := needIt
       WORD_JUMP_SLICE := doItSlice
-      WORD_JUMP_PC := pcTarget
+      WORD_JUMP_PC := pcTarget << Fetch.SLICE_RANGE_LOW
 
       val history = historyPort.map { port =>
         new Area {

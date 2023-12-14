@@ -9,7 +9,7 @@ import AguPlugin._
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
-import vexiiriscv.misc.AddressToMask
+import vexiiriscv.misc.{AddressToMask, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
 
@@ -58,16 +58,21 @@ class LsuCachelessPlugin(var layer : LaneLayer,
   lazy val srcp = host.find[SrcPlugin](_.layer == layer)
   lazy val ats = host[AddressTranslationService]
   lazy val rp = host[RedoPlugin]
+  lazy val ts = host[TrapService]
   buildBefore(elp.pipelineLock)
   setupRetain(elp.uopLock)
   setupRetain(srcp.elaborationLock)
   setupRetain(ifp.elaborationLock)
   setupRetain(ats.elaborationLock)
   setupRetain(rp.elaborationLock)
+  setupRetain(ts.trapLock)
 
   val FENCE_I_SEL = Payload(Bool())
 
   val logic = during build new Area{
+    val trapPort = ts.newTrap(layer.el.getAge(addressAt), Execute.LANE_AGE_WIDTH)
+    ts.trapLock.release()
+
     val redoPort = withSpeculativeLoadFlush generate rp.newPort(forkAt)
     rp.elaborationLock.release()
 
@@ -155,6 +160,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       assert(tpk.REDO === False)
 
       elp.freezeWhen(bus.cmd.isStall)
+
+//      trapPort.valid :;=
 
       val speculLoad = withSpeculativeLoadFlush generate new Area {
         val tooRisky = isValid && SEL && LOAD && (tpk.IO && elp.atRiskOfFlush(forkAt) || MISS_ALIGNED) //TODO remove that MISS_ALIGNED management

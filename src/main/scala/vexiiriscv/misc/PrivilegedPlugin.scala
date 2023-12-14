@@ -1,6 +1,7 @@
 package vexiiriscv.misc
 
 import spinal.core._
+import spinal.core.fiber.Lock
 import spinal.lib._
 import spinal.lib.fsm._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -8,6 +9,8 @@ import vexiiriscv.Global
 import vexiiriscv.execute.CsrAccessPlugin
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
+
+import scala.collection.mutable.ArrayBuffer
 
 
 object PrivilegedConfig{
@@ -38,23 +41,50 @@ case class PrivilegedConfig(withSupervisor : Boolean,
 
 }
 
-case class Trap() extends Bundle{
+
+case class TrapSpec(bus : Flow[Trap], age : Int)
+case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
   val tval = Reg(Bits(XLEN bits))
   val epc = Reg(Global.PC)
   val cause = Reg(Global.CAUSE)
+  val laneAge = full generate UInt(laneAgeWidth bits)
+  val hartId = full generate Global.HART_ID()
+
+  def toRaw(): Trap = {
+    val r = new Trap(laneAgeWidth, false)
+    r.assignSomeByName(this)
+    r
+  }
 }
 
 trait CauseUser{
   def getCauseWidthMin() : Int
 }
 
-class PrivilegedPlugin(p : PrivilegedConfig) extends FiberPlugin{
+/**
+ * fetch (page fault, access fault)
+ * decode (illegal)
+ * execute (miss aligned load/store/branch)
+ */
+trait TrapService{
+  val trapLock = Lock()
+  val traps = ArrayBuffer[TrapSpec]()
+  def newTrap(age: Int, laneAgeWidth: Int): Flow[Trap] = {
+    traps.addRet(TrapSpec(Flow(Trap(laneAgeWidth, true)), age)).bus
+  }
+}
+
+class PrivilegedPlugin(p : PrivilegedConfig) extends FiberPlugin with TrapService{
   lazy val cap = host[CsrAccessPlugin]
   setupRetain(cap.csrLock)
+
 
   val logic = during build new Area{
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
     Global.CAUSE_WIDTH.set((4 +: causesWidthMins).max)
+
+    assert(Global.HART_COUNT.get == 1)
+    val hartId = 0
 
     val withFs = RVF || p.withSupervisor
     val mstatus = new Area {
@@ -77,12 +107,15 @@ class PrivilegedPlugin(p : PrivilegedConfig) extends FiberPlugin{
 
 
 //    val fsm = new StateMachine{
-//      val pending = new Area{
-//        val valid = RegInit(False)
-//        val tval = Reg(Bits(XLEN bits))
-//        val epc = Reg(Global.PC)
-//        val cause = Reg(Bits(4 bits))
-//      }
+
+      trapLock.await()
+      val pending = new Area{
+        val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.age))
+        val arbiter = new AgedArbiter(requests)
+
+        val valid = RegInit(False) setWhen(arbiter.down.valid)
+        val state = arbiter.down.toReg
+      }
 //      val RUNNING = makeInstantEntry()
 //
 //
