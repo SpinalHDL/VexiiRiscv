@@ -9,7 +9,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource, RfWrite}
-import vexiiriscv.schedule.Ages
+import vexiiriscv.schedule.{Ages, FlushCmd}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -110,6 +110,7 @@ trait ExecuteLaneService extends Area{
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType)
   def withBypasses : Boolean
   def rfReadHazardFrom(usedAt : Int) : Int
+//  def newFlushPort(executeId : Int) : Flow[FlushCmd]
 
   def getStageable(r: RfResource): Payload[Bits]
   def apply(rf: RegfileSpec, access: RfAccess) = getStageable(rf -> access)
@@ -136,6 +137,7 @@ trait ExecuteLaneService extends Area{
 case class CompletionPayload() extends Bundle{
   val hartId = Global.HART_ID()
   val uopId = Decode.UOP_ID()
+  val trap = Bool()
 }
 
 //case class RetirePayload() extends Bundle{

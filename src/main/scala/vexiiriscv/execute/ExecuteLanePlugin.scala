@@ -12,7 +12,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
-import vexiiriscv.schedule.{Ages, DispatchPlugin, ReschedulePlugin}
+import vexiiriscv.schedule.{Ages, DispatchPlugin, FlushCmd, ReschedulePlugin}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -111,6 +111,10 @@ class ExecuteLanePlugin(override val laneName : String,
     ctrl(id + executeAt)
   }
 
+//  val flushPorts = mutable.LinkedHashMap[Int, ArrayBuffer[Flow[FlushCmd]]]()
+//  override def newFlushPort(executeId: Int): Flow[FlushCmd] = {
+//    flushPorts.getOrElseUpdate(executeId, ArrayBuffer[Flow[FlushCmd]]()).addRet()
+//  }
 
   override def rfReadHazardFrom(usedAt : Int) : Int = if(withBypasses) usedAt else rfReadAt+1
 
@@ -236,6 +240,7 @@ class ExecuteLanePlugin(override val laneName : String,
         port.valid := c.down.isFiring && c(ENABLE)
         port.hartId := c(Global.HART_ID)
         port.uopId := c(Decode.UOP_ID)
+        port.trap := c(Global.TRAP)
       }
     }
 

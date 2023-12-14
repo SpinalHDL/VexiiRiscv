@@ -5,6 +5,7 @@ import spinal.core.fiber.Lock
 import spinal.lib.misc.pipeline._
 import spinal.lib.{Flow, OHMux}
 import spinal.lib.misc.plugin.FiberPlugin
+import vexiiriscv.Global
 import vexiiriscv.Global._
 import vexiiriscv.decode.Decode._
 import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
@@ -76,7 +77,7 @@ class WriteBackPlugin(val laneName : String,
       bypass(DATA) := merged
 
       val write = Flow(RegFileWriter(rf))
-      write.valid := down.isFiring && hits.orR && rfa.ENABLE
+      write.valid := down.isFiring && hits.orR && rfa.ENABLE && !Global.TRAP
       write.hartId := HART_ID
       write.uopId := UOP_ID
       write.data := muxed

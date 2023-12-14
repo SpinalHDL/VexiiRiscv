@@ -5,10 +5,11 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
+import vexiiriscv.Global.{HART_COUNT, TRAP}
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
-import vexiiriscv.misc.PipelineBuilderPlugin
+import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin}
 import vexiiriscv.prediction.{BtbPlugin, LearnCmd, LearnPlugin}
 import vexiiriscv.regfile.{RegFileWrite, RegFileWriter, RegFileWriterService}
 import vexiiriscv.riscv.{Const, Riscv}
@@ -127,7 +128,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.wbCtrl
-        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(p.logic.onAddress.translationPort.keys.IO)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(TRAP) && !c(p.logic.onAddress.translationPort.keys.IO)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
@@ -184,6 +185,14 @@ class WhiteboxerPlugin extends FiberPlugin{
       val dispatchFeedCounters = (0 to dispatch.logic.feeds.size).map(id => wrap(Counter(1 << 60l, dispatchFeedCount === id).value))
     }
 
+    val trap = new Area {
+      val ports = for(hartId <- 0 until HART_COUNT) yield new Area{
+        val priv = host[PrivilegedPlugin].logic.hartsTrap(hartId)
+        val valid = wrap(priv.trigger.valid)
+        val cause = wrap(priv.pending.state.cause)
+      }
+    }
+
 
     def self = this
     class Proxies {
@@ -199,8 +208,9 @@ class WhiteboxerPlugin extends FiberPlugin{
       val loadExecute = new LoadExecuteProxy()
       val storeCommit = new StoreCommitProxy()
       val storeBroadcast = new StoreBroadcastProxy()
-      val learns = self.prediction.learns.map(learn => new LearnProxy(learn))
+      val learns = self.prediction.learns.map(learn => new LearnProxy(learn)).toArray
       val perf = new PerfProxy()
+      val trap = self.trap.ports.indices.map(new TrapProxy(_)).toArray
     }
 
     class FetchProxy {
@@ -266,6 +276,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val valid = port.valid.simProxy()
       val hartId = port.hartId.simProxy()
       val uopId = port.uopId.simProxy()
+      val trap = port.trap.simProxy()
     }
 
     class FlushProxy(port: Flow[FlushCmd]) {
@@ -318,6 +329,12 @@ class WhiteboxerPlugin extends FiberPlugin{
       val executeFreezed = perf.executeFreezed.simProxy()
       val dispatchHazards = perf.dispatchHazards.simProxy()
       val candidatesCount = perf.candidatesCount.simProxy()
+    }
+
+    class TrapProxy(val hartId : Int) {
+      val self = trap.ports(hartId)
+      val fire = self.valid.simProxy()
+      val cause = self.cause.simProxy()
     }
   }
 }

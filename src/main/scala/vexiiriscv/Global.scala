@@ -24,6 +24,8 @@ object Global extends AreaRoot{
   val PC = Payload(UInt(PC_WIDTH bits))
   val PC_TARGET = Payload(UInt(PC_WIDTH-Fetch.SLICE_RANGE_LOW bits))
   val CAUSE = Payload(Bits(CAUSE_WIDTH bits))
+  val TVAL = Payload(Bits(TVAL_WIDTH bits))
+  val TRAP = Payload(Bool())
 
   def HART_ID_WIDTH = log2Up(HART_COUNT)
   val HART_ID = Payload(UInt(HART_ID_WIDTH bits))

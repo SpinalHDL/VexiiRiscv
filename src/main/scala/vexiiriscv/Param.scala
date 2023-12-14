@@ -37,15 +37,15 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 2
-    lanes = 2
+    decoders = 1
+    lanes = 1
     regFileSync = false
-    withGShare = true
-    withBtb = true
-    withRas = true
+    withGShare = false
+    withBtb = false
+    withRas = false
 //    withMul = false
 //    withDiv = false
-    withLateAlu = true
+    withLateAlu = false
     allowBypassFrom = 0
     relaxedBranch = false
     relaxedShift = false
@@ -200,7 +200,7 @@ class ParamSimple(){
       plugins += new DivPlugin(early0)
     }
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(PrivilegedConfig.full)
+    plugins += new PrivilegedPlugin(PrivilegedConfig.full, trapAt = 2)
 
     if(withLateAlu) {
       val late0 = new LaneLayer("late0", lane0, priority = -5)

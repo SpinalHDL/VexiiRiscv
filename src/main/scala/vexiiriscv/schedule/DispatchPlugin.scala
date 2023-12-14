@@ -121,6 +121,7 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
     val slotsCount = 0
 
     hmKeys.add(Global.PC)
+    hmKeys.add(Global.TRAP)
     hmKeys.add(Decode.UOP_ID)
     for ((k, ac) <- Decode.rfaKeys) {
       hmKeys.add(ac.ENABLE)
