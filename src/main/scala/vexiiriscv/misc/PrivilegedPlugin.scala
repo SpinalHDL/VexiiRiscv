@@ -76,12 +76,20 @@ trait CauseUser{
  * - Store cause / tval
  * - Rise trap flag in the pipe (this will disable side-effects)
  */
-trait TrapService{
+trait TrapService extends Area{
   val trapLock = Lock()
   val traps = ArrayBuffer[TrapSpec]()
   def newTrap(age: Int, laneAgeWidth: Int): Flow[Trap] = {
     traps.addRet(TrapSpec(Flow(Trap(laneAgeWidth, true)), age)).bus
   }
+
+  def trapHandelingAt : Int
+  val trapPendings = ArrayBuffer[Bits]()
+  def newTrapPending() = trapPendings.addRet(Bits(Global.HART_COUNT bits))
+}
+
+case class TrapPending() extends Bundle{
+  val hartId = Global.HART_ID()
 }
 
 class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin with TrapService{
@@ -93,6 +101,7 @@ class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin w
   buildBefore(pcs.elaborationLock)
 
 
+  override def trapHandelingAt: Int = trapAt
 
   val logic = during build new Area{
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
@@ -196,8 +205,6 @@ class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin w
         when(valid){
           pending.pc := pc
         }
-
-        val inflights = B(for(lane <- lanes; exId <- 0 to trapAt; ctrl = lane.execute(exId)) yield ctrl.isValid && ctrl(TRAP))
       }
 
 
@@ -209,8 +216,9 @@ class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin w
         val RUNNING = makeInstantEntry()
         val TRAP_TRIGGER = new State()
 
+        val inflightTrap = trapPendings.map(_(hartId)).orR
         val holdPort = pcs.newHoldPort(hartId)
-        holdPort := trigger.inflights.orR || !isActive(RUNNING)
+        holdPort := inflightTrap || !isActive(RUNNING)
 
         RUNNING.whenIsActive{
           when(trigger.valid){

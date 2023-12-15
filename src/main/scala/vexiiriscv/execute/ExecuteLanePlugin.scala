@@ -8,8 +8,9 @@ import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
+import vexiiriscv.Global.TRAP
 import vexiiriscv.decode.Decode
-import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
+import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
 import vexiiriscv.schedule.{Ages, DispatchPlugin, FlushCmd, ReschedulePlugin}
@@ -19,45 +20,21 @@ import scala.collection.mutable.ArrayBuffer
 
 case class UopImplKey(uop : MicroOp, name : LaneLayer)
 
-//class DecodingFromUopImpls(val target: Payload[_ <: BaseType]) {
-//  var default = Option.empty[Masked]
-//  val needs = mutable.LinkedHashMap[UopImplKey, Masked]()
-//
-//  def setDefault(value: Masked) = {
-//    default match {
-//      case Some(x) => ???
-//      case None => default = Some(value)
-//    }
-//    this
-//  }
-//
-//  def addNeeds(key: UopImplKey, value: Masked): this.type = {
-//    needs.get(key) match {
-//      case Some(x) => assert(needs(key) == value)
-//      case None => needs(key) = value
-//    }
-//    this
-//  }
-//
-//  def addNeeds(keys: Seq[UopImplKey], value: Masked): this.type = {
-//    keys.foreach(addNeeds(_, value))
-//    this
-//  }
-//}
-
-
 class ExecuteLanePlugin(override val laneName : String,
                         override val rfReadAt : Int,
                         val decodeAt : Int,
                         override val executeAt : Int,
                         override val withBypasses : Boolean) extends FiberPlugin with ExecuteLaneService with CompletionService{
   lazy val eupp = host[ExecutePipelinePlugin]
+  lazy val ts = host[TrapService]
+  setupRetain(ts.trapLock)
   setupRetain(eupp.pipelineLock)
   setName("execute_" + laneName)
 
   during setup {
     host.list[RegfileService].foreach(_.elaborationLock.retain())
   }
+
 
   val readLatencyMax = Handle[Int]
   override def rfReadLatencyMax: Int = readLatencyMax.get
@@ -81,14 +58,13 @@ class ExecuteLanePlugin(override val laneName : String,
   }
 
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType): Unit = {
-    val masked = Masked(value)
     decodingDefaults.get(key) match {
-      case None => decodingDefaults(key) = masked
-      case Some(x) => assert(x == masked)
+      case None => decodingDefaults(key) = value
+      case Some(x) => assert(Masked(x) == Masked(value))
     }
   }
 
-  val decodingDefaults = mutable.LinkedHashMap[Payload[_ <: BaseType], Masked]()
+  val decodingDefaults = mutable.LinkedHashMap[Payload[_ <: BaseType], BaseType]()
 
   val rfStageables = mutable.LinkedHashMap[RfResource, Payload[Bits]]()
 
@@ -121,6 +97,9 @@ class ExecuteLanePlugin(override val laneName : String,
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.completions.onCtrl.map(_.port).toSeq
 
   val logic = during build new Area {
+    val trapPending = ts.newTrapPending()
+    ts.trapLock.release()
+
     uopLock.await()
 
     getLayers().foreach(_.doChecks())
@@ -256,13 +235,16 @@ class ExecuteLanePlugin(override val laneName : String,
       val coverAll = getUopLayerSpec().map(implToMasked)
       val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
       def ds(key : Payload[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
-      for((key, default) <- decodingDefaults) ds(key).setDefault(default)
+      for((key, default) <- decodingDefaults) ds(key).setDefault(Masked(default))
       for(impl <- getUopLayerSpec()){
         for((key, value) <- impl.decodings) ds(key).addNeeds(implToMasked(impl), value)
       }
       val decodingBits = apply(LAYER_SEL) ## apply(Decode.UOP)
       for ((key, spec) <- decodingSpecs) {
         key.assignFromBits(spec.build(decodingBits, coverAll).asBits)
+      }
+      when(Global.TRAP){
+        for((key, default) <- decodingDefaults) key.assignFrom(default)
       }
     }
 
@@ -285,8 +267,11 @@ class ExecuteLanePlugin(override val laneName : String,
       }
     }
 
-    host.list[RegfileService].foreach(_.elaborationLock.release())
+    for(hartId <- 0 until Global.HART_COUNT) {
+      trapPending(hartId) := (for (ctrlId <- 1 to ts.trapHandelingAt; c = ctrl(ctrlId)) yield c.isValid && c(Global.HART_ID) === hartId && c(TRAP)).orR
+    }
 
+    host.list[RegfileService].foreach(_.elaborationLock.release())
     eupp.pipelineLock.release()
   }
 

@@ -14,7 +14,7 @@ import scala.collection.mutable
 class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   setName("fetch")
   val elaborationLock = Lock()
-  def getAge(at: Int, prediction: Boolean): Int = Ages.FETCH + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
+  def getAge(at: Int, prediction: Boolean = false): Int = Ages.FETCH + at * Ages.STAGE + (!prediction).toInt * Ages.NOT_PREDICTION
 
   override def getLinks(): Seq[Link] = logic.connectors
   val idToFetch = mutable.LinkedHashMap[Int, pipeline.CtrlLink]()
@@ -32,7 +32,7 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
     val rp = host[ReschedulePlugin]
     val flushRange = 1 until ctrls.size
     val flushes = for(id <- flushRange) yield new Area {
-      val age = getAge(id, true)
+      val age = getAge(id)
       val c = fetch(id)
       val doIt = rp.isFlushedAt(age, c(Global.HART_ID), U(0))
       doIt.foreach(v => c.throwWhen(v, usingReady = false))

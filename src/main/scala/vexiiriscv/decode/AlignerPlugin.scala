@@ -14,6 +14,7 @@ import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+//Warning, if it start to hold stats => you need to notify TrapService when flush is pending
 class AlignerPlugin(fetchAt : Int,
                     lanes : Int = 1) extends FiberPlugin with PipelineService{
   lazy val fpp = host[FetchPipelinePlugin]
@@ -64,7 +65,8 @@ class AlignerPlugin(fetchAt : Int,
         val pcLaneRange = pcLaneLow + log2Up(Decode.LANES) -1 downto pcLaneLow
 
         lane.up(lane.LANE_SEL)       := up.valid && up(Fetch.WORD_PC)(pcLaneRange) <= laneId
-        lane(Decode.INSTRUCTION)     := instructionSlices(laneId)
+        lane(Decode.INSTRUCTION) := instructionSlices(laneId)
+        lane(Decode.INSTRUCTION_RAW) := instructionSlices(laneId)
         lane(Global.PC)              := up(Fetch.WORD_PC)
         lane(Global.PC)(pcLaneRange) := laneId
         lane(Fetch.ID)               := up(Fetch.ID)

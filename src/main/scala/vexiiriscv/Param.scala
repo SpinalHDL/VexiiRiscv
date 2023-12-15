@@ -4,10 +4,12 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
+import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.riscv.IntRegFile
+import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
 import scala.collection.mutable.ArrayBuffer
@@ -37,15 +39,15 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 1
-    lanes = 1
+    decoders = 2
+    lanes = 2
     regFileSync = false
-    withGShare = false
-    withBtb = false
-    withRas = false
+    withGShare = true
+    withBtb = true
+    withRas = true
 //    withMul = false
 //    withDiv = false
-    withLateAlu = false
+    withLateAlu = true
     allowBypassFrom = 0
     relaxedBranch = false
     relaxedShift = false
@@ -150,7 +152,8 @@ class ParamSimple(){
       decodeAt = 1
     )
     plugins += new schedule.DispatchPlugin(
-      dispatchAt = 1
+      dispatchAt = 1,
+      trapLayer = null
     )
 
     plugins += new regfile.RegFilePlugin(
@@ -173,7 +176,6 @@ class ParamSimple(){
     val lane0 = newExecuteLanePlugin("lane0")
     val early0 = new LaneLayer("early0", lane0, priority = 0)
     plugins += lane0
-
 
     plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
@@ -235,6 +237,10 @@ class ParamSimple(){
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
     }
 
+    plugins.foreach {
+      case p: DispatchPlugin => p.trapLayer = early0
+      case _ =>
+    }
 
     plugins += new WhiteboxerPlugin()
 
