@@ -1,9 +1,10 @@
 package vexiiriscv.decode
 
-import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
+import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService, TrapService}
 import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 import spinal.core._
 import spinal.core.fiber.Lock
+import spinal.lib._
 import spinal.lib.misc.pipeline
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -14,8 +15,11 @@ import scala.collection.mutable
 
 class DecodePipelinePlugin extends FiberPlugin with PipelineService{
   setName("decode")
+  lazy val ts = host[TrapService]
+  setupRetain(ts.trapLock)
+
   val elaborationLock = Lock()
-  def getAge(at: Int, prediction: Boolean): Int = Ages.DECODE + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
+  def getAge(at: Int, prediction: Boolean = false): Int = Ages.DECODE + at * Ages.STAGE + (!prediction).toInt * Ages.NOT_PREDICTION
 
   override def getLinks(): Seq[Link] = logic.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, Ctrl]()
@@ -44,6 +48,9 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
   class LaneArea(ctrlId : Int, laneId : Int) extends CtrlLaneMirror(ctrl(ctrlId).lane(laneId))
 
   val logic = during build new Area{
+    val trapPending = ts.newTrapPending()
+    ts.trapLock.release()
+
     elaborationLock.await()
     val idMax = idToCtrl.keys.max
     for(i <- 0 to idMax) ctrl(i) //To ensure the creation to all intermediate nodes
@@ -66,7 +73,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
 
     val flushRange = 0 until ctrls.size
     val flushes = for(ctrlId <- flushRange) yield new Area {
-      val age = getAge(ctrlId, true)
+      val age = getAge(ctrlId)
       val c = idToCtrl(ctrlId)
 //      val doIt = rp.isFlushedAt(age, c.link(Global.HART_ID), U(0))
 //      doIt.foreach(v => c.link.throwWhen(v, usingReady = false))
@@ -85,6 +92,10 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
           case None => l.cancel := False
         }
       }
+    }
+
+    for (hartId <- 0 until Global.HART_COUNT) {
+      trapPending(hartId) := (for (ctrlId <- 0 to idMax; laneId <- 0 until Decode.LANES; e = ctrl(ctrlId).lane(laneId)) yield e.isValid && e(Global.HART_ID) === hartId && e(Global.TRAP)).orR
     }
   }
 }

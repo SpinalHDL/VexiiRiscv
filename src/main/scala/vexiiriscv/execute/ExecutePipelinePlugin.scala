@@ -32,8 +32,6 @@ class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
     idToCtrl.getOrElseUpdate(id, CtrlLink().setCompositeName(this, "ctrl" + id))
   }
 
-  def getAge(at: Int, prediction: Boolean): Int = Ages.EU + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
-
   val freeze = during build new Area{
     val requests = ArrayBuffer[Bool]()
     val valid = Bool()

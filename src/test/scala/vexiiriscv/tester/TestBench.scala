@@ -272,6 +272,7 @@ object TestBench extends App{
       param.addOptions(this)
     }.parse(args, Unit).nonEmpty)
 
+    println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
       simConfig.compile(VexiiRiscv(param.plugins()))
     }

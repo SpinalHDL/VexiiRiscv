@@ -17,6 +17,7 @@ object Decode extends AreaObject {
   val UOP_ID_WIDTH = blocking[Int]
 
   val INSTRUCTION = Payload(Bits(INSTRUCTION_WIDTH bits))
+  val INSTRUCTION_RAW = Payload(Bits(INSTRUCTION_WIDTH bits))
   val UOP = Payload(Bits(UOP_WIDTH bits))
   def UOP_WIDTH = INSTRUCTION_WIDTH.get
 

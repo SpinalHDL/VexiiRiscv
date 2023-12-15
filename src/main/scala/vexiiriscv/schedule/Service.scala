@@ -11,7 +11,7 @@ import vexiiriscv.fetch.JumpCmd
 
 object Ages {
   val STAGE = 10
-  val PREDICTION = -1
+  val NOT_PREDICTION = 1
   val FETCH = 0
   val DECODE = 1000
   val EU = 2000
