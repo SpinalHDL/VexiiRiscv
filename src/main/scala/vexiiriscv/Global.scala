@@ -23,7 +23,7 @@ object Global extends AreaRoot{
   val PHYSICAL_ADDRESS = Payload(UInt(PHYSICAL_WIDTH bits))
   val PC = Payload(UInt(PC_WIDTH bits))
   val PC_TARGET = Payload(UInt(PC_WIDTH-Fetch.SLICE_RANGE_LOW bits))
-  val CAUSE = Payload(Bits(CAUSE_WIDTH bits))
+  val CODE = Payload(Bits(CAUSE_WIDTH bits))
   val TVAL = Payload(Bits(TVAL_WIDTH bits))
   val TRAP = Payload(Bool())
 

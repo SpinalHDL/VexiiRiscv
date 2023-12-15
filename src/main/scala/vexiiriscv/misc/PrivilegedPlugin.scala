@@ -48,7 +48,7 @@ case class PrivilegedConfig(withSupervisor : Boolean,
 case class TrapSpec(bus : Flow[Trap], age : Int)
 case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
   val tval = TVAL()
-  val cause = CAUSE()
+  val code = CODE()
   val laneAge = full generate UInt(laneAgeWidth bits)
   val hartId = full generate HART_ID()
 
@@ -100,29 +100,73 @@ class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin w
 
     assert(HART_COUNT.get == 1)
 
+    val io =new Area {
+      val int = new Area {
+        val m = new Area {
+          val timer = in Bool()
+          val software = in Bool()
+          val external = in Bool()
+        }
+        val supervisor = p.withSupervisor generate new Area {
+          val external = in Bool()
+        }
+        val user = p.withUserTrap generate new Area {
+          val external = in Bool()
+        }
+      }
+      val rdtime = in UInt (64 bits)
+    }
+
     val csrs = for(hartId <- 0 until HART_COUNT) yield new Area{
       val api = cap.hart(hartId)
       val withFs = RVF || p.withSupervisor
-      val mstatus = new Area {
-        val mie, mpie = RegInit(False)
-        val mpp = RegInit(U"00")
-        val fs = withFs generate RegInit(U"00")
-        val sd = False
-        if (RVF) ??? //setup.isFpuEnabled setWhen (fs =/= 0)
-        if (withFs) sd setWhen (fs === 3)
+      val privilege = RegInit(U"11")
+      
+      val m = new api.Csr(CSR.MSTATUS) {
+        val status = new Area {
+          val mie, mpie = RegInit(False)
+          val mpp = RegInit(U"00")
+          val fs = withFs generate RegInit(U"00")
+          val sd = False
+          if (RVF) ??? //setup.isFpuEnabled setWhen (fs =/= 0)
+          if (withFs) sd setWhen (fs === 3)
 
-        val mapper = api.onCsr(CSR.MSTATUS)
-        mapper.readWrite(11 -> mpp, 7 -> mpie, 3 -> mie)
-        mapper.read(XLEN - 1 -> sd)
-        if (withFs) mapper.readWrite(13 -> fs)
+          readWrite(11 -> mpp, 7 -> mpie, 3 -> mie)
+          read(XLEN - 1 -> sd)
+          if (withFs) readWrite(13 -> fs)
+        }
+
+        val cause = new api.Csr(CSR.MCAUSE) {
+          val interrupt = RegInit(False)
+          val code = Reg(CODE) init (0)
+
+          readWrite(XLEN-1 -> interrupt, 0 -> code)
+        }
+
+        val ip =  new api.Csr(CSR.MIP) {
+          val meip = RegNext(io.int.m.external) init (False)
+          val mtip = RegNext(io.int.m.timer) init (False)
+          val msip = RegNext(io.int.m.software) init (False)
+          read(11 -> meip, 7 -> mtip, 3 -> msip)
+        }
+
+        val ie = new api.Csr(CSR.MIE) {
+          val meie, mtie, msie = RegInit(False)
+          readWrite(11 -> meie, 7 -> mtie, 3 -> msie)
+        }
+
+
+        val tval = Reg(TVAL) init (0)
+        val epc = Reg(PC) init (0)
+        val tvec = Reg(PC) init (0)
+
+        api.onCsr(CSR.MTVAL).readWrite(tval)
+        api.onCsr(CSR.MEPC).readWrite(epc)
+        api.onCsr(CSR.MTVEC).readWrite(tvec)
+
       }
-      val mcause = Reg(CAUSE) init (0)
-      val mtval = Reg(TVAL) init (0)
-      val mepc = Reg(PC) init (0)
-      val mtvec = Reg(PC) init (0)
-      api.onCsr(CSR.MTVAL).readWrite(mtval)
-      api.onCsr(CSR.MEPC).readWrite(mepc)
-      api.onCsr(CSR.MTVEC).readWrite(mtvec)
+
+
 
       //    cap.readWrite(CSR.MCAUSE, XLEN - 1 -> cause.interrupt, 0 -> cause.code)
 
@@ -135,6 +179,7 @@ class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin w
 
     trapLock.await()
     val hartsTrap = for(hartId <- 0 until HART_COUNT) yield new Area{
+      val csr = csrs(hartId)
       val pending = new Area {
         val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.age))
         val arbiter = new AgedArbiter(requests)
@@ -153,20 +198,37 @@ class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin w
         }
 
         val inflights = B(for(lane <- lanes; exId <- 0 to trapAt; ctrl = lane.execute(exId)) yield ctrl.isValid && ctrl(TRAP))
-        val holdPort = pcs.newHoldPort(hartId)
-        holdPort := inflights.orR
       }
 
 
       val pcPort = pcs.createJumpInterface(Ages.TRAP, 0, 0)
       pcPort.valid := trigger.valid
       pcPort.hartId := hartId
-      pcPort.pc := csrs(hartId).mtvec
-//      val fsm = new StateMachine {
-//        val RUNNING = makeInstantEntry()
-//
-//
-//      }
+      pcPort.pc := csrs(hartId).m.tvec
+      val fsm = new StateMachine {
+        val RUNNING = makeInstantEntry()
+        val TRAP_TRIGGER = new State()
+
+        val holdPort = pcs.newHoldPort(hartId)
+        holdPort := trigger.inflights.orR || !isActive(RUNNING)
+
+        RUNNING.whenIsActive{
+          when(trigger.valid){
+            goto(TRAP_TRIGGER)
+          }
+        }
+
+        TRAP_TRIGGER.whenIsActive{
+          csr.m.epc := pending.pc
+          csr.m.tval := pending.state.tval
+          csr.m.cause.code := pending.state.code
+          csr.m.cause.interrupt := False
+          csr.m.status.mpp := csr.privilege
+          goto(RUNNING)
+        }
+      }
+
+      csr.privilege := 3 //TODO remove
     }
     cap.csrLock.release()
   }

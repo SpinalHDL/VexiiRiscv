@@ -7,13 +7,14 @@ package vexiiriscv.execute
 import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
-import vexiiriscv.riscv.{Const, IMM, RD, Riscv, Rvi}
+import vexiiriscv.riscv.{CSR, Const, IMM, RD, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
+import vexiiriscv.misc.TrapService
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
 import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
@@ -37,10 +38,14 @@ class BranchPlugin(val layer : LaneLayer,
   lazy val pcp = host[PcPlugin]
   lazy val hp = host.get[HistoryPlugin]
   lazy val ls = host[LearnService]
+  lazy val ts = host[TrapService]
   setupRetain(wbp.elaborationLock)
   setupRetain(sp.elaborationLock)
   setupRetain(pcp.elaborationLock)
+  setupRetain(ts.trapLock)
   during setup(hp.foreach(_.elaborationLock.retain))
+
+  def catchMissaligned = !Riscv.RVC
 
   val logic = during build new Logic{
     import SrcKeys._
@@ -73,8 +78,9 @@ class BranchPlugin(val layer : LaneLayer,
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
     val historyPort = hp.map(_.createPort(age, Execute.LANE_AGE_WIDTH))
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
-    //    val trapPort = if XXX sp.newTrapPort(age)
+    val trapPort = catchMissaligned generate ts.newTrap(layer.el.getAge(jumpAt), Execute.LANE_AGE_WIDTH)
 
+    ts.trapLock.release()
     eu.uopLock.release()
     wbp.elaborationLock.release()
     sp.elaborationLock.release()
@@ -176,12 +182,23 @@ class BranchPlugin(val layer : LaneLayer,
         port.age := Execute.LANE_AGE
       }
 
-
       flushPort.valid := doIt
       flushPort.hartId := Global.HART_ID
       flushPort.uopId :=  Decode.UOP_ID
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
+
+      val MISSALIGNED = insert(alu.PC_TRUE(0, Fetch.SLICE_RANGE_LOW bits) =/= 0 && alu.COND)
+      if (catchMissaligned) { //Non RVC can trap on missaligned branches
+        trapPort.valid := False
+        trapPort.code := CSR.MCAUSE_ENUM.FETCH_MISSALIGNED
+        trapPort.tval := B(alu.PC_TRUE)
+
+        when(doIt && MISSALIGNED){
+          trapPort.valid := True
+          bypass(TRAP) := True
+        }
+      }
 
       val IS_JAL = insert(BRANCH_CTRL === BranchCtrlEnum.JAL)
       val IS_JALR = insert(BRANCH_CTRL === BranchCtrlEnum.JALR)
