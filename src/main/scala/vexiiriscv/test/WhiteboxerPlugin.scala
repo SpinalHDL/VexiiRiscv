@@ -189,7 +189,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val ports = for(hartId <- 0 until HART_COUNT) yield new Area{
         val priv = host[PrivilegedPlugin].logic.hartsTrap(hartId)
         val valid = wrap(priv.trigger.valid)
-        val cause = wrap(priv.pending.state.cause)
+        val cause = wrap(priv.pending.state.code)
       }
     }
 

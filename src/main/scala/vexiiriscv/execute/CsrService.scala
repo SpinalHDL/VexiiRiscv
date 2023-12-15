@@ -147,22 +147,24 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     write(value, csrId, bitOffset)
   }
 
-  def onCsr(csrFilter : Any) = new {
-    def read[T <: Data](value: T, bitOffset: Int = 0): Unit = {
-      CsrHartApi.this.read(value, csrFilter, bitOffset)
-    }
-    def write[T <: Data](value: T, bitOffset: Int = 0): Unit = {
-      CsrHartApi.this.write(value, csrFilter, bitOffset)
-    }
-    def readWrite[T <: Data](value: T, bitOffset: Int = 0): Unit = {
-      read(value, bitOffset)
-      write(value, bitOffset)
-    }
+  class Csr(csrFilter : Any) extends Area{
+      def read[T <: Data](value: T, bitOffset: Int = 0): Unit = {
+        CsrHartApi.this.read(value, csrFilter, bitOffset)
+      }
+      def write[T <: Data](value: T, bitOffset: Int = 0): Unit = {
+        CsrHartApi.this.write(value, csrFilter, bitOffset)
+      }
+      def readWrite[T <: Data](value: T, bitOffset: Int = 0): Unit = {
+        read(value, bitOffset)
+        write(value, bitOffset)
+      }
 
-    def readWrite(thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, that._1)
-    def write(thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, that._1)
-    def read(thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, that._1)
+      def readWrite(thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, that._1)
+      def write(thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, that._1)
+      def read(thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, that._1)
   }
+
+  def onCsr(csrFilter : Any) = new Csr(csrFilter)
 }
 
 class CsrRamAllocation(val entries : Int){

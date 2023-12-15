@@ -39,6 +39,8 @@ case class IMM(instruction  : Bits) extends Area{
 
 object CSR {
   val MCAUSE_ENUM = new {
+    val FETCH_MISSALIGNED = 0
+
     val STORE_PAGE_FAULT = 15
     val STORE_MISALIGNED = 6
     val STORE_ACCESS_FAULT = 7
