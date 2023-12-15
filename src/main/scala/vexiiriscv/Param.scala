@@ -201,8 +201,10 @@ class ParamSimple(){
       plugins += new RsUnsignedPlugin("lane0")
       plugins += new DivPlugin(early0)
     }
+
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(PrivilegedConfig.full, trapAt = 2)
+    plugins += new EnvPlugin(early0, executeAt = 0)
 
     if(withLateAlu) {
       val late0 = new LaneLayer("late0", lane0, priority = -5)
