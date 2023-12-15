@@ -103,13 +103,16 @@ class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin w
 
   override def trapHandelingAt: Int = trapAt
 
+
+  def getPrivilege(hartId : UInt) : UInt = logic.csrs.map(_.privilege).read(hartId)
+
   val logic = during build new Area{
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
-    CAUSE_WIDTH.set((4 +: causesWidthMins).max)
+    CODE_WIDTH.set((4 +: causesWidthMins).max)
 
     assert(HART_COUNT.get == 1)
 
-    val io =new Area {
+    val io = new Area {
       val int = new Area {
         val m = new Area {
           val timer = in Bool()
