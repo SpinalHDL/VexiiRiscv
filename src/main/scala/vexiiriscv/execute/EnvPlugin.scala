@@ -36,8 +36,9 @@ class EnvPlugin(layer : LaneLayer,
     add(Rvi.MRET).decode(OP -> EnvPluginOp.XRET)
 
     val uopList = List(Rvi.ECALL, Rvi.EBREAK, Rvi.MRET)
-    for (uop <- uopList) {
-      layer(uop).setCompletion(executeAt)
+    for (uop <- uopList; spec = layer(uop)) {
+      spec.setCompletion(executeAt)
+      spec.mayFlushUpTo(executeAt)
     }
 
     eu.uopLock.release()
