@@ -47,6 +47,7 @@ case class PrivilegedConfig(withSupervisor : Boolean,
 
 case class TrapSpec(bus : Flow[Trap], age : Int)
 case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
+  val exception = Bool()
   val tval = TVAL()
   val code = CODE()
   val laneAge = full generate UInt(laneAgeWidth bits)

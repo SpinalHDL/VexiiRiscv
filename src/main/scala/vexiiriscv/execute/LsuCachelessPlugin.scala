@@ -177,6 +177,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       flushPort.self := False
 
       trapPort.valid :=  isValid && SEL && MISS_ALIGNED
+      trapPort.exception := True
       trapPort.code := LOAD.mux[Bits](CSR.MCAUSE_ENUM.LOAD_MISALIGNED, CSR.MCAUSE_ENUM.STORE_MISALIGNED).andMask(MISS_ALIGNED).resized
       trapPort.tval  := onAddress.RAW_ADDRESS.asBits
       trapPort.hartId := Global.HART_ID

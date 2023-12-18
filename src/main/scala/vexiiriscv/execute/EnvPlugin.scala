@@ -55,10 +55,12 @@ class EnvPlugin(layer : LaneLayer,
       flushPort.self := False
 
       trapPort.valid := False
+      trapPort.exception := True
       trapPort.code.assignDontCare()
       trapPort.tval := B(PC).andMask(OP === EnvPluginOp.EBREAK) //That's what spike do
 
       val privilege = ps.getPrivilege(HART_ID)
+      val xretPriv = Decode.UOP(29 downto 28).asUInt
       val forceCommit = True
       switch(this(OP)) {
         is(EnvPluginOp.EBREAK) {
