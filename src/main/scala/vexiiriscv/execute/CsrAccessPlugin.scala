@@ -154,7 +154,7 @@ class CsrAccessPlugin(layer : LaneLayer,
 
       val inject = new elp.Execute(injectAt){
 
-        assert(!(up(LANE_SEL) && SEL && hasCancelRequest))
+        assert(!(up(LANE_SEL) && SEL && hasCancelRequest), "CsrAccessPlugin saw forbidden select && cancel request")
         val imm = IMM(UOP)
         val immZero = imm.z === 0
         val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
