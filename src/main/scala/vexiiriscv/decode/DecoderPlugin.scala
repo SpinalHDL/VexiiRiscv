@@ -17,14 +17,6 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService with CompletionService{
-  lazy val dpp = host[DecodePipelinePlugin]
-  lazy val ts = host[TrapService]
-  lazy val ss = host[ScheduleService]
-  buildBefore(dpp.elaborationLock)
-  setupRetain(ts.trapLock)
-  setupRetain(ss.elaborationLock)
-
-
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.laneLogic.map(_.completionPort)
 
   val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
@@ -49,7 +41,13 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     host.list[ExecuteLaneService].flatMap(_.getUops()).map(e => Masked(e.key))
   }
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val dpp = host[DecodePipelinePlugin]
+    val ts = host[TrapService]
+    val ss = host[ScheduleService]
+    val buildBefore = retains(dpp.elaborationLock, ts.trapLock, ss.elaborationLock)
+    awaitBuild()
+
     elaborationLock.await()
 
     Decode.INSTRUCTION_WIDTH.set(32)
@@ -181,7 +179,6 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       Decode.UOP_ID := uopIdBase + laneId
     }
 
-    ss.elaborationLock.release()
-    ts.trapLock.release()
+    buildBefore.release()
   }
 }

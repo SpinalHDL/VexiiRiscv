@@ -17,22 +17,20 @@ import scala.collection.mutable.ArrayBuffer
 //Warning, if it start to hold stats => you need to notify TrapService when flush is pending
 class AlignerPlugin(fetchAt : Int,
                     lanes : Int = 1) extends FiberPlugin with PipelineService{
-  lazy val fpp = host[FetchPipelinePlugin]
-  lazy val dpp = host[DecodePipelinePlugin]
-
-  buildBefore(fpp.elaborationLock)
-  buildBefore(dpp.elaborationLock)
-
   override def getLinks(): Seq[Link] = logic.connectors
 
   val lastSliceData = mutable.LinkedHashSet[NamedType[_ <: Data]]()
 
   val elaborationLock = Lock()
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val fpp = host[FetchPipelinePlugin]
+    val dpp = host[DecodePipelinePlugin]
+    val buildBefore = retains(fpp.elaborationLock, dpp.elaborationLock)
+    awaitBuild()
+
     val connectors = ArrayBuffer[Link]()
     Decode.LANES.set(lanes)
     Decode.INSTRUCTION_WIDTH.get
-
 
     assert(Decode.INSTRUCTION_WIDTH.get*Decode.LANES == Fetch.WORD_WIDTH.get)
     assert(!Riscv.RVC)
@@ -90,5 +88,6 @@ class AlignerPlugin(fetchAt : Int,
         }
       }
     }
+    buildBefore.release()
   }
 }

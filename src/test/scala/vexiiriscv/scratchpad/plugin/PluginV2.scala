@@ -32,7 +32,7 @@ object FiberPlay extends App{
         Fiber.awaitBuild()
         println("build y")
         value = 42
-//        xLock.releases()
+        xLock.release()
       }
 
       val z = Fiber build new Area {

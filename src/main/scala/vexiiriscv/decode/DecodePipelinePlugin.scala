@@ -15,8 +15,7 @@ import scala.collection.mutable
 
 class DecodePipelinePlugin extends FiberPlugin with PipelineService{
   setName("decode")
-  lazy val ts = host[TrapService]
-  setupRetain(ts.trapLock)
+
 
   val elaborationLock = Lock()
   def getAge(at: Int, prediction: Boolean = false): Int = Ages.DECODE + at * Ages.STAGE + (!prediction).toInt * Ages.NOT_PREDICTION
@@ -47,9 +46,13 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
 
   class LaneArea(ctrlId : Int, laneId : Int) extends CtrlLaneMirror(ctrl(ctrlId).lane(laneId))
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    lazy val ts = host[TrapService]
+    val retainer = retains(ts.trapLock)
+    awaitBuild()
+
     val trapPending = ts.newTrapPending()
-    ts.trapLock.release()
+    retainer.release()
 
     elaborationLock.await()
     val idMax = idToCtrl.keys.max

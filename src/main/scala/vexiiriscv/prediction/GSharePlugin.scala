@@ -21,32 +21,29 @@ class GSharePlugin(var historyWidth : Int,
                    var readAt : Int = 0,
                    var counterWidth : Int = 2,
                    var readAsync : Boolean = false) extends FiberPlugin with FetchConditionalPrediction with HistoryUser{
-  lazy val fpp = host[FetchPipelinePlugin]
-  lazy val ls = host[LearnService]
-  lazy val dp = host[DispatchPlugin]
-  lazy val ap = host[AlignerPlugin]
-  buildBefore(fpp.elaborationLock)
-  setupRetain(ls.learnLock)
-  setupRetain(dp.elaborationLock)
-  setupRetain(ap.elaborationLock)
 
   override def useHistoryAt = readAt
   override def historyWidthUsed = historyWidth
-  override def getPredictionAt(stageId: Int) = fpp.fetch(stageId)(GSHARE_COUNTER).map(_.msb)
+  override def getPredictionAt(stageId: Int) = host[FetchPipelinePlugin].fetch(stageId)(GSHARE_COUNTER).map(_.msb)
 
   val GSHARE_COUNTER = Payload(Vec.fill(SLICE_COUNT)(UInt(counterWidth bits)))
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val fpp = host[FetchPipelinePlugin]
+    val ls = host[LearnService]
+    val dp = host[DispatchPlugin]
+    val ap = host[AlignerPlugin]
+    val buildBefore = retains(fpp.elaborationLock)
+    val retainer = retains(ls.learnLock, dp.elaborationLock, ap.elaborationLock)
+    awaitBuild()
+
     assert(readAsync == false, "The issue with read async is that it may change while btb stage is stuck, producing transiants => missmatch between pc correction and announced prediction done to BranchPlugin")
 
     ls.addLearnCtx(GSHARE_COUNTER)
-    ls.learnLock.release()
-
     dp.hmKeys += GSHARE_COUNTER
-    dp.elaborationLock.release()
-
     ap.lastSliceData += GSHARE_COUNTER
-    ap.elaborationLock.release()
+
+    retainer.release()
 
     var words = entries/SLICE_COUNT
     if(memBytes != null) words = (1 <<(log2Up(memBytes.toInt*8/counterWidth+1)-1)) / SLICE_COUNT
@@ -109,5 +106,6 @@ class GSharePlugin(var historyWidth : Int,
       mem.write.address := hash
       mem.write.data := updated
     }
+    buildBefore.release()
   }
 }
