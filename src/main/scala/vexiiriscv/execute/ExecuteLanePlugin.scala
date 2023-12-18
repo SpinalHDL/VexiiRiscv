@@ -25,16 +25,7 @@ class ExecuteLanePlugin(override val laneName : String,
                         val decodeAt : Int,
                         override val executeAt : Int,
                         override val withBypasses : Boolean) extends FiberPlugin with ExecuteLaneService with CompletionService{
-  lazy val eupp = host[ExecutePipelinePlugin]
-  lazy val ts = host[TrapService]
-  setupRetain(ts.trapLock)
-  setupRetain(eupp.pipelineLock)
   setName("execute_" + laneName)
-
-  during setup {
-    host.list[RegfileService].foreach(_.elaborationLock.retain())
-  }
-
 
   val readLatencyMax = Handle[Int]
   override def rfReadLatencyMax: Int = readLatencyMax.get
@@ -95,10 +86,15 @@ class ExecuteLanePlugin(override val laneName : String,
   override def rfReadHazardFrom(usedAt : Int) : Int = if(withBypasses) usedAt else rfReadAt+1
 
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.completions.onCtrl.map(_.port).toSeq
+  def eupp = host[ExecutePipelinePlugin]
+  val logic = during setup new Area {
+    val ts = host[TrapService]
+    val trapRetain = retains(ts.trapLock)
+    val buildBefore = retains(host.list[RegfileService].map(_.elaborationLock) :+ eupp.pipelineLock)
+    awaitBuild()
 
-  val logic = during build new Area {
     val trapPending = ts.newTrapPending()
-    ts.trapLock.release()
+    trapRetain.release()
 
     uopLock.await()
 
@@ -272,8 +268,7 @@ class ExecuteLanePlugin(override val laneName : String,
     }
     execute(0).up(TRAP_COMMIT) := False
 
-    host.list[RegfileService].foreach(_.elaborationLock.release())
-    eupp.pipelineLock.release()
+    buildBefore.release()
   }
 
   def freezeWhen(cond: Bool)(implicit loc: Location) = eupp.freezeWhen(cond)

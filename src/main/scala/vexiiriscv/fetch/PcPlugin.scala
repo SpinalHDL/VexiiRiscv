@@ -11,8 +11,6 @@ import vexiiriscv.Global
 import scala.collection.mutable.ArrayBuffer
 
 class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with PcService{
-  lazy val pp = host[FetchPipelinePlugin]
-  setupRetain(pp.elaborationLock)
 
   case class JumpSpec(bus : Flow[JumpCmd], priority : Int, aggregationPriority : Int) extends Composite(bus) {
     val laneValid = Bool()
@@ -34,7 +32,11 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
 
   override def forcedSpawn(): Bool = logic.forcedSpawn
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val pp = host[FetchPipelinePlugin]
+    val buildBefore = retains(pp.elaborationLock)
+    awaitBuild()
+
     elaborationLock.await()
     val injectStage = pp.fetch(0).up
 
@@ -123,6 +125,6 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
         Fetch.ID := hart.self.id
       }
     }
-    pp.elaborationLock.release()
+    buildBefore.release()
   }
 }

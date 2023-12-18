@@ -19,8 +19,7 @@ case class HistoryJump(laneAgeWidth : Int) extends Bundle{
 
 //TODO a few history port may be removed to save area, as they are corner case  : DecodePredictionPlugin, and eventualy Lsu io missprediction
 class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin {
-  lazy val fpp = host[FetchPipelinePlugin]
-  buildBefore(fpp.elaborationLock)
+
 
   case class HistorySpec(priority : Int, laneAgeWidth : Int, port : Flow[HistoryJump])
   val historySpecs = mutable.ArrayBuffer[HistorySpec]()
@@ -29,7 +28,11 @@ class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin
   }
 
   val elaborationLock = Lock()
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val fpp = host[FetchPipelinePlugin]
+    val buildBefore = retains(fpp.elaborationLock)
+    awaitBuild()
+
     elaborationLock.await()
 
     val fetchUsages = host.list[FetchConditionalPrediction]
@@ -59,5 +62,6 @@ class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin
     val inserter = new fpp.Fetch(fetchInsertAt){
       BRANCH_HISTORY := (if(historyFetchBypass) onFetch.valueNext else onFetch.value)
     }
+    buildBefore.release()
   }
 }

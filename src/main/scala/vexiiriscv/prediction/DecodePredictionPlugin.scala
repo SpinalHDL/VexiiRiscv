@@ -18,23 +18,22 @@ The job of this plugin is to prevent instruction which got a fetch prediction, b
  */
 class DecodePredictionPlugin(var decodeAt: Int,
                              var jumpAt: Int) extends FiberPlugin{
-  lazy val dpp = host[DecodePipelinePlugin]
-  lazy val pcp = host[PcService]
-  lazy val rp = host[ReschedulePlugin]
-  lazy val dp = host[DecoderService]
-  lazy val hp = host.get[HistoryPlugin]
-  buildBefore(dpp.elaborationLock)
-  buildBefore(pcp.elaborationLock)
-  setupRetain(rp.elaborationLock)
-  during setup(hp.foreach(_.elaborationLock.retain()))
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val dpp = host[DecodePipelinePlugin]
+    val pcp = host[PcService]
+    val rp = host[ReschedulePlugin]
+    val dp = host[DecoderService]
+    val hp = host.get[HistoryPlugin]
+    val buildBefore = retains(dpp.elaborationLock, pcp.elaborationLock)
+    val retainer = retains(List(rp.elaborationLock) ++ hp.map(_.elaborationLock))
+    awaitBuild()
+
     val age = dpp.getAge(jumpAt, true)
     val pcPorts = List.fill(Decode.LANES)(pcp.createJumpInterface(age, log2Up(Decode.LANES), 0))
     val flushPorts = List.fill(Decode.LANES)(rp.newFlushPort(dpp.getAge(jumpAt), log2Up(Decode.LANES), true))
     val historyPorts = hp.map(hp => List.tabulate(Decode.LANES)(i => hp.createPort(age + i, 0)))
-    rp.elaborationLock.release()
-    hp.foreach(_.elaborationLock.release())
+    retainer.release()
 
     val decodeSpec = new Area{
       val branchKeys = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU).map(e => Masked(e.key))
@@ -72,5 +71,6 @@ class DecodePredictionPlugin(var decodeAt: Int,
         }
       }
     }
+    buildBefore.release()
   }
 }

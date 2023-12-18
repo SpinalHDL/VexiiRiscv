@@ -33,7 +33,7 @@ case class TrapCmd(age : Int, pcWidth : Int, tvalWidth : Int, causeWidth : Int) 
 
 trait ScheduleService {
   def newFlushPort(age: Int, laneAgeWidth: Int, withUopId: Boolean): Flow[FlushCmd]
-  def sharedFlushPort(age: Int, laneAgeWidth: Int, withUopId: Boolean, key : Nameable): Flow[FlushCmd]
+//  def sharedFlushPort(age: Int, laneAgeWidth: Int, withUopId: Boolean, key : Nameable): Flow[FlushCmd]
 //  def newPcPort(age : Int, aggregationPriority : Int = 0) : Flow[JumpCmd]
   def newTrapPort(age : Int, causeWidth : Int = 4) : Flow[TrapCmd]
   def isFlushedAt(age: Int, hartId : UInt, laneAge : UInt): Option[Bool]

@@ -32,19 +32,6 @@ Schedule euristic :
 */
 
 class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends FiberPlugin{
-  lazy val dpp = host[DecodePipelinePlugin]
-  lazy val dp = host[DecoderService]
-  lazy val eupp = host[ExecutePipelinePlugin]
-
-  buildBefore(host[PipelineBuilderPlugin].elaborationLock)
-  buildBefore(dpp.elaborationLock)
-  buildBefore(eupp.pipelineLock)
-  setupRetain(dp.elaborationLock)
-
-  during setup{
-    host.list[ExecuteLaneService].foreach(_.pipelineLock.retain())
-  }
-
   val elaborationLock = Lock()
 
   val MAY_FLUSH = Payload(Bool())
@@ -59,7 +46,17 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
 //  def fenceYounger(op : MicroOp) = fenceYoungerOps += op
 //  def fenceOlder(op : MicroOp) = fenceOlderOps += op
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val dpp = host[DecodePipelinePlugin]
+    val dp = host[DecoderService]
+    val eupp = host[ExecutePipelinePlugin]
+    val pbp = host[PipelineBuilderPlugin]
+    val buildBefore = retains(
+      List(pbp.elaborationLock, dpp.elaborationLock, eupp.pipelineLock) ++ host.list[ExecuteLaneService].map(_.pipelineLock)
+    )
+    val dpRetains = retains(dp.elaborationLock)
+    awaitBuild()
+
     Execute.LANE_AGE_WIDTH.set(log2Up(Decode.LANES))
 
     elaborationLock.await()
@@ -118,7 +115,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       }
     }
 
-    dp.elaborationLock.release()
+    dpRetains.release()
     val slotsCount = 0 //Warning, if not zero you need to notify TrapService when flush is pending
 
     hmKeys.add(Global.PC)
@@ -293,7 +290,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
 
     eupp.ctrl(0).up.setAlwaysValid()
 
-    eus.foreach(_.pipelineLock.release())
+    buildBefore.release()
   }
 }
 
