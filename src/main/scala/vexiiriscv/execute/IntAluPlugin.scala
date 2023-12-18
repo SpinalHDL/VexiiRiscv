@@ -24,14 +24,13 @@ class IntAluPlugin(var layer: LaneLayer,
                    var aluAt : Int = 0,
                    var formatAt : Int = 0) extends ExecutionUnitElementSimple(layer)  {
   import IntAluPlugin._
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.el.laneName)
-  setupRetain(ifp.elaborationLock)
 
   val ALU_BITWISE_CTRL = Payload(AluBitwiseCtrlEnum())
   val ALU_CTRL = Payload(AluCtrlEnum())
   val ALU_RESULT = Payload(Bits(Riscv.XLEN bits))
 
-  val logic = during build new Logic{
+  val logic = during setup new Logic{
+    awaitBuild()
     import SrcKeys._
 
     val ace = AluCtrlEnum
@@ -68,9 +67,7 @@ class IntAluPlugin(var layer: LaneLayer,
       }
     }
 
-    eu.uopLock.release()
-    srcp.elaborationLock.release()
-    ifp.elaborationLock.release()
+    uopRetainer.release()
 
     val alu = new eu.Execute(aluAt) {
       val ss = SrcStageables

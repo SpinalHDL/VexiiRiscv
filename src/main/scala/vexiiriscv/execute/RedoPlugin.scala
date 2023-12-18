@@ -14,21 +14,19 @@ import scala.collection.mutable.ArrayBuffer
 
 class RedoPlugin(val laneName : String) extends FiberPlugin {
   lazy val elp = host.find[ExecuteLaneService](_.laneName == laneName)
-  lazy val pcs = host[PcService]
-  lazy val sp = host[ReschedulePlugin]
-  lazy val hp = host.get[HistoryPlugin]
-
-  buildBefore(pcs.elaborationLock)
-  buildBefore(elp.pipelineLock)
-  buildBefore(sp.elaborationLock)
-  during setup (hp.foreach(_.elaborationLock.retain))
-
   case class Spec(ctrlAt : Int, request : Bool)
   val specs = ArrayBuffer[Spec]()
   def newPort(executeAt : Int) : Bool = specs.addRet(Spec(executeAt + elp.executeAt, Bool())).request
 
+
   val elaborationLock = Lock()
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val pcs = host[PcService]
+    val sp = host[ReschedulePlugin]
+    val hp = host.get[HistoryPlugin]
+    val buildBefore = retains(hp.map(_.elaborationLock).toList :+ pcs.elaborationLock :+ elp.pipelineLock :+ sp.elaborationLock)
+    awaitBuild()
+
     elaborationLock.await()
 
     val groups = specs.groupBy(_.ctrlAt)
@@ -56,6 +54,6 @@ class RedoPlugin(val laneName : String) extends FiberPlugin {
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := True
     }
-    hp.foreach(_.elaborationLock.release())
+    buildBefore.release()
   }
 }

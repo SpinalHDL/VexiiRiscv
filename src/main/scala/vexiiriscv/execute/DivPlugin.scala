@@ -22,9 +22,6 @@ class DivPlugin(val layer : LaneLayer,
                 val writebackAt : Int = 0) extends ExecutionUnitElementSimple(layer){
   import DivPlugin._
 
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
-  setupRetain(ifp.elaborationLock)
-
   val logic = during build new Logic {
     val formatBus = ifp.access(writebackAt)
     implicit val _ = ifp -> formatBus
@@ -50,9 +47,7 @@ class DivPlugin(val layer : LaneLayer,
       }
     }
 
-    eu.uopLock.release()
-    srcp.elaborationLock.release()
-    ifp.elaborationLock.release()
+    uopRetainer.release()
 
     val processing = new eu.Execute(divAt) {
       val div = DivRadix4(width = XLEN.get)
