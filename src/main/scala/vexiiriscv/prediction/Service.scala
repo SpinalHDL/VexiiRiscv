@@ -1,7 +1,7 @@
 package vexiiriscv.prediction
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib.Flow
 import spinal.lib.misc.database.Database.blocking
 import spinal.lib.misc.pipeline._
@@ -68,7 +68,7 @@ case class LearnCmd(hmElements : Seq[NamedType[_ <: Data]]) extends Bundle{
 }
 
 trait LearnService{
-  val learnLock = Lock()
+  val learnLock = Retainer()
   val learnCtxElements = mutable.LinkedHashSet[NamedType[_ <: Data]]()
   def addLearnCtx[T <: Data](that: Payload[T]): Unit = learnCtxElements += that
   def getLearnPort() : Flow[LearnCmd]

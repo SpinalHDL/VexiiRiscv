@@ -61,7 +61,6 @@ class MulPlugin(val layer : LaneLayer,
         }
       }
     }
-
     uopRetainer.release()
 
     val finalWidth = XLEN*2

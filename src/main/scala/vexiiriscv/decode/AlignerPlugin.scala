@@ -1,7 +1,7 @@
 package vexiiriscv.decode
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.{Retainer}
 import spinal.lib._
 import spinal.lib.misc.pipeline.{CtrlLink, Link}
 import spinal.lib.misc.plugin.FiberPlugin
@@ -21,7 +21,7 @@ class AlignerPlugin(fetchAt : Int,
 
   val lastSliceData = mutable.LinkedHashSet[NamedType[_ <: Data]]()
 
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
   val logic = during setup new Area{
     val fpp = host[FetchPipelinePlugin]
     val dpp = host[DecodePipelinePlugin]

@@ -1,7 +1,7 @@
 package vexiiriscv.memory
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin._
 import vexiiriscv.Global._

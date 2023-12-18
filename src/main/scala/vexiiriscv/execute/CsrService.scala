@@ -1,6 +1,6 @@
 package vexiiriscv.execute
 
-import spinal.core.fiber.{Handle, Lock}
+import spinal.core.fiber.{Handle, Retainer}
 import spinal.core._
 import spinal.lib._
 import vexiiriscv.Global
@@ -24,7 +24,7 @@ case class CsrIsReadingHartId(hartId : Int, value : Bool)
 
 case class CsrListFilter(mapping : Seq[Int]) extends Nameable
 trait CsrService {
-  val csrLock = Lock()
+  val csrLock = Retainer()
   val spec = ArrayBuffer[CsrSpec]()
   val reads = ArrayBuffer[CsrOnReadData]()
   val isReadingCsrMap = mutable.LinkedHashMap[Any, CsrIsReadingCsr]()
@@ -208,6 +208,6 @@ trait CsrRamService {
   def ramAllocate(entries : Int) : CsrRamAllocation
   def ramReadPort(priority : Int) : Handle[CsrRamRead]
   def ramWritePort(priority : Int) : Handle[CsrRamWrite]
-  val allocationLock = Lock()
-  val portLock = Lock()
+  val allocationLock = Retainer()
+  val portLock = Retainer()
 }

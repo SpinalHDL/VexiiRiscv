@@ -1,7 +1,7 @@
 package vexiiriscv.schedule
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline.{CtrlApi, CtrlLaneApi, CtrlLink, NodeApi, Payload}
@@ -32,7 +32,7 @@ Schedule euristic :
 */
 
 class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends FiberPlugin{
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
 
   val MAY_FLUSH = Payload(Bool())
   val DONT_FLUSH = Payload(Bool())

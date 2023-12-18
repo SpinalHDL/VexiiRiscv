@@ -5,7 +5,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.{Retainer}
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -47,7 +47,7 @@ object SrcKeys extends AreaObject {
 class SrcPlugin(val layer : LaneLayer,
                 var executeAt : Int,
                 var relaxedRs: Boolean) extends FiberPlugin{
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
   withPrefix(layer.name)
 
   val spec = mutable.LinkedHashMap[UopLayerSpec, mutable.LinkedHashSet[SrcKeys]]()

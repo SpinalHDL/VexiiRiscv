@@ -94,10 +94,12 @@ sbt "test:runMain vexiiriscv.Generate --help"
 
 # Run a simulation
 
+Note that Vexiiriscv use mostly an opt-in configuration. So, most performance related configuration are disabled by default.
+
 ```shell
 sbt
 compile
-test:runMain vexiiriscv.tester.TestBench --load-elf ext/NaxSoftware/baremetal/dhrystone/build/rv32ima/dhrystone.elf --with-all
+test:runMain vexiiriscv.tester.TestBench --load-elf ext/NaxSoftware/baremetal/dhrystone/build/rv32ima/dhrystone.elf --trace-all
 ```
 
 This will generate a simWorkspace/VexiiRiscv/test folder which contains :

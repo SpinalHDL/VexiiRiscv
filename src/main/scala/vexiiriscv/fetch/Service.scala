@@ -1,7 +1,7 @@
 package vexiiriscv.fetch
 
 import spinal.core._
-import spinal.core.fiber.{Lock, Lockable}
+import spinal.core.fiber.{Retainer, Lockable}
 import spinal.lib.{misc, _}
 import spinal.lib.misc.plugin.Plugin
 import vexiiriscv._
@@ -18,7 +18,7 @@ case class JumpCmd(laneAgeWidth : Int) extends Bundle{
 
 case class PcServiceHoldPortSpec(hartId : Int, valid : Bool)
 trait PcService {
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
   def createJumpInterface(age: Int, laneAgeWidth : Int, aggregationPriority : Int) : Flow[JumpCmd] //High priority win
   def simSetPc(value : Long) : Unit
   def forcedSpawn() : Bool

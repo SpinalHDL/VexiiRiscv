@@ -1,7 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib.misc.pipeline._
 import spinal.lib.{Flow, OHMux}
 import spinal.lib.misc.plugin.FiberPlugin
@@ -20,7 +20,7 @@ class WriteBackPlugin(val laneName : String,
                       var allowBypassFrom : Int) extends FiberPlugin with RegFileWriterService{
   withPrefix(laneName + "_" + rf.getName())
 
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
 
   case class Spec(port : Flow[Bits], ctrlAt : Int){
     val impls = ArrayBuffer[UopLayerSpec]()
@@ -49,7 +49,6 @@ class WriteBackPlugin(val laneName : String,
     awaitBuild()
 
     elaborationLock.await()
-
     val specs = portToSpec.values
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
@@ -66,6 +65,7 @@ class WriteBackPlugin(val laneName : String,
         }
       }
     }
+
     uopRetainer.release()
 
     val rfa = rfaKeys.get(RD)

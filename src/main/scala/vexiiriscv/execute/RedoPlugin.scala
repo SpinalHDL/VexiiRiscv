@@ -1,7 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
@@ -19,7 +19,7 @@ class RedoPlugin(val laneName : String) extends FiberPlugin {
   def newPort(executeAt : Int) : Bool = specs.addRet(Spec(executeAt + elp.executeAt, Bool())).request
 
 
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
   val logic = during setup new Area{
     val pcs = host[PcService]
     val sp = host[ReschedulePlugin]
