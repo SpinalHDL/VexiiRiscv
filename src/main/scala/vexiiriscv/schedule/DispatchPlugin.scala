@@ -238,7 +238,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       c.ctx.uop := Decode.UOP
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
       dispatchCtrl.link.down.ready clearWhen(isValid && !sent && !c.fire)
-      when(Global.TRAP){
+      when(Global.TRAP){ //TODO  May it could be injected futher down the arbitration ?
         c.ctx.laneLayerHits := 1 << lanesLayers.indexOf(trapLayer)
       }
     }

@@ -134,6 +134,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)
       trapPort.valid := False
+      trapPort.exception := True
       trapPort.tval := Decode.INSTRUCTION_RAW
       trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
       trapPort.laneAge := laneId

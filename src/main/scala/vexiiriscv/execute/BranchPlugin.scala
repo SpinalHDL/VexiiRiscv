@@ -191,6 +191,7 @@ class BranchPlugin(val layer : LaneLayer,
       val MISSALIGNED = insert(alu.PC_TRUE(0, Fetch.SLICE_RANGE_LOW bits) =/= 0 && alu.COND)
       if (catchMissaligned) { //Non RVC can trap on missaligned branches
         trapPort.valid := False
+        trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.FETCH_MISSALIGNED
         trapPort.tval := B(alu.PC_TRUE)
 
