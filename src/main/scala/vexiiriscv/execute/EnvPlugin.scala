@@ -18,15 +18,15 @@ object EnvPluginOp extends SpinalEnum{
 
 class EnvPlugin(layer : LaneLayer,
                 executeAt : Int) extends ExecutionUnitElementSimple(layer){
-  lazy val sp = host[ReschedulePlugin]
-  lazy val ts = host[TrapService]
-  lazy val ps = host[PrivilegedPlugin]
-  setupRetain(sp.elaborationLock)
-  setupRetain(ts.trapLock)
-
   val OP = Payload(EnvPluginOp())
 
-  val logic = during build new Logic{
+  val logic = during setup new Logic{
+    val sp = host[ReschedulePlugin]
+    val ts = host[TrapService]
+    val ps = host[PrivilegedPlugin]
+    val ioRetainer = retains(sp.elaborationLock, ts.trapLock)
+    awaitBuild()
+
     val age = eu.getExecuteAge(executeAt)
     val trapPort = ts.newTrap(age, Execute.LANE_AGE_WIDTH)
     val flushPort = sp.newFlushPort(age, Execute.LANE_AGE_WIDTH, true)
@@ -41,11 +41,8 @@ class EnvPlugin(layer : LaneLayer,
       spec.mayFlushUpTo(executeAt)
     }
 
-    eu.uopLock.release()
-    srcp.elaborationLock.release()
-    ts.trapLock.release()
-    sp.elaborationLock.release()
-
+    uopRetainer.release()
+    ioRetainer.release()
 
     val exe = new eu.Execute(executeAt){
       flushPort.valid := False

@@ -33,21 +33,20 @@ class BranchPlugin(val layer : LaneLayer,
                    var jumpAt: Int = 1,
                    var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
   import BranchPlugin._
-  lazy val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
-  lazy val sp = host[ReschedulePlugin]
-  lazy val pcp = host[PcPlugin]
-  lazy val hp = host.get[HistoryPlugin]
-  lazy val ls = host[LearnService]
-  lazy val ts = host[TrapService]
-  setupRetain(wbp.elaborationLock)
-  setupRetain(sp.elaborationLock)
-  setupRetain(pcp.elaborationLock)
-  setupRetain(ts.trapLock)
-  during setup(hp.foreach(_.elaborationLock.retain))
 
   def catchMissaligned = !Riscv.RVC
 
-  val logic = during build new Logic{
+  val logic = during setup new Logic{
+    val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
+    val sp = host[ReschedulePlugin]
+    val pcp = host[PcPlugin]
+    val hp = host.get[HistoryPlugin]
+    val ls = host[LearnService]
+    val ts = host[TrapService]
+    val ioRetainer = retains(wbp.elaborationLock, sp.elaborationLock, pcp.elaborationLock, ts.trapLock)
+    hp.foreach(ioRetainer += _.elaborationLock)
+    awaitBuild()
+
     import SrcKeys._
     if(hp.nonEmpty) host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
 
@@ -80,13 +79,8 @@ class BranchPlugin(val layer : LaneLayer,
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val trapPort = catchMissaligned generate ts.newTrap(layer.el.getAge(jumpAt), Execute.LANE_AGE_WIDTH)
 
-    ts.trapLock.release()
-    eu.uopLock.release()
-    wbp.elaborationLock.release()
-    sp.elaborationLock.release()
-    srcp.elaborationLock.release()
-    pcp.elaborationLock.release()
-    hp.foreach(_.elaborationLock.release())
+    uopRetainer.release()
+    ioRetainer.release()
 
     // Without prediction, the plugin can assume that there is no correction to do if no branch is needed
     // leading to a simpler design.
