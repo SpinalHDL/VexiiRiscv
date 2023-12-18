@@ -141,7 +141,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val tpk =  onAddress.translationPort.keys
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && onAddress.RAW_ADDRESS(i - 1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
       val RS2 = elp(IntRegFile, riscv.RS2)
-      assert(bus.cmd.ready) // For now
+      assert(bus.cmd.ready, "LsuCachelessPlugin expected bus.cmd.ready to be True, but False") // For now
 
 
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(isReady)
@@ -157,7 +157,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.cmd.mask := AddressToMask(bus.cmd.address, bus.cmd.size, Riscv.LSLEN/8)
       bus.cmd.io := tpk.IO
       bus.cmd.hartId := Global.HART_ID
-      assert(tpk.REDO === False)
+      assert(tpk.REDO === False, "LsuCachelessPlugin expected translation port REDO False, but True")
 
       elp.freezeWhen(bus.cmd.isStall)
 
@@ -174,7 +174,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val READ_DATA = insert(buffer.data)
       elp.freezeWhen(isValid && SEL && !buffer.valid)
       buffer.ready := isReady && SEL
-      assert(!(isValid && hasCancelRequest && SEL && !LOAD)) //TODO add tpk.IO and along the way
+      assert(!(isValid && hasCancelRequest && SEL && !LOAD), "LsuCachelessPlugin saw unexpected select && !LOAD && cancel request") //TODO add tpk.IO and along the way
     }
 
     val onWb = new wbCtrl.Area{

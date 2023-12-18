@@ -201,6 +201,7 @@ class TestOptions{
     val lsclp = dut.host.get[execute.LsuCachelessPlugin].map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
+      bus.cmd.ready #= true
 
       case class Access(write : Boolean, address: Long, data : Array[Byte], bytes : Int, io : Boolean)
       val pending = mutable.Queue[Access]()
