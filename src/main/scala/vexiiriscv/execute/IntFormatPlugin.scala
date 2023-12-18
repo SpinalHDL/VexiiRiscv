@@ -13,10 +13,6 @@ import scala.collection.mutable.ArrayBuffer
 
 class IntFormatPlugin(val laneName : String) extends FiberPlugin{
   withPrefix(laneName)
-  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
-  lazy val wbp = host.find[WriteBackPlugin](p => p.laneName == laneName && p.rf == IntRegFile)
-  buildBefore(eu.pipelineLock)
-  buildBefore(wbp.elaborationLock)
   val elaborationLock = Lock()
 
   case class ExtendsSpec(op: UopLayerSpec, bitId: Int)
@@ -53,7 +49,12 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
     impl.setCompletion(portToSpec(port).ctrlId)
   }
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
+    val wbp = host.find[WriteBackPlugin](p => p.laneName == laneName && p.rf == IntRegFile)
+    val buildBefore = retains(eu.pipelineLock, wbp.elaborationLock)
+    awaitBuild()
+
     elaborationLock.await()
     val specs = portToSpec.values
     val grouped = specs.groupByLinked(_.ctrlId)
@@ -113,5 +114,6 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
         from = to
       }
     }
+    buildBefore.release()
   }
 }

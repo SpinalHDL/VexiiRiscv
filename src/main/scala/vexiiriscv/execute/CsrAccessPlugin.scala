@@ -23,18 +23,6 @@ class CsrAccessPlugin(layer : LaneLayer,
                       writeBackKey : Any,
                       integrated : Boolean = true,
                       injectAt : Int = 0) extends FiberPlugin with CsrService with CompletionService {
-  lazy val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
-  lazy val irf = host.find[RegfileService](_.rfSpec == IntRegFile)
-  lazy val iwb = host.find[IntFormatPlugin](_.laneName == layer.laneName)
-  lazy val dp = host[DispatchPlugin]
-  setupRetain(dp.elaborationLock)
-  setupRetain(iwb.elaborationLock)
-  setupRetain(elp.uopLock)
-  buildBefore(elp.pipelineLock)
-  buildBefore(irf.elaborationLock)
-
-
-
   override def getCompletions(): Seq[Flow[CompletionPayload]] = if(!integrated) Seq(logic.fsm.completion) else Nil
 
   val SEL = Payload(Bool())
@@ -96,7 +84,15 @@ class CsrAccessPlugin(layer : LaneLayer,
     val onWriteMovingOff = Bool()
   }
 
-  val logic = during build new Area {
+  val logic = during setup new Area {
+    val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
+    val irf = host.find[RegfileService](_.rfSpec == IntRegFile)
+    val iwb = host.find[IntFormatPlugin](_.laneName == layer.laneName)
+    val dp = host[DispatchPlugin]
+    val ioRetainer = retains(dp.elaborationLock, iwb.elaborationLock, elp.uopLock)
+    val buildBefore = retains(elp.pipelineLock, irf.elaborationLock)
+    awaitBuild()
+
     elp.setDecodingDefault(SEL, False)
 
     val add = new ExecuteUnitElementSimple.Api(layer, null, SEL).add(_)
@@ -121,9 +117,7 @@ class CsrAccessPlugin(layer : LaneLayer,
     }
 
 
-    iwb.elaborationLock.release()
-    elp.uopLock.release()
-    dp.elaborationLock.release()
+    ioRetainer.release()
 
     csrLock.await()
 
@@ -423,5 +417,6 @@ class CsrAccessPlugin(layer : LaneLayer,
         }
       }
     }
+    buildBefore.release()
   }
 }

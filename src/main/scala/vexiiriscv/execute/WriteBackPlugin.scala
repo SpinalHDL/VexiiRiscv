@@ -22,13 +22,6 @@ class WriteBackPlugin(val laneName : String,
 
   val elaborationLock = Lock()
 
-  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
-  lazy val rfp = host.find[RegfileService](_.rfSpec == rf)
-
-  setupRetain(eu.uopLock)
-  buildBefore(eu.pipelineLock)
-  buildBefore(rfp.elaborationLock)
-
   case class Spec(port : Flow[Bits], ctrlAt : Int){
     val impls = ArrayBuffer[UopLayerSpec]()
   }
@@ -48,7 +41,13 @@ class WriteBackPlugin(val laneName : String,
 
   val SEL = Payload(Bool())
 
-  val logic = during build new Area {
+  val logic = during setup new Area {
+    val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
+    val rfp = host.find[RegfileService](_.rfSpec == rf)
+    val uopRetainer = retains(eu.uopLock)
+    val buildBefore = retains(eu.pipelineLock, rfp.elaborationLock)
+    awaitBuild()
+
     elaborationLock.await()
 
     val specs = portToSpec.values
@@ -67,7 +66,7 @@ class WriteBackPlugin(val laneName : String,
         }
       }
     }
-    eu.uopLock.release()
+    uopRetainer.release()
 
     val rfa = rfaKeys.get(RD)
     val stages = for (group <- sorted; ctrlId = group.head.ctrlAt) yield new eu.Execute(ctrlId) {
@@ -93,6 +92,7 @@ class WriteBackPlugin(val laneName : String,
       port.hartId := HART_ID
       port.uopId := UOP_ID
     }
+    buildBefore.release()
   }
 
   override def getRegFileWriters(): Seq[Flow[RegFileWriter]] = logic.stages.map(_.write)

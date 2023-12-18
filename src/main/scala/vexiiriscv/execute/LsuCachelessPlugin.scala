@@ -54,35 +54,24 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var forkAt: Int = 0,
                          var joinAt: Int = 1,
                          var wbAt: Int = 2) extends FiberPlugin{
-  lazy val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
-  lazy val srcp = host.find[SrcPlugin](_.layer == layer)
-  lazy val ats = host[AddressTranslationService]
-  lazy val rp = host[RedoPlugin]
-  lazy val ts = host[TrapService]
-  lazy val ss = host[ScheduleService]
-
-  buildBefore(elp.pipelineLock)
-  setupRetain(elp.uopLock)
-  setupRetain(srcp.elaborationLock)
-  setupRetain(ifp.elaborationLock)
-  setupRetain(ats.elaborationLock)
-  setupRetain(rp.elaborationLock)
-  setupRetain(ts.trapLock)
-  setupRetain(ss.elaborationLock)
 
   val FENCE_I_SEL = Payload(Bool())
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
+    val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
+    val srcp = host.find[SrcPlugin](_.layer == layer)
+    val ats = host[AddressTranslationService]
+    val rp = host[RedoPlugin]
+    val ts = host[TrapService]
+    val ss = host[ScheduleService]
+    val buildBefore = retains(elp.pipelineLock, ats.elaborationLock)
+    val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, rp.elaborationLock, ts.trapLock, ss.elaborationLock)
+    awaitBuild()
+
     val trapPort = ts.newTrap(layer.el.getAge(forkAt), Execute.LANE_AGE_WIDTH)
-    ts.trapLock.release()
-
     val redoPort = withSpeculativeLoadFlush generate rp.newPort(forkAt)
-    rp.elaborationLock.release()
-
     val flushPort = ss.newFlushPort(layer.el.getExecuteAge(addressAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
-    ss.elaborationLock.release()
-
     val frontend = new AguFrontend(layer, host)
 
     // IntFormatPlugin specification
@@ -113,9 +102,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     layer(Rvi.FENCE).setCompletion(joinAt)
     for(uop <- frontend.stores) layer(uop).setCompletion(joinAt)
 
-    elp.uopLock.release()
-    srcp.elaborationLock.release()
-    ifp.elaborationLock.release()
+    retainer.release()
 
     val injectCtrl = elp.ctrl(0)
     val inject = new injectCtrl.Area {
@@ -221,7 +208,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       iwb.payload := rspShifted
     }
 
-
-    ats.elaborationLock.release()
+    buildBefore.release()
   }
 }
