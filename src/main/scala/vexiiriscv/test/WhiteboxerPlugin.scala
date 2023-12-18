@@ -16,10 +16,13 @@ import vexiiriscv.riscv.{Const, Riscv}
 import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
 
 class WhiteboxerPlugin extends FiberPlugin{
-  buildBefore(host[PipelineBuilderPlugin].elaborationLock)
 
-  val logic = during build new Logic()
+  val logic = during setup new Logic()
   class Logic extends Area{
+    val pbp = host[PipelineBuilderPlugin]
+    val buildBefore = retains(pbp.elaborationLock)
+    awaitBuild()
+
     def wrap[T <: Data](that: T): T = CombInit(that).simPublic
 
     val fpp = host[FetchPipelinePlugin]
@@ -132,7 +135,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
-        address := c(p.srcp.ADD_SUB).asUInt
+        address := c(p.logic.srcp.ADD_SUB).asUInt
         data := host.find[IntFormatPlugin](_.laneName == p.layer.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
       })
     }
@@ -336,5 +339,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val fire = self.valid.simProxy()
       val cause = self.cause.simProxy()
     }
+
+    buildBefore.release()
   }
 }

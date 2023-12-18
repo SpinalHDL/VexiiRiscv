@@ -94,20 +94,18 @@ case class TrapPending() extends Bundle{
 }
 
 class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin with TrapService{
-  lazy val cap = host[CsrAccessPlugin]
-  lazy val pp = host[PipelineBuilderPlugin]
-  lazy val pcs = host[PcService]
-  setupRetain(cap.csrLock)
-  buildBefore(pp.elaborationLock)
-  buildBefore(pcs.elaborationLock)
-
-
   override def trapHandelingAt: Int = trapAt
 
 
   def getPrivilege(hartId : UInt) : UInt = logic.csrs.map(_.privilege).read(hartId)
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val cap = host[CsrAccessPlugin]
+    val pp = host[PipelineBuilderPlugin]
+    val pcs = host[PcService]
+    val buildBefore = retains(pp.elaborationLock, pcs.elaborationLock, cap.csrLock)
+    awaitBuild()
+
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
     CODE_WIDTH.set((4 +: causesWidthMins).max)
 
@@ -242,6 +240,6 @@ class PrivilegedPlugin(p : PrivilegedConfig, trapAt : Int) extends FiberPlugin w
 
       csr.privilege := 3 //TODO remove
     }
-    cap.csrLock.release()
+    buildBefore.release()
   }
 }
