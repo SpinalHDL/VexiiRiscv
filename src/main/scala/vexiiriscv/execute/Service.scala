@@ -1,7 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.{Lock, Lockable}
+import spinal.core.fiber.{Retainer, Lockable}
 import spinal.idslplugin.Location
 import spinal.lib._
 import spinal.lib.logic.Masked
@@ -90,8 +90,8 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
 }
 
 trait ExecuteLaneService extends Area{
-  val uopLock = Lock()
-  val pipelineLock = Lock()
+  val uopLock = Retainer()
+  val pipelineLock = Retainer()
 
   def laneName : String
 //  def pushPort() : ExecutionUnitPush

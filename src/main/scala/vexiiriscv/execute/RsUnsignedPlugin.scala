@@ -1,7 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.riscv._
@@ -19,7 +19,7 @@ class RsUnsignedPlugin(val laneName : String, executeAt : Int = 0) extends Fiber
   import RsUnsignedPlugin._
   withPrefix(laneName)
 
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
 
   def addUop(uop : UopLayerSpec, rs1Signed : Boolean, rs2Signed : Boolean) : Unit = {
     uop.addDecoding(RS1_SIGNED -> Bool(rs1Signed) , RS2_SIGNED -> Bool(rs2Signed))

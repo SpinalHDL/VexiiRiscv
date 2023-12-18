@@ -3,7 +3,7 @@ package vexiiriscv.decode
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService, TrapService}
 import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.misc.pipeline
 import spinal.lib.misc.pipeline._
@@ -17,7 +17,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
   setName("decode")
 
 
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
   def getAge(at: Int, prediction: Boolean = false): Int = Ages.DECODE + at * Ages.STAGE + (!prediction).toInt * Ages.NOT_PREDICTION
 
   override def getLinks(): Seq[Link] = logic.connectors

@@ -1,7 +1,7 @@
 package vexiiriscv.fetch
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline
 import spinal.lib.misc.pipeline.{CtrlLink, CtrlLinkMirror, Link}
@@ -13,7 +13,7 @@ import scala.collection.mutable
 
 class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   setName("fetch")
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
   def getAge(at: Int, prediction: Boolean = false): Int = Ages.FETCH + at * Ages.STAGE + (!prediction).toInt * Ages.NOT_PREDICTION
 
   override def getLinks(): Seq[Link] = logic.connectors

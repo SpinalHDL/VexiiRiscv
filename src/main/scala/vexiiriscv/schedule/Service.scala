@@ -1,7 +1,7 @@
 package vexiiriscv.schedule
 
 import spinal.core._
-import spinal.core.fiber.{Lock, Lockable}
+import spinal.core.fiber.{Retainer, Lockable}
 import spinal.lib.Flow
 import spinal.lib.misc.pipeline.CtrlLink
 import vexiiriscv.Global
@@ -39,7 +39,7 @@ trait ScheduleService {
   def isFlushedAt(age: Int, hartId : UInt, laneAge : UInt): Option[Bool]
 //  def addCtrl(age : Int, ctrl : CtrlLink) : Unit
 
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
 }
 
 

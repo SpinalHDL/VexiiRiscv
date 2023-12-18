@@ -1,7 +1,7 @@
 package vexiiriscv.misc
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.fsm._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -78,7 +78,7 @@ trait CauseUser{
  * - Rise trap flag in the pipe (this will disable side-effects)
  */
 trait TrapService extends Area{
-  val trapLock = Lock()
+  val trapLock = Retainer()
   val traps = ArrayBuffer[TrapSpec]()
   def newTrap(age: Int, laneAgeWidth: Int): Flow[Trap] = {
     traps.addRet(TrapSpec(Flow(Trap(laneAgeWidth, true)), age)).bus

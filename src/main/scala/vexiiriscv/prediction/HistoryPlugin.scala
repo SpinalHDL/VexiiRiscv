@@ -1,7 +1,7 @@
 package vexiiriscv.prediction
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -27,7 +27,7 @@ class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin
     historySpecs.addRet(HistorySpec(priority, laneAgeWidth, Flow(HistoryJump(laneAgeWidth)))).port
   }
 
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
   val logic = during setup new Area{
     val fpp = host[FetchPipelinePlugin]
     val buildBefore = retains(fpp.elaborationLock)

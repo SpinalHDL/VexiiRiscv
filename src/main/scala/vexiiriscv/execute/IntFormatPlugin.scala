@@ -1,7 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib._
 import spinal.lib.misc.pipeline._
@@ -13,7 +13,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class IntFormatPlugin(val laneName : String) extends FiberPlugin{
   withPrefix(laneName)
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
 
   case class ExtendsSpec(op: UopLayerSpec, bitId: Int)
   case class Spec(port : Flow[Bits],
