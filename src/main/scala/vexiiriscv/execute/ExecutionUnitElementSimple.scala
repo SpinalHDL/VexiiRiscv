@@ -3,8 +3,10 @@ package vexiiriscv.execute
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.core._
+import spinal.idslplugin.PostInitCallback
 import spinal.lib.Flow
 import vexiiriscv.decode.DecodeListType
+import vexiiriscv.execute.RsUnsignedPlugin.RS1_SIGNED
 import vexiiriscv.riscv.{MicroOp, RD, RfResource}
 
 
@@ -39,8 +41,9 @@ object ExecuteUnitElementSimple{
         this
       }
 
-      def rsUnsigned(rs1Signed : Boolean, rs2Signed : Boolean) : this.type = {
-        rsUnsignedPlugin.addUop(impl, rs1Signed, rs2Signed)
+      def rsUnsigned(rs1Signed : Boolean, rs2Signed : Boolean, cond : Boolean = true) : this.type = {
+        if(cond) rsUnsignedPlugin.addUop(impl, rs1Signed, rs2Signed)
+        else impl.addDecoding(RsUnsignedPlugin.RS1_SIGNED -> Bool(rs1Signed), RsUnsignedPlugin.RS2_SIGNED -> Bool(rs2Signed))
         this
       }
     }
@@ -49,16 +52,22 @@ object ExecuteUnitElementSimple{
 
 //This is a simple skeleton to ease the implementation of simple ExecutionUnit elements. It assume a single writeback and a single completion
 abstract class ExecutionUnitElementSimple(layer : LaneLayer) extends FiberPlugin {
-  val eu = layer.el
-  lazy val srcp = host.find[SrcPlugin](_.layer == layer)
-  buildBefore(eu.pipelineLock)
-  setupRetain(eu.uopLock)
-  setupRetain(srcp.elaborationLock)
   withPrefix(layer.name)
 
   val SEL = Payload(Bool())
 
-  class Logic extends ExecuteUnitElementSimple.Api(layer, srcp, SEL, rsUnsignedPlugin = host.get[RsUnsignedPlugin].getOrElse(null)) with Area {
+  class Logic extends ExecuteUnitElementSimple.Api(layer,  host.find[SrcPlugin](_.layer == layer), SEL, rsUnsignedPlugin = host.get[RsUnsignedPlugin].getOrElse(null)) with Area with PostInitCallback {
+    val eu = layer.el
+    val srcp = srcPlugin
+    val ifp = host.find[IntFormatPlugin](_.laneName == layer.el.laneName)
+    val uopRetainer = retains(eu.uopLock, srcp.elaborationLock, ifp.elaborationLock)
+    val euPipelineRetainer = retains(eu.pipelineLock)
+
     eu.setDecodingDefault(SEL, False)
+
+    override def postInitCallback() = {
+      euPipelineRetainer.release()
+      this
+    }
   }
 }

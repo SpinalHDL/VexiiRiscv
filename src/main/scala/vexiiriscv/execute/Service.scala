@@ -1,7 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.{Lock, Lockable}
+import spinal.core.fiber.{Retainer, Lockable}
 import spinal.idslplugin.Location
 import spinal.lib._
 import spinal.lib.logic.Masked
@@ -9,7 +9,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource, RfWrite}
-import vexiiriscv.schedule.Ages
+import vexiiriscv.schedule.{Ages, FlushCmd}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -90,8 +90,8 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
 }
 
 trait ExecuteLaneService extends Area{
-  val uopLock = Lock()
-  val pipelineLock = Lock()
+  val uopLock = Retainer()
+  val pipelineLock = Retainer()
 
   def laneName : String
 //  def pushPort() : ExecutionUnitPush
@@ -110,6 +110,7 @@ trait ExecuteLaneService extends Area{
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType)
   def withBypasses : Boolean
   def rfReadHazardFrom(usedAt : Int) : Int
+//  def newFlushPort(executeId : Int) : Flow[FlushCmd]
 
   def getStageable(r: RfResource): Payload[Bits]
   def apply(rf: RegfileSpec, access: RfAccess) = getStageable(rf -> access)
@@ -136,6 +137,7 @@ trait ExecuteLaneService extends Area{
 case class CompletionPayload() extends Bundle{
   val hartId = Global.HART_ID()
   val uopId = Decode.UOP_ID()
+  val trap = Bool()
 }
 
 //case class RetirePayload() extends Bundle{

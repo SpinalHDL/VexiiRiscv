@@ -1,15 +1,16 @@
 package vexiiriscv.schedule
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline.{CtrlApi, CtrlLaneApi, CtrlLink, NodeApi, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
+import vexiiriscv.Global.TRAP
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
-import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin}
-import vexiiriscv.misc.PipelineBuilderPlugin
+import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin, LaneLayer}
+import vexiiriscv.misc.{PipelineBuilderPlugin, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RfRead, RfResource}
 
@@ -30,21 +31,8 @@ Schedule euristic :
 - If the slot can't be schedule, disable all following ones with same HART_ID
 */
 
-class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
-  lazy val dpp = host[DecodePipelinePlugin]
-  lazy val dp = host[DecoderService]
-  lazy val eupp = host[ExecutePipelinePlugin]
-
-  buildBefore(host[PipelineBuilderPlugin].elaborationLock)
-  buildBefore(dpp.elaborationLock)
-  buildBefore(eupp.pipelineLock)
-  setupRetain(dp.elaborationLock)
-
-  during setup{
-    host.list[ExecuteLaneService].foreach(_.pipelineLock.retain())
-  }
-
-  val elaborationLock = Lock()
+class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends FiberPlugin{
+  val elaborationLock = Retainer()
 
   val MAY_FLUSH = Payload(Bool())
   val DONT_FLUSH = Payload(Bool())
@@ -58,7 +46,17 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
 //  def fenceYounger(op : MicroOp) = fenceYoungerOps += op
 //  def fenceOlder(op : MicroOp) = fenceOlderOps += op
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val dpp = host[DecodePipelinePlugin]
+    val dp = host[DecoderService]
+    val eupp = host[ExecutePipelinePlugin]
+    val pbp = host[PipelineBuilderPlugin]
+    val buildBefore = retains(
+      List(pbp.elaborationLock, dpp.elaborationLock, eupp.pipelineLock) ++ host.list[ExecuteLaneService].map(_.pipelineLock)
+    )
+    val dpRetains = retains(dp.elaborationLock)
+    awaitBuild()
+
     Execute.LANE_AGE_WIDTH.set(log2Up(Decode.LANES))
 
     elaborationLock.await()
@@ -117,10 +115,11 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       }
     }
 
-    dp.elaborationLock.release()
-    val slotsCount = 0
+    dpRetains.release()
+    val slotsCount = 0 //Warning, if not zero you need to notify TrapService when flush is pending
 
     hmKeys.add(Global.PC)
+    hmKeys.add(Global.TRAP)
     hmKeys.add(Decode.UOP_ID)
     for ((k, ac) <- Decode.rfaKeys) {
       hmKeys.add(ac.ENABLE)
@@ -236,6 +235,9 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
       c.ctx.uop := Decode.UOP
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
       dispatchCtrl.link.down.ready clearWhen(isValid && !sent && !c.fire)
+      when(Global.TRAP){ //TODO  May it could be injected futher down the arbitration ?
+        c.ctx.laneLayerHits := 1 << lanesLayers.indexOf(trapLayer)
+      }
     }
 
     val scheduler = new Area {
@@ -288,7 +290,7 @@ class DispatchPlugin(var dispatchAt : Int) extends FiberPlugin{
 
     eupp.ctrl(0).up.setAlwaysValid()
 
-    eus.foreach(_.pipelineLock.release())
+    buildBefore.release()
   }
 }
 

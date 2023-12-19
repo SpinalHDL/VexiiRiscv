@@ -11,8 +11,6 @@ import vexiiriscv.Global
 import scala.collection.mutable.ArrayBuffer
 
 class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with PcService{
-  lazy val pp = host[FetchPipelinePlugin]
-  setupRetain(pp.elaborationLock)
 
   case class JumpSpec(bus : Flow[JumpCmd], priority : Int, aggregationPriority : Int) extends Composite(bus) {
     val laneValid = Bool()
@@ -34,7 +32,11 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
 
   override def forcedSpawn(): Bool = logic.forcedSpawn
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val pp = host[FetchPipelinePlugin]
+    val buildBefore = retains(pp.elaborationLock)
+    awaitBuild()
+
     elaborationLock.await()
     val injectStage = pp.fetch(0).up
 
@@ -89,25 +91,23 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
 
       // Stream of PC for the given hart
       val output = Stream(PC).simPublic()
-      output.valid := True
+      output.valid := holdPorts.filter(_.hartId == hartId).map(_.valid).norR
       output.payload := aggregator.target
       output.payload(SLICE_RANGE_LOW - 1 downto 0) := 0
 
       // Update the hart PC state
-      when(output.valid) {
-        self.state := output.payload
-        self.increment := False
-        when(output.ready) {
-          self.increment := True
-          self.state(Fetch.SLICE_RANGE) := 0
-        }
+      self.state := output.payload
+      self.increment := False
+      when(output.fire) {
+        self.increment := True
+        self.state(Fetch.SLICE_RANGE) := 0
       }
     }
 
     assert(HART_COUNT.get == 1)
 
     val inject = new injectStage.Area {
-      valid := True
+      valid := harts(0).output.valid
       harts(0).output.ready := ready
       Fetch.WORD_PC := harts(0).output.payload
       HART_ID := 0
@@ -125,6 +125,6 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
         Fetch.ID := hart.self.id
       }
     }
-    pp.elaborationLock.release()
+    buildBefore.release()
   }
 }

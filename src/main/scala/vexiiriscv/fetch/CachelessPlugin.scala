@@ -42,10 +42,12 @@ class CachelessPlugin(var wordWidth : Int,
                       var forkAt : Int = 0,
                       var joinAt : Int = 1,
                       var cmdForkPersistence : Boolean = true) extends FiberPlugin{
-  lazy val pp = host[FetchPipelinePlugin]
-  buildBefore(pp.elaborationLock)
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val pp = host[FetchPipelinePlugin]
+    val buildBefore = retains(pp.elaborationLock)
+    awaitBuild()
+
     Fetch.WORD_WIDTH.set(wordWidth)
 
     val idCount = joinAt - forkAt + 1
@@ -97,7 +99,9 @@ class CachelessPlugin(var wordWidth : Int,
         haltIt := False
         Fetch.WORD := bus.rsp.word
       }
+      TRAP := False
       haltWhen(haltIt)
     }
+    buildBefore.release()
   }
 }

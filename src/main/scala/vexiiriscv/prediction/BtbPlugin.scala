@@ -13,6 +13,7 @@ import Fetch._
 import vexiiriscv.Global._
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 import Prediction._
+import spinal.core.fiber.Fiber
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.BranchPlugin
 
@@ -25,33 +26,32 @@ class BtbPlugin(var sets : Int,
                 var readAt : Int = 0,
                 var hitAt : Int = 1,
                 var jumpAt : Int = 1) extends FiberPlugin with FetchWordPrediction {
-  lazy val fpp = host[FetchPipelinePlugin]
-  lazy val pcp = host[PcService]
-  lazy val rp = host[ReschedulePlugin]
-  lazy val dp = host[DispatchPlugin]
-  lazy val hp = host.get[HistoryPlugin]
-  buildBefore(fpp.elaborationLock)
-  buildBefore(pcp.elaborationLock)
-  setupRetain(rp.elaborationLock)
-  setupRetain(dp.elaborationLock)
-  during setup(hp.map(_.elaborationLock.retain()))
+
 
   def waysRange = 0 until ways
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val fpp = host[FetchPipelinePlugin]
+    val pcp = host[PcService]
+    val rp = host[ReschedulePlugin]
+    val dp = host[DispatchPlugin]
+    val hp = host.get[HistoryPlugin]
+
+    val buildBefore = retains(fpp.elaborationLock, pcp.elaborationLock)
+    val retainer = retains(List(rp.elaborationLock, dp.elaborationLock) ++ hp.map(_.elaborationLock))
+    Fiber.awaitBuild()
+
     val age = fpp.getAge(jumpAt, true)
     val pcPort = pcp.createJumpInterface(age,0, (jumpAt < 2).toInt)
-    val flushPort = rp.newFlushPort(age, 0, false)
     val historyPort = hp.map(_.createPort(age, 0))
+    val flushPort = rp.newFlushPort(fpp.getAge(jumpAt), 0, false)
 
     dp.hmKeys += Prediction.ALIGNED_JUMPED
     dp.hmKeys += Prediction.ALIGNED_JUMPED_PC
     dp.hmKeys += Prediction.ALIGNED_SLICES_TAKEN
     dp.hmKeys += Prediction.ALIGNED_SLICES_BRANCH
 
-    dp.elaborationLock.release()
-    rp.elaborationLock.release()
-    hp.foreach(_.elaborationLock.release())
+    retainer.release()
 
     val withRas = rasDepth > 0
     val ras = withRas generate new Area{
@@ -251,5 +251,6 @@ class BtbPlugin(var sets : Int,
         }
       }
     }
+    buildBefore.release()
   }
 }

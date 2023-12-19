@@ -1,7 +1,7 @@
 package vexiiriscv.regfile
 
 import spinal.core._
-import spinal.core.fiber.{Lock, Lockable}
+import spinal.core.fiber.{Retainer, Lockable}
 import spinal.lib._
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
@@ -72,7 +72,7 @@ case class RegFileRead(rfpp : RegFilePortParam, withReady : Boolean) extends Bun
 //}
 
 trait RegfileService {
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
 
   def rfSpec : RegfileSpec
   def getPhysicalDepth : Int

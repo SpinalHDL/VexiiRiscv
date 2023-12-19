@@ -1,7 +1,7 @@
 package vexiiriscv.decode
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.{Retainer}
 import spinal.lib._
 import spinal.lib.misc.pipeline.{CtrlLink, Link}
 import spinal.lib.misc.plugin.FiberPlugin
@@ -14,24 +14,23 @@ import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+//Warning, if it start to hold stats => you need to notify TrapService when flush is pending
 class AlignerPlugin(fetchAt : Int,
                     lanes : Int = 1) extends FiberPlugin with PipelineService{
-  lazy val fpp = host[FetchPipelinePlugin]
-  lazy val dpp = host[DecodePipelinePlugin]
-
-  buildBefore(fpp.elaborationLock)
-  buildBefore(dpp.elaborationLock)
-
   override def getLinks(): Seq[Link] = logic.connectors
 
   val lastSliceData = mutable.LinkedHashSet[NamedType[_ <: Data]]()
 
-  val elaborationLock = Lock()
-  val logic = during build new Area{
+  val elaborationLock = Retainer()
+  val logic = during setup new Area{
+    val fpp = host[FetchPipelinePlugin]
+    val dpp = host[DecodePipelinePlugin]
+    val buildBefore = retains(fpp.elaborationLock, dpp.elaborationLock)
+    awaitBuild()
+
     val connectors = ArrayBuffer[Link]()
     Decode.LANES.set(lanes)
     Decode.INSTRUCTION_WIDTH.get
-
 
     assert(Decode.INSTRUCTION_WIDTH.get*Decode.LANES == Fetch.WORD_WIDTH.get)
     assert(!Riscv.RVC)
@@ -64,7 +63,8 @@ class AlignerPlugin(fetchAt : Int,
         val pcLaneRange = pcLaneLow + log2Up(Decode.LANES) -1 downto pcLaneLow
 
         lane.up(lane.LANE_SEL)       := up.valid && up(Fetch.WORD_PC)(pcLaneRange) <= laneId
-        lane(Decode.INSTRUCTION)     := instructionSlices(laneId)
+        lane(Decode.INSTRUCTION) := instructionSlices(laneId)
+        lane(Decode.INSTRUCTION_RAW) := instructionSlices(laneId)
         lane(Global.PC)              := up(Fetch.WORD_PC)
         lane(Global.PC)(pcLaneRange) := laneId
         lane(Fetch.ID)               := up(Fetch.ID)
@@ -74,6 +74,7 @@ class AlignerPlugin(fetchAt : Int,
         })
         lane(Prediction.BRANCH_HISTORY) := up(Prediction.BRANCH_HISTORY)
         for(e <- lastSliceData) lane(e).assignFrom(up.apply(e))
+        lane(Global.TRAP) := up(Global.TRAP)
 
         val onBtb = withBtb generate new Area{
           assert(!Riscv.RVC)
@@ -87,5 +88,6 @@ class AlignerPlugin(fetchAt : Int,
         }
       }
     }
+    buildBefore.release()
   }
 }

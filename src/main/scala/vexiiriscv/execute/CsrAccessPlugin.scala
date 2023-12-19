@@ -23,17 +23,6 @@ class CsrAccessPlugin(layer : LaneLayer,
                       writeBackKey : Any,
                       integrated : Boolean = true,
                       injectAt : Int = 0) extends FiberPlugin with CsrService with CompletionService {
-  lazy val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
-  lazy val irf = host.find[RegfileService](_.rfSpec == IntRegFile)
-  lazy val iwb = host.find[IntFormatPlugin](_.laneName == layer.laneName)
-  lazy val dp = host[DispatchPlugin]
-  setupRetain(dp.elaborationLock)
-  setupRetain(iwb.elaborationLock)
-  setupRetain(elp.uopLock)
-  buildBefore(elp.pipelineLock)
-  buildBefore(irf.elaborationLock)
-
-
   override def getCompletions(): Seq[Flow[CompletionPayload]] = if(!integrated) Seq(logic.fsm.completion) else Nil
 
   val SEL = Payload(Bool())
@@ -55,6 +44,7 @@ class CsrAccessPlugin(layer : LaneLayer,
   override def onDecodeAddress: UInt = apiIo.onDecodeAddress
 
   override def onReadAddress: UInt = apiIo.onReadAddress
+  override def onReadHartId: UInt = apiIo.onReadHartId
   override def onReadHalt(): Unit = apiIo.onReadHalt := True
 
   override def onReadToWriteBits: Bits = ???
@@ -62,7 +52,11 @@ class CsrAccessPlugin(layer : LaneLayer,
   override def onWriteHalt(): Unit = apiIo.onWriteHalt := True
   override def onWriteBits: Bits = apiIo.onWriteBits
   override def onWriteAddress: UInt = apiIo.onWriteAddress
+  override def onWriteHartId: UInt = apiIo.onWriteHartId
   override def onWriteFlushPipeline(): Unit = ???
+
+
+
 
   override def getCsrRam(): CsrRamService = ???
 
@@ -78,17 +72,27 @@ class CsrAccessPlugin(layer : LaneLayer,
     val onDecodeAddress = CSR_ADDRESS()
     val onReadAddress = CSR_ADDRESS()
     val onReadHalt = False
+    val onReadHartId = Global.HART_ID()
     val onReadToWriteBits = CSR_VALUE()
     val onWriteHalt = False
     val onWriteBits = CSR_VALUE()
     val onWriteAddress = CSR_ADDRESS()
+    val onWriteHartId = Global.HART_ID()
 //    val onWriteFlushPipeline(): Unit
 //    val getCsrRam(): CsrRamService
     val onReadMovingOff = Bool()
     val onWriteMovingOff = Bool()
   }
 
-  val logic = during build new Area {
+  val logic = during setup new Area {
+    val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
+    val irf = host.find[RegfileService](_.rfSpec == IntRegFile)
+    val iwb = host.find[IntFormatPlugin](_.laneName == layer.laneName)
+    val dp = host[DispatchPlugin]
+    val ioRetainer = retains(dp.elaborationLock, iwb.elaborationLock, elp.uopLock)
+    val buildBefore = retains(elp.pipelineLock, irf.elaborationLock)
+    awaitBuild()
+
     elp.setDecodingDefault(SEL, False)
 
     val add = new ExecuteUnitElementSimple.Api(layer, null, SEL).add(_)
@@ -113,9 +117,7 @@ class CsrAccessPlugin(layer : LaneLayer,
     }
 
 
-    iwb.elaborationLock.release()
-    elp.uopLock.release()
-    dp.elaborationLock.release()
+    ioRetainer.release()
 
     csrLock.await()
 
@@ -265,20 +267,19 @@ class CsrAccessPlugin(layer : LaneLayer,
           if (onReadsFire.nonEmpty) when(onReadsFireDo && regs.sels(csrFilter)) {
             onReadsFire.foreach(_.body())
           }
-
-          val read = onReadsData.nonEmpty generate new Area {
-            val bitCount = onReadsData.map(e => widthOf(e.value)).sum
-            assert(bitCount <= XLEN.get)
-
-            val value = if (bitCount != XLEN.get) B(0, XLEN bits) else Bits(XLEN bits)
-            onReadsData.foreach(e => value.assignFromBits(e.value.asBits, e.bitOffset, widthOf(e.value) bits))
-            val masked = value.andMask(regs.sels(csrFilter))
-          }
         }
 
         val csrValue = CSR_VALUE()
-        if (groupedLogic.exists(_.onReadsData.nonEmpty)) {
-          csrValue := groupedLogic.filter(_.onReadsData.nonEmpty).map(_.read.masked).toList.reduceBalancedTree(_ | _)
+        if (reads.nonEmpty) {
+          val shifteds = reads.map(e => e.bitOffset match {
+            case 0 => e.value
+            case _ => e.value << e.bitOffset
+          })
+          val resized = shifteds.map(e => widthOf(e) match {
+            case w if w == XLEN.get => e
+            case w if w <  XLEN.get => e.resize(XLEN)
+          })
+          csrValue := resized.reduceBalancedTree(_ | _)
         } else {
           csrValue := 0
         }
@@ -299,6 +300,15 @@ class CsrAccessPlugin(layer : LaneLayer,
             onReadToWrite.foreach(_.body())
           }
         }
+
+        spec.foreach{
+          case e : CsrIsReadingCsr => {
+            e.value := regs.sels(e.csrFilter)
+          }
+          case _ =>
+        }
+
+        for((id, value) <- onReadingHartIdMap) value := onReadHartId === id
 
         READ.whenIsActive {
           onReadsDo := regs.read
@@ -339,6 +349,8 @@ class CsrAccessPlugin(layer : LaneLayer,
         }
 
 
+        for ((id, value) <- onWritingHartIdMap) value := onWriteHartId === id
+
         val groupedLogic = for ((csrFilter, elements) <- grouped) yield new Area {
           setPartialName(filterToName(csrFilter))
 
@@ -377,6 +389,7 @@ class CsrAccessPlugin(layer : LaneLayer,
       completion.valid := False
       completion.uopId := regs.uopId
       completion.hartId := regs.hartId
+      completion.trap := inject(Global.TRAP)
 
       integrated match {
         case true => {
@@ -404,5 +417,6 @@ class CsrAccessPlugin(layer : LaneLayer,
         }
       }
     }
+    buildBefore.release()
   }
 }

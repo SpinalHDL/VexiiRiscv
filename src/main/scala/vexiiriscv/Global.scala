@@ -15,7 +15,7 @@ object Global extends AreaRoot{
   val PC_WIDTH         = blocking[Int]
   val TVAL_WIDTH       = blocking[Int]
   val HART_COUNT       = blocking[Int]
-  val CAUSE_WIDTH      = blocking[Int]
+  val CODE_WIDTH      = blocking[Int]
 
 
   val VIRTUAL_ADDRESS = Payload(UInt(VIRTUAL_WIDTH bits))
@@ -23,7 +23,10 @@ object Global extends AreaRoot{
   val PHYSICAL_ADDRESS = Payload(UInt(PHYSICAL_WIDTH bits))
   val PC = Payload(UInt(PC_WIDTH bits))
   val PC_TARGET = Payload(UInt(PC_WIDTH-Fetch.SLICE_RANGE_LOW bits))
-  val CAUSE = Payload(Bits(CAUSE_WIDTH bits))
+  val CODE = Payload(Bits(CODE_WIDTH bits))
+  val TVAL = Payload(Bits(TVAL_WIDTH bits))
+  val TRAP = Payload(Bool())
+  val TRAP_COMMIT = Payload(Bool())
 
   def HART_ID_WIDTH = log2Up(HART_COUNT)
   val HART_ID = Payload(UInt(HART_ID_WIDTH bits))

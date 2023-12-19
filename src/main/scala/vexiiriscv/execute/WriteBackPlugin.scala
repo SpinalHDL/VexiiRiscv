@@ -1,10 +1,11 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib.misc.pipeline._
 import spinal.lib.{Flow, OHMux}
 import spinal.lib.misc.plugin.FiberPlugin
+import vexiiriscv.Global
 import vexiiriscv.Global._
 import vexiiriscv.decode.Decode._
 import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
@@ -19,14 +20,7 @@ class WriteBackPlugin(val laneName : String,
                       var allowBypassFrom : Int) extends FiberPlugin with RegFileWriterService{
   withPrefix(laneName + "_" + rf.getName())
 
-  val elaborationLock = Lock()
-
-  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
-  lazy val rfp = host.find[RegfileService](_.rfSpec == rf)
-
-  setupRetain(eu.uopLock)
-  buildBefore(eu.pipelineLock)
-  buildBefore(rfp.elaborationLock)
+  val elaborationLock = Retainer()
 
   case class Spec(port : Flow[Bits], ctrlAt : Int){
     val impls = ArrayBuffer[UopLayerSpec]()
@@ -47,9 +41,14 @@ class WriteBackPlugin(val laneName : String,
 
   val SEL = Payload(Bool())
 
-  val logic = during build new Area {
-    elaborationLock.await()
+  val logic = during setup new Area {
+    val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
+    val rfp = host.find[RegfileService](_.rfSpec == rf)
+    val uopRetainer = retains(eu.uopLock)
+    val buildBefore = retains(eu.pipelineLock, rfp.elaborationLock)
+    awaitBuild()
 
+    elaborationLock.await()
     val specs = portToSpec.values
     val grouped = specs.groupByLinked(_.ctrlAt).values
     val sorted = grouped.toList.sortBy(_.head.ctrlAt)
@@ -66,7 +65,8 @@ class WriteBackPlugin(val laneName : String,
         }
       }
     }
-    eu.uopLock.release()
+
+    uopRetainer.release()
 
     val rfa = rfaKeys.get(RD)
     val stages = for (group <- sorted; ctrlId = group.head.ctrlAt) yield new eu.Execute(ctrlId) {
@@ -76,7 +76,7 @@ class WriteBackPlugin(val laneName : String,
       bypass(DATA) := merged
 
       val write = Flow(RegFileWriter(rf))
-      write.valid := down.isFiring && hits.orR && rfa.ENABLE
+      write.valid := down.isFiring && hits.orR && rfa.ENABLE && !Global.TRAP
       write.hartId := HART_ID
       write.uopId := UOP_ID
       write.data := muxed
@@ -92,6 +92,7 @@ class WriteBackPlugin(val laneName : String,
       port.hartId := HART_ID
       port.uopId := UOP_ID
     }
+    buildBefore.release()
   }
 
   override def getRegFileWriters(): Seq[Flow[RegFileWriter]] = logic.stages.map(_.write)

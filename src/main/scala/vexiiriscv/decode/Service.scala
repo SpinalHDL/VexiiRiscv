@@ -1,14 +1,14 @@
 package vexiiriscv.decode
 
 import spinal.core._
-import spinal.core.fiber.{Lock, Lockable}
+import spinal.core.fiber.{Retainer, Lockable}
 import spinal.lib._
 import spinal.lib.logic.Masked
 import spinal.lib.misc.pipeline._
 import vexiiriscv.riscv.{MicroOp, RegfileSpec, RfRead}
 
 trait DecoderService {
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
 
 //  def addEuOp(fu: ExecuteUnitService, microOp : MicroOp) : Unit
 //  def addResourceDecoding(resource : Resource, stageable : Stageable[Bool])

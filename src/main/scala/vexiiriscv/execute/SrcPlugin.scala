@@ -5,7 +5,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.{Retainer}
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -47,9 +47,7 @@ object SrcKeys extends AreaObject {
 class SrcPlugin(val layer : LaneLayer,
                 var executeAt : Int,
                 var relaxedRs: Boolean) extends FiberPlugin{
-  val elaborationLock = Lock()
-  lazy val eu = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
-  setupRetain(eu.pipelineLock)
+  val elaborationLock = Retainer()
   withPrefix(layer.name)
 
   val spec = mutable.LinkedHashMap[UopLayerSpec, mutable.LinkedHashSet[SrcKeys]]()
@@ -72,7 +70,11 @@ class SrcPlugin(val layer : LaneLayer,
   val ADD_SUB = Payload(SInt(Riscv.XLEN bits))
   val LESS = Payload(Bool())
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val eu = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
+    val buildBefore = retains(eu.pipelineLock)
+    awaitBuild()
+
     elaborationLock.await()
     val ss = SrcStageables
     val sk = SrcKeys
@@ -148,6 +150,6 @@ class SrcPlugin(val layer : LaneLayer,
         LESS := (SRC1.msb === SRC2.msb) ? ADD_SUB.msb | Mux(ss.UNSIGNED, SRC2.msb, SRC1.msb)
       }
     }
-    eu.pipelineLock.release()
+    buildBefore.release()
   }
 }

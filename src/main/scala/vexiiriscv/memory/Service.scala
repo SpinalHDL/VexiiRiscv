@@ -1,7 +1,7 @@
 package vexiiriscv.memory
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin._
 import vexiiriscv.Global
@@ -13,7 +13,7 @@ object AddressTranslationPortUsage{
 }
 
 trait AddressTranslationService extends Area {
-  val elaborationLock = Lock()
+  val elaborationLock = Retainer()
   def newStorage(pAny: Any): Any
 
   def newTranslationPort(nodes: Seq[NodeBaseApi],
@@ -38,5 +38,5 @@ class AddressTranslationRsp(s : AddressTranslationService, wakesCount : Int, val
     val BYPASS_TRANSLATION = Payload(Bool())
   }
   val wake = Bool()
-  val pipelineLock = Lock().retain()
+//  val pipelineLock = Retainer().retain()
 }

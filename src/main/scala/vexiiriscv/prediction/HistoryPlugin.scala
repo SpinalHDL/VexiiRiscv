@@ -1,7 +1,7 @@
 package vexiiriscv.prediction
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -19,8 +19,7 @@ case class HistoryJump(laneAgeWidth : Int) extends Bundle{
 
 //TODO a few history port may be removed to save area, as they are corner case  : DecodePredictionPlugin, and eventualy Lsu io missprediction
 class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin {
-  lazy val fpp = host[FetchPipelinePlugin]
-  buildBefore(fpp.elaborationLock)
+
 
   case class HistorySpec(priority : Int, laneAgeWidth : Int, port : Flow[HistoryJump])
   val historySpecs = mutable.ArrayBuffer[HistorySpec]()
@@ -28,8 +27,12 @@ class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin
     historySpecs.addRet(HistorySpec(priority, laneAgeWidth, Flow(HistoryJump(laneAgeWidth)))).port
   }
 
-  val elaborationLock = Lock()
-  val logic = during build new Area{
+  val elaborationLock = Retainer()
+  val logic = during setup new Area{
+    val fpp = host[FetchPipelinePlugin]
+    val buildBefore = retains(fpp.elaborationLock)
+    awaitBuild()
+
     elaborationLock.await()
 
     val fetchUsages = host.list[FetchConditionalPrediction]
@@ -59,5 +62,6 @@ class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin
     val inserter = new fpp.Fetch(fetchInsertAt){
       BRANCH_HISTORY := (if(historyFetchBypass) onFetch.valueNext else onFetch.value)
     }
+    buildBefore.release()
   }
 }

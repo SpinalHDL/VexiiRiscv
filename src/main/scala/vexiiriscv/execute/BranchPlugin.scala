@@ -7,13 +7,14 @@ package vexiiriscv.execute
 import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
-import vexiiriscv.riscv.{Const, IMM, RD, Riscv, Rvi}
+import vexiiriscv.riscv.{CSR, Const, IMM, RD, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
+import vexiiriscv.misc.TrapService
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
 import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
@@ -32,17 +33,20 @@ class BranchPlugin(val layer : LaneLayer,
                    var jumpAt: Int = 1,
                    var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
   import BranchPlugin._
-  lazy val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
-  lazy val sp = host[ReschedulePlugin]
-  lazy val pcp = host[PcPlugin]
-  lazy val hp = host.get[HistoryPlugin]
-  lazy val ls = host[LearnService]
-  setupRetain(wbp.elaborationLock)
-  setupRetain(sp.elaborationLock)
-  setupRetain(pcp.elaborationLock)
-  during setup(hp.foreach(_.elaborationLock.retain))
 
-  val logic = during build new Logic{
+  def catchMissaligned = !Riscv.RVC
+
+  val logic = during setup new Logic{
+    val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
+    val sp = host[ReschedulePlugin]
+    val pcp = host[PcPlugin]
+    val hp = host.get[HistoryPlugin]
+    val ls = host[LearnService]
+    val ts = host[TrapService]
+    val ioRetainer = retains(wbp.elaborationLock, sp.elaborationLock, pcp.elaborationLock, ts.trapLock)
+    hp.foreach(ioRetainer += _.elaborationLock)
+    awaitBuild()
+
     import SrcKeys._
     if(hp.nonEmpty) host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
 
@@ -73,14 +77,10 @@ class BranchPlugin(val layer : LaneLayer,
     val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
     val historyPort = hp.map(_.createPort(age, Execute.LANE_AGE_WIDTH))
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
-    //    val trapPort = if XXX sp.newTrapPort(age)
+    val trapPort = catchMissaligned generate ts.newTrap(layer.el.getAge(jumpAt), Execute.LANE_AGE_WIDTH)
 
-    eu.uopLock.release()
-    wbp.elaborationLock.release()
-    sp.elaborationLock.release()
-    srcp.elaborationLock.release()
-    pcp.elaborationLock.release()
-    hp.foreach(_.elaborationLock.release())
+    uopRetainer.release()
+    ioRetainer.release()
 
     // Without prediction, the plugin can assume that there is no correction to do if no branch is needed
     // leading to a simpler design.
@@ -176,12 +176,24 @@ class BranchPlugin(val layer : LaneLayer,
         port.age := Execute.LANE_AGE
       }
 
-
       flushPort.valid := doIt
       flushPort.hartId := Global.HART_ID
       flushPort.uopId :=  Decode.UOP_ID
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
+
+      val MISSALIGNED = insert(alu.PC_TRUE(0, Fetch.SLICE_RANGE_LOW bits) =/= 0 && alu.COND)
+      if (catchMissaligned) { //Non RVC can trap on missaligned branches
+        trapPort.valid := False
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.FETCH_MISSALIGNED
+        trapPort.tval := B(alu.PC_TRUE)
+
+        when(doIt && MISSALIGNED){
+          trapPort.valid := True
+          bypass(TRAP) := True
+        }
+      }
 
       val IS_JAL = insert(BRANCH_CTRL === BranchCtrlEnum.JAL)
       val IS_JALR = insert(BRANCH_CTRL === BranchCtrlEnum.JALR)

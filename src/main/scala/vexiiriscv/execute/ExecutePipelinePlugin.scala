@@ -1,7 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.Lock
+import spinal.core.fiber.Retainer
 import spinal.idslplugin.Location
 import spinal.lib._
 import spinal.lib.logic.{DecodingSpec, Masked}
@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
   setName("execute")
-  val pipelineLock = Lock()
+  val pipelineLock = Retainer()
 
   def freezeWhen(cond: Bool)(implicit loc: Location) = freeze.requests += cond
   def isFreezed(): Bool = freeze.valid
@@ -31,8 +31,6 @@ class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
   def ctrl(id : Int)  : CtrlLink = {
     idToCtrl.getOrElseUpdate(id, CtrlLink().setCompositeName(this, "ctrl" + id))
   }
-
-  def getAge(at: Int, prediction: Boolean): Int = Ages.EU + at * Ages.STAGE + prediction.toInt * Ages.PREDICTION
 
   val freeze = during build new Area{
     val requests = ArrayBuffer[Bool]()

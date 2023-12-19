@@ -29,9 +29,6 @@ class MulPlugin(val layer : LaneLayer,
                 var bufferedHigh : Option[Boolean] = None) extends ExecutionUnitElementSimple(layer){
   import MulPlugin._
 
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
-  setupRetain(ifp.elaborationLock)
-
   val logic = during build new Logic {
     import SrcKeys._
 
@@ -42,21 +39,29 @@ class MulPlugin(val layer : LaneLayer,
 
     val formatBus = ifp.access(writebackAt)
     implicit val _ = ifp -> formatBus
-    add(Rvi.MUL   ).decode(HIGH -> False).rsUnsigned(true , true )
-    add(Rvi.MULH  ).decode(HIGH -> True ).rsUnsigned(true , true )
-    add(Rvi.MULHSU).decode(HIGH -> True ).rsUnsigned(true , false)
-    add(Rvi.MULHU ).decode(HIGH -> True ).rsUnsigned(false, false)
+    add(Rvi.MUL   ).decode(HIGH -> False).rsUnsigned(true , true , useRsUnsignedPlugin)
+    add(Rvi.MULH  ).decode(HIGH -> True ).rsUnsigned(true , true , useRsUnsignedPlugin)
+    add(Rvi.MULHSU).decode(HIGH -> True ).rsUnsigned(true , false, useRsUnsignedPlugin)
+    add(Rvi.MULHU ).decode(HIGH -> True ).rsUnsigned(false, false, useRsUnsignedPlugin)
 
-    if (XLEN.get == 64) {
-      add(Rvi.MULW).decode(HIGH -> False).rsUnsigned(true , true )
-      for (op <- List(Rvi.MULW)) {
-        ifp.signExtend(formatBus, layer(op), 32)
+    if(!useRsUnsignedPlugin){
+      for(uop <- List(Rvi.MUL,Rvi.MULH, Rvi.MULHSU, Rvi.MULHU); spec = layer(uop)){
+        spec.addRsSpec(RS1, srcAt)
+        spec.addRsSpec(RS2, srcAt)
       }
     }
 
-    eu.uopLock.release()
-    srcp.elaborationLock.release()
-    ifp.elaborationLock.release()
+    if (XLEN.get == 64) {
+      add(Rvi.MULW).decode(HIGH -> False).rsUnsigned(true , true, useRsUnsignedPlugin)
+      for (op <- List(Rvi.MULW); spec = layer(op)) {
+        ifp.signExtend(formatBus, layer(op), 32)
+        if (!useRsUnsignedPlugin) {
+          spec.addRsSpec(RS1, srcAt)
+          spec.addRsSpec(RS2, srcAt)
+        }
+      }
+    }
+    uopRetainer.release()
 
     val finalWidth = XLEN*2
     val SRC_WIDTH = XLEN.get + (!useRsUnsignedPlugin).toInt

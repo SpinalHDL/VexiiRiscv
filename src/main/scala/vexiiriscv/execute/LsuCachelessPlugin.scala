@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.{Global, riscv}
-import vexiiriscv.riscv.{Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
+import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
@@ -12,6 +12,7 @@ import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService
 import vexiiriscv.misc.{AddressToMask, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
+import vexiiriscv.schedule.{ReschedulePlugin, ScheduleService}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -53,29 +54,24 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var forkAt: Int = 0,
                          var joinAt: Int = 1,
                          var wbAt: Int = 2) extends FiberPlugin{
-  lazy val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
-  lazy val srcp = host.find[SrcPlugin](_.layer == layer)
-  lazy val ats = host[AddressTranslationService]
-  lazy val rp = host[RedoPlugin]
-  lazy val ts = host[TrapService]
-  buildBefore(elp.pipelineLock)
-  setupRetain(elp.uopLock)
-  setupRetain(srcp.elaborationLock)
-  setupRetain(ifp.elaborationLock)
-  setupRetain(ats.elaborationLock)
-  setupRetain(rp.elaborationLock)
-  setupRetain(ts.trapLock)
 
   val FENCE_I_SEL = Payload(Bool())
 
-  val logic = during build new Area{
-    val trapPort = ts.newTrap(layer.el.getAge(addressAt), Execute.LANE_AGE_WIDTH)
-    ts.trapLock.release()
+  val logic = during setup new Area{
+    val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
+    val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
+    val srcp = host.find[SrcPlugin](_.layer == layer)
+    val ats = host[AddressTranslationService]
+    val rp = host[RedoPlugin]
+    val ts = host[TrapService]
+    val ss = host[ScheduleService]
+    val buildBefore = retains(elp.pipelineLock, ats.elaborationLock)
+    val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, rp.elaborationLock, ts.trapLock, ss.elaborationLock)
+    awaitBuild()
 
+    val trapPort = ts.newTrap(layer.el.getAge(forkAt), Execute.LANE_AGE_WIDTH)
     val redoPort = withSpeculativeLoadFlush generate rp.newPort(forkAt)
-    rp.elaborationLock.release()
-
+    val flushPort = ss.newFlushPort(layer.el.getExecuteAge(addressAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
     // IntFormatPlugin specification
@@ -106,9 +102,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     layer(Rvi.FENCE).setCompletion(joinAt)
     for(uop <- frontend.stores) layer(uop).setCompletion(joinAt)
 
-    elp.uopLock.release()
-    srcp.elaborationLock.release()
-    ifp.elaborationLock.release()
+    retainer.release()
 
     val injectCtrl = elp.ctrl(0)
     val inject = new injectCtrl.Area {
@@ -143,9 +137,10 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val RS2 = elp(IntRegFile, riscv.RS2)
       assert(bus.cmd.ready, "LsuCachelessPlugin expected bus.cmd.ready to be True, but False") // For now
 
+      val skip = CombInit[Bool](MISS_ALIGNED)
 
-      val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(isReady)
-      bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest
+      val cmdSent = RegInit(False) setWhen(bus.cmd.fire || skip) clearWhen(isReady)
+      bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest && !skip
       bus.cmd.write := ! LOAD
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>
@@ -161,10 +156,27 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       elp.freezeWhen(bus.cmd.isStall)
 
-//      trapPort.valid :;=
+
+      flushPort.valid := False
+      flushPort.hartId := Global.HART_ID
+      flushPort.uopId := Decode.UOP_ID
+      flushPort.laneAge := Execute.LANE_AGE
+      flushPort.self := False
+
+      trapPort.valid :=  isValid && SEL && MISS_ALIGNED
+      trapPort.exception := True
+      trapPort.code := LOAD.mux[Bits](CSR.MCAUSE_ENUM.LOAD_MISALIGNED, CSR.MCAUSE_ENUM.STORE_MISALIGNED).andMask(MISS_ALIGNED).resized
+      trapPort.tval  := onAddress.RAW_ADDRESS.asBits
+      trapPort.hartId := Global.HART_ID
+      trapPort.laneAge := Execute.LANE_AGE
+
+      when(isValid && SEL && MISS_ALIGNED){
+        flushPort.valid := True
+        bypass(Global.TRAP) := True
+      }
 
       val speculLoad = withSpeculativeLoadFlush generate new Area {
-        val tooRisky = isValid && SEL && LOAD && (tpk.IO && elp.atRiskOfFlush(forkAt) || MISS_ALIGNED) //TODO remove that MISS_ALIGNED management
+        val tooRisky = isValid && SEL && LOAD && (tpk.IO && elp.atRiskOfFlush(forkAt))
         redoPort := tooRisky
       }
     }
@@ -172,9 +184,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val onJoin = new joinCtrl.Area{
       val buffer = bus.rsp.toStream.queueLowLatency(joinAt-forkAt+1).combStage
       val READ_DATA = insert(buffer.data)
-      elp.freezeWhen(isValid && SEL && !buffer.valid)
-      buffer.ready := isReady && SEL
-      assert(!(isValid && hasCancelRequest && SEL && !LOAD), "LsuCachelessPlugin saw unexpected select && !LOAD && cancel request") //TODO add tpk.IO and along the way
+      elp.freezeWhen(isValid && SEL && !buffer.valid && !up(Global.TRAP))
+      buffer.ready := isReady && SEL && !up(Global.TRAP)
+      assert(!(isValid && hasCancelRequest && SEL && !LOAD && !up(Global.TRAP)), "LsuCachelessPlugin saw unexpected select && !LOAD && cancel request") //TODO add tpk.IO and along the way)) //TODO add tpk.IO and along the way
     }
 
     val onWb = new wbCtrl.Area{
@@ -196,7 +208,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       iwb.payload := rspShifted
     }
 
-
-    ats.elaborationLock.release()
+    buildBefore.release()
   }
 }

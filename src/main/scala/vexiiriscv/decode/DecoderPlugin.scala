@@ -4,20 +4,20 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.pipeline.{CtrlLink, Link, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
-import vexiiriscv.execute.ExecuteLaneService
+import vexiiriscv.execute.{CompletionPayload, CompletionService, ExecuteLaneService}
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.misc.PipelineService
+import vexiiriscv.misc.{PipelineService, TrapService}
 import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
 import vexiiriscv.riscv._
+import vexiiriscv.schedule.{Ages, ScheduleService}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
-  lazy val dpp = host[DecodePipelinePlugin]
-  buildBefore(dpp.elaborationLock)
+class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService with CompletionService{
+  override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.laneLogic.map(_.completionPort)
 
   val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
   def getDecodingSpec(key: Payload[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
@@ -41,7 +41,13 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
     host.list[ExecuteLaneService].flatMap(_.getUops()).map(e => Masked(e.key))
   }
 
-  val logic = during build new Area{
+  val logic = during setup new Area{
+    val dpp = host[DecodePipelinePlugin]
+    val ts = host[TrapService]
+    val ss = host[ScheduleService]
+    val buildBefore = retains(dpp.elaborationLock, ts.trapLock, ss.elaborationLock)
+    awaitBuild()
+
     elaborationLock.await()
 
     Decode.INSTRUCTION_WIDTH.set(32)
@@ -109,7 +115,6 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
     }
 
     val laneLogic = for(laneId <- 0 until Decode.LANES) yield new decodeCtrl.LaneArea(laneId) {
-      LEGAL := Symplify(Decode.INSTRUCTION, encodings.all)
       for(rfa <- rfAccesses){
         val keys = rfaKeys(rfa)
         val dec = encodings.rfAccessDec(rfa)
@@ -123,8 +128,39 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
         }).asUInt
       }
 
-      // Clear RD.ENABLE if it select a regfile which doesn't allow writing x0
+      LEGAL := Symplify(Decode.INSTRUCTION, encodings.all)
 
+      val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)
+      trapPort.valid := False
+      trapPort.exception := True
+      trapPort.tval := Decode.INSTRUCTION_RAW
+      trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
+      trapPort.laneAge := laneId
+      trapPort.hartId := Global.HART_ID
+
+      val completionPort = Flow(CompletionPayload())
+      completionPort.valid := False
+      completionPort.hartId := Global.HART_ID
+      completionPort.uopId := Decode.UOP_ID
+      completionPort.trap := True
+
+      when(isValid && !LEGAL) {
+        bypass(Global.TRAP) := True
+        trapPort.valid := True
+        when(up.transactionSpawn){
+          completionPort.valid := True
+        }
+      }
+
+      //Will also flush instructions after a fetch trap
+      val flushPort = ss.newFlushPort(dpp.getAge(decodeAt), log2Up(Decode.LANES), true)
+      flushPort.valid := isValid && Global.TRAP
+      flushPort.hartId := Global.HART_ID
+      flushPort.uopId := Decode.UOP_ID
+      flushPort.laneAge := laneId
+      flushPort.self := False
+
+      // Clear RD.ENABLE if it select a regfile which doesn't allow writing x0
       val x0Logic = Decode.rfaKeys.get.get(RD) map { rfaRd =>
         val rdRfidZero = rfaRd.rfMapping.zipWithIndex.filter(_._1.x0AlwaysZero).map(_._2)
         val rdZero = Decode.INSTRUCTION(riscv.Const.rdRange) === 0 && rdRfidZero.map(rfaRd.RFID === _).orR
@@ -142,5 +178,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService{
       val uopIdBase = harts.map(_.uopId).read(decodeCtrl.link(Global.HART_ID))
       Decode.UOP_ID := uopIdBase + laneId
     }
+
+    buildBefore.release()
   }
 }

@@ -20,12 +20,10 @@ class BarrelShifterPlugin(val layer : LaneLayer,
                           var shiftAt : Int = 0,
                           var formatAt : Int = 0) extends ExecutionUnitElementSimple(layer)  {
   import BarrelShifterPlugin._
-  lazy val ifp = host.find[IntFormatPlugin](_.laneName == layer.el.laneName)
-  buildBefore(ifp.elaborationLock)
-
   val SHIFT_RESULT = Payload(Bits(Riscv.XLEN bits))
 
-  val logic = during build new Logic{
+  val logic = during setup new Logic{
+    awaitBuild()
     import SrcKeys._
 
     val wb = ifp.access(formatAt)
@@ -54,8 +52,7 @@ class BarrelShifterPlugin(val layer : LaneLayer,
       }
     }
 
-    eu.uopLock.release()
-    srcp.elaborationLock.release()
+    uopRetainer.release()
 
     val shift = new eu.Execute(shiftAt) {
       val ss = SrcStageables
