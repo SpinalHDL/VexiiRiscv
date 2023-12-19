@@ -6,6 +6,7 @@ import spinal.core._
 import spinal.idslplugin.PostInitCallback
 import spinal.lib.Flow
 import vexiiriscv.decode.DecodeListType
+import vexiiriscv.execute.RsUnsignedPlugin.RS1_SIGNED
 import vexiiriscv.riscv.{MicroOp, RD, RfResource}
 
 
@@ -42,6 +43,7 @@ object ExecuteUnitElementSimple{
 
       def rsUnsigned(rs1Signed : Boolean, rs2Signed : Boolean, cond : Boolean = true) : this.type = {
         if(cond) rsUnsignedPlugin.addUop(impl, rs1Signed, rs2Signed)
+        else impl.addDecoding(RsUnsignedPlugin.RS1_SIGNED -> Bool(rs1Signed), RsUnsignedPlugin.RS2_SIGNED -> Bool(rs2Signed))
         this
       }
     }
