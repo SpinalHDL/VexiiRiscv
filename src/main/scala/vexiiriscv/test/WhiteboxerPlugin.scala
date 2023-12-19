@@ -15,6 +15,8 @@ import vexiiriscv.regfile.{RegFileWrite, RegFileWriter, RegFileWriterService}
 import vexiiriscv.riscv.{Const, Riscv}
 import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
 
+import scala.collection.mutable.ArrayBuffer
+
 class WhiteboxerPlugin extends FiberPlugin{
 
   val logic = during setup new Logic()
@@ -190,15 +192,15 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val trap = new Area {
       val ports = for(hartId <- 0 until HART_COUNT) yield new Area{
-        val priv = host[PrivilegedPlugin].logic.hartsTrap(hartId)
-        val valid = wrap(priv.trigger.valid)
-        val cause = wrap(priv.pending.state.code)
+        val priv = host[PrivilegedPlugin].logic.harts(hartId).trap
+        val valid = wrap(priv.whitebox.trap)
+        val interrupt = wrap(priv.whitebox.interrupt)
+        val cause = wrap(priv.whitebox.code)
       }
     }
 
-
     def self = this
-    class Proxies {
+    abstract class Proxies {
       val fetch = new FetchProxy()
       val decodes = self.decodes.indices.map(new DecodeProxy(_)).toArray
       val serializeds = self.serializeds.indices.map(new SerializedProxy(_)).toArray
@@ -214,7 +216,48 @@ class WhiteboxerPlugin extends FiberPlugin{
       val learns = self.prediction.learns.map(learn => new LearnProxy(learn)).toArray
       val perf = new PerfProxy()
       val trap = self.trap.ports.indices.map(new TrapProxy(_)).toArray
+      val interrupts = new InterruptsProxy()
+
+      def interrupt(hartId : Int, intId : Int, value : Boolean)
+
+      class InterruptChecker(hartId : Int, pin: Bool, id: Int) {
+        val proxy = pin.simProxy()
+        var last = proxy.toBoolean
+
+        def sync(): Unit = {
+          interrupt(hartId, id, last)
+        }
+
+        def check(): Unit = {
+          val value = proxy.toBoolean
+          if (value != last) {
+            interrupt(hartId, id, value)
+            last = value
+          }
+        }
+      }
+
+      class InterruptsProxy {
+        val priv = host[PrivilegedPlugin]
+        val checkers = ArrayBuffer[InterruptChecker]()
+        for ((hart, hartId) <- priv.io.harts.zipWithIndex) {
+          checkers += new InterruptChecker(hartId, hart.int.m.timer,  7)
+          checkers += new InterruptChecker(hartId, hart.int.m.software,  3)
+          checkers += new InterruptChecker(hartId, hart.int.m.external, 11)
+          if (hart.p.withSupervisor) {
+            checkers += new InterruptChecker(hartId, hart.int.s.external, 9)
+          }
+        }
+        def check(): Unit = {
+          checkers.foreach(_.check())
+        }
+
+        def sync(): Unit = {
+          checkers.foreach(_.sync())
+        }
+      }
     }
+
 
     class FetchProxy {
       val fire = fetch.fire.simProxy()
@@ -337,6 +380,7 @@ class WhiteboxerPlugin extends FiberPlugin{
     class TrapProxy(val hartId : Int) {
       val self = trap.ports(hartId)
       val fire = self.valid.simProxy()
+      val interrupt = self.interrupt.simProxy()
       val cause = self.cause.simProxy()
     }
 

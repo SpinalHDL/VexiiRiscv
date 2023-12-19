@@ -203,7 +203,7 @@ class ParamSimple(){
     }
 
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(PrivilegedConfig.full, trapAt = 2)
+    plugins += new PrivilegedPlugin(List.tabulate(hartCount)(i => PrivilegedParam.full.setHartId(i)), trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
 
     if(withLateAlu) {

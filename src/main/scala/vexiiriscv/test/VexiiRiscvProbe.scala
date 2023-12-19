@@ -34,11 +34,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   val disass = withRvls generate rvls.jni.Frontend.newDisassemble(xlen)
   val harts = hartsIds.map(new HartCtx(_)).toArray
   val wbp = cpu.host[WhiteboxerPlugin].logic.get
-  val proxies = new wbp.Proxies()
+  val proxies = new wbp.Proxies(){
+    override def interrupt(hartId: Int, intId: Int, value: Boolean): Unit = {
+      backends.foreach(_.setInterrupt(hartsIds(hartId), intId, value))
+    }
+  }
 
   def add(tracer: TraceBackend): this.type = {
     backends += tracer
     harts.foreach(_.add(tracer))
+    proxies.interrupts.sync()
     this
   }
 
@@ -448,6 +453,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         }
       }
     }
+    interrupts.check()
   }
 
 
@@ -507,7 +513,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
   def checkTraps(): Unit = {
     for(trap <- proxies.trap) if(trap.fire.toBoolean){
-      backends.foreach(_.trap(trap.hartId, false, trap.cause.toInt))
+      backends.foreach(_.trap(trap.hartId, trap.interrupt.toBoolean, trap.cause.toInt))
     }
   }
 

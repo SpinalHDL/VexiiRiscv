@@ -8,6 +8,7 @@ import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamMonitor, StreamReadyRandomizer}
 import vexiiriscv._
 import vexiiriscv.fetch.PcService
+import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
 
 import java.io.{File, IOException, InputStream, OutputStream, OutputStreamWriter, PrintStream, PrintWriter}
@@ -169,7 +170,8 @@ class TestOptions{
       }
     }
 
-    val peripheral = new PeripheralEmulator(0x10000000, null, null){
+    val priv = dut.host[PrivilegedPlugin].io.harts(0)
+    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, null){
       override def getClintTime(): Long = probe.cycle
     }
 
