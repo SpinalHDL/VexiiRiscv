@@ -4,16 +4,18 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline._
-import vexiiriscv.misc.{PrivilegedPlugin, TrapService}
+import vexiiriscv.misc.{PrivilegedPlugin, TrapReason, TrapService}
 import vexiiriscv.riscv.{CSR, Rvi}
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.decode.Decode
 import vexiiriscv.schedule.ReschedulePlugin
 
+import scala.collection.mutable.ArrayBuffer
+
 
 object EnvPluginOp extends SpinalEnum{
-  val ECALL, EBREAK, XRET = newElement()
+  val ECALL, EBREAK, PRIV_RET = newElement()
 }
 
 class EnvPlugin(layer : LaneLayer,
@@ -33,9 +35,14 @@ class EnvPlugin(layer : LaneLayer,
 
     add(Rvi.ECALL).decode(OP -> EnvPluginOp.ECALL)
     add(Rvi.EBREAK).decode(OP -> EnvPluginOp.EBREAK)
-    add(Rvi.MRET).decode(OP -> EnvPluginOp.XRET)
+    add(Rvi.MRET).decode(OP -> EnvPluginOp.PRIV_RET)
+    if (ps.implementSupervisor) add(Rvi.SRET).decode(OP -> EnvPluginOp.PRIV_RET)
+    if (ps.implementUserTrap)   add(Rvi.URET).decode(OP -> EnvPluginOp.PRIV_RET)
 
-    val uopList = List(Rvi.ECALL, Rvi.EBREAK, Rvi.MRET)
+    val uopList = ArrayBuffer(Rvi.ECALL, Rvi.EBREAK, Rvi.MRET)
+    if (ps.implementSupervisor) uopList += (Rvi.SRET)
+    if (ps.implementUserTrap) uopList += (Rvi.URET)
+
     for (uop <- uopList; spec = layer(uop)) {
       spec.setCompletion(executeAt)
       spec.mayFlushUpTo(executeAt)
@@ -59,6 +66,7 @@ class EnvPlugin(layer : LaneLayer,
       val privilege = ps.getPrivilege(HART_ID)
       val xretPriv = Decode.UOP(29 downto 28).asUInt
       val forceCommit = True
+
       switch(this(OP)) {
         is(EnvPluginOp.EBREAK) {
           trapPort.code := CSR.MCAUSE_ENUM.BREAKPOINT
@@ -66,14 +74,15 @@ class EnvPlugin(layer : LaneLayer,
         is(EnvPluginOp.ECALL) {
           trapPort.code := B(privilege.resize(Global.CODE_WIDTH) | CSR.MCAUSE_ENUM.ECALL_USER)
         }
-        is(EnvPluginOp.XRET) {
-//          trapPort.code := CAUSE_XRET //the reschedule cause isn't the final value which will end up into XCAUSE csr
-//          setup.reschedule.tval(1 downto 0) := xretPriv.asBits
-//          when(xretPriv < priv.getPrivilege()) {
-//            setup.reschedule.cause := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
-//            setup.reschedule.reason := ScheduleReason.TRAP
-//            setup.reschedule.skipCommit := True
-//          }
+        is(EnvPluginOp.PRIV_RET) {
+          when(xretPriv >= ps.getPrivilege(HART_ID)) {
+            trapPort.exception := False
+            trapPort.code := TrapReason.PRIV_RET
+            trapPort.tval(1 downto 0) := xretPriv.asBits
+          } otherwise {
+            forceCommit := False
+            trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
+          }
         }
       }
 

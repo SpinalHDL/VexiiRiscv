@@ -100,11 +100,15 @@ case class TrapPending() extends Bundle{
 
 object TrapReason{
   val INTERRUPT = 0
+  val PRIV_RET = 1
 }
 
 class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends FiberPlugin with TrapService{
   override def trapHandelingAt: Int = trapAt
 
+  def implementSupervisor = params.exists(_.withSupervisor)
+  def implementUser = params.exists(_.withUser)
+  def implementUserTrap = params.exists(_.withUserTrap)
 
   def getPrivilege(hartId : UInt) : UInt = logic.csrs.map(_.privilege).read(hartId)
 
@@ -163,6 +167,7 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
       val privilege = RegInit(U"11")
       val withMachinePrivilege = privilege >= U"11"
       val withSupervisorPrivilege = privilege >= U"01"
+      val xretAwayFromMachine = False
 
       val m = new api.Csr(CSR.MSTATUS) {
         val status = new Area {
@@ -231,6 +236,15 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
       val hartIo = io.harts(hartId)
       val csr = csrs(hartId)
 
+      def privilegeMux[T <: Data](priv: UInt)(machine: => T, supervisor: => T): T = {
+        val ret = CombInit(machine)
+        switch(priv) {
+          if (p.withSupervisor) is(1) {
+            ret := supervisor
+          }
+        }
+        ret
+      }
 
       //Process interrupt request, code and privilege
       val interrupt = new Area {
@@ -295,6 +309,14 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
           val arbiter = new AgedArbiter(requests)
           val state = arbiter.down.toReg
           val pc = Reg(PC)
+
+          val xret = new Area {
+            val sourcePrivilege = state.tval(1 downto 0).asUInt
+            val targetPrivilege = privilegeMux(sourcePrivilege)(
+              csr.m.status.mpp,
+              ???//U"0" @@ supervisor.sstatus.spp
+            )
+          }
         }
 
         val exception = new Area {
@@ -341,7 +363,7 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
         val pcPort = pcs.createJumpInterface(Ages.TRAP, 0, 0)
         pcPort.valid := False
         pcPort.hartId := hartId
-        pcPort.pc := csrs(hartId).m.tvec
+        pcPort.pc.assignDontCare()
         val fsm = new StateMachine {
           val RUNNING = makeInstantEntry()
           val TRAP_TRIGGER = new State()
@@ -370,6 +392,8 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
           TRAP_TRIGGER.whenIsActive {
             when(pending.state.exception) {
               pcPort.valid := True
+              pcPort.pc := csrs(hartId).m.tvec
+
               csr.m.epc := pending.pc
               csr.m.tval := pending.state.tval
               csr.m.status.mie := False
@@ -387,6 +411,8 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
                 is(TrapReason.INTERRUPT) {
                   when(buffer.i.valid) {
                     pcPort.valid := True
+                    pcPort.pc := csrs(hartId).m.tvec
+
                     csr.m.epc := pending.pc
                     csr.m.tval := 0
                     csr.m.status.mie := False
@@ -402,6 +428,26 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
                   } otherwise {
                     pcPort.valid := True
                     pcPort.pc := pending.pc
+                  }
+                }
+                is(TrapReason.PRIV_RET){
+                  pcPort.valid := True
+                  pcPort.pc := csr.m.epc
+
+                  csr.privilege := pending.xret.targetPrivilege
+                  csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege < 3)
+                  switch(pending.state.tval(1 downto 0)) {
+                    is(3) {
+                      csr.m.status.mpp := 0
+                      csr.m.status.mie := csr.m.status.mpie
+                      csr.m.status.mpie := True
+                    }
+                    p.withSupervisor generate is(1) {
+                      ???
+//                      s.sstatus.spp := U"0"
+//                      s.sstatus.sie := supervisor.sstatus.spie
+//                      s.sstatus.spie := True
+                    }
                   }
                 }
                 default {

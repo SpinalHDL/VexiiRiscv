@@ -475,6 +475,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           hart.lastUopId = uopId
           hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
 
+          if(decode.pc == 0xFFFFFFFF800000c8l){
+            println("asd")
+          }
+
           uop.toKonata(hart)
           if (uop.didCommit) {
             lastCommitAt = cycle

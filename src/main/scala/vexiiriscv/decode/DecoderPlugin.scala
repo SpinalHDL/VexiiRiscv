@@ -150,6 +150,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       completionPort.hartId := Global.HART_ID
       completionPort.uopId := Decode.UOP_ID
       completionPort.trap := True
+      completionPort.commit := False
 
       when(isValid && (!LEGAL || interruptPending)) {
         bypass(Global.TRAP) := True
