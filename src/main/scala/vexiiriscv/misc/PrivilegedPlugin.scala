@@ -366,7 +366,7 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
         pcPort.pc.assignDontCare()
         val fsm = new StateMachine {
           val RUNNING = makeInstantEntry()
-          val TRAP_TRIGGER = new State()
+          val COMPLETION = new State()
 
           val inflightTrap = trapPendings.map(_(hartId)).orR
           val holdPort = pcs.newHoldPort(hartId)
@@ -385,50 +385,34 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
           RUNNING.whenIsActive {
             when(trigger.valid) {
               buffer.sampleIt := True
-              goto(TRAP_TRIGGER)
+              goto(COMPLETION)
             }
           }
 
-          TRAP_TRIGGER.whenIsActive {
-            when(pending.state.exception) {
+          val trapCode = pending.state.exception.mux(pending.state.code, buffer.i.code)
+          COMPLETION.whenIsActive {
+            when(pending.state.exception || pending.state.code === TrapReason.INTERRUPT && buffer.i.valid) {
               pcPort.valid := True
               pcPort.pc := csrs(hartId).m.tvec
 
               csr.m.epc := pending.pc
-              csr.m.tval := pending.state.tval
+              csr.m.tval := pending.state.tval.andMask(pending.state.exception)
               csr.m.status.mie := False
               csr.m.status.mpie := csr.m.status.mie
               csr.m.status.mpp := csr.privilege
-              csr.m.cause.code := pending.state.code
-              csr.m.cause.interrupt := False
+              csr.m.cause.code := trapCode
+              csr.m.cause.interrupt := !pending.state.exception
               csr.privilege := exception.targetPrivilege
 
               whitebox.trap := True
-              whitebox.interrupt := False
-              whitebox.code := pending.state.code
+              whitebox.interrupt := !pending.state.exception
+              whitebox.code := trapCode
             } otherwise {
               switch(pending.state.code) {
                 is(TrapReason.INTERRUPT) {
-                  when(buffer.i.valid) {
-                    pcPort.valid := True
-                    pcPort.pc := csrs(hartId).m.tvec
-
-                    csr.m.epc := pending.pc
-                    csr.m.tval := 0
-                    csr.m.status.mie := False
-                    csr.m.status.mpie := csr.m.status.mie
-                    csr.m.status.mpp := csr.privilege
-                    csr.m.cause.code := buffer.i.code
-                    csr.m.cause.interrupt := True
-                    csr.privilege := buffer.i.targetPrivilege
-
-                    whitebox.trap := True
-                    whitebox.interrupt := True
-                    whitebox.code := buffer.i.code
-                  } otherwise {
-                    pcPort.valid := True
-                    pcPort.pc := pending.pc
-                  }
+                  assert(!buffer.i.valid)
+                  pcPort.valid := True
+                  pcPort.pc := pending.pc
                 }
                 is(TrapReason.PRIV_RET){
                   pcPort.valid := True
