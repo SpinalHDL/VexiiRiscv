@@ -103,7 +103,7 @@ object TrapReason{
   val PRIV_RET = 1
 }
 
-class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends FiberPlugin with TrapService{
+class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends FiberPlugin with TrapService with CommitService{
   override def trapHandelingAt: Int = trapAt
 
   def implementSupervisor = params.exists(_.withSupervisor)
@@ -115,9 +115,11 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
   case class Delegator(var enable: Bool, privilege: Int)
   case class InterruptSpec(var cond: Bool, id: Int, privilege: Int, delegators: List[Delegator])
   case class ExceptionSpec(id: Int, delegators: List[Delegator])
+  override def getCommitMask(hartId: Int): Bits = io.harts(hartId).commitMask
 
   val io = during build new Area{
     val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
+      val commitMask = Bits(HART_COUNT bits)
       val p = params(hartId)
       val rdtime = in UInt (64 bits)
       val int = new Area {
@@ -151,7 +153,7 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
     val cap = host[CsrAccessPlugin]
     val pp = host[PipelineBuilderPlugin]
     val pcs = host[PcService]
-    val buildBefore = retains(pp.elaborationLock, pcs.elaborationLock, cap.csrLock)
+    val buildBefore = retains(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, cap.getCsrRam().allocationLock)
     awaitBuild()
 
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
@@ -220,6 +222,11 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
         api.onCsr(CSR.MTVAL).readWrite(tval)
         api.onCsr(CSR.MEPC).readWrite(epc)
         api.onCsr(CSR.MTVEC).readWrite(tvec)
+
+//        val tvec = cap.readWriteRam(CSR.MTVEC)
+//        val tval = cap.readWriteRam(CSR.MTVAL)
+//        val epc = cap.readWriteRam(CSR.MEPC)
+        val scratch = cap.readWriteRam(CSR.MSCRATCH)
 
         hartIo.spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = 3, delegators = Nil)
         hartIo.spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = 3, delegators = Nil)
@@ -346,6 +353,7 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
 
         val trigger = new Area {
           val lanes = host.list[ExecuteLanePlugin] //TODO AREA filter the ones which may trap
+          hartIo.commitMask := B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(COMMIT))
           val oh = B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(TRAP))
           val valid = oh.orR
           val pc = OHMux.or(oh, lanes.map(_.execute(trapAt).down(PC)), true)
