@@ -136,34 +136,36 @@ class BranchPlugin(val layer : LaneLayer,
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
       val pcOnLastSlice = PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
 
+
       val history = new Area{
-        assert(Global.HART_COUNT.get == 1)
-        val state = Reg(Prediction.BRANCH_HISTORY) init(0)
-        val shifted = (state ## alu.COND).dropHigh(1)
-        val next = (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
-        when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B){
-          state := shifted
-        }
+        val fetched, next = Prediction.BRANCH_HISTORY()
+        val withSelfHistory = Global.HART_COUNT.get == 1 && Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1
 
-        val fetched = CombInit(
-          false /*(Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1)*/ match {
-            case true  => state //State will always reflect what the fetch stages will use, so let's use it as that little area
-            case false => apply(Prediction.BRANCH_HISTORY) //While the BRANCH_HISTORY may take some more time to wormup, it seems to have little effect in practice (coremark 9.1 miss rate vs 9.0)
-          }                                            //We can't use state there, as if there multiple branch instruction on the same Fetch.WORD it won't reflect the btb branch history
-        )
-      }
-
-      //TODO
-      println("!!! REPLACE THE OLD IMPL WITH THE BELLOW ONE !!!")
-      val historyV2 = new Area{
-        val slice = PC(Fetch.SLICE_RANGE.get)
-        var next = CombInit(apply(Prediction.BRANCH_HISTORY))
-        for(sliceId <- 0 until Fetch.SLICE_COUNT-1){
-          when(slice < sliceId && Prediction.ALIGNED_SLICES_BRANCH(sliceId)){
-            next \= (next ## Prediction.ALIGNED_SLICES_TAKEN(sliceId)).dropHigh(1)
+        val fromSelf = withSelfHistory generate new Area {
+          val state = Reg(Prediction.BRANCH_HISTORY) init (0)
+          val shifted = (state ## alu.COND).dropHigh(1)
+          when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B) {
+            state := shifted
           }
+
+          fetched := state
+          next := (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
         }
-        next \= (next ## alu.COND).dropHigh(1)
+
+        val fromFetch = !withSelfHistory generate new Area {
+          val slice = PC(Fetch.SLICE_RANGE.get)
+          var shifter = CombInit(apply(Prediction.BRANCH_HISTORY))
+          for (sliceId <- 0 until Fetch.SLICE_COUNT - 1) {
+            when(slice < sliceId && Prediction.ALIGNED_SLICES_BRANCH(sliceId)) {
+              shifter \= (shifter ## Prediction.ALIGNED_SLICES_TAKEN(sliceId)).dropHigh(1)
+            }
+          }
+          when(BRANCH_CTRL === BranchCtrlEnum.B) {
+            shifter \= (shifter ## alu.COND).dropHigh(1)
+          }
+          next := shifter
+          fetched := Prediction.BRANCH_HISTORY
+        }
       }
 
       pcPort.valid := doIt
@@ -172,7 +174,7 @@ class BranchPlugin(val layer : LaneLayer,
 
       historyPort.foreach{ port =>
         port.valid := doIt
-        port.history := historyV2.next
+        port.history := history.next
         port.age := Execute.LANE_AGE
       }
 
@@ -192,6 +194,7 @@ class BranchPlugin(val layer : LaneLayer,
         when(doIt && MISSALIGNED){
           trapPort.valid := True
           bypass(TRAP) := True
+          bypass(COMMIT) := False
         }
       }
 

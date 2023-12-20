@@ -6,7 +6,7 @@ import spinal.lib.misc.pipeline.{CtrlLink, Link, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.execute.{CompletionPayload, CompletionService, ExecuteLaneService}
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.misc.{PipelineService, TrapService}
+import vexiiriscv.misc.{PipelineService, PrivilegedPlugin, TrapReason, TrapService}
 import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
@@ -40,6 +40,8 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     elaborationLock.await()
     host.list[ExecuteLaneService].flatMap(_.getUops()).map(e => Masked(e.key))
   }
+
+
 
   val logic = during setup new Area{
     val dpp = host[DecodePipelinePlugin]
@@ -130,21 +132,27 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       LEGAL := Symplify(Decode.INSTRUCTION, encodings.all)
 
+      val interruptPending = host[PrivilegedPlugin].io.harts.map(_.int.pending).read(Global.HART_ID)
       val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)
       trapPort.valid := False
-      trapPort.exception := True
+      trapPort.exception := !interruptPending
       trapPort.tval := Decode.INSTRUCTION_RAW
       trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
       trapPort.laneAge := laneId
       trapPort.hartId := Global.HART_ID
+
+      when(interruptPending){
+        trapPort.code := TrapReason.INTERRUPT
+      }
 
       val completionPort = Flow(CompletionPayload())
       completionPort.valid := False
       completionPort.hartId := Global.HART_ID
       completionPort.uopId := Decode.UOP_ID
       completionPort.trap := True
+      completionPort.commit := False
 
-      when(isValid && !LEGAL) {
+      when(isValid && (!LEGAL || interruptPending)) {
         bypass(Global.TRAP) := True
         trapPort.valid := True
         when(up.transactionSpawn){

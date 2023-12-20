@@ -138,6 +138,7 @@ case class CompletionPayload() extends Bundle{
   val hartId = Global.HART_ID()
   val uopId = Decode.UOP_ID()
   val trap = Bool()
+  val commit = Bool()
 }
 
 //case class RetirePayload() extends Bundle{

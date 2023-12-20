@@ -34,11 +34,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   val disass = withRvls generate rvls.jni.Frontend.newDisassemble(xlen)
   val harts = hartsIds.map(new HartCtx(_)).toArray
   val wbp = cpu.host[WhiteboxerPlugin].logic.get
-  val proxies = new wbp.Proxies()
+  val proxies = new wbp.Proxies(){
+    override def interrupt(hartId: Int, intId: Int, value: Boolean): Unit = {
+      backends.foreach(_.setInterrupt(hartsIds(hartId), intId, value))
+    }
+  }
 
   def add(tracer: TraceBackend): this.type = {
     backends += tracer
     harts.foreach(_.add(tracer))
+    proxies.interrupts.sync()
     this
   }
 
@@ -161,9 +166,9 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
     def spawned = spawnAt != -1
     def done = !spawned || retireAt != -1 || flushAt != -1
-    def didCommit = done && flushAt == -1
+    def didCommit = done && commit
 
-    var trap = false
+    var trap, commit = false
 
     var integerWriteValid = false
     var integerWriteData = -1l
@@ -219,7 +224,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       if (didCommit) {
         i += new Retire(retireAt)
       } else {
-        i += new Flush(flushAt)
+        i += new Flush(flushAt max retireAt)
       }
       kb.foreach(_.insert(i))
 
@@ -242,6 +247,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       retireAt = -1l
 
       trap = false
+      commit = false
       integerWriteValid = false;
       floatWriteValid = false;
       csrValid = false;
@@ -431,6 +437,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         microOp.completionAt = cycle
         microOp.retireAt = cycle + 1
         microOp.trap = port.trap.toBoolean
+        microOp.commit = port.commit.toBoolean
       }
     }
 
@@ -444,10 +451,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         while (ptr != until) {
           val opCtx = hart.microOp(ptr)
           if (opCtx.spawned && opCtx.flushAt == -1) opCtx.flushAt = cycle
+          opCtx.commit = false
           ptr = (ptr + 1) & microOpIdMask
         }
       }
     }
+    interrupts.check()
   }
 
 
@@ -469,6 +478,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           hart.lastUopId = uopId
           hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
 
+//          if(decode.pc == 0xFFFFFFFF800000c8l){
+//            println("asd")
+//          }
+
           uop.toKonata(hart)
           if (uop.didCommit) {
             lastCommitAt = cycle
@@ -489,10 +502,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
               if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))
               if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
             }
-            uop.trap match {
-              case false => backends.foreach(_.commit(hartId, decode.pc))
-              case true => //backends.foreach(_.trap(hartId, false, 85))
-            }
+            if(uop.commit) backends.foreach(_.commit(hartId, decode.pc))
             if (uop.storeValid) {
               backends.foreach(_.storeBroadcast(hartId, uopId & 0xF))
             }
@@ -507,7 +517,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
   def checkTraps(): Unit = {
     for(trap <- proxies.trap) if(trap.fire.toBoolean){
-      backends.foreach(_.trap(trap.hartId, false, trap.cause.toInt))
+      backends.foreach(_.trap(trap.hartId, trap.interrupt.toBoolean, trap.cause.toInt))
     }
   }
 

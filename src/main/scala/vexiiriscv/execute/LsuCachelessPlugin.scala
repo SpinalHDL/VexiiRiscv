@@ -173,6 +173,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       when(isValid && SEL && MISS_ALIGNED){
         flushPort.valid := True
         bypass(Global.TRAP) := True
+        bypass(Global.COMMIT) := False
       }
 
       val speculLoad = withSpeculativeLoadFlush generate new Area {

@@ -8,7 +8,7 @@ import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
-import vexiiriscv.Global.{TRAP, TRAP_COMMIT}
+import vexiiriscv.Global.{TRAP, COMMIT}
 import vexiiriscv.decode.Decode
 import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService, TrapService}
 import vexiiriscv.regfile.RegfileService
@@ -216,6 +216,7 @@ class ExecuteLanePlugin(override val laneName : String,
         port.hartId := c(Global.HART_ID)
         port.uopId := c(Decode.UOP_ID)
         port.trap := c(Global.TRAP)
+        port.commit := c(Global.COMMIT)
       }
     }
 
@@ -264,9 +265,9 @@ class ExecuteLanePlugin(override val laneName : String,
     }
 
     for(hartId <- 0 until Global.HART_COUNT) {
-      trapPending(hartId) := (for (ctrlId <- 1 to ts.trapHandelingAt; c = ctrl(ctrlId)) yield c.isValid && c(Global.HART_ID) === hartId && c(TRAP)).orR
+      trapPending(hartId) := (for (ctrlId <- 1 to executeAt + ts.trapHandelingAt; c = ctrl(ctrlId)) yield c.isValid && c(Global.HART_ID) === hartId && c(TRAP)).orR
     }
-    execute(0).up(TRAP_COMMIT) := False
+    execute(0).up(COMMIT) := True
 
     buildBefore.release()
   }

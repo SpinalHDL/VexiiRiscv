@@ -385,11 +385,12 @@ class CsrAccessPlugin(layer : LaneLayer,
         //    }
       }
 
-      val completion = Flow(CompletionPayload())
+      val completion = Flow(CompletionPayload()) //TODO is it realy necessary to have this port ?
       completion.valid := False
       completion.uopId := regs.uopId
       completion.hartId := regs.hartId
       completion.trap := inject(Global.TRAP)
+      completion.commit := !inject(Global.TRAP)
 
       integrated match {
         case true => {
