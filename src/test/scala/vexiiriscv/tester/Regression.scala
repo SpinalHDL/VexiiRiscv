@@ -135,6 +135,8 @@ object RegressionSingle extends App{
 
 
 class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REGRESSION_THREAD_COUNT", "0").toInt){
+  FileUtils.deleteQuietly(new File("regression"))
+
   def addTest(args: String): Unit = addTest(args.split("\\s+"))
   def addTest(args: Seq[String]): Unit = {
     val param = new ParamSimple()

@@ -451,6 +451,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         while (ptr != until) {
           val opCtx = hart.microOp(ptr)
           if (opCtx.spawned && opCtx.flushAt == -1) opCtx.flushAt = cycle
+          opCtx.commit = false
           ptr = (ptr + 1) & microOpIdMask
         }
       }
