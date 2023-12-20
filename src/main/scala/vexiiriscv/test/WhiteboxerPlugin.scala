@@ -323,6 +323,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val hartId = port.hartId.simProxy()
       val uopId = port.uopId.simProxy()
       val trap = port.trap.simProxy()
+      val commit = port.commit.simProxy()
     }
 
     class FlushProxy(port: Flow[FlushCmd]) {

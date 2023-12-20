@@ -65,7 +65,7 @@ class EnvPlugin(layer : LaneLayer,
 
       val privilege = ps.getPrivilege(HART_ID)
       val xretPriv = Decode.UOP(29 downto 28).asUInt
-      val forceCommit = True
+      val commit = False
 
       switch(this(OP)) {
         is(EnvPluginOp.EBREAK) {
@@ -76,11 +76,11 @@ class EnvPlugin(layer : LaneLayer,
         }
         is(EnvPluginOp.PRIV_RET) {
           when(xretPriv >= ps.getPrivilege(HART_ID)) {
+            commit := True
             trapPort.exception := False
             trapPort.code := TrapReason.PRIV_RET
             trapPort.tval(1 downto 0) := xretPriv.asBits
           } otherwise {
-            forceCommit := False
             trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
           }
         }
@@ -90,8 +90,8 @@ class EnvPlugin(layer : LaneLayer,
         flushPort.valid := True
         trapPort.valid := True
         bypass(Global.TRAP) := True
-        when(forceCommit) {
-          bypass(TRAP_COMMIT) := True
+        when(!commit) {
+          bypass(COMMIT) := False
         }
       }
     }

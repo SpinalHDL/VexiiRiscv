@@ -166,9 +166,9 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
     def spawned = spawnAt != -1
     def done = !spawned || retireAt != -1 || flushAt != -1
-    def didCommit = done && flushAt == -1
+    def didCommit = done && commit
 
-    var trap = false
+    var trap, commit = false
 
     var integerWriteValid = false
     var integerWriteData = -1l
@@ -224,7 +224,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       if (didCommit) {
         i += new Retire(retireAt)
       } else {
-        i += new Flush(flushAt)
+        i += new Flush(flushAt max retireAt)
       }
       kb.foreach(_.insert(i))
 
@@ -247,6 +247,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       retireAt = -1l
 
       trap = false
+      commit = false
       integerWriteValid = false;
       floatWriteValid = false;
       csrValid = false;
@@ -436,6 +437,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         microOp.completionAt = cycle
         microOp.retireAt = cycle + 1
         microOp.trap = port.trap.toBoolean
+        microOp.commit = port.commit.toBoolean
       }
     }
 
@@ -475,9 +477,9 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           hart.lastUopId = uopId
           hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
 
-          if(decode.pc == 0xFFFFFFFF800000c8l){
-            println("asd")
-          }
+//          if(decode.pc == 0xFFFFFFFF800000c8l){
+//            println("asd")
+//          }
 
           uop.toKonata(hart)
           if (uop.didCommit) {
@@ -499,10 +501,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
               if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))
               if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
             }
-            uop.trap match {
-              case false => backends.foreach(_.commit(hartId, decode.pc))
-              case true => //backends.foreach(_.trap(hartId, false, 85))
-            }
+            if(uop.commit) backends.foreach(_.commit(hartId, decode.pc))
             if (uop.storeValid) {
               backends.foreach(_.storeBroadcast(hartId, uopId & 0xF))
             }

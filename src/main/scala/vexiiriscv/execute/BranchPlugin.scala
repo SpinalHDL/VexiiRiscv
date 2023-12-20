@@ -194,6 +194,7 @@ class BranchPlugin(val layer : LaneLayer,
         when(doIt && MISSALIGNED){
           trapPort.valid := True
           bypass(TRAP) := True
+          bypass(COMMIT) := False
         }
       }
 
