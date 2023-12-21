@@ -72,15 +72,15 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 
       id match {
         case 0 =>
-          setPartialName("cycle")
+//          setPartialName("cycle")
           value := value + 1
         case 1 =>
-          setPartialName("time")
+//          setPartialName("time")
         case 2 =>
-          setPartialName("instret")
+//          setPartialName("instret")
           value := value + RegNext(commitCount).init(0)
         case _ =>
-          setPartialName(s"mhpmcounter$id")
+//          setPartialName(s"mhpmcounter$id")
       }
     }
 
@@ -234,7 +234,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 
     val csrRead = new Area {
       val fired = RegInit(False) setWhen(fsm.csrReadCmd.fire)
-      val requested = csr.onReadingCsr(csrFilter)
+      val requested = csr.isReading && csr.readingCsr(csrFilter)
       fsm.csrReadCmd.valid := requested && !fired
       fsm.csrReadCmd.address := csr.onReadAddress(0, log2Up(counterCount) bits)
       if(withHigh)

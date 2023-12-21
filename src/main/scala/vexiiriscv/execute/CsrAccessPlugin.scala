@@ -44,6 +44,8 @@ class CsrAccessPlugin(layer : LaneLayer,
   override def onDecodeHartId: UInt = apiIo.onDecodeHartId
   override def onDecodeAddress: UInt = apiIo.onDecodeAddress
 
+
+  override def isReading: Bool = apiIo.isReading
   override def onReadAddress: UInt = apiIo.onReadAddress
   override def onReadHartId: UInt = apiIo.onReadHartId
   override def onReadHalt(): Unit = apiIo.onReadHalt := True
@@ -68,6 +70,7 @@ class CsrAccessPlugin(layer : LaneLayer,
     val onDecodeWrite = Bool()
     val onDecodeHartId = Global.HART_ID()
     val onDecodeAddress = CSR_ADDRESS()
+    val isReading = Bool()
     val onReadAddress = CSR_ADDRESS()
     val onReadHalt = False
     val onReadHartId = Global.HART_ID()
@@ -110,7 +113,7 @@ class CsrAccessPlugin(layer : LaneLayer,
       if (!integrated) ??? //elp.setRdOutOfPip(op)
       if (integrated) iwb.addMicroOp(wbWi, op)
       //      dp.fenceYounger(op)
-      //      dp.fenceOlder(op)
+      dp.fenceOlder(op.uop)
     }
 
     for (op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC).map(layer(_))) {
@@ -285,9 +288,10 @@ class CsrAccessPlugin(layer : LaneLayer,
       }
 
       val readLogic = new Area {
-        apiIo.onReadAddress := U(regs.uop(Const.csrRange))
         val onReadsDo = False
         val onReadsFireDo = False
+        apiIo.isReading := onReadsDo
+        apiIo.onReadAddress := U(regs.uop(Const.csrRange))
 
         apiIo.onReadMovingOff := !apiIo.onReadHalt //TODO || eu.getExecute(0).isFlushed
 

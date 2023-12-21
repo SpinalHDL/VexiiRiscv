@@ -41,6 +41,7 @@ trait CsrService {
   def onDecodeHartId : UInt
   def onDecodeAddress : UInt
 
+  def isReading : Bool
   def onRead (csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = spec += CsrOnRead(csrFilter, onlyOnFire, () => body)
   def onReadAddress: UInt
   def onReadHartId: UInt
@@ -70,17 +71,17 @@ trait CsrService {
     alloc
   }
 
-  def onReadingCsr(csrFilter : Any): Bool = {
+  def readingCsr(csrFilter : Any): Bool = {
     isReadingCsrMap.getOrElseUpdate(csrFilter, spec.addRet(CsrIsReadingCsr(csrFilter, Bool())).asInstanceOf[CsrIsReadingCsr]).value
   }
-  def onReadingHartId(hartId : Int): Bool = {
+  def readingHartId(hartId : Int): Bool = {
     onReadingHartIdMap.getOrElseUpdate(hartId, Bool())
   }
-  def onReadingHartIdCsr(hartId: Int, csrFilter : Any): Bool = {
-    isReadingHartIdCsrMap.getOrElseUpdate(hartId -> csrFilter, onReadingHartId(hartId) && onReadingCsr(csrFilter))
+  def readingHartIdCsr(hartId: Int, csrFilter : Any): Bool = {
+    isReadingHartIdCsrMap.getOrElseUpdate(hartId -> csrFilter, readingHartId(hartId) && readingCsr(csrFilter))
   }
 
-  def onWritingHartId(hartId: Int): Bool = {
+  def writingHartId(hartId: Int): Bool = {
     onWritingHartIdMap.getOrElseUpdate(hartId, Bool())
   }
 
@@ -89,7 +90,7 @@ trait CsrService {
       case v : Bits => v
       case v => v.asBits
     }
-    reads += CsrOnReadData(bitOffset, converted.andMask(onReadingCsr(csrFilter)))
+    reads += CsrOnReadData(bitOffset, converted.andMask(readingCsr(csrFilter)))
   }
 
   def write[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : Unit = {
@@ -128,11 +129,11 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
       case v: Bits => v
       case v => v.asBits
     }
-    csrService.reads += CsrOnReadData(bitOffset, converted.andMask(csrService.onReadingHartIdCsr(hartId, csrFilter)))
+    csrService.reads += CsrOnReadData(bitOffset, converted.andMask(csrService.readingHartIdCsr(hartId, csrFilter)))
   }
 
   def write[T <: Data](value: T, csrFilter: Any, bitOffset: Int = 0): Unit = {
-    val hartSel = csrService.onWritingHartId(hartId)
+    val hartSel = csrService.writingHartId(hartId)
     csrService.onWrite(csrFilter, true) {
       if(Global.HART_COUNT > 1) when(hartSel) {
         value.assignFromBits(csrService.onWriteBits(bitOffset, widthOf(value) bits))

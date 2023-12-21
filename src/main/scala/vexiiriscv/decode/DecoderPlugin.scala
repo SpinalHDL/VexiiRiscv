@@ -116,6 +116,12 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       }
     }
 
+    val interrupt = new Area {
+      val async = B(host[PrivilegedPlugin].io.harts.map(_.int.pending))
+      //We need to buffer interrupts request to ensure we don't generate sporadic flushes while the ctrl is stuck
+      val buffered = RegNextWhen(async, decodeCtrl.link.up.isMoving)
+    }
+
     val laneLogic = for(laneId <- 0 until Decode.LANES) yield new decodeCtrl.LaneArea(laneId) {
       for(rfa <- rfAccesses){
         val keys = rfaKeys(rfa)
@@ -132,7 +138,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       LEGAL := Symplify(Decode.INSTRUCTION, encodings.all)
 
-      val interruptPending = host[PrivilegedPlugin].io.harts.map(_.int.pending).read(Global.HART_ID)
+      val interruptPending = interrupt.buffered(Global.HART_ID)
       val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)
       trapPort.valid := False
       trapPort.exception := !interruptPending

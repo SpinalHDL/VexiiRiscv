@@ -267,7 +267,7 @@ class ExecuteLanePlugin(override val laneName : String,
     for(hartId <- 0 until Global.HART_COUNT) {
       trapPending(hartId) := (for (ctrlId <- 1 to executeAt + ts.trapHandelingAt; c = ctrl(ctrlId)) yield c.isValid && c(Global.HART_ID) === hartId && c(TRAP)).orR
     }
-    execute(0).up(COMMIT) := True
+    execute(0).up(COMMIT) := !execute(0).up(TRAP)
 
     buildBefore.release()
   }
