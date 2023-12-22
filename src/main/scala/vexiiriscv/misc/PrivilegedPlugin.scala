@@ -145,9 +145,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
     val cap = host[CsrAccessPlugin]
     val pp = host[PipelineBuilderPlugin]
     val pcs = host[PcService]
-    val crs = host.get[CsrRamService]
+    val withRam = host.get[CsrRamService].nonEmpty
+    val crs = withRam generate host[CsrRamService]
     val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock))
-    val ramCsrRetainer = crs.map(_.csrLock())
+    val ramRetainers = withRam generate new Area{
+      val csr = crs.csrLock()
+      val port = crs.portLock()
+    }
+
     awaitBuild()
 
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
@@ -208,18 +213,18 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
           readWrite(9 -> se, 5 -> st, 1 -> ss)
         }
 
-        val tval = Reg(TVAL) init (0)
-        val epc = Reg(PC) init (0)
-        val tvec = Reg(PC) init (0)
+//        val tval = Reg(TVAL) init (0)
+//        val epc = Reg(PC) init (0)
+//        val tvec = Reg(PC) init (0)
 
-        api.onCsr(CSR.MTVAL).readWrite(tval)
-        api.onCsr(CSR.MEPC).readWrite(epc)
-        api.onCsr(CSR.MTVEC).readWrite(tvec)
+//        api.onCsr(CSR.MTVAL).readWrite(tval)
+//        api.onCsr(CSR.MEPC).readWrite(epc)
+//        api.onCsr(CSR.MTVEC).readWrite(tvec)
 
-//        val tvec = cap.readWriteRam(CSR.MTVEC)
-//        val tval = cap.readWriteRam(CSR.MTVAL)
-//        val epc = cap.readWriteRam(CSR.MEPC)
-        val scratch = crs.get.readWriteRam(CSR.MSCRATCH)
+        val tvec = crs.readWriteRam(CSR.MTVEC)
+        val tval = crs.readWriteRam(CSR.MTVAL)
+        val epc = crs.readWriteRam(CSR.MEPC)
+        val scratch = crs.readWriteRam(CSR.MSCRATCH)
 //        for(i <- 0 until 16) cap.readWriteRam(CSR.MHPMCOUNTER3+i)
 
 
@@ -233,12 +238,23 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
     }
 
 
-    ramCsrRetainer.foreach(_.release())
+    ramRetainers.csr.release()
 
     trapLock.await()
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
       val hartIo = io.harts(hartId)
       val csr = csrs(hartId)
+
+      val crsPorts = withRam generate new Area{
+        val read = crs.ramReadPort(CsrRamService.priority.TRAP)
+        read.valid := False
+        read.address.assignDontCare()
+
+        val write = crs.ramWritePort(CsrRamService.priority.TRAP)
+        write.valid := False
+        write.address.assignDontCare()
+        write.data.assignDontCare()
+      }
 
       def privilegeMux[T <: Data](priv: UInt)(machine: => T, supervisor: => T): T = {
         val ret = CombInit(machine)
@@ -372,7 +388,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         pcPort.pc.assignDontCare()
         val fsm = new StateMachine {
           val RUNNING = makeInstantEntry()
-          val COMPLETION = new State()
+          val PROCESS = new State()
+          val TRAP_EPC, TRAP_TVAL, TRAP_TVEC, TRAP_APPLY = new State()
+          val XRET_EPC, XRET_APPLY = new State()
 
           val inflightTrap = trapPendings.map(_(hartId)).orR
           val holdPort = pcs.newHoldPort(hartId)
@@ -386,33 +404,25 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
               val code = sample(interrupt.code)
               val targetPrivilege = sample(interrupt.targetPrivilege)
             }
+            val trap = new Area{
+              val interrupt = pending.state.code === TrapReason.INTERRUPT && i.valid
+              val targetPrivilege = interrupt.mux(i.targetPrivilege, exception.targetPrivilege)
+              val tval = pending.state.tval.andMask(!interrupt)
+              val code = interrupt.mux(i.code, pending.state.code)
+            }
           }
+
 
           RUNNING.whenIsActive {
             when(trigger.valid) {
               buffer.sampleIt := True
-              goto(COMPLETION)
+              goto(PROCESS)
             }
           }
 
-          val trapCode = pending.state.exception.mux(pending.state.code, buffer.i.code)
-          COMPLETION.whenIsActive {
-            when(pending.state.exception || pending.state.code === TrapReason.INTERRUPT && buffer.i.valid) {
-              pcPort.valid := True
-              pcPort.pc := csrs(hartId).m.tvec
-
-              csr.m.epc := pending.pc
-              csr.m.tval := pending.state.tval.andMask(pending.state.exception)
-              csr.m.status.mie := False
-              csr.m.status.mpie := csr.m.status.mie
-              csr.m.status.mpp := csr.privilege
-              csr.m.cause.code := trapCode
-              csr.m.cause.interrupt := !pending.state.exception
-              csr.privilege := exception.targetPrivilege
-
-              whitebox.trap := True
-              whitebox.interrupt := !pending.state.exception
-              whitebox.code := trapCode
+          PROCESS.whenIsActive{
+            when(pending.state.exception || buffer.trap.interrupt) {
+              goto(TRAP_TVAL)
             } otherwise {
               switch(pending.state.code) {
                 is(TrapReason.INTERRUPT) {
@@ -420,29 +430,98 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
                   pcPort.valid := True
                   pcPort.pc := pending.pc
                 }
-                is(TrapReason.PRIV_RET){
-                  pcPort.valid := True
-                  pcPort.pc := csr.m.epc
-
-                  csr.privilege := pending.xret.targetPrivilege
-                  csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege < 3)
-                  switch(pending.state.tval(1 downto 0)) {
-                    is(3) {
-                      csr.m.status.mpp := 0
-                      csr.m.status.mie := csr.m.status.mpie
-                      csr.m.status.mpie := True
-                    }
-                    p.withSupervisor generate is(1) {
-                      ???
-//                      s.sstatus.spp := U"0"
-//                      s.sstatus.sie := supervisor.sstatus.spie
-//                      s.sstatus.spie := True
-                    }
-                  }
+                is(TrapReason.PRIV_RET) {
+                  goto(XRET_EPC)
                 }
                 default {
                   assert(False, "Unexpected trap reason")
                 }
+              }
+            }
+          }
+
+          TRAP_TVAL.whenIsActive {
+            crsPorts.write.valid := True
+            crsPorts.write.address := privilegeMux(buffer.trap.targetPrivilege)(
+              csr.m.tval.getAddress(),
+              ??? //csr.s.tval.getAddress()
+            )
+            crsPorts.write.data := S(buffer.trap.tval).resize(XLEN).asBits
+            when(crsPorts.write.ready) {
+              goto(TRAP_EPC)
+            }
+          }
+          TRAP_EPC.whenIsActive {
+            crsPorts.write.valid := True
+            crsPorts.write.address := privilegeMux(buffer.trap.targetPrivilege)(
+              csr.m.epc.getAddress(),
+              ??? //csr.s.epc.getAddress()
+            )
+            crsPorts.write.data := S(pending.pc, XLEN bits).asBits //TODO PC sign extends ? (DONE)
+            when(crsPorts.write.ready) {
+              goto(TRAP_TVEC)
+            }
+          }
+
+          val readed = RegNextWhen(crsPorts.read.data, crsPorts.read.valid && crsPorts.read.ready)
+          TRAP_TVEC.whenIsActive {
+            crsPorts.read.valid := True
+            crsPorts.read.address := privilegeMux(buffer.trap.targetPrivilege)(
+              csr.m.tvec.getAddress(),
+              ???//csr.m.tvec.getAddress()
+            )
+            when(crsPorts.read.ready) {
+              goto(TRAP_APPLY)
+            }
+          }
+
+          TRAP_APPLY.whenIsActive{
+            pcPort.valid := True
+            pcPort.pc := U(readed)
+
+            csr.m.status.mie := False
+            csr.m.status.mpie := csr.m.status.mie
+            csr.m.status.mpp := csr.privilege
+            csr.m.cause.code := buffer.trap.code
+            csr.m.cause.interrupt := buffer.trap.interrupt
+            csr.privilege := buffer.trap.targetPrivilege
+
+            whitebox.trap := True
+            whitebox.interrupt := buffer.trap.interrupt
+            whitebox.code :=  buffer.trap.code
+
+            goto(RUNNING)
+          }
+
+          val xretPrivilege = U(pending.state.tval(1 downto 0))
+          XRET_EPC.whenIsActive{
+            crsPorts.read.valid := True
+            crsPorts.read.address := privilegeMux(xretPrivilege)(
+              csr.m.epc.getAddress(),
+              ??? //csr.s.epc.getAddress()
+            )
+            when(crsPorts.read.ready) {
+              goto(XRET_APPLY)
+            }
+          }
+
+          XRET_APPLY.whenIsActive{
+            pcPort.valid := True
+            pcPort.pc := U(readed)
+
+            csr.privilege := pending.xret.targetPrivilege
+            csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege < 3)
+            switch(pending.state.tval(1 downto 0)) {
+              is(3) {
+                csr.m.status.mpp := 0
+                csr.m.status.mie := csr.m.status.mpie
+                csr.m.status.mpie := True
+              }
+              p.withSupervisor generate is(1) {
+                ???
+//                      s.sstatus.spp := U"0"
+//                      s.sstatus.sie := supervisor.sstatus.spie
+//                      s.sstatus.spie := True
               }
             }
             goto(RUNNING)
@@ -451,6 +530,61 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
       }
 
     }
+    ramRetainers.port.release()
     buildBefore.release()
   }
 }
+
+
+
+//          COMPLETION.whenIsActive {
+//            when(pending.state.exception || pending.state.code === TrapReason.INTERRUPT && buffer.i.valid) {
+//              pcPort.valid := True
+//              pcPort.pc := csrs(hartId).m.tvec
+//
+//              csr.m.epc := pending.pc
+//              csr.m.tval := pending.state.tval.andMask(pending.state.exception)
+//              csr.m.status.mie := False
+//              csr.m.status.mpie := csr.m.status.mie
+//              csr.m.status.mpp := csr.privilege
+//              csr.m.cause.code := trapCode
+//              csr.m.cause.interrupt := !pending.state.exception
+//              csr.privilege := exception.targetPrivilege ???
+//
+//              whitebox.trap := True
+//              whitebox.interrupt := !pending.state.exception
+//              whitebox.code := trapCode
+//            } otherwise {
+//              switch(pending.state.code) {
+//                is(TrapReason.INTERRUPT) {
+//                  assert(!buffer.i.valid)
+//                  pcPort.valid := True
+//                  pcPort.pc := pending.pc
+//                }
+//                is(TrapReason.PRIV_RET){
+//                  pcPort.valid := True
+//                  pcPort.pc := csr.m.epc
+//
+//                  csr.privilege := pending.xret.targetPrivilege
+//                  csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege < 3)
+//                  switch(pending.state.tval(1 downto 0)) {
+//                    is(3) {
+//                      csr.m.status.mpp := 0
+//                      csr.m.status.mie := csr.m.status.mpie
+//                      csr.m.status.mpie := True
+//                    }
+//                    p.withSupervisor generate is(1) {
+//                      ???
+////                      s.sstatus.spp := U"0"
+////                      s.sstatus.sie := supervisor.sstatus.spie
+////                      s.sstatus.spie := True
+//                    }
+//                  }
+//                }
+//                default {
+//                  assert(False, "Unexpected trap reason")
+//                }
+//              }
+//            }
+//            goto(RUNNING)
+//          }
