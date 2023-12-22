@@ -52,13 +52,12 @@ class CsrAccessPlugin(layer : LaneLayer,
 
   override def onReadToWriteBits: Bits = ???
 
+  override def isWriting: Bool = apiIo.isWriting
   override def onWriteHalt(): Unit = apiIo.onWriteHalt := True
   override def onWriteBits: Bits = apiIo.onWriteBits
   override def onWriteAddress: UInt = apiIo.onWriteAddress
   override def onWriteHartId: UInt = apiIo.onWriteHartId
   override def onWriteFlushPipeline(): Unit = ???
-
-  override def getCsrRam(): CsrRamService = host[CsrRamService]
 
   override def onReadMovingOff: Bool = apiIo.onReadMovingOff
   override def onWriteMovingOff: Bool = apiIo.onWriteMovingOff
@@ -75,12 +74,12 @@ class CsrAccessPlugin(layer : LaneLayer,
     val onReadHalt = False
     val onReadHartId = Global.HART_ID()
     val onReadToWriteBits = CSR_VALUE()
+    val isWriting = Bool()
     val onWriteHalt = False
     val onWriteBits = CSR_VALUE()
     val onWriteAddress = CSR_ADDRESS()
     val onWriteHartId = Global.HART_ID()
 //    val onWriteFlushPipeline(): Unit
-//    val getCsrRam(): CsrRamService
     val onReadMovingOff = Bool()
     val onWriteMovingOff = Bool()
   }
@@ -125,14 +124,14 @@ class CsrAccessPlugin(layer : LaneLayer,
 
     csrLock.await()
 
-    val useRamRead = spec.exists(_.isInstanceOf[CsrRamSpec])
-    val useRamWrite = spec.exists(_.isInstanceOf[CsrRamSpec])
-    val useRam = spec.exists(_.isInstanceOf[CsrRamSpec])
+//    val useRamRead = spec.exists(_.isInstanceOf[CsrRamSpec])
+//    val useRamWrite = spec.exists(_.isInstanceOf[CsrRamSpec])
+//    val useRam = spec.exists(_.isInstanceOf[CsrRamSpec])
 
-    val ramPorts = useRam generate new Area{
-      val read = useRamRead generate ram.get.ramReadPort(CsrRamService.priority.CSR)
-      val write = useRamWrite generate ram.get.ramWritePort(CsrRamService.priority.CSR)
-    }
+//    val ramPorts = useRam generate new Area{
+//      val read = useRamRead generate ram.get.ramReadPort(CsrRamService.priority.CSR)
+//      val write = useRamWrite generate ram.get.ramWritePort(CsrRamService.priority.CSR)
+//    }
     ramPortRetainer.foreach(_.release())
 
     val wbNi = !integrated generate irf.newWrite(withReady = true, sharingKey = writeBackKey)
@@ -152,8 +151,6 @@ class CsrAccessPlugin(layer : LaneLayer,
 
       val rd = rfaKeys.get(RD)
 
-      val RAM_ADDRESS = Payload(UInt(ramPorts.read.addressWidth bits))
-
       //TODO this is a bit fat
       val regs = new Area {
         def doReg[T <: Data](that : HardType[T]) : T = if(integrated) that() else Reg(that)
@@ -168,9 +165,6 @@ class CsrAccessPlugin(layer : LaneLayer,
         val rdPhys = doReg(rd.PHYS)
         val rdEnable = doReg(Bool())
         val fire = False
-
-        val ramAddress = useRam generate doReg(RAM_ADDRESS)
-        val ramSel = useRam generate doReg(Bool())
       }
 
       val inject = new elp.Execute(injectAt){
@@ -202,13 +196,14 @@ class CsrAccessPlugin(layer : LaneLayer,
         }
 
 
+
         val trap = !implemented || apiIo.onDecodeTrap
 
         def connectRegs(): Unit = {
           regs.hartId := Global.HART_ID
           regs.uopId := Decode.UOP_ID
-          regs.write := SEL && !trap && csrWrite
-          regs.read := SEL && !trap && csrRead
+          regs.write := apiIo.onDecodeWrite
+          regs.read := apiIo.onDecodeRead
           regs.rs1 := up(elp(IntRegFile, RS1))
           regs.uop := UOP
           regs.doImm := CSR_IMM
@@ -216,30 +211,12 @@ class CsrAccessPlugin(layer : LaneLayer,
           regs.doClear := CSR_CLEAR
           regs.rdEnable := rd.ENABLE
           regs.rdPhys := rd.PHYS
-
-          if (useRam) {
-//            ram.get //Ensure the ram port is generated
-            regs.ramAddress.assignDontCare()
-            regs.ramSel := False
-            switch(UOP(Const.csrRange)) {
-              for (e <- spec.collect { case x: CsrRamSpec => x }) e.csrFilter match {
-                case filter: CsrListFilter => for ((csrId, offset) <- filter.mapping.zipWithIndex) {
-                  is(csrId) {
-                    regs.ramSel := True
-                    regs.ramAddress := e.alloc.at + offset
-                  }
-                }
-                case csrId: Int => {
-                  is(csrId) {
-                    regs.ramSel := True
-                    regs.ramAddress := e.alloc.at
-                  }
-                }
-              }
-            }
-          }
         }
 
+        apiIo.onDecodeRead := SEL && !trap && csrRead
+        apiIo.onDecodeWrite := SEL && !trap && csrWrite
+        apiIo.onDecodeHartId := Global.HART_ID
+        apiIo.onDecodeAddress := UOP(Const.csrRange).asUInt
 
         val iLogic = integrated generate new Area{
           connectRegs()
@@ -259,27 +236,6 @@ class CsrAccessPlugin(layer : LaneLayer,
 //          regs.flushPipeline := setup.onDecodeFlushPipeline
 
           (regs.sels.values, sels.values).zipped.foreach(_ := _)
-//
-//          if (useRam) {
-//            ramReadPort.get //Ensure the ram port is generated
-//            regs.ramSel := False
-//            switch(MICRO_OP(Const.csrRange)) {
-//              for (e <- spec.collect { case x: CsrRamSpec => x }) e.csrFilter match {
-//                case filter: CsrListFilter => for ((csrId, offset) <- filter.mapping.zipWithIndex) {
-//                  is(csrId) {
-//                    regs.ramSel := True
-//                    regs.ramAddress := e.alloc.at + offset
-//                  }
-//                }
-//                case csrId: Int => {
-//                  is(csrId) {
-//                    regs.ramSel := True
-//                    regs.ramAddress := e.alloc.at
-//                  }
-//                }
-//              }
-//            }
-//          }
 
           when(onDecodeDo) {
             goto(READ)
@@ -323,15 +279,6 @@ class CsrAccessPlugin(layer : LaneLayer,
           csrValue := resized.reduceBalancedTree(_ | _)
         } else {
           csrValue := 0
-        }
-
-        val ramRead = useRamRead generate new Area {
-          ramPorts.read.valid := onReadsDo && regs.ramSel
-          ramPorts.read.address := regs.ramAddress
-          when(regs.ramSel) {
-            csrValue := ramPorts.read.data
-          }
-          apiIo.onReadHalt setWhen(ramPorts.read.valid && !ramPorts.read.ready)
         }
 
         apiIo.onReadToWriteBits := csrValue
@@ -380,6 +327,8 @@ class CsrAccessPlugin(layer : LaneLayer,
         val onWritesDo = False
         val onWritesFireDo = False
 
+        apiIo.isWriting := onWritesDo
+
         WRITE.whenIsActive {
 //          regs.flushPipeline setWhen (io.onWriteFlushPipeline)
           onWritesDo := regs.write
@@ -415,14 +364,6 @@ class CsrAccessPlugin(layer : LaneLayer,
               doIt()
             }
           }
-        }
-
-        val ramWrite = useRamRead generate new Area {
-          val fired = RegInit(False) setWhen (ramPorts.write.fire) clearWhen (apiIo.onWriteMovingOff)
-          ramPorts.write.valid := onWritesDo && regs.ramSel && !fired
-          ramPorts.write.address := regs.ramAddress
-          ramPorts.write.data := apiIo.onWriteBits
-          apiIo.onWriteHalt setWhen (ramPorts.write.valid && !ramPorts.write.ready)
         }
       }
 

@@ -2,27 +2,93 @@ package vexiiriscv.execute
 
 import spinal.core._
 import spinal.core.fiber.Handle
-import spinal.lib._
+import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
+import spinal.lib.{misc, _}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.fetch.InitService
 import vexiiriscv.riscv.Riscv
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
-  val allocations = ArrayBuffer[CsrRamAllocation]()
-  val reads = ArrayBuffer[Handle[CsrRamRead]]()
-  val writes = ArrayBuffer[Handle[CsrRamWrite]]()
-
-  override def ramAllocate(entries: Int = 1) : CsrRamAllocation= allocations.addRet(new CsrRamAllocation(entries))
-  override def ramReadPort(priority : Int) : Handle[CsrRamRead] = reads.addRet(Handle(CsrRamRead(setup.addressWidth, Riscv.XLEN.get, priority)))
-  override def ramWritePort(priority : Int)  : Handle[CsrRamWrite] = writes.addRet(Handle(CsrRamWrite(setup.addressWidth, Riscv.XLEN.get, priority)))
 
   override def initHold(): Bool = !logic.flush.done
+  override def portAddressWidth: Int = setup.addressWidth
 
+
+  override def holdCsrRead(): Unit = api.holdRead := True
+  val api = during build new Area{
+    val holdRead = False
+  }
+
+  val csrMapper = during setup new Area{
+    val cas = host[CsrAccessPlugin]
+    val portRetainer = portLock()
+    val casRetainer = cas.csrLock()
+    awaitBuild()
+    csrLock.await()
+
+    val read = ramReadPort(CsrRamService.priority.CSR)
+    val write = ramWritePort(CsrRamService.priority.CSR)
+    portRetainer.release()
+
+    val RAM_ADDRESS = misc.pipeline.Payload(UInt(read.addressWidth bits))
+    val ramAddress = RAM_ADDRESS()
+
+    // Decode stuff
+    val ramAddressMask = ramAddress.maxValue
+    val addressDecoder = new DecodingSpec(RAM_ADDRESS)
+    val selDecoder = ArrayBuffer[Int]()
+    switch(cas.onDecodeAddress) {
+      for (e <- csrMappings) e.csrFilter match {
+        case filter: CsrListFilter => for (csrId <- filter.mapping) {
+          val mask = Masked(csrId, 0xFFF)
+          addressDecoder.addNeeds(mask, Masked(e.alloc.at + e.offset, ramAddressMask))
+          selDecoder += csrId
+        }
+        case csrId: Int => {
+          is(csrId) {
+            val mask = Masked(csrId, 0xFFF)
+            addressDecoder.addNeeds(mask, Masked(e.alloc.at + e.offset, ramAddressMask))
+            selDecoder += csrId
+          }
+        }
+      }
+    }
+
+    ramAddress := addressDecoder.build(cas.onDecodeAddress.asBits, Nil)
+    val selFilter = CsrListFilter(selDecoder)
+    cas.allowCsr(selFilter)
+
+    // Read stuff
+    val withRead = False
+    cas.onRead(selFilter, false)(withRead := True)
+    read.valid := withRead && !api.holdRead
+    read.address := ramAddress
+    cas.readAlways(read.data.andMask(withRead))
+    when (withRead && !read.ready){
+      cas.onReadHalt()
+    }
+
+    // Write stuff
+    val doWrite = False
+    cas.onWrite(selFilter, false)(doWrite := True)
+    val fired = RegInit(False) setWhen (write.fire) clearWhen (cas.onWriteMovingOff)
+    write.valid := doWrite && !fired
+    write.address := ramAddress
+    write.data := cas.onWriteBits
+    when (write.valid && !write.ready){
+      cas.onWriteHalt()
+    }
+
+    casRetainer.release()
+  }
+
+
+  override def awaitMapping(): Unit = setup.get
   val setup = during build new Area{
-    allocationLock.await()
-
+    csrLock.await()
     val initPort = ramWritePort(CsrRamService.priority.INIT)
 
     val sorted = allocations.sortBy(_.entriesLog2).reverse

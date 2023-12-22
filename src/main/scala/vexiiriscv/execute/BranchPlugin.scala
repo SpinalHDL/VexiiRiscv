@@ -14,7 +14,7 @@ import Global._
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
-import vexiiriscv.misc.TrapService
+import vexiiriscv.misc.{PerformanceCounterService, TrapService}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
 import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
@@ -43,8 +43,14 @@ class BranchPlugin(val layer : LaneLayer,
     val hp = host.get[HistoryPlugin]
     val ls = host[LearnService]
     val ts = host[TrapService]
+    val pcs = host.get[PerformanceCounterService]
     val ioRetainer = retains(wbp.elaborationLock, sp.elaborationLock, pcp.elaborationLock, ts.trapLock)
     hp.foreach(ioRetainer += _.elaborationLock)
+
+    val pluginsOnLane = host.list[BranchPlugin].filter(_.layer.el == layer.el)
+    val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last
+    val isLastOfLane = BranchPlugin.this == lastOfLane
+    val branchMissEvent = (isLastOfLane && pcs.nonEmpty).option(pcs.get.createEventPort(PerformanceCounterService.BRANCH_MISS))
     awaitBuild()
 
     import SrcKeys._
@@ -206,9 +212,6 @@ class BranchPlugin(val layer : LaneLayer,
 
       ls.learnLock.await()
 
-      val pluginsOnLane = host.list[BranchPlugin].filter(_.layer.el == layer.el)
-      val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last
-      val isLastOfLane = BranchPlugin.this == lastOfLane
       val learn = isLastOfLane.option(Stream(LearnCmd(ls.learnCtxElements.toSeq)))
       learn.foreach { learn =>
         learn.valid := isValid && isReady && !hasCancelRequest && pluginsOnLane.map(p => apply(p.SEL)).orR
@@ -225,7 +228,9 @@ class BranchPlugin(val layer : LaneLayer,
         for (e <- ls.learnCtxElements) {
           learn.ctx(e).assignFrom(apply(e))
         }
+        branchMissEvent.foreach(_ := learn.valid && learn.isBranch && learn.wasWrong)
       }
+
     }
 
     val wbLogic = new eu.Execute(wbAt){

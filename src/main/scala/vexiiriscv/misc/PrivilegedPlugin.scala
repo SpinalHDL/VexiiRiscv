@@ -6,7 +6,7 @@ import spinal.lib._
 import spinal.lib.fsm._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global._
-import vexiiriscv.execute.{CsrAccessPlugin, CsrRamPlugin, ExecuteLanePlugin}
+import vexiiriscv.execute.{CsrAccessPlugin, CsrRamPlugin, CsrRamService, ExecuteLanePlugin}
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
@@ -149,13 +149,13 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
     }
   }
 
-
-
   val logic = during setup new Area{
     val cap = host[CsrAccessPlugin]
     val pp = host[PipelineBuilderPlugin]
     val pcs = host[PcService]
-    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock) ++ host.get[CsrRamPlugin].map(_.allocationLock))
+    val crs = host.get[CsrRamService]
+    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock))
+    val ramCsrRetainer = crs.map(_.csrLock())
     awaitBuild()
 
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
@@ -228,7 +228,7 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
 //        val tvec = cap.readWriteRam(CSR.MTVEC)
 //        val tval = cap.readWriteRam(CSR.MTVAL)
 //        val epc = cap.readWriteRam(CSR.MEPC)
-        val scratch = cap.readWriteRam(CSR.MSCRATCH)
+        val scratch = crs.get.readWriteRam(CSR.MSCRATCH)
 //        for(i <- 0 until 16) cap.readWriteRam(CSR.MHPMCOUNTER3+i)
 
 
@@ -242,7 +242,7 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
     }
 
 
-
+    ramCsrRetainer.foreach(_.release())
 
     trapLock.await()
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
