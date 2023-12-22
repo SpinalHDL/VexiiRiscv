@@ -119,7 +119,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     val interrupt = new Area {
       val async = B(host[PrivilegedPlugin].io.harts.map(_.int.pending))
       //We need to buffer interrupts request to ensure we don't generate sporadic flushes while the ctrl is stuck
-      val buffered = RegNextWhen(async, decodeCtrl.link.up.isMoving)
+      val buffered = RegNextWhen(async, !decodeCtrl.link.up.valid || decodeCtrl.link.up.ready || decodeCtrl.link.up.isCanceling) init(0)
     }
 
     val laneLogic = for(laneId <- 0 until Decode.LANES) yield new decodeCtrl.LaneArea(laneId) {
