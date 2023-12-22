@@ -47,28 +47,16 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
     val addressWidth = setup.addressWidth
     val mem = Mem.fill(1 << addressWidth)(Bits(Riscv.XLEN bits))
 
-    val flush = new Area{
-      val counter = Reg(UInt(log2Up(mem.wordCount)+1 bits)) init(0)
-      val done = counter.msb
-
-      setup.initPort.valid  := !done
-      setup.initPort.address := counter.resized
-      setup.initPort.data := 0
-      when(!done && setup.initPort.ready){
-        counter := counter + 1
-      }
-    }
-
     val writeLogic = new Area{
       val hits = writes.map(_.valid).asBits
       val hit = hits.orR
       val oh = OHMasking.first(hits)
-      val sel = OHToUInt(oh)
       val port = mem.writePort
+      val reader = writes.reader(oh)
 
       port.valid := hit
-      port.address := writes.map(_.address).read(sel)
-      port.data := writes.map(_.data).read(sel)
+      port.address := reader(_.address)
+      port.data := reader(_.data)
       (writes, oh.asBools).zipped.foreach(_.ready :=  _)
     }
 
@@ -86,6 +74,16 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
       port.cmd.payload := reads.map(_.address).read(sel)
       (reads, ohReg.asBools).zipped.foreach(_.ready := _)
       reads.foreach(_.data := port.rsp)
+    }
+
+    val flush = new Area {
+      val counter = Reg(UInt(log2Up(mem.wordCount) + 1 bits)) init (0)
+      val done = counter.msb
+
+      setup.initPort.valid := !done
+      setup.initPort.address := counter.resized
+      setup.initPort.data := 0
+      counter := counter + (!done).asUInt
     }
   }
 }

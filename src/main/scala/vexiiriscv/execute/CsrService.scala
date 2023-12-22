@@ -71,6 +71,11 @@ trait CsrService {
     alloc
   }
 
+  def readWriteRam(filters: Any, alloc : CsrRamAllocation) = {
+    spec += CsrRamSpec(filters, alloc)
+    alloc
+  }
+
   def readingCsr(csrFilter : Any): Bool = {
     isReadingCsrMap.getOrElseUpdate(csrFilter, spec.addRet(CsrIsReadingCsr(csrFilter, Bool())).asInstanceOf[CsrIsReadingCsr]).value
   }
