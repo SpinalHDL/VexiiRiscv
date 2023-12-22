@@ -23,7 +23,8 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val csr = host[CsrAccessPlugin]
     val ram = host[CsrRamPlugin]
     val priv = host[PrivilegedPlugin]
-    val csrRetainer = retains(csr.csrLock, ram.csrLock)
+    val csrRetainer = csr.csrLock()
+    val ramCsrRetainer = ram.csrLock()
     val ramPortRetainer = ram.portLock()
     awaitBuild()
 
@@ -43,8 +44,8 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val counterId = counterIdPtr
       counterIdPtr += 1
 
-      val mcounteren = RegInit(False)
-      val scounteren = RegInit(False)
+      val mcounteren = csr.readWrite(RegInit(False), CSR.MCOUNTEREN, counterId)
+      val scounteren = priv.p.withSupervisor generate csr.readWrite(RegInit(False), CSR.SCOUNTEREN, counterId)
     }
     case class Mapping(csrId : Int, alloc : CsrRamAllocation, offset : Int)
     val mappings = ArrayBuffer[Mapping]()
@@ -67,8 +68,9 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       }
       val list = List(cycle, instret) ++ additionals
     }
+    csr.allowCsr(CSR.MCOUNTINHIBIT) //As read zero
 
-    csrRetainer.release()
+    ramCsrRetainer.release()
     val readPort = ram.ramReadPort(CsrRamService.priority.COUNTER)
     val writePort = ram.ramWritePort(CsrRamService.priority.COUNTER)
     ramPortRetainer.release()
@@ -76,17 +78,6 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     elaborationLock.await()
 
     val csrFilter = CsrListFilter(mappings.map(m => m.csrId))
-
-//TODO
-    csr.allowCsr(CSR.MCOUNTINHIBIT) //As read zero
-
-//    val mcounteren = csr.readWrite(Reg(3 + Counter))
-//    mcountinhibit
-//    if (priv.implementSupervisor) csr.allowCsr(CSR.SCOUNTEREN)
-//    csr.allowCsr(CSR.MCOUNTEREN)
-
-
-
 
     val events = new Area {
       val selWidth = log2Up((specs.map(_.id) :+ 0).max + 1)
@@ -232,6 +223,21 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       fsm.flusherCmd.oh := oh
     }
 
+    // Trap eventual bad accesses
+    val csrDecode = new Area{
+      val addr = csr.onDecodeAddress(0, log2Up(counterCount + 1) bits)
+      val mok = addr.muxListDc(counters.list.map(e => e.counterId -> e.mcounteren))
+      val sok = priv.p.withSupervisor.mux(addr.muxListDc(counters.list.map(e => e.counterId -> e.scounteren)), True)
+      val privOk = (priv.getPrivilege(csr.onDecodeHartId) | U(mok ## sok)).andR
+      csr.onDecode(csrFilter){ //TODO test
+        when(csr.onDecodeAddress(9 downto 8) === 0){
+          when(csr.onDecodeWrite || !privOk){
+            csr.onDecodeTrap()
+          }
+        }
+      }
+    }
+
     val csrRead = new Area {
       val fired = RegInit(False) setWhen(fsm.csrReadCmd.fire)
       val requested = csr.isReading && csr.readingCsr(csrFilter)
@@ -252,10 +258,6 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val fired = RegInit(False) setWhen(fsm.csrWriteCmd.fire)
       fsm.csrWriteCmd.valid := False
       fsm.csrWriteCmd.address := csr.onWriteAddress(0, log2Up(counterCount+1) bits)
-
-      if(priv.implementUser) when(csr.onDecodeWrite && (csr.onDecodeAddress & 0xF60) === CSR.UCYCLE){
-        csr.onDecodeTrap()
-      }
 
       csr.onWrite(csrFilter, false){
         when(!fired){

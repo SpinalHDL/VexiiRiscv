@@ -27,7 +27,6 @@ object PrivilegedParam{
     vendorId       = 0,
     archId         = 5, //As spike
     impId          = 0,
-    hartId         = 0,
     debugTriggers  = 0
   )
 }
@@ -40,13 +39,7 @@ case class PrivilegedParam(withSupervisor : Boolean,
                            debugTriggers : Int,
                            vendorId: Int,
                            archId: Int,
-                           impId: Int,
-                           var hartId: Int) {
-  def setHartId(v : Int) : this.type = {
-    hartId = v
-    this
-  }
-}
+                           impId: Int)
 
 
 case class TrapSpec(bus : Flow[Trap], age : Int)
@@ -103,12 +96,12 @@ object TrapReason{
   val PRIV_RET = 1
 }
 
-class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends FiberPlugin with TrapService with CommitService{
+class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int) extends FiberPlugin with TrapService with CommitService{
   override def trapHandelingAt: Int = trapAt
 
-  def implementSupervisor = params.exists(_.withSupervisor)
-  def implementUser = params.exists(_.withUser)
-  def implementUserTrap = params.exists(_.withUserTrap)
+  def implementSupervisor = p.withSupervisor
+  def implementUser = p.withUser
+  def implementUserTrap = p.withUserTrap
 
   def getPrivilege(hartId : UInt) : UInt = logic.csrs.map(_.privilege).read(hartId)
 
@@ -122,7 +115,6 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
     val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
       val commitMask = Bits(host.list[ExecuteLanePlugin].size bits)
       val hasInflight = Bool()
-      val p = params(hartId)
       val rdtime = in UInt (64 bits)
       val int = new Area {
         val pending = False
@@ -164,7 +156,6 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
     assert(HART_COUNT.get == 1)
 
     val csrs = for(hartId <- 0 until HART_COUNT) yield new Area{
-      val p = params(hartId)
       val hartIo = io.harts(hartId)
       val api = cap.hart(hartId)
       val withFs = RVF || p.withSupervisor
@@ -246,7 +237,6 @@ class PrivilegedPlugin(params : Seq[PrivilegedParam], trapAt : Int) extends Fibe
 
     trapLock.await()
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
-      val p = params(hartId)
       val hartIo = io.harts(hartId)
       val csr = csrs(hartId)
 

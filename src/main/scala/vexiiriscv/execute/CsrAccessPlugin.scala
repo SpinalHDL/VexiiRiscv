@@ -202,8 +202,8 @@ class CsrAccessPlugin(layer : LaneLayer,
         def connectRegs(): Unit = {
           regs.hartId := Global.HART_ID
           regs.uopId := Decode.UOP_ID
-          regs.write := apiIo.onDecodeWrite
-          regs.read := apiIo.onDecodeRead
+          regs.read := SEL && !trap && csrRead
+          regs.write := SEL && !trap && csrWrite
           regs.rs1 := up(elp(IntRegFile, RS1))
           regs.uop := UOP
           regs.doImm := CSR_IMM
@@ -213,8 +213,8 @@ class CsrAccessPlugin(layer : LaneLayer,
           regs.rdPhys := rd.PHYS
         }
 
-        apiIo.onDecodeRead := SEL && !trap && csrRead
-        apiIo.onDecodeWrite := SEL && !trap && csrWrite
+        apiIo.onDecodeRead := csrRead
+        apiIo.onDecodeWrite := csrWrite
         apiIo.onDecodeHartId := Global.HART_ID
         apiIo.onDecodeAddress := UOP(Const.csrRange).asUInt
 
@@ -288,7 +288,6 @@ class CsrAccessPlugin(layer : LaneLayer,
             onReadToWrite.foreach(_.body())
           }
         }
-
         spec.foreach{
           case e : CsrIsReadingCsr => {
             e.value := regs.sels(e.csrFilter)

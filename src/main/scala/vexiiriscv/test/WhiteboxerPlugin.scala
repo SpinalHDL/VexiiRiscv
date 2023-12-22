@@ -244,7 +244,7 @@ class WhiteboxerPlugin extends FiberPlugin{
           checkers += new InterruptChecker(hartId, hart.int.m.timer,  7)
           checkers += new InterruptChecker(hartId, hart.int.m.software,  3)
           checkers += new InterruptChecker(hartId, hart.int.m.external, 11)
-          if (hart.p.withSupervisor) {
+          if (priv.p.withSupervisor) {
             checkers += new InterruptChecker(hartId, hart.int.s.external, 9)
           }
         }

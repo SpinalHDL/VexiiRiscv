@@ -93,15 +93,18 @@ trait CsrService {
     reads += CsrOnReadData(bitOffset, converted)
   }
 
-  def write[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : Unit = {
+  def write[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : T = {
     onWrite(csrId, true){ value.assignFromBits(onWriteBits(bitOffset, widthOf(value) bits)) }
+    value
   }
-  def writeWhen[T <: Data](value : T, cond : Bool, csrId : Int, bitOffset : Int = 0) : Unit = {
+  def writeWhen[T <: Data](value : T, cond : Bool, csrId : Int, bitOffset : Int = 0) : T = {
     onWrite(csrId, true){ when(cond) { value.assignFromBits(onWriteBits(bitOffset, widthOf(value) bits)) }}
+    value
   }
-  def readWrite[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : Unit = {
+  def readWrite[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : T = {
     read(value, csrId, bitOffset)
     write(value, csrId, bitOffset)
+    value
   }
 
   def readToWrite[T <: Data](value : T, csrFilter : Any, bitOffset : Int = 0) : Unit = {
