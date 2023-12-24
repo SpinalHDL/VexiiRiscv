@@ -154,7 +154,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.cmd.hartId := Global.HART_ID
       assert(tpk.REDO === False, "LsuCachelessPlugin expected translation port REDO False, but True")
 
-      elp.freezeWhen(bus.cmd.isStall)
+      val freeze = bus.cmd.isStall
+      elp.freezeWhen(freeze)
 
 
       flushPort.valid := False
@@ -185,8 +186,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val onJoin = new joinCtrl.Area{
       val buffer = bus.rsp.toStream.queueLowLatency(joinAt-forkAt+1).combStage
       val READ_DATA = insert(buffer.data)
-      elp.freezeWhen(isValid && SEL && !buffer.valid && !up(Global.TRAP))
-      buffer.ready := isReady && SEL && !up(Global.TRAP)
+      val freeze = isValid && SEL && !buffer.valid && !up(Global.TRAP)
+      elp.freezeWhen(freeze)
+      buffer.ready := isValid && isReady && SEL && !up(Global.TRAP)
       assert(!(isValid && hasCancelRequest && SEL && !LOAD && !up(Global.TRAP)), "LsuCachelessPlugin saw unexpected select && !LOAD && cancel request") //TODO add tpk.IO and along the way)) //TODO add tpk.IO and along the way
     }
 

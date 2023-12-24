@@ -25,6 +25,9 @@ project/plugins/project/
 .idea
 out
 
+.vscode
+.metals
+
 # Eclipse
 bin/
 .classpath
