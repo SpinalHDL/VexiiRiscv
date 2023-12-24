@@ -90,7 +90,7 @@ class IterativeShifterPlugin(val layer: LaneLayer,
         shiftReg := shiftResult
         amplitudeReg := amplitude - 1
       }
-      when((busy && done) || unscheduleRequest) {
+      when(!eu.isFreezed()) {
         busy := False
       }
 
