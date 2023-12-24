@@ -162,7 +162,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
       //TODO amo AQ/RL
 
-      elp.freezeWhen(bus.cmd.isStall)
+      val freeze = bus.cmd.isStall
+      elp.freezeWhen(freeze)
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
