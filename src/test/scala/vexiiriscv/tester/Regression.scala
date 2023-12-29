@@ -45,7 +45,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv]){
     tests += t
   }
 
-  val archTests = new File(nsf, "riscv-arch-test/rv32i_m/I").listFiles().filter(_.getName.endsWith(".elf"))
+  val archTests = new File(nsf, s"riscv-arch-test/rv${xlen}i_m/I").listFiles().filter(_.getName.endsWith(".elf"))
   for (elf <- archTests) {
     val t = newTest()
     t.elfs += elf
@@ -58,7 +58,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv]){
   val regulars = List("dhrystone", "coremark")
   for(name <- regulars){
     val t = newTest()
-    t.elfs += new File(nsf, s"baremetal/$name/build/rv32ima/$name.elf")
+    t.elfs += new File(nsf, s"baremetal/$name/build/rv${xlen}ima/$name.elf")
     t.failAfter = Some(300000000)
     t.testName = Some(name)
     tests += t
@@ -151,8 +151,8 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   }
 
   val md = "--with-mul --with-div"
-  for(issues <- 1 to 2; rf <- List("", "--regfile-async"); bpf <- List(0,1,2,3,100)){
-    val base = s"--decoders $issues --lanes $issues $md --allow-bypass-from $bpf"
+  for(issues <- 1 to 2; rf <- List("", "--regfile-async"); bpf <- List(0,1,2,3,100); xlen <- List(64, 32)){
+    val base = s"--decoders $issues --lanes $issues --xlen $xlen $md --allow-bypass-from $bpf"
     addTest(s"$base $rf")
     if(bpf == 0 || bpf == 100) {
       addTest(s"$base $rf --with-btb")

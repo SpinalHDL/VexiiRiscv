@@ -10,7 +10,7 @@ import vexiiriscv.Global
 import vexiiriscv.Global.TRAP
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
 import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin, LaneLayer}
-import vexiiriscv.misc.{PipelineBuilderPlugin, TrapService}
+import vexiiriscv.misc.{CommitService, PipelineBuilderPlugin, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RfRead, RfResource}
 
@@ -37,14 +37,15 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
   val MAY_FLUSH = Payload(Bool())
   val DONT_FLUSH = Payload(Bool())
   val DONT_FLUSH_FROM_LANES = Payload(Bool())
+  val FENCE_OLDER = Payload(Bool())
 
 
   val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
 
 //  val fenceYoungerOps = mutable.LinkedHashSet[MicroOp]()
-//  val fenceOlderOps = mutable.LinkedHashSet[MicroOp]()
+  val fenceOlderOps = mutable.LinkedHashSet[MicroOp]()
 //  def fenceYounger(op : MicroOp) = fenceYoungerOps += op
-//  def fenceOlder(op : MicroOp) = fenceOlderOps += op
+  def fenceOlder(op : MicroOp) = fenceOlderOps += op
 
   val logic = during setup new Area{
     val dpp = host[DecodePipelinePlugin]
@@ -73,12 +74,14 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       }
     }
 
+    hmKeys.add(FENCE_OLDER)
     hmKeys.add(MAY_FLUSH)
     hmKeys.add(DONT_FLUSH)
     hmKeys.add(DONT_FLUSH_FROM_LANES)
     dp.addMicroOpDecodingDefault(MAY_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH_FROM_LANES, False)
+    dp.addMicroOpDecodingDefault(FENCE_OLDER, False)
     val mayFlushUpToMax = eus.flatMap(_.getUopLayerSpec().map(_.mayFlushUpTo.getOrElse(-1))).max
     val mayFlushUops, dontFlushUops, dontFlushFromLanesUops = mutable.LinkedHashSet[MicroOp]()
     for (eu <- eus; spec <- eu.getUopLayerSpec()) {
@@ -92,6 +95,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
     for (uop <- mayFlushUops) dp.addMicroOpDecoding(uop, MAY_FLUSH, True)
     for (uop <- dontFlushUops) dp.addMicroOpDecoding(uop, DONT_FLUSH, True)
     for (uop <- dontFlushFromLanesUops) dp.addMicroOpDecoding(uop, DONT_FLUSH_FROM_LANES, True)
+    for(uop <- fenceOlderOps) dp.addMicroOpDecoding(uop, FENCE_OLDER, True)
 
     // Generate upstream up dontFlush precise decoding
     case class DontFlushSpec(at: Int, value: Payload[Bool])
@@ -147,6 +151,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
 
       val rsHazards = Bits(lanesLayers.size bits)
       val flushHazards = Bool() //Pessimistic, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
+      val fenceOlderHazards = Bool()
     }
 
     case class BypassedSpec(el: ExecuteLaneService, at: Int, value : Payload[Bool])
@@ -223,6 +228,16 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       }
     }
 
+    val fenceChecker = new Area{
+      val olderInflights = B(for(hartId <- 0 until Global.HART_COUNT) yield host.list[CommitService].map(_.hasInflight(hartId)).orR)
+      for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
+        val c = candidates(cId)
+        val olderCandidate = candidates.take(cId).map(older => older.ctx.valid && older.ctx.hartId === c.ctx.hartId).orR
+        val olderExecute = olderInflights(c.ctx.hartId)
+        c.fenceOlderHazards := c.ctx.hm(FENCE_OLDER) && (olderExecute || olderCandidate)
+      }
+    }
+
     dispatchCtrl.link.down.ready := True
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
       val c = candidates(slotsCount + lane)
@@ -260,7 +275,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
         val layersHits = c.ctx.laneLayerHits & ~c.rsHazards & eusToLayers(eusFree(id))
         val layerOh = OHMasking.firstV2(layersHits)
         val eusOh = layersToEus(layerOh)
-        val doIt = c.ctx.valid && !c.flushHazards && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
+        val doIt = c.ctx.valid && !c.flushHazards && !c.fenceOlderHazards && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
         eusFree(id + 1) := eusFree(id) & (~eusOh).orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(!c.ctx.valid || doIt)
         c.fire := doIt && !eupp.isFreezed()

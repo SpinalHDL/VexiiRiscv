@@ -5,11 +5,12 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.core.fiber.{Retainer}
+import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
+import vexiiriscv.Global._
 import vexiiriscv.decode.Decode
 import vexiiriscv.riscv.{IMM, IntRegFile, MicroOp, RS1, RS2, RfRead, Riscv}
 
@@ -120,11 +121,12 @@ class SrcPlugin(val layer : LaneLayer,
         case sk.SRC1.U  => src1ToEnum(sk.SRC1.U ) -> S(imm.u).resize(Riscv.XLEN)
       })
 
+      val pcExtended = PHYSICAL_WIDTH.get < VIRTUAL_WIDTH.get
       if(src2Keys.nonEmpty) SRC2 := SRC2_CTRL.muxListDc[SInt](src2Keys.map {
         case sk.SRC2.RF => src2ToEnum(sk.SRC2.RF) -> S(get(RS2))
         case sk.SRC2.I  => src2ToEnum(sk.SRC2.I ) -> imm.i_sext
         case sk.SRC2.S  => src2ToEnum(sk.SRC2.S ) -> imm.s_sext
-        case sk.SRC2.PC => src2ToEnum(sk.SRC2.PC) -> S(this(Global.PC)).resize(Riscv.XLEN bits)
+        case sk.SRC2.PC => src2ToEnum(sk.SRC2.PC) -> pcExtended.mux(S(this(Global.PC)).resize(Riscv.XLEN), S(this(Global.PC).resize(Riscv.XLEN)))
       })
     }
 

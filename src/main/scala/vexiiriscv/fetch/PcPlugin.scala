@@ -16,7 +16,7 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
     val laneValid = Bool()
   }
   val jumps = ArrayBuffer[JumpSpec]()
-  override def createJumpInterface(age: Int, laneAgeWidth : Int, aggregationPriority : Int): Flow[JumpCmd] = {
+  override def newJumpInterface(age: Int, laneAgeWidth : Int, aggregationPriority : Int): Flow[JumpCmd] = {
     jumps.addRet(JumpSpec(Flow(JumpCmd(laneAgeWidth)), age, aggregationPriority)).bus
   }
 
@@ -55,7 +55,7 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
       // Self is a jump interface which store the hart PC
       val self = new Area {
         val id = Reg(Fetch.ID) init(0)
-        val flow = createJumpInterface(-1, laneAgeWidth = 0, aggregationPriority = 0)
+        val flow = newJumpInterface(-1, laneAgeWidth = 0, aggregationPriority = 0)
         val increment = RegInit(False)
         val state = Reg(PC) init (resetVector) simPublic()
         val pc = state + U(WORD_BYTES).andMask(increment)

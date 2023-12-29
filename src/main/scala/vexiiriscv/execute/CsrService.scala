@@ -4,6 +4,7 @@ import spinal.core.fiber.{Handle, Retainer}
 import spinal.core._
 import spinal.lib._
 import vexiiriscv.Global
+import vexiiriscv.riscv.Riscv
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -15,7 +16,6 @@ case class CsrOnRead (override val csrFilter : Any, onlyOnFire : Boolean, body :
 case class CsrOnReadToWrite (override val csrFilter : Any, body : () => Unit) extends CsrSpec(csrFilter) //Allow the fancy supervisor external interrupt logic
 case class CsrOnWrite(override val csrFilter : Any, onlyOnFire : Boolean, body : () => Unit) extends CsrSpec(csrFilter)
 case class CsrOnDecode (override val csrFilter : Any, priority : Int, body : () => Unit) extends CsrSpec(csrFilter)
-case class CsrRamSpec(override val csrFilter : Any, alloc : CsrRamAllocation) extends CsrSpec(csrFilter)
 case class CsrWriteCancel(override val csrFilter : Any, cond : Bool) extends CsrSpec(csrFilter)
 
 case class CsrOnReadData (bitOffset : Int, value : Bits)
@@ -41,6 +41,7 @@ trait CsrService {
   def onDecodeHartId : UInt
   def onDecodeAddress : UInt
 
+  def isReading : Bool
   def onRead (csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = spec += CsrOnRead(csrFilter, onlyOnFire, () => body)
   def onReadAddress: UInt
   def onReadHartId: UInt
@@ -49,6 +50,7 @@ trait CsrService {
   def onReadToWrite (csrFilter : Any)(body : => Unit) = spec += CsrOnReadToWrite(csrFilter, () => body)
   def onReadToWriteBits: Bits
 
+  def isWriting: Bool
   def onWrite(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = spec += CsrOnWrite(csrFilter, onlyOnFire, () => body)
   def onWriteHalt() : Unit
   def onWriteBits : Bits
@@ -56,31 +58,22 @@ trait CsrService {
   def onWriteHartId: UInt
   def onWriteFlushPipeline() : Unit
 
-  def getCsrRam() : CsrRamService
   def onReadMovingOff : Bool
   def onWriteMovingOff : Bool
 
   def allowCsr(csrFilter : Any) = onDecode(csrFilter){}
 
-
-  def readWrite(alloc : CsrRamAllocation, filters : Any) = spec += CsrRamSpec(filters, alloc)
-  def readWriteRam(filters : Int) = {
-    val alloc = getCsrRam.ramAllocate(1)
-    spec += CsrRamSpec(filters, alloc)
-    alloc
-  }
-
-  def onReadingCsr(csrFilter : Any): Bool = {
+  def readingCsr(csrFilter : Any): Bool = {
     isReadingCsrMap.getOrElseUpdate(csrFilter, spec.addRet(CsrIsReadingCsr(csrFilter, Bool())).asInstanceOf[CsrIsReadingCsr]).value
   }
-  def onReadingHartId(hartId : Int): Bool = {
+  def readingHartId(hartId : Int): Bool = {
     onReadingHartIdMap.getOrElseUpdate(hartId, Bool())
   }
-  def onReadingHartIdCsr(hartId: Int, csrFilter : Any): Bool = {
-    isReadingHartIdCsrMap.getOrElseUpdate(hartId -> csrFilter, onReadingHartId(hartId) && onReadingCsr(csrFilter))
+  def readingHartIdCsr(hartId: Int, csrFilter : Any): Bool = {
+    isReadingHartIdCsrMap.getOrElseUpdate(hartId -> csrFilter, readingHartId(hartId) && readingCsr(csrFilter))
   }
 
-  def onWritingHartId(hartId: Int): Bool = {
+  def writingHartId(hartId: Int): Bool = {
     onWritingHartIdMap.getOrElseUpdate(hartId, Bool())
   }
 
@@ -89,18 +82,29 @@ trait CsrService {
       case v : Bits => v
       case v => v.asBits
     }
-    reads += CsrOnReadData(bitOffset, converted.andMask(onReadingCsr(csrFilter)))
+    reads += CsrOnReadData(bitOffset, converted.andMask(readingCsr(csrFilter)))
   }
 
-  def write[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : Unit = {
+  def readAlways[T <: Data](value: T, bitOffset: Int = 0): Unit = {
+    val converted = value match {
+      case v: Bits => v
+      case v => v.asBits
+    }
+    reads += CsrOnReadData(bitOffset, converted)
+  }
+
+  def write[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : T = {
     onWrite(csrId, true){ value.assignFromBits(onWriteBits(bitOffset, widthOf(value) bits)) }
+    value
   }
-  def writeWhen[T <: Data](value : T, cond : Bool, csrId : Int, bitOffset : Int = 0) : Unit = {
+  def writeWhen[T <: Data](value : T, cond : Bool, csrId : Int, bitOffset : Int = 0) : T = {
     onWrite(csrId, true){ when(cond) { value.assignFromBits(onWriteBits(bitOffset, widthOf(value) bits)) }}
+    value
   }
-  def readWrite[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : Unit = {
+  def readWrite[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : T = {
     read(value, csrId, bitOffset)
     write(value, csrId, bitOffset)
+    value
   }
 
   def readToWrite[T <: Data](value : T, csrFilter : Any, bitOffset : Int = 0) : Unit = {
@@ -128,11 +132,11 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
       case v: Bits => v
       case v => v.asBits
     }
-    csrService.reads += CsrOnReadData(bitOffset, converted.andMask(csrService.onReadingHartIdCsr(hartId, csrFilter)))
+    csrService.reads += CsrOnReadData(bitOffset, converted.andMask(csrService.readingHartIdCsr(hartId, csrFilter)))
   }
 
   def write[T <: Data](value: T, csrFilter: Any, bitOffset: Int = 0): Unit = {
-    val hartSel = csrService.onWritingHartId(hartId)
+    val hartSel = csrService.writingHartId(hartId)
     csrService.onWrite(csrFilter, true) {
       if(Global.HART_COUNT > 1) when(hartSel) {
         value.assignFromBits(csrService.onWriteBits(bitOffset, widthOf(value) bits))
@@ -204,10 +208,35 @@ object CsrRamService{
   }
 }
 //usefull for, for instance, mscratch scratch mtvec stvec mepc sepc mtval stval satp pmp stuff
-trait CsrRamService {
-  def ramAllocate(entries : Int) : CsrRamAllocation
-  def ramReadPort(priority : Int) : Handle[CsrRamRead]
-  def ramWritePort(priority : Int) : Handle[CsrRamWrite]
-  val allocationLock = Retainer()
+trait CsrRamService extends Area{
   val portLock = Retainer()
+  val csrLock = Retainer()
+
+  val allocations = ArrayBuffer[CsrRamAllocation]()
+  val reads = ArrayBuffer[Handle[CsrRamRead]]()
+  val writes = ArrayBuffer[Handle[CsrRamWrite]]()
+
+  def ramAllocate(entries: Int = 1): CsrRamAllocation = allocations.addRet(new CsrRamAllocation(entries))
+  def ramReadPort(priority: Int): Handle[CsrRamRead] = reads.addRet(Handle(CsrRamRead(portAddressWidth, Riscv.XLEN.get, priority)))
+  def ramWritePort(priority: Int): Handle[CsrRamWrite] = writes.addRet(Handle(CsrRamWrite(portAddressWidth, Riscv.XLEN.get, priority)))
+
+  case class Mapping(csrFilter: Any, alloc: CsrRamAllocation, offset : Int)
+  val csrMappings = mutable.ArrayBuffer[Mapping]()
+
+  def readWriteRam(filters: Int) = {
+    val alloc = ramAllocate(1)
+    csrMappings += Mapping(filters, alloc, 0)
+    alloc
+  }
+
+  def readWriteRam(filters: Any, alloc: CsrRamAllocation, offset : Int) = {
+    csrMappings += Mapping(filters, alloc, offset)
+    alloc
+  }
+
+  def portAddressWidth : Int
+
+  def awaitMapping() : Unit
+
+  def holdCsrRead() : Unit
 }

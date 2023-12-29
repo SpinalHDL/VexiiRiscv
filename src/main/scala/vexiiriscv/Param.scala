@@ -39,15 +39,15 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 1
-    lanes = 1
+    decoders = 2
+    lanes = 2
     regFileSync = false
-    withGShare = false
-    withBtb = false
-    withRas = false
+    withGShare = true
+    withBtb = true
+    withRas = true
 //    withMul = false
 //    withDiv = false
-    withLateAlu = false
+    withLateAlu = true
     allowBypassFrom = 0
     relaxedBranch = false
     relaxedShift = false
@@ -77,6 +77,7 @@ class ParamSimple(){
 
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
+    opt[Int]("xlen") action { (v, c) => xlen = v }
     opt[Int]("decoders") action { (v, c) => decoders = v }
     opt[Int]("lanes") action { (v, c) => lanes = v }
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
@@ -113,7 +114,7 @@ class ParamSimple(){
     if(withBtb) {
       plugins += new prediction.BtbPlugin(
         sets = 512 / decoders,
-        ways = decoders,
+        chunks = decoders,
         rasDepth = if(withRas) 4 else 0,
         hashWidth = 16,
         readAt = 0,
@@ -137,7 +138,7 @@ class ParamSimple(){
 
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
-    plugins += new fetch.CachelessPlugin(
+    plugins += new fetch.FetchCachelessPlugin(
       forkAt = 0,
       joinAt = 1, //You can for instance allow the external memory to have more latency by changing this
       wordWidth = 32*decoders
@@ -202,8 +203,10 @@ class ParamSimple(){
       plugins += new DivPlugin(early0)
     }
 
+    plugins += new CsrRamPlugin()
+    plugins += new PerformanceCounterPlugin(additionalCounterCount = 0)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(List.tabulate(hartCount)(i => PrivilegedParam.full.setHartId(i)), trapAt = 2)
+    plugins += new PrivilegedPlugin(PrivilegedParam.full, 0 until hartCount, trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
 
     if(withLateAlu) {

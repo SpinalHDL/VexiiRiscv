@@ -137,7 +137,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
-        address := c(p.logic.srcp.ADD_SUB).asUInt
+        address := c(p.logic.srcp.ADD_SUB).asUInt.resized //PC RESIZED
         data := host.find[IntFormatPlugin](_.laneName == p.layer.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
       })
     }
@@ -244,7 +244,7 @@ class WhiteboxerPlugin extends FiberPlugin{
           checkers += new InterruptChecker(hartId, hart.int.m.timer,  7)
           checkers += new InterruptChecker(hartId, hart.int.m.software,  3)
           checkers += new InterruptChecker(hartId, hart.int.m.external, 11)
-          if (hart.p.withSupervisor) {
+          if (priv.p.withSupervisor) {
             checkers += new InterruptChecker(hartId, hart.int.s.external, 9)
           }
         }

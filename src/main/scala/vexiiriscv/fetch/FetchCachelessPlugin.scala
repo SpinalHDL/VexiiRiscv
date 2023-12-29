@@ -33,15 +33,15 @@ case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave 
   }
 }
 
-object CachelessPlugin{
+object FetchCachelessPlugin{
   val ID_WIDTH = blocking[Int]
   val ID = blocking[Int]
 }
 
-class CachelessPlugin(var wordWidth : Int,
-                      var forkAt : Int = 0,
-                      var joinAt : Int = 1,
-                      var cmdForkPersistence : Boolean = true) extends FiberPlugin{
+class FetchCachelessPlugin(var wordWidth : Int,
+                           var forkAt : Int = 0,
+                           var joinAt : Int = 1,
+                           var cmdForkPersistence : Boolean = true) extends FiberPlugin{
 
   val logic = during setup new Area{
     val pp = host[FetchPipelinePlugin]

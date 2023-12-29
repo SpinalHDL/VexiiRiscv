@@ -14,7 +14,7 @@ import Global._
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
-import vexiiriscv.misc.TrapService
+import vexiiriscv.misc.{PerformanceCounterService, TrapService}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
 import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
@@ -43,8 +43,14 @@ class BranchPlugin(val layer : LaneLayer,
     val hp = host.get[HistoryPlugin]
     val ls = host[LearnService]
     val ts = host[TrapService]
+    val pcs = host.get[PerformanceCounterService]
     val ioRetainer = retains(wbp.elaborationLock, sp.elaborationLock, pcp.elaborationLock, ts.trapLock)
     hp.foreach(ioRetainer += _.elaborationLock)
+
+    val pluginsOnLane = host.list[BranchPlugin].filter(_.layer.el == layer.el)
+    val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last
+    val isLastOfLane = BranchPlugin.this == lastOfLane
+    val branchMissEvent = (isLastOfLane && pcs.nonEmpty).option(pcs.get.createEventPort(PerformanceCounterService.BRANCH_MISS))
     awaitBuild()
 
     import SrcKeys._
@@ -74,8 +80,8 @@ class BranchPlugin(val layer : LaneLayer,
     }
 
     val age = eu.getExecuteAge(jumpAt)
-    val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
-    val historyPort = hp.map(_.createPort(age, Execute.LANE_AGE_WIDTH))
+    val pcPort = pcp.newJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
+    val historyPort = hp.map(_.newPort(age, Execute.LANE_AGE_WIDTH))
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val trapPort = catchMissaligned generate ts.newTrap(layer.el.getAge(jumpAt), Execute.LANE_AGE_WIDTH)
 
@@ -115,7 +121,7 @@ class BranchPlugin(val layer : LaneLayer,
 
       val slices = Decode.INSTRUCTION_SLICE_COUNT +^ 1
       val sliceShift = Fetch.SLICE_RANGE_LOW.get
-      val PC_TRUE = insert(U(target_a + target_b).as(PC)) //TODO overflows ?
+      val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH)) //PC RESIZED
       val PC_FALSE = insert(PC + (slices << sliceShift))
 
       // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
@@ -206,9 +212,6 @@ class BranchPlugin(val layer : LaneLayer,
 
       ls.learnLock.await()
 
-      val pluginsOnLane = host.list[BranchPlugin].filter(_.layer.el == layer.el)
-      val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last
-      val isLastOfLane = BranchPlugin.this == lastOfLane
       val learn = isLastOfLane.option(Stream(LearnCmd(ls.learnCtxElements.toSeq)))
       learn.foreach { learn =>
         learn.valid := isValid && isReady && !hasCancelRequest && pluginsOnLane.map(p => apply(p.SEL)).orR
@@ -225,12 +228,14 @@ class BranchPlugin(val layer : LaneLayer,
         for (e <- ls.learnCtxElements) {
           learn.ctx(e).assignFrom(apply(e))
         }
+        branchMissEvent.foreach(_ := learn.valid && learn.isBranch && learn.wasWrong)
       }
+
     }
 
     val wbLogic = new eu.Execute(wbAt){
       wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
-      wb.payload := alu.PC_FALSE.asBits
+      wb.payload := alu.PC_FALSE.asBits.resized //PC RESIZED
     }
   }
 }

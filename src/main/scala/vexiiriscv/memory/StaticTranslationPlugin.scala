@@ -2,9 +2,11 @@ package vexiiriscv.memory
 
 import spinal.core._
 import spinal.core.fiber.Retainer
+import spinal.lib._
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin._
 import vexiiriscv.Global._
+import vexiiriscv.riscv.Riscv
 
 class StaticTranslationPlugin(var physicalWidth: Int,
                               var ioRange: UInt => Bool,
@@ -23,7 +25,7 @@ class StaticTranslationPlugin(var physicalWidth: Int,
       import keys._
 
       REDO := False
-      TRANSLATED := rawAddress
+      TRANSLATED := rawAddress.resized //PC RESIZED
       IO := ioRange(TRANSLATED)
       ALLOW_EXECUTE := True
       ALLOW_READ := True
@@ -37,6 +39,11 @@ class StaticTranslationPlugin(var physicalWidth: Int,
 
 
   val logic = during build new Area {
+//    PHYSICAL_WIDTH.set(physicalWidth)
+//    VIRTUAL_WIDTH.set(physicalWidth min Riscv.XLEN.get)
+//    MIXED_WIDTH.set(VIRTUAL_WIDTH.get + (VIRTUAL_WIDTH < Riscv.XLEN).toInt)
+//    PC_WIDTH.set(MIXED_WIDTH)
+//    TVAL_WIDTH.set(MIXED_WIDTH)
     PHYSICAL_WIDTH.set(physicalWidth)
     VIRTUAL_WIDTH.set(physicalWidth)
     MIXED_WIDTH.set(physicalWidth)

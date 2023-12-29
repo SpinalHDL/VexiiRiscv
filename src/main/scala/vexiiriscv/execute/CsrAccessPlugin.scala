@@ -5,6 +5,7 @@ import spinal.lib._
 import spinal.lib.fsm.{State, StateMachine}
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline._
+import spinal.lib.pipeline.Stageable
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{UOP, rfaKeys}
@@ -43,22 +44,20 @@ class CsrAccessPlugin(layer : LaneLayer,
   override def onDecodeHartId: UInt = apiIo.onDecodeHartId
   override def onDecodeAddress: UInt = apiIo.onDecodeAddress
 
+
+  override def isReading: Bool = apiIo.isReading
   override def onReadAddress: UInt = apiIo.onReadAddress
   override def onReadHartId: UInt = apiIo.onReadHartId
   override def onReadHalt(): Unit = apiIo.onReadHalt := True
 
   override def onReadToWriteBits: Bits = ???
 
+  override def isWriting: Bool = apiIo.isWriting
   override def onWriteHalt(): Unit = apiIo.onWriteHalt := True
   override def onWriteBits: Bits = apiIo.onWriteBits
   override def onWriteAddress: UInt = apiIo.onWriteAddress
   override def onWriteHartId: UInt = apiIo.onWriteHartId
   override def onWriteFlushPipeline(): Unit = ???
-
-
-
-
-  override def getCsrRam(): CsrRamService = ???
 
   override def onReadMovingOff: Bool = apiIo.onReadMovingOff
   override def onWriteMovingOff: Bool = apiIo.onWriteMovingOff
@@ -70,16 +69,17 @@ class CsrAccessPlugin(layer : LaneLayer,
     val onDecodeWrite = Bool()
     val onDecodeHartId = Global.HART_ID()
     val onDecodeAddress = CSR_ADDRESS()
+    val isReading = Bool()
     val onReadAddress = CSR_ADDRESS()
     val onReadHalt = False
     val onReadHartId = Global.HART_ID()
     val onReadToWriteBits = CSR_VALUE()
+    val isWriting = Bool()
     val onWriteHalt = False
     val onWriteBits = CSR_VALUE()
     val onWriteAddress = CSR_ADDRESS()
     val onWriteHartId = Global.HART_ID()
 //    val onWriteFlushPipeline(): Unit
-//    val getCsrRam(): CsrRamService
     val onReadMovingOff = Bool()
     val onWriteMovingOff = Bool()
   }
@@ -89,6 +89,9 @@ class CsrAccessPlugin(layer : LaneLayer,
     val irf = host.find[RegfileService](_.rfSpec == IntRegFile)
     val iwb = host.find[IntFormatPlugin](_.laneName == layer.laneName)
     val dp = host[DispatchPlugin]
+    val ram = host.get[CsrRamService]
+
+    val ramPortRetainer = ram.map(_.portLock())
     val ioRetainer = retains(dp.elaborationLock, iwb.elaborationLock, elp.uopLock)
     val buildBefore = retains(elp.pipelineLock, irf.elaborationLock)
     awaitBuild()
@@ -109,7 +112,7 @@ class CsrAccessPlugin(layer : LaneLayer,
       if (!integrated) ??? //elp.setRdOutOfPip(op)
       if (integrated) iwb.addMicroOp(wbWi, op)
       //      dp.fenceYounger(op)
-      //      dp.fenceOlder(op)
+      dp.fenceOlder(op.uop)
     }
 
     for (op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC).map(layer(_))) {
@@ -120,6 +123,16 @@ class CsrAccessPlugin(layer : LaneLayer,
     ioRetainer.release()
 
     csrLock.await()
+
+//    val useRamRead = spec.exists(_.isInstanceOf[CsrRamSpec])
+//    val useRamWrite = spec.exists(_.isInstanceOf[CsrRamSpec])
+//    val useRam = spec.exists(_.isInstanceOf[CsrRamSpec])
+
+//    val ramPorts = useRam generate new Area{
+//      val read = useRamRead generate ram.get.ramReadPort(CsrRamService.priority.CSR)
+//      val write = useRamWrite generate ram.get.ramWritePort(CsrRamService.priority.CSR)
+//    }
+    ramPortRetainer.foreach(_.release())
 
     val wbNi = !integrated generate irf.newWrite(withReady = true, sharingKey = writeBackKey)
 
@@ -183,13 +196,14 @@ class CsrAccessPlugin(layer : LaneLayer,
         }
 
 
+
         val trap = !implemented || apiIo.onDecodeTrap
 
         def connectRegs(): Unit = {
           regs.hartId := Global.HART_ID
           regs.uopId := Decode.UOP_ID
-          regs.write := SEL && !trap && csrWrite
           regs.read := SEL && !trap && csrRead
+          regs.write := SEL && !trap && csrWrite
           regs.rs1 := up(elp(IntRegFile, RS1))
           regs.uop := UOP
           regs.doImm := CSR_IMM
@@ -199,6 +213,10 @@ class CsrAccessPlugin(layer : LaneLayer,
           regs.rdPhys := rd.PHYS
         }
 
+        apiIo.onDecodeRead := csrRead
+        apiIo.onDecodeWrite := csrWrite
+        apiIo.onDecodeHartId := Global.HART_ID
+        apiIo.onDecodeAddress := UOP(Const.csrRange).asUInt
 
         val iLogic = integrated generate new Area{
           connectRegs()
@@ -218,27 +236,6 @@ class CsrAccessPlugin(layer : LaneLayer,
 //          regs.flushPipeline := setup.onDecodeFlushPipeline
 
           (regs.sels.values, sels.values).zipped.foreach(_ := _)
-//
-//          if (useRam) {
-//            ramReadPort.get //Ensure the ram port is generated
-//            regs.ramSel := False
-//            switch(MICRO_OP(Const.csrRange)) {
-//              for (e <- spec.collect { case x: CsrRamSpec => x }) e.csrFilter match {
-//                case filter: CsrListFilter => for ((csrId, offset) <- filter.mapping.zipWithIndex) {
-//                  is(csrId) {
-//                    regs.ramSel := True
-//                    regs.ramAddress := e.alloc.at + offset
-//                  }
-//                }
-//                case csrId: Int => {
-//                  is(csrId) {
-//                    regs.ramSel := True
-//                    regs.ramAddress := e.alloc.at
-//                  }
-//                }
-//              }
-//            }
-//          }
 
           when(onDecodeDo) {
             goto(READ)
@@ -247,9 +244,10 @@ class CsrAccessPlugin(layer : LaneLayer,
       }
 
       val readLogic = new Area {
-        apiIo.onReadAddress := U(regs.uop(Const.csrRange))
         val onReadsDo = False
         val onReadsFireDo = False
+        apiIo.isReading := onReadsDo
+        apiIo.onReadAddress := U(regs.uop(Const.csrRange))
 
         apiIo.onReadMovingOff := !apiIo.onReadHalt //TODO || eu.getExecute(0).isFlushed
 
@@ -257,7 +255,6 @@ class CsrAccessPlugin(layer : LaneLayer,
           setPartialName(filterToName(csrFilter))
 
           val onReads = elements.collect { case e: CsrOnRead => e }
-          val onReadsData = elements.collect { case e: CsrOnReadData => e }
           val onReadsAlways = onReads.filter(!_.onlyOnFire)
           val onReadsFire = onReads.filter(_.onlyOnFire)
 
@@ -284,15 +281,6 @@ class CsrAccessPlugin(layer : LaneLayer,
           csrValue := 0
         }
 
-        //    val ramRead = useRamRead generate new Area {
-        //      ramReadPort.valid := onReadsDo && regs.ramSel
-        //      ramReadPort.address := regs.ramAddress
-        //      when(regs.ramSel) {
-        //        csrValue := ramReadPort.data
-        //      }
-        //      setup.onReadHalt setWhen(ramReadPort.valid && !ramReadPort.ready)
-        //    }
-
         apiIo.onReadToWriteBits := csrValue
         for ((csrFilter, elements) <- grouped) {
           val onReadToWrite = elements.collect { case e: CsrOnReadToWrite => e }
@@ -300,7 +288,6 @@ class CsrAccessPlugin(layer : LaneLayer,
             onReadToWrite.foreach(_.body())
           }
         }
-
         spec.foreach{
           case e : CsrIsReadingCsr => {
             e.value := regs.sels(e.csrFilter)
@@ -339,6 +326,8 @@ class CsrAccessPlugin(layer : LaneLayer,
         val onWritesDo = False
         val onWritesFireDo = False
 
+        apiIo.isWriting := onWritesDo
+
         WRITE.whenIsActive {
 //          regs.flushPipeline setWhen (io.onWriteFlushPipeline)
           onWritesDo := regs.write
@@ -375,14 +364,6 @@ class CsrAccessPlugin(layer : LaneLayer,
             }
           }
         }
-
-        //    val ramWrite = useRamRead generate new Area {
-        //      val fired = RegInit(False) setWhen (ramWritePort.fire) clearWhen (setup.onWriteMovingOff)
-        //      ramWritePort.valid := onWritesDo && regs.ramSel && !fired
-        //      ramWritePort.address := regs.ramAddress
-        //      ramWritePort.data := setup.onWriteBits
-        //      setup.onWriteHalt setWhen (ramWritePort.valid && !ramWritePort.ready)
-        //    }
       }
 
       val completion = Flow(CompletionPayload()) //TODO is it realy necessary to have this port ?

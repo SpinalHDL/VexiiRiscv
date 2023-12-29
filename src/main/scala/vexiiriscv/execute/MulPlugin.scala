@@ -153,9 +153,9 @@ class MulPlugin(val layer : LaneLayer,
 //        case true => stage(sourceToSignal(sourcesSpec.head)).twoComplement(RESULT_IS_SIGNED)
       }
       val buffer = bufferedHigh.get generate new Area{
-        val valid = RegNext(False) init (False) setWhen (isValid && !isReady && hasCancelRequest)
+        val valid = RegNext(False) init (False) setWhen (isValid && !isReady && !hasCancelRequest)
         val data = RegNext(result(XLEN, XLEN bits))
-        eu.freezeWhen(HIGH && !valid)
+        eu.freezeWhen(isValid && HIGH && !valid)
       }
 
       formatBus.valid := SEL
