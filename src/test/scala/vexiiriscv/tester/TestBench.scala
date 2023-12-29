@@ -175,7 +175,7 @@ class TestOptions{
       override def getClintTime(): Long = probe.cycle
     }
 
-    val fclp = dut.host.get[fetch.CachelessPlugin].map { p =>
+    val fclp = dut.host.get[fetch.FetchCachelessPlugin].map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 

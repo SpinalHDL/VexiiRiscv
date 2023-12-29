@@ -384,7 +384,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
           val code = Global.CODE().assignDontCare()
         }
 
-        val pcPort = pcs.createJumpInterface(Ages.TRAP, 0, 0)
+        val pcPort = pcs.newJumpInterface(Ages.TRAP, 0, 0)
         pcPort.valid := False
         pcPort.hartId := hartId
         pcPort.pc.assignDontCare()

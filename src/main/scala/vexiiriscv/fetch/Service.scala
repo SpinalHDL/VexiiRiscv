@@ -19,7 +19,7 @@ case class JumpCmd(laneAgeWidth : Int) extends Bundle{
 case class PcServiceHoldPortSpec(hartId : Int, valid : Bool)
 trait PcService {
   val elaborationLock = Retainer()
-  def createJumpInterface(age: Int, laneAgeWidth : Int, aggregationPriority : Int) : Flow[JumpCmd] //High priority win
+  def newJumpInterface(age: Int, laneAgeWidth : Int, aggregationPriority : Int) : Flow[JumpCmd] //High priority win
   def simSetPc(value : Long) : Unit
   def forcedSpawn() : Bool
   def newHoldPort(hartId : Int) : Bool = holdPorts.addRet(PcServiceHoldPortSpec(hartId, Bool())).valid

@@ -30,9 +30,9 @@ class DecodePredictionPlugin(var decodeAt: Int,
     awaitBuild()
 
     val age = dpp.getAge(jumpAt, true)
-    val pcPorts = List.fill(Decode.LANES)(pcp.createJumpInterface(age, log2Up(Decode.LANES), 0))
+    val pcPorts = List.fill(Decode.LANES)(pcp.newJumpInterface(age, log2Up(Decode.LANES), 0))
     val flushPorts = List.fill(Decode.LANES)(rp.newFlushPort(dpp.getAge(jumpAt), log2Up(Decode.LANES), true))
-    val historyPorts = hp.map(hp => List.tabulate(Decode.LANES)(i => hp.createPort(age + i, 0)))
+    val historyPorts = hp.map(hp => List.tabulate(Decode.LANES)(i => hp.newPort(age + i, 0)))
     retainer.release()
 
     val decodeSpec = new Area{

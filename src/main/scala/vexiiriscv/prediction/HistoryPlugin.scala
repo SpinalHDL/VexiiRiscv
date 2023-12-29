@@ -23,7 +23,7 @@ class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin
 
   case class HistorySpec(priority : Int, laneAgeWidth : Int, port : Flow[HistoryJump])
   val historySpecs = mutable.ArrayBuffer[HistorySpec]()
-  def createPort(priority : Int, laneAgeWidth : Int): Flow[HistoryJump] = {
+  def newPort(priority : Int, laneAgeWidth : Int): Flow[HistoryJump] = {
     historySpecs.addRet(HistorySpec(priority, laneAgeWidth, Flow(HistoryJump(laneAgeWidth)))).port
   }
 

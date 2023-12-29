@@ -20,7 +20,7 @@ import vexiiriscv.execute.BranchPlugin
 import scala.util.Random
 
 class BtbPlugin(var sets : Int,
-                var ways : Int,
+                var chunks : Int,
                 var rasDepth : Int = 4,
                 var hashWidth : Int = 16,
                 var readAt : Int = 0,
@@ -28,7 +28,7 @@ class BtbPlugin(var sets : Int,
                 var jumpAt : Int = 1) extends FiberPlugin with FetchWordPrediction {
 
 
-  def waysRange = 0 until ways
+  def chunksRange = 0 until chunks
 
   val logic = during setup new Area{
     val fpp = host[FetchPipelinePlugin]
@@ -42,8 +42,8 @@ class BtbPlugin(var sets : Int,
     Fiber.awaitBuild()
 
     val age = fpp.getAge(jumpAt, true)
-    val pcPort = pcp.createJumpInterface(age,0, (jumpAt < 2).toInt)
-    val historyPort = hp.map(_.createPort(age, 0))
+    val pcPort = pcp.newJumpInterface(age,0, (jumpAt < 2).toInt)
+    val historyPort = hp.map(_.newPort(age, 0))
     val flushPort = rp.newFlushPort(fpp.getAge(jumpAt), 0, false)
 
     dp.hmKeys += Prediction.ALIGNED_JUMPED
@@ -90,11 +90,11 @@ class BtbPlugin(var sets : Int,
 
     val wordBytesWidth = log2Up(Fetch.WORD_WIDTH/8)
 
-    assert(ways <= SLICE_COUNT)
-    val SLICE_LOW_RANGE = SLICE_RANGE.get.high - log2Up(ways) downto SLICE_RANGE.get.low
-    val SLICE_HIGH_RANGE = SLICE_RANGE.get.high downto SLICE_RANGE.get.high+1 - log2Up(ways)
-    val SLICE_LOW = Payload(UInt(log2Up(Fetch.SLICE_COUNT/ways) bits))
-    def getSlice(wayId : Int, low : UInt) = U(wayId, SLICE_HIGH_RANGE.size bits) @@ low
+    assert(chunks <= SLICE_COUNT)
+    val SLICE_LOW_RANGE = SLICE_RANGE.get.high - log2Up(chunks) downto SLICE_RANGE.get.low
+    val SLICE_HIGH_RANGE = SLICE_RANGE.get.high downto SLICE_RANGE.get.high+1 - log2Up(chunks)
+    val SLICE_LOW = Payload(UInt(log2Up(Fetch.SLICE_COUNT/chunks) bits))
+    def getSlice(chunkId : Int, low : UInt) = U(chunkId, SLICE_HIGH_RANGE.size bits) @@ low
 
 
     def getHash(value : UInt) = value(wordBytesWidth + log2Up(sets), hashWidth bits) //TODO better hash
@@ -106,7 +106,7 @@ class BtbPlugin(var sets : Int,
       val taken = Bool() //TODO remove
     }
 
-    val mem = Mem.fill(sets)(Vec.fill(ways)(BtbEntry())) //TODO bypass read durring write ?
+    val mem = Mem.fill(sets)(Vec.fill(chunks)(BtbEntry())) //TODO bypass read durring write ?
     if(GenerationFlags.simulation){
       val rand = new Random(42)
       mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
@@ -116,7 +116,7 @@ class BtbPlugin(var sets : Int,
       val cmd = host[LearnPlugin].getLearnPort()
       val hash = getHash(cmd.pcOnLastSlice)
 
-      val port = mem.writePortWithMask(ways)
+      val port = mem.writePortWithMask(chunks)
       port.valid := cmd.valid
       port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
       port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
@@ -142,17 +142,17 @@ class BtbPlugin(var sets : Int,
       B((0 until SLICE_COUNT).map(s.getPredictionAt(jumpAt)(_)))
     )
 
-    val waysLogic = for (wayId <- waysRange) yield new Area {
+    val chunksLogic = for (chunkId <- chunksRange) yield new Area {
       val readRsp = new fpp.Fetch(readAt + 1) {
-        val ENTRY = insert(readPort.rsp(wayId))
+        val ENTRY = insert(readPort.rsp(chunkId))
         KeepAttribute(this(ENTRY))
       }
       val hitCalc = new fpp.Fetch(hitAt) {
-        val HIT = insert(readRsp.ENTRY.hash === getHash(WORD_PC) && getSlice(wayId, readRsp.ENTRY.sliceLow) >= WORD_PC(SLICE_RANGE.get))
+        val HIT = insert(readRsp.ENTRY.hash === getHash(WORD_PC) && getSlice(chunkId, readRsp.ENTRY.sliceLow) >= WORD_PC(SLICE_RANGE.get))
       }
       val predict = new fpp.Fetch(jumpAt) {
         def pred = host.get[FetchConditionalPrediction] match {
-          case Some(x) => predictions.get(getSlice(wayId, readRsp.ENTRY.sliceLow))
+          case Some(x) => predictions.get(getSlice(chunkId, readRsp.ENTRY.sliceLow))
           case None => readRsp.ENTRY.taken
         }
         val TAKEN = insert(!readRsp.ENTRY.isBranch || pred)
@@ -161,9 +161,9 @@ class BtbPlugin(var sets : Int,
 
     if(withRas) ras.readIt := fpp.fetch(jumpAt-1).isReady
     val applyIt = new fpp.Fetch(jumpAt) {
-      // Find the first way which predicted a PC disruption
-      val waysMask = B(for (self <- waysLogic) yield self.hitCalc.HIT && waysLogic.takeWhile(_ != self).map(other => other.hitCalc.HIT && other.predict.TAKEN).norR)
-      val waysTakenOh = B(for (self <- waysLogic) yield apply(self.predict.TAKEN)) & waysMask
+      // Find the first chunk which predicted a PC disruption
+      val chunksMask = B(for (self <- chunksLogic) yield self.hitCalc.HIT && chunksLogic.takeWhile(_ != self).map(other => other.hitCalc.HIT && other.predict.TAKEN).norR)
+      val chunksTakenOh = B(for (self <- chunksLogic) yield apply(self.predict.TAKEN)) & chunksMask
 
 
       val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
@@ -179,13 +179,13 @@ class BtbPlugin(var sets : Int,
       }
 
       val gotSkip = harts.map(_.skip).read(HART_ID)
-      val needIt = isValid && !gotSkip && waysTakenOh.orR
+      val needIt = isValid && !gotSkip && chunksTakenOh.orR
       val correctionSent = RegInit(False) setWhen (isValid) clearWhen (up.ready || up.cancel)
       val doIt = needIt && !correctionSent
-      val entry = OHMux.or(waysTakenOh, waysLogic.map(_.readRsp.ENTRY).map(this (_)), bypassIfSingle = true)
+      val entry = OHMux.or(chunksTakenOh, chunksLogic.map(_.readRsp.ENTRY).map(this (_)), bypassIfSingle = true)
       val pcTarget = CombInit(entry.pcTarget)
       if(withRas) when(entry.isPop){ pcTarget := ras.read }
-      val doItSlice = OHToUInt(waysTakenOh) @@ entry.sliceLow
+      val doItSlice = OHToUInt(chunksTakenOh) @@ entry.sliceLow
 
       val rasLogic = withRas generate new Area {
         val pushValid = (doIt && entry.isPush)
@@ -222,29 +222,29 @@ class BtbPlugin(var sets : Int,
 
       val history = historyPort.map { port =>
         new Area {
-          val layers = List.fill(ways + 1)(new Area {
+          val layers = List.fill(chunks + 1)(new Area {
             val history = Prediction.BRANCH_HISTORY()
             val valid = Bool()
           })
           layers(0).history := Prediction.BRANCH_HISTORY
 
-          val layersLogic = for (i <- 0 until ways) yield new Area {
-            def e = waysLogic(i)
+          val layersLogic = for (i <- 0 until chunks) yield new Area {
+            def e = chunksLogic(i)
 
-            val doIt = waysMask(i) && e.readRsp.ENTRY.isBranch
+            val doIt = chunksMask(i) && e.readRsp.ENTRY.isBranch
             val shifted = layers(i).history.dropHigh(1) ## e.predict.TAKEN
             layers(i + 1).history := doIt.mux(shifted, layers(i).history)
           }
 
-          port.valid := isValid && !gotSkip && !correctionSent && waysLogic.map(e => apply(e.hitCalc.HIT)).orR
+          port.valid := isValid && !gotSkip && !correctionSent && chunksLogic.map(e => apply(e.hitCalc.HIT)).orR
           port.history := layers.last.history
 
-          val slicePerWay = SLICE_COUNT/ways
-          for(way <- 0 until ways){
-            for(slice <- 0 until slicePerWay){
-              val i = slice + way*slicePerWay
-              WORD_SLICES_BRANCH(i) := waysLogic(i).hitCalc.HIT && waysLogic(i).readRsp.ENTRY.isBranch && waysLogic(i).readRsp.ENTRY.sliceLow === slice
-              WORD_SLICES_TAKEN(i) := waysLogic(i).predict.TAKEN
+          val slicePerChunk = SLICE_COUNT/chunks
+          for(chunk <- 0 until chunks){
+            for(slice <- 0 until slicePerChunk){
+              val i = slice + chunk*slicePerChunk
+              WORD_SLICES_BRANCH(i) := chunksLogic(i).hitCalc.HIT && chunksLogic(i).readRsp.ENTRY.isBranch && chunksLogic(i).readRsp.ENTRY.sliceLow === slice
+              WORD_SLICES_TAKEN(i) := chunksLogic(i).predict.TAKEN
             }
           }
 

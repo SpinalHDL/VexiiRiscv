@@ -80,8 +80,8 @@ class BranchPlugin(val layer : LaneLayer,
     }
 
     val age = eu.getExecuteAge(jumpAt)
-    val pcPort = pcp.createJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
-    val historyPort = hp.map(_.createPort(age, Execute.LANE_AGE_WIDTH))
+    val pcPort = pcp.newJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
+    val historyPort = hp.map(_.newPort(age, Execute.LANE_AGE_WIDTH))
     val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val trapPort = catchMissaligned generate ts.newTrap(layer.el.getAge(jumpAt), Execute.LANE_AGE_WIDTH)
 

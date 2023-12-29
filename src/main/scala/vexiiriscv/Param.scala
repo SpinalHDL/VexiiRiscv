@@ -39,19 +39,20 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 2
-    lanes = 2
+    decoders = 1
+    lanes = 1
     regFileSync = false
-    withGShare = false
-    withBtb = false
-    withRas = false
+    withGShare = true
+    withBtb = true
+    withRas = true
 //    withMul = false
 //    withDiv = false
-    withLateAlu = false
+    withLateAlu = true
     allowBypassFrom = 0
     relaxedBranch = false
     relaxedShift = false
     relaxedSrc = true
+//    xlen = 64
   }
 
 
@@ -113,7 +114,7 @@ class ParamSimple(){
     if(withBtb) {
       plugins += new prediction.BtbPlugin(
         sets = 512 / decoders,
-        ways = decoders,
+        chunks = decoders,
         rasDepth = if(withRas) 4 else 0,
         hashWidth = 16,
         readAt = 0,
@@ -137,7 +138,7 @@ class ParamSimple(){
 
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
-    plugins += new fetch.CachelessPlugin(
+    plugins += new fetch.FetchCachelessPlugin(
       forkAt = 0,
       joinAt = 1, //You can for instance allow the external memory to have more latency by changing this
       wordWidth = 32*decoders
