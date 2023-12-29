@@ -43,7 +43,7 @@ class DivPlugin(val layer : LaneLayer,
       }
 
       for (op <- List(Rvi.DIV, Rvi.DIVU, Rvi.REM, Rvi.REMU)) {
-        layer(op).addDecoding(IS_W -> True)
+        layer(op).addDecoding(IS_W -> False)
       }
     }
 

@@ -39,8 +39,8 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 1
-    lanes = 1
+    decoders = 2
+    lanes = 2
     regFileSync = false
     withGShare = true
     withBtb = true
@@ -52,7 +52,6 @@ class ParamSimple(){
     relaxedBranch = false
     relaxedShift = false
     relaxedSrc = true
-    xlen = 64
   }
 
 
@@ -78,6 +77,7 @@ class ParamSimple(){
 
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
+    opt[Int]("xlen") action { (v, c) => xlen = v }
     opt[Int]("decoders") action { (v, c) => decoders = v }
     opt[Int]("lanes") action { (v, c) => lanes = v }
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }

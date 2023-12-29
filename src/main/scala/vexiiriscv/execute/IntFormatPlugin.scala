@@ -95,22 +95,21 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
       val extendBitIds = extendSpecs.map(_.bitId).distinct.sorted
 
       var from = extendBitIds.head
-      var widthId = 0
-      val segments = for(to <- extendBitIds.tail) yield new Area {
+      val segments = for(to <- extendBitIds.tail) yield new Area { // For each independent section
+        var widthId = widthsToId(to)
         val width = to-from
         val signeds = group.flatMap(_.signExtends.map(_.bitId))
         val sign = signeds.nonEmpty generate new Area{
-          val widths = signeds.filter(_ < to)
+          val widths = signeds.filter(_ < to).distinctLinked
           val sels = widths.map(bitId => raw(bitId-1))
           val mapping = (widths.map(widthsToId), sels).zipped.toSeq
           val value = SIGNED && WIDTH_ID.muxListDc(mapping)
         }
 
-        val doIt = WIDTH_ID <= widthId
+        val doIt = WIDTH_ID < widthId
         when(doIt) {
           wb.payload(from, width bits) := (if(signeds.nonEmpty) sign.value #* width else B(0))
         }
-        widthId += 1
         from = to
       }
     }
