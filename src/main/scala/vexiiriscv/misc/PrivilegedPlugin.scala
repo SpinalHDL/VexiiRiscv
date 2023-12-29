@@ -479,7 +479,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
 
           TRAP_APPLY.whenIsActive{
             pcPort.valid := True
-            pcPort.pc := U(readed)
+            pcPort.pc := U(readed).resized //PC RESIZED
 
             csr.m.status.mie := False
             csr.m.status.mpie := csr.m.status.mie
@@ -509,7 +509,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
 
           XRET_APPLY.whenIsActive{
             pcPort.valid := True
-            pcPort.pc := U(readed)
+            pcPort.pc := U(readed).resized //PC RESIZED
 
             csr.privilege := pending.xret.targetPrivilege
             csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege < 3)

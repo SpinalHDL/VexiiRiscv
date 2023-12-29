@@ -163,10 +163,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
 
+      //TODO handle case were address isn't in the range of the virtual address ?
       trapPort.valid :=  isValid && SEL && MISS_ALIGNED
       trapPort.exception := True
       trapPort.code := LOAD.mux[Bits](CSR.MCAUSE_ENUM.LOAD_MISALIGNED, CSR.MCAUSE_ENUM.STORE_MISALIGNED).andMask(MISS_ALIGNED).resized
-      trapPort.tval  := onAddress.RAW_ADDRESS.asBits
+      trapPort.tval  := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
       trapPort.hartId := Global.HART_ID
       trapPort.laneAge := Execute.LANE_AGE
 

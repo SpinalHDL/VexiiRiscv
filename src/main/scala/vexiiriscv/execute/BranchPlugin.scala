@@ -121,7 +121,7 @@ class BranchPlugin(val layer : LaneLayer,
 
       val slices = Decode.INSTRUCTION_SLICE_COUNT +^ 1
       val sliceShift = Fetch.SLICE_RANGE_LOW.get
-      val PC_TRUE = insert(U(target_a + target_b).as(PC)) //TODO overflows ?
+      val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH)) //PC RESIZED
       val PC_FALSE = insert(PC + (slices << sliceShift))
 
       // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
@@ -235,7 +235,7 @@ class BranchPlugin(val layer : LaneLayer,
 
     val wbLogic = new eu.Execute(wbAt){
       wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
-      wb.payload := alu.PC_FALSE.asBits
+      wb.payload := alu.PC_FALSE.asBits.resized //PC RESIZED
     }
   }
 }

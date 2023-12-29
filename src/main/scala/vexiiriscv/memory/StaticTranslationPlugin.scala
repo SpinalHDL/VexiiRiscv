@@ -23,7 +23,7 @@ class StaticTranslationPlugin(var physicalWidth: Int,
       import keys._
 
       REDO := False
-      TRANSLATED := rawAddress
+      TRANSLATED := rawAddress.resized //PC RESIZED
       IO := ioRange(TRANSLATED)
       ALLOW_EXECUTE := True
       ALLOW_READ := True

@@ -52,7 +52,7 @@ class ParamSimple(){
     relaxedBranch = false
     relaxedShift = false
     relaxedSrc = true
-//    xlen = 64
+    xlen = 64
   }
 
 
