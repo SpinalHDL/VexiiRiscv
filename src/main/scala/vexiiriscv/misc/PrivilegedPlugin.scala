@@ -96,6 +96,8 @@ object TrapReason{
   val PRIV_RET = 1
 }
 
+
+//TODO ensure that CSR stored in ram are properly masked on read (mtval ... )
 class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int) extends FiberPlugin with TrapService with CommitService{
   override def trapHandelingAt: Int = trapAt
 

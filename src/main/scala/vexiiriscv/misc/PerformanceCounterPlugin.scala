@@ -203,15 +203,16 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
         when(readPort.ready) {
           goto(CALC_HIGH)
         }
-      }
 
-      CALC_HIGH.whenIsActive {
-        writePort.valid := True
-        writePort.data := B(calc.sum).resized
-        when(writePort.ready) {
-          goto(IDLE)
+        CALC_HIGH.whenIsActive {
+          writePort.valid := True
+          writePort.data := B(calc.sum).resized
+          when(writePort.ready) {
+            goto(IDLE)
+          }
         }
       }
+
     }
 
     val flusher = new Area{
