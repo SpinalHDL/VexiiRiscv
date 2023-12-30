@@ -95,7 +95,8 @@ class ParamSimple(){
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
   }
 
-  def plugins() = {
+  def plugins() = pluginsArea.plugins
+  def pluginsArea() = new Area {
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
@@ -248,8 +249,6 @@ class ParamSimple(){
     }
 
     plugins += new WhiteboxerPlugin()
-
-    plugins
   }
 }
 
