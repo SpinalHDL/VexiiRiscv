@@ -110,6 +110,7 @@ class BtbPlugin(var sets : Int,
     if(GenerationFlags.simulation){
       val rand = new Random(42)
       mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
+//      mem.initBigInt(List.fill(mem.wordCount)(BigInt(0)))
     }
 
     val onLearn = new Area{
@@ -128,6 +129,26 @@ class BtbPlugin(var sets : Int,
         data.isPush := cmd.isPush
         data.isPop := cmd.isPop
         data.taken := cmd.taken
+      }
+    }
+
+    val onForget = new Area{
+      val cmd = host[ForgetSource].getForgetPort()
+      val hash = getHash(cmd.pcOnLastSlice)
+
+      import onLearn.port
+      when(cmd.valid){
+        port.valid := cmd.valid
+        port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
+        port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
+        for(data <- port.data) {
+          data.hash := ~hash
+          data.sliceLow := cmd.pcOnLastSlice(SLICE_LOW_RANGE)
+          data.isBranch := False
+          data.isPush := False
+          data.isPop := False
+          data.taken := False
+        }
       }
     }
 

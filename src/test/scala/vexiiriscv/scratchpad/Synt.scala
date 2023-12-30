@@ -17,7 +17,20 @@ object IntegrationSynthBench extends App{
     val param = new ParamSimple
     param.decoders = 1
     param.lanes = 1
+    param.xlen = 64
+    param.withMul = false
+    param.withDiv = false
+    param.allowBypassFrom = 0
     Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i"))
+  })
+  rtls += Rtl(sc.generateVerilog {
+    val param = new ParamSimple
+    param.decoders = 1
+    param.lanes = 1
+    param.xlen = 64
+    param.withMul = false
+    param.withDiv = false
+    Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i_b"))
   })
 //  rtls += Rtl(sc.generateVerilog {
 //    val param = new ParamSimple
@@ -25,7 +38,7 @@ object IntegrationSynthBench extends App{
 //    param.lanes = 2
 //    Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_2i"))
 //  })
-  val targets = XilinxStdTargets().take(1)
+  val targets = XilinxStdTargets().take(2)
 
   Bench(rtls, targets)
 }

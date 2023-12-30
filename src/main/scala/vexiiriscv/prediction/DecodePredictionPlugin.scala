@@ -17,7 +17,9 @@ import vexiiriscv.prediction.Prediction.ALIGNED_JUMPED
 The job of this plugin is to prevent instruction which got a fetch prediction, but aren't actualy a branch, to continue in the pipeline
  */
 class DecodePredictionPlugin(var decodeAt: Int,
-                             var jumpAt: Int) extends FiberPlugin{
+                             var jumpAt: Int) extends FiberPlugin with ForgetSource{
+
+  def getForgetPort() = logic.forgetPort
 
   val logic = during setup new Area{
     val dpp = host[DecodePipelinePlugin]
@@ -35,6 +37,9 @@ class DecodePredictionPlugin(var decodeAt: Int,
     val historyPorts = hp.map(hp => List.tabulate(Decode.LANES)(i => hp.newPort(age + i, 0)))
     retainer.release()
 
+    val forgetPort = Flow(ForgetCmd())
+    forgetPort.setIdle()
+
     val decodeSpec = new Area{
       val branchKeys = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU).map(e => Masked(e.key))
       val jalKeys = List(Rvi.JAL, Rvi.JALR).map(e => Masked(e.key))
@@ -42,7 +47,7 @@ class DecodePredictionPlugin(var decodeAt: Int,
       any.addNeeds(branchKeys ++ jalKeys, Masked.one)
     }
 
-    val lanes = for (slotId <- 0 until Decode.LANES) yield new Area {
+    val lanes = for (slotId <- Decode.LANES-1 downto 0) yield new Area {
       val decoder = new dpp.LaneArea(decodeAt, slotId) {
         val IS_ANY = insert(decodeSpec.any.build(Decode.INSTRUCTION, dp.covers()))
       }
@@ -63,6 +68,13 @@ class DecodePredictionPlugin(var decodeAt: Int,
         pcPort.valid := fixIt
         pcPort.pc := PC
         pcPort.laneAge := slotId
+
+        when(fixIt) {
+          forgetPort.valid := True
+          forgetPort.hartId := HART_ID
+          forgetPort.pcOnLastSlice := PC; assert(!Riscv.RVC)
+        }
+
 
         if(hp.nonEmpty) {
           val historyPort = historyPorts.get(slotId)

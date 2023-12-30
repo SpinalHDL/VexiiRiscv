@@ -67,6 +67,11 @@ case class LearnCmd(hmElements : Seq[NamedType[_ <: Data]]) extends Bundle{
   hmElements.foreach(e => ctx.add(e))
 }
 
+case class ForgetCmd() extends Bundle{
+  val pcOnLastSlice = Global.PC()
+  val hartId = Global.HART_ID()
+}
+
 trait LearnService{
   val learnLock = Retainer()
   val learnCtxElements = mutable.LinkedHashSet[NamedType[_ <: Data]]()

@@ -16,7 +16,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
 import vexiiriscv.misc.{PerformanceCounterService, TrapService}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
-import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, Prediction}
+import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, LearnSource, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
 import scala.collection.mutable
@@ -31,10 +31,11 @@ object BranchPlugin extends AreaObject {
 class BranchPlugin(val layer : LaneLayer,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
-                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
+                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) with LearnSource {
   import BranchPlugin._
 
   def catchMissaligned = !Riscv.RVC
+  override def getLearnPort(): Option[Stream[LearnCmd]] = logic.jumpLogic.learn
 
   val logic = during setup new Logic{
     val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
