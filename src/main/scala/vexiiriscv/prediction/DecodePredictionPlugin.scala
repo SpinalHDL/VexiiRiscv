@@ -50,7 +50,7 @@ class DecodePredictionPlugin(var decodeAt: Int,
       //TODO Make BTB learn on this
       val fixer = new dpp.LaneArea(jumpAt, slotId){
         val fixIt = up.isValid && ALIGNED_JUMPED && !decoder.IS_ANY
-        val fixed = RegInit(False) setWhen(fixIt) clearWhen(up.ready || up.cancel)
+        val fixed = RegInit(False) setWhen(fixIt) clearWhen(up.isReady || up.isCancel)
 
         val flushPort = flushPorts(slotId)
         flushPort.valid := fixIt

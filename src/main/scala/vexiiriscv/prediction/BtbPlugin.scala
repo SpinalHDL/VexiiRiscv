@@ -180,7 +180,7 @@ class BtbPlugin(var sets : Int,
 
       val gotSkip = harts.map(_.skip).read(HART_ID)
       val needIt = isValid && !gotSkip && chunksTakenOh.orR
-      val correctionSent = RegInit(False) setWhen (isValid) clearWhen (up.ready || up.cancel)
+      val correctionSent = RegInit(False) setWhen (isValid) clearWhen (up.isReady || up.isCancel)
       val doIt = needIt && !correctionSent
       val entry = OHMux.or(chunksTakenOh, chunksLogic.map(_.readRsp.ENTRY).map(this (_)), bypassIfSingle = true)
       val pcTarget = CombInit(entry.pcTarget)

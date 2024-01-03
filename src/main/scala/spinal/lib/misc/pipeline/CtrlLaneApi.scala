@@ -30,14 +30,17 @@ trait CtrlLaneApi{
   class NodeMirror(node : Node) extends NodeBaseApi {
     override def valid = node(LANE_SEL, laneName)
     override def ready = node.ready
-    override def cancel = node.cancel //TODO not that great ?
-    override def isFiring = valid && ready && !cancel
-    override def isMoving = valid && (ready || cancel)
-    override def isCanceling = valid && cancel
+    override def cancel = node.cancel //TODO not that great ?-
+    override def isValid: Bool = node(LANE_SEL, laneName)
+    override def isReady: Bool = node.isReady
+    override def isFiring = valid && isReady && !isCancel
+    override def isMoving = valid && (isReady || isCancel)
+    override def isCancel: Bool = node.isCancel
+    override def isCanceling = valid && isCancel
     override def apply(key: NamedTypeKey) = ???
     override def apply[T <: Data](key: Payload[T]) = node(key, laneName)
     override def apply(subKey: Seq[Any]) = ???
-    def transactionSpawn = valid && !RegNext(valid, False).clearWhen(ready || cancel)
+    def transactionSpawn = valid && !RegNext(valid, False).clearWhen(isReady || isCancel)
   }
 
   def up = new NodeMirror(_c.up)
