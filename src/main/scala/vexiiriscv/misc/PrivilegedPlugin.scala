@@ -113,6 +113,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
   override def getCommitMask(hartId: Int): Bits = io.harts(hartId).commitMask
   override def hasInflight(hartId: Int): Bool = io.harts(hartId).hasInflight
 
+  val misaIds = mutable.LinkedHashSet[Int]()
+  def addMisa(id: Char): Unit = addMisa(id - 'A')
+  def addMisa(id: Int) = {
+    misaIds += id
+  }
+
   val io = during build new Area{
     val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
       val commitMask = Bits(host.list[ExecuteLanePlugin].size bits)
@@ -157,6 +163,13 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
 
     awaitBuild()
 
+    addMisa('I')
+    if (RVC) addMisa('C')
+    if (RVF) addMisa('F')
+    if (RVD) addMisa('D')
+    if (p.withUser) addMisa('U')
+    if (p.withSupervisor) addMisa('S')
+
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
     CODE_WIDTH.set((4 +: causesWidthMins).max)
 
@@ -171,16 +184,30 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
       val withSupervisorPrivilege = privilege >= U"01"
       val xretAwayFromMachine = False
 
-      val m = new api.Csr(CSR.MSTATUS) {
-        val status = new Area {
+      val m = new Area{
+        api.read(U(p.vendorId), CSR.MVENDORID) // MRO Vendor ID.
+        api.read(U(p.archId), CSR.MARCHID) // MRO Architecture ID.
+        api.read(U(p.impId), CSR.MIMPID) // MRO Implementation ID.
+        api.read(U(hartId), CSR.MHARTID) // MRO Hardware thread ID.Machine Trap Setup
+        val misaExt = misaIds.map(1l << _).reduce(_ | _)
+        val misaMxl = XLEN.get match {
+          case 32 => BigInt(1) << XLEN.get - 2
+          case 64 => BigInt(2) << XLEN.get - 2
+        }
+        val misa = misaMxl | misaExt
+        api.read(U(misa, XLEN bits), CSR.MISA) // MRW ISA and extensions
+
+        val status = new api.Csr(CSR.MSTATUS) {
           val mie, mpie = RegInit(False)
-          val mpp = RegInit(U"00")
+          val mpp = p.withUser.mux(RegInit(U"00"), U"11")
           val fs = withFs generate RegInit(U"00")
           val sd = False
           if (RVF) ??? //setup.isFpuEnabled setWhen (fs =/= 0)
           if (withFs) sd setWhen (fs === 3)
 
-          readWrite(11 -> mpp, 7 -> mpie, 3 -> mie)
+          readWrite(7 -> mpie, 3 -> mie)
+          read(11 -> mpp)
+          if(p.withUser) write(11 -> mpp)
           read(XLEN - 1 -> sd)
           if (withFs) readWrite(13 -> fs)
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")
@@ -427,10 +454,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
               goto(TRAP_TVAL)
             } otherwise {
               switch(pending.state.code) {
-                is(TrapReason.INTERRUPT) {
+                is(TrapReason.INTERRUPT) { //Got a sporadic interrupt => resume
                   assert(!buffer.i.valid)
                   pcPort.valid := True
                   pcPort.pc := pending.pc
+                  goto(RUNNING)
                 }
                 is(TrapReason.PRIV_RET) {
                   goto(XRET_EPC)
@@ -483,7 +511,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
 
             csr.m.status.mie := False
             csr.m.status.mpie := csr.m.status.mie
-            csr.m.status.mpp := csr.privilege
+            if(p.withUser) csr.m.status.mpp := csr.privilege
             csr.m.cause.code := buffer.trap.code
             csr.m.cause.interrupt := buffer.trap.interrupt
             csr.privilege := buffer.trap.targetPrivilege
@@ -515,7 +543,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
             csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege < 3)
             switch(pending.state.tval(1 downto 0)) {
               is(3) {
-                csr.m.status.mpp := 0
+                if(p.withUser) csr.m.status.mpp := 0
                 csr.m.status.mie := csr.m.status.mpie
                 csr.m.status.mpie := True
               }
