@@ -133,8 +133,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         }
       }
       val spec = new Area{
-        var interrupt = ArrayBuffer[InterruptSpec]()
-        var exception = ArrayBuffer[ExceptionSpec]()
+        val interrupt = ArrayBuffer[InterruptSpec]()
+        val exception = ArrayBuffer[ExceptionSpec]()
 
         def addInterrupt(cond: Bool, id: Int, privilege: Int, delegators: List[Delegator]): Unit = {
           interrupt += InterruptSpec(cond, id, privilege, delegators)

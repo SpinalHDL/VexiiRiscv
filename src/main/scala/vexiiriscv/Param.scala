@@ -35,12 +35,13 @@ class ParamSimple(){
   var relaxedShift = false
   var relaxedSrc = false
   var allowBypassFrom = 100 //100 => disabled
+  var performanceCounters = 0
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 2
-    lanes = 2
+    decoders = 1
+    lanes = 1
     regFileSync = false
     withGShare = true
     withBtb = true
@@ -52,6 +53,7 @@ class ParamSimple(){
     relaxedBranch = false
     relaxedShift = false
     relaxedSrc = true
+    performanceCounters = 4
   }
 
 
@@ -93,6 +95,7 @@ class ParamSimple(){
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true }
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
+    opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
   }
 
   def plugins() = {
@@ -204,7 +207,7 @@ class ParamSimple(){
     }
 
     plugins += new CsrRamPlugin()
-    plugins += new PerformanceCounterPlugin(additionalCounterCount = 0)
+    plugins += new PerformanceCounterPlugin(additionalCounterCount = performanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(PrivilegedParam.full, 0 until hartCount, trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)

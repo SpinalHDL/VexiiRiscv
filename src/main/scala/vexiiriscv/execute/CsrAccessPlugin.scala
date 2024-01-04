@@ -9,12 +9,13 @@ import spinal.lib.pipeline.Stageable
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{UOP, rfaKeys}
+import vexiiriscv.misc.TrapService
 import vexiiriscv.regfile.RegfileService
-import vexiiriscv.riscv.{Const, IMM, IntRegFile, RD, RS1, Rvi}
+import vexiiriscv.riscv.{CSR, Const, IMM, IntRegFile, RD, RS1, Rvi}
 
 import scala.collection.mutable.ArrayBuffer
 import vexiiriscv.riscv.Riscv._
-import vexiiriscv.schedule.DispatchPlugin
+import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
 object CsrFsm{
   val CSR_VALUE = Payload(Bits(XLEN bits))
@@ -90,9 +91,11 @@ class CsrAccessPlugin(layer : LaneLayer,
     val iwb = host.find[IntFormatPlugin](_.laneName == layer.laneName)
     val dp = host[DispatchPlugin]
     val ram = host.get[CsrRamService]
+    val sp = host[ReschedulePlugin]
+    val ts = host[TrapService]
 
     val ramPortRetainer = ram.map(_.portLock())
-    val ioRetainer = retains(dp.elaborationLock, iwb.elaborationLock, elp.uopLock)
+    val ioRetainer = retains(dp.elaborationLock, iwb.elaborationLock, elp.uopLock, sp.elaborationLock, ts.trapLock)
     val buildBefore = retains(elp.pipelineLock, irf.elaborationLock)
     awaitBuild()
 
@@ -119,6 +122,9 @@ class CsrAccessPlugin(layer : LaneLayer,
       op.addRsSpec(RS1, injectAt)
     }
 
+    val age = layer.el.getExecuteAge(injectAt)
+    val flushPort = sp.newFlushPort(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
+    val trapPort = ts.newTrap(age, Execute.LANE_AGE_WIDTH)
 
     ioRetainer.release()
 
@@ -229,16 +235,30 @@ class CsrAccessPlugin(layer : LaneLayer,
           }
         }
 
+        flushPort.valid := False
+        flushPort.hartId := Global.HART_ID
+        flushPort.uopId := Decode.UOP_ID
+        flushPort.laneAge := Execute.LANE_AGE
+        flushPort.self := False
 
-        //TODO handle trap
+        trapPort.valid := False
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
+        trapPort.tval := UOP
+
         IDLE whenIsActive {
-//          regs.trap := trap
-//          regs.flushPipeline := setup.onDecodeFlushPipeline
-
           (regs.sels.values, sels.values).zipped.foreach(_ := _)
 
           when(onDecodeDo) {
-            goto(READ)
+            when(trap) {
+              flushPort.valid := True
+              trapPort.valid := True
+              bypass(Global.TRAP) := True
+              bypass(Global.COMMIT) := False
+              iLogic.freeze := False
+            } otherwise {
+              goto(READ)
+            }
           }
         }
       }
