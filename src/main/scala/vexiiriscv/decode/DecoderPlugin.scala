@@ -160,7 +160,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       when(isValid && (!LEGAL || interruptPending)) {
         bypass(Global.TRAP) := True
-        trapPort.valid := True
+        trapPort.valid := !up(Global.TRAP)
         when(up.transactionSpawn){
           completionPort.valid := True
         }

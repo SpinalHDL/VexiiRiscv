@@ -14,6 +14,14 @@ import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * - Warning : bad btb hash prediction may cut a word, need to project against that
+ *
+ * 1) Scan buffer for instruction [fusion]
+ * 2) Decode -> Serialize uop
+ * 3) dispatch on lanes
+ */
+
 //Warning, if it start to hold stats => you need to notify TrapService when flush is pending
 class AlignerPlugin(fetchAt : Int,
                     lanes : Int = 1) extends FiberPlugin with PipelineService{

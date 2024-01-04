@@ -7,6 +7,7 @@ import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.LsuCachelessPlugin
 import vexiiriscv.fetch.FetchPipelinePlugin
+import vexiiriscv.misc.PrivilegedPlugin
 //import vexiiriscv.execute.LsuCachelessPlugin
 import vexiiriscv.fetch.Fetch
 import vexiiriscv.riscv.{IntRegFile, Riscv}
@@ -128,8 +129,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
     def add(tracer: TraceBackend): Unit = {
       for (hartId <- hartsIds) {
+        val csrp = cpu.host.get[PrivilegedPlugin] match {
+          case Some(x) => "M" + x.p.withSupervisor.mux("S", "") + x.p.withUser.mux("U", "")
+          case None => "M"
+        }
         tracer.newCpuMemoryView(hartId, 16, 16) //TODO readIds writeIds
-        tracer.newCpu(hartId, s"RV${xlen}IMA", "MSU", 32, hartId)
+        tracer.newCpu(hartId, s"RV${xlen}IMA", csrp, 32, hartId)
         val pc = pcExtends(0x80000000l)
         tracer.setPc(hartId, pc)
         this

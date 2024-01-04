@@ -83,8 +83,8 @@ class BranchPlugin(val layer : LaneLayer,
     val age = eu.getExecuteAge(jumpAt)
     val pcPort = pcp.newJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
     val historyPort = hp.map(_.newPort(age, Execute.LANE_AGE_WIDTH))
-    val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
-    val trapPort = catchMissaligned generate ts.newTrap(layer.el.getAge(jumpAt), Execute.LANE_AGE_WIDTH)
+    val flushPort = sp.newFlushPort(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
+    val trapPort = catchMissaligned generate ts.newTrap(age, Execute.LANE_AGE_WIDTH)
 
     uopRetainer.release()
     ioRetainer.release()
@@ -122,8 +122,9 @@ class BranchPlugin(val layer : LaneLayer,
 
       val slices = Decode.INSTRUCTION_SLICE_COUNT +^ 1
       val sliceShift = Fetch.SLICE_RANGE_LOW.get
-      val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH)) //PC RESIZED
+      val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH)); PC_TRUE(0) := False //PC RESIZED
       val PC_FALSE = insert(PC + (slices << sliceShift))
+
 
       // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
       // with the 32 bits of the TRUE/FALSE adders, ending up in a quite long combinatorial path (21 lut XD)

@@ -7,6 +7,8 @@ import spinal.lib.misc.database.Database._
 import spinal.lib.misc.pipeline._
 import vexiiriscv._
 import vexiiriscv.Global._
+import vexiiriscv.misc.TrapService
+import vexiiriscv.riscv.CSR
 
 case class CachelessBusParam(addressWidth : Int, dataWidth : Int, idCount : Int, cmdPersistence : Boolean){
   val idWidth = log2Up(idCount)
@@ -17,8 +19,8 @@ case class CachelessCmd(p : CachelessBusParam) extends Bundle{
   val address = UInt(p.addressWidth bits)
 }
 
-case class CachelessRsp(p : CachelessBusParam) extends Bundle{
-  val id = UInt(p.idWidth bits)
+case class CachelessRsp(p : CachelessBusParam, withId : Boolean = true) extends Bundle{
+  val id = withId generate UInt(p.idWidth bits)
   val error = Bool()
   val word  = Bits(p.dataWidth bits)
 }
@@ -45,10 +47,15 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
   val logic = during setup new Area{
     val pp = host[FetchPipelinePlugin]
+    val ts = host[TrapService]
     val buildBefore = retains(pp.elaborationLock)
+    val trapLock =  ts.trapLock()
     awaitBuild()
 
     Fetch.WORD_WIDTH.set(wordWidth)
+
+    val trapPort = ts.newTrap(pp.getAge(joinAt), 0)
+    trapLock.release()
 
     val idCount = joinAt - forkAt + 1
     val p = CachelessBusParam(MIXED_WIDTH, Fetch.WORD_WIDTH, idCount, false)
@@ -59,7 +66,8 @@ class FetchCachelessPlugin(var wordWidth : Int,
     val buffer = new Area{
       val reserveId = Counter(idCount)
       val inflight = Vec.fill(idCount)(RegInit(False))
-      val words = Mem.fill(idCount)(Fetch.WORD)
+      val words = Mem.fill(idCount)(CachelessRsp(p, false))
+      val write = words.writePort()
       val reservedHits = for (ctrlId <- forkAt+1 to joinAt; ctrl = pp.fetch(ctrlId)) yield {
         ctrl.isValid && ctrl(BUFFER_ID) === reserveId
       }
@@ -69,9 +77,12 @@ class FetchCachelessPlugin(var wordWidth : Int,
         inflight(reserveId) := True
       }
 
+      write.valid := False
+      write.address := bus.rsp.id
+      write.data.assignSomeByName(bus.rsp.payload)
       when(bus.rsp.valid) {
+        write.valid := True
         inflight(bus.rsp.id) := False
-        words(bus.rsp.id) := bus.rsp.word
       }
     }
 
@@ -92,14 +103,21 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
     val join = new pp.Fetch(joinAt){
       val haltIt = buffer.inflight.read(BUFFER_ID)
-      Fetch.WORD := buffer.words.readAsync(BUFFER_ID)
+      val rsp = CombInit(buffer.words.readAsync(BUFFER_ID))
       // Implement bus rsp bypass into the pipeline (without using the buffer)
       // TODO this one can be optional
       when(bus.rsp.valid && bus.rsp.id === BUFFER_ID){
         haltIt := False
-        Fetch.WORD := bus.rsp.word
+        rsp.assignSomeByName(bus.rsp.payload)
       }
-      TRAP := False
+      Fetch.WORD := rsp.word
+      TRAP := isValid && !haltIt && rsp.error
+      trapPort.valid := TRAP
+      trapPort.exception := True
+      trapPort.tval := Fetch.WORD_PC.asBits
+      trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
+      trapPort.hartId := Global.HART_ID
+
       haltWhen(haltIt)
     }
     buildBefore.release()

@@ -303,8 +303,6 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       eu.LAYER_SEL := OHMux.or(layer.map(_._2).asBits(), layer.map(_._1), true)
     }
 
-    eupp.ctrl(0).up.setAlwaysValid()
-
     buildBefore.release()
   }
 }

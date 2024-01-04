@@ -171,7 +171,7 @@ class TestOptions{
     }
 
     val priv = dut.host[PrivilegedPlugin].io.harts(0)
-    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, null){
+    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, null, mti = priv.int.m.timer, cd = cd){
       override def getClintTime(): Long = probe.cycle
     }
 
@@ -191,7 +191,7 @@ class TestOptions{
           val cmd = pending.randomPop()
           p.word #= mem.readBytes(cmd.address, p.p.dataWidth / 8)
           p.id #= cmd.id
-          p.error #= false
+          p.error #= cmd.address < 0x10000000
         }
         doIt
       }
@@ -241,6 +241,7 @@ class TestOptions{
               }
             }
           }
+          if(cmd.address < 0x10000000) p.error #= true
         }
         doIt
       }
