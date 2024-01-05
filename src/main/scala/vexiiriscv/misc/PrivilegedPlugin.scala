@@ -6,11 +6,11 @@ import spinal.lib._
 import spinal.lib.fsm._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global._
-import vexiiriscv.execute.{CsrAccessPlugin, CsrRamPlugin, CsrRamService, ExecuteLanePlugin}
+import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamPlugin, CsrRamService, ExecuteLanePlugin}
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
-import vexiiriscv.fetch.PcService
+import vexiiriscv.fetch.{Fetch, PcService}
 import vexiiriscv.schedule.Ages
 
 import scala.collection.mutable
@@ -175,6 +175,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
 
     assert(HART_COUNT.get == 1)
 
+    // Implement read-only CSR space
+    when(cap.onDecodeWrite && cap.onDecodeAddress(11 downto 10) === U"11") {
+      cap.onDecodeTrap()
+    }
+
     val csrs = for(hartId <- 0 until HART_COUNT) yield new Area{
       val hartIo = io.harts(hartId)
       val api = cap.hart(hartId)
@@ -254,11 +259,6 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         val tval = crs.readWriteRam(CSR.MTVAL)
         val epc = crs.readWriteRam(CSR.MEPC)
         val scratch = crs.readWriteRam(CSR.MSCRATCH)
-//        for(i <- 0 until 16) cap.readWriteRam(CSR.MHPMCOUNTER3+i)
-
-
-//        for (i <- 0 until 4) cap.readWrite(CSR.MHPMCOUNTER3+i, 0 -> Reg(Bits(32 bits)).init(0))
-
 
         hartIo.spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = 3, delegators = Nil)
         hartIo.spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = 3, delegators = Nil)
@@ -266,10 +266,16 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
       }
     }
 
+    val tvecFilter = CsrListFilter(List(CSR.MTVEC) ++ p.withSupervisor.option(CSR.STVEC))
+    val epcFilter = CsrListFilter(List(CSR.MEPC) ++ p.withSupervisor.option(CSR.SEPC))
+    cap.onWrite(tvecFilter, false) {cap.onWriteBits(0, 2 bits) := 0}
+    cap.onWrite(epcFilter, false) {cap.onWriteBits(0, log2Up(Fetch.SLICE_BYTES) bits) := 0}
+
 
     ramRetainers.csr.release()
 
     trapLock.await()
+
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
       val hartIo = io.harts(hartId)
       val csr = csrs(hartId)
