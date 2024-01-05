@@ -68,7 +68,7 @@ class IntAluPlugin(var layer: LaneLayer,
 
     uopRetainer.release()
 
-    val alu = new eu.Execute(aluAt) {
+    val alu = new el.Execute(aluAt) {
       val ss = SrcStageables
 
       val bitwise = ALU_BITWISE_CTRL.mux(
@@ -86,7 +86,7 @@ class IntAluPlugin(var layer: LaneLayer,
       ALU_RESULT := result.asBits
     }
 
-    val format = new eu.Execute(formatAt) {
+    val format = new el.Execute(formatAt) {
       wb.valid := SEL
       wb.payload := ALU_RESULT
     }

@@ -53,7 +53,7 @@ class BarrelShifterPlugin(val layer : LaneLayer,
 
     uopRetainer.release()
 
-    val shift = new eu.Execute(shiftAt) {
+    val shift = new el.Execute(shiftAt) {
       val ss = SrcStageables
       val amplitude = srcp.SRC2(log2Up(Riscv.XLEN.get) - 1 downto 0).asUInt
       val reversed = Mux[SInt](LEFT, srcp.SRC1.reversed, srcp.SRC1)
@@ -72,7 +72,7 @@ class BarrelShifterPlugin(val layer : LaneLayer,
       SHIFT_RESULT := B(patched)
     }
 
-    val format = new eu.Execute(formatAt) {
+    val format = new el.Execute(formatAt) {
       wb.valid := SEL
       wb.payload := SHIFT_RESULT
     }

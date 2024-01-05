@@ -36,7 +36,7 @@ class MulPlugin(val layer : LaneLayer,
 
     if (bufferedHigh == None) bufferedHigh = Some(Riscv.XLEN >= 64)
     if (bufferedHigh.get) {
-      eu.setDecodingDefault(HIGH, False)
+      el.setDecodingDefault(HIGH, False)
     }
 
     val formatBus = newWriteback(ifp, writebackAt)
@@ -73,9 +73,9 @@ class MulPlugin(val layer : LaneLayer,
     }
     import keys._
 
-    val src = new eu.Execute(srcAt) {
-      val rs1 = up(eu(IntRegFile, RS1))
-      val rs2 = up(eu(IntRegFile, RS2))
+    val src = new el.Execute(srcAt) {
+      val rs1 = up(el(IntRegFile, RS1))
+      val rs2 = up(el(IntRegFile, RS2))
       useRsUnsignedPlugin match {
         case false => {
           MUL_SRC1 := (RS1_SIGNED && rs1.msb) ## (rs1)
@@ -92,7 +92,7 @@ class MulPlugin(val layer : LaneLayer,
     }
 
     // Generate all the partial multiplications
-    val mul = new eu.Execute(mulAt) {
+    val mul = new el.Execute(mulAt) {
       // MulSpliter.splits Will generate a data model of all partial multiplications
       val splits = MulSpliter(SRC_WIDTH, SRC_WIDTH, splitWidthA, splitWidthB, !useRsUnsignedPlugin, !useRsUnsignedPlugin)
       // Generate the partial multiplications from the splits data model
@@ -114,7 +114,7 @@ class MulPlugin(val layer : LaneLayer,
       var ptr = 0
     }
 
-    val steps = for(stepId <- sumsSpec.indices) yield new eu.Execute(sumAt + stepId) {
+    val steps = for(stepId <- sumsSpec.indices) yield new el.Execute(sumAt + stepId) {
       val (stepWidth, stepLanes) = sumsSpec(stepId)
       // Generate the specification for ever adders of the current step
       val addersSpec = AdderAggregator(
@@ -147,7 +147,7 @@ class MulPlugin(val layer : LaneLayer,
       }
     }
 
-    val writeback = new eu.Execute(writebackAt) {
+    val writeback = new el.Execute(writebackAt) {
       assert(sourcesSpec.size == 1)
       val result = useRsUnsignedPlugin match {
         case false => apply(sourceToSignal(sourcesSpec.head))
@@ -157,7 +157,7 @@ class MulPlugin(val layer : LaneLayer,
       val buffer = bufferedHigh.get generate new Area{
         val valid = RegNext(False) init (False) setWhen (isValid && !isReady && !hasCancelRequest)
         val data = RegNext(result(XLEN, XLEN bits))
-        eu.freezeWhen(isValid && HIGH && !valid)
+        el.freezeWhen(isValid && HIGH && !valid)
       }
 
       formatBus.valid := SEL

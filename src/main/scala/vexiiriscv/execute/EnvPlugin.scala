@@ -29,7 +29,7 @@ class EnvPlugin(layer : LaneLayer,
     val ioRetainer = retains(sp.elaborationLock, ts.trapLock)
     awaitBuild()
 
-    val age = eu.getExecuteAge(executeAt)
+    val age = el.getExecuteAge(executeAt)
     val trapPort = ts.newTrap(age, Execute.LANE_AGE_WIDTH)
     val flushPort = sp.newFlushPort(age, Execute.LANE_AGE_WIDTH, true)
 
@@ -51,7 +51,7 @@ class EnvPlugin(layer : LaneLayer,
     uopRetainer.release()
     ioRetainer.release()
 
-    val exe = new eu.Execute(executeAt){
+    val exe = new el.Execute(executeAt){
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
       flushPort.uopId := Decode.UOP_ID

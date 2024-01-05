@@ -66,13 +66,13 @@ abstract class ExecutionUnitElementSimple(layer : LaneLayer) extends FiberPlugin
   val SEL = Payload(Bool())
 
   class Logic extends ExecuteUnitElementSimple.Api(layer,  host.find[SrcPlugin](_.layer == layer), SEL, rsUnsignedPlugin = host.get[RsUnsignedPlugin].getOrElse(null)) with Area with PostInitCallback {
-    val eu = layer.el
+    val el = layer.el
     val srcp = srcPlugin
     val ifp = host.find[IntFormatPlugin](_.laneName == layer.el.laneName)
-    val uopRetainer = retains(eu.uopLock, srcp.elaborationLock, ifp.elaborationLock)
-    val euPipelineRetainer = retains(eu.pipelineLock)
+    val uopRetainer = retains(el.uopLock, srcp.elaborationLock, ifp.elaborationLock)
+    val euPipelineRetainer = retains(el.pipelineLock)
 
-    eu.setDecodingDefault(SEL, False)
+    el.setDecodingDefault(SEL, False)
 
     override def postInitCallback() = {
       euPipelineRetainer.release()

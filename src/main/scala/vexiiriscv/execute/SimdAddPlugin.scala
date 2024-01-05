@@ -59,10 +59,10 @@ class SimdAddPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(la
     uopRetainer.release()
 
     //Let's define some logic in the execute lane [0]
-    val process = new eu.Execute(id = 0) {
+    val process = new el.Execute(id = 0) {
       //Get the RISC-V RS1/RS2 values from the register file
-      val rs1 = eu(IntRegFile, RS1).asUInt
-      val rs2 = eu(IntRegFile, RS2).asUInt
+      val rs1 = el(IntRegFile, RS1).asUInt
+      val rs2 = el(IntRegFile, RS2).asUInt
 
       //Do some computation
       val rd = UInt(32 bits)
