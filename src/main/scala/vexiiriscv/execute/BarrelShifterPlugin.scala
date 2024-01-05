@@ -26,8 +26,7 @@ class BarrelShifterPlugin(val layer : LaneLayer,
     awaitBuild()
     import SrcKeys._
 
-    val wb = ifp.access(formatAt)
-    implicit val _ = ifp -> wb
+    val wb = newWriteback(ifp, formatAt)
 
     //TODO why using SRC1 ? why not directly RS1 => less combinatorial path, also not sure about SRC2 is realy wort it (for only 5/ 6 bits)
     add(Rvi.SLL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True, SIGNED -> False)

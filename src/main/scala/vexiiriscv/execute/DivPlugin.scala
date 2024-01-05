@@ -25,8 +25,7 @@ class DivPlugin(val layer : LaneLayer,
   val logic = during setup new Logic {
     awaitBuild()
 
-    val formatBus = ifp.access(writebackAt)
-    implicit val _ = ifp -> formatBus
+    val formatBus = newWriteback(ifp, writebackAt)
 
     add(Rvi.DIV ).decode(REM -> False).rsUnsigned(true  , true )
     add(Rvi.DIVU).decode(REM -> False).rsUnsigned(false , false)

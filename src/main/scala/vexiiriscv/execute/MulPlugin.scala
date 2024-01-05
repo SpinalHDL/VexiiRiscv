@@ -39,8 +39,8 @@ class MulPlugin(val layer : LaneLayer,
       eu.setDecodingDefault(HIGH, False)
     }
 
-    val formatBus = ifp.access(writebackAt)
-    implicit val _ = ifp -> formatBus
+    val formatBus = newWriteback(ifp, writebackAt)
+
     add(Rvi.MUL   ).decode(HIGH -> False).rsUnsigned(true , true , useRsUnsignedPlugin)
     add(Rvi.MULH  ).decode(HIGH -> True ).rsUnsigned(true , true , useRsUnsignedPlugin)
     add(Rvi.MULHSU).decode(HIGH -> True ).rsUnsigned(true , false, useRsUnsignedPlugin)

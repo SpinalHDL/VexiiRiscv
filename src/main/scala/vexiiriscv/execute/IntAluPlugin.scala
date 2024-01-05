@@ -36,8 +36,7 @@ class IntAluPlugin(var layer: LaneLayer,
     val ace = AluCtrlEnum
     val abce = AluBitwiseCtrlEnum
 
-    val formatBus = ifp.access(formatAt)
-    implicit val _ = ifp -> formatBus
+    val wb = newWriteback(ifp, formatAt)
 
     add(Rvi.ADD ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
     add(Rvi.SUB ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
@@ -63,7 +62,7 @@ class IntAluPlugin(var layer: LaneLayer,
       add(Rvi.ADDIW).srcs(Op.ADD   , SRC1.RF, SRC2.I ).decode(ALU_CTRL -> ace.ADD_SUB)
 
       for(op <- List(Rvi.ADDW, Rvi.SUBW, Rvi.ADDIW)){
-        ifp.signExtend(formatBus, layer(op), 32)
+        ifp.signExtend(wb, layer(op), 32)
       }
     }
 
@@ -88,8 +87,8 @@ class IntAluPlugin(var layer: LaneLayer,
     }
 
     val format = new eu.Execute(formatAt) {
-      formatBus.valid := SEL
-      formatBus.payload := ALU_RESULT
+      wb.valid := SEL
+      wb.payload := ALU_RESULT
     }
   }
 }

@@ -29,32 +29,36 @@ object SimdAddPlugin{
   val ADD4 = IntRegFile.TypeR(M"0000000----------000-----0001011")
 }
 
-//ExecutionUnitElementSimple Is a base class which will be coupled to the pipeline provided by a ExecutionUnitBase with
-//the same euId. It provide quite a few utilities to ease the implementation of custom instruction.
+//ExecutionUnitElementSimple is a plugin base class which will integrate itself in a execute lane layer
+//It provide quite a few utilities to ease the implementation of custom instruction.
 //Here we will implement a plugin which provide SIMD add on the register file.
-//staticLatency=true specify that our plugin will never halt the pipeling, allowing the issue queue to statically
-//wake up instruction which depend on its result.
 class SimdAddPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(layer)  {
 
-  //The setup code is by plugins to specify things to each others before it is too late
-  //create early blockOfCode will
-  val logic = during setup new Logic{
-    //Let's assume we only support RV32 for now
+  //Here we create an elaboration thread. The Logic class is provided by ExecutionUnitElementSimple to provide functionalities
+  val logic = during setup new Logic {
+    //Here we could have lock the elaboration of some other plugins (ex CSR), but here we don't need any of that
+    //as all is already sorted out in the Logic base class.
+    //So we just wait for the build phase
     awaitBuild()
 
+    //Let's assume we only support RV32 for now
     assert(Riscv.XLEN.get == 32)
 
-    val wb = ifp.access(0)
-    implicit val _ = ifp -> wb
+    //Let's get the hardware interface that we will use to provide the result of our custom instruction
+    val wb = newWriteback(ifp, 0)
     
     //Specify that the current plugin will implement the ADD4 instruction
-    add(SimdAddPlugin.ADD4)
-    layer(SimdAddPlugin.ADD4).addRsSpec(RS1, 0)
-    layer(SimdAddPlugin.ADD4).addRsSpec(RS2, 0)
+    val add4 = add(SimdAddPlugin.ADD4).spec
 
+    //We need to specify on which stage we start using the register file values
+    add4.addRsSpec(RS1, executeAt = 0)
+    add4.addRsSpec(RS2, executeAt = 0)
 
+    //Now that we are done specifying everything about the instructions, we can release the Logic.uopRetainer
+    //This will allow a few other plugins to continue their elaboration (ex : decoder, dispatcher, ...)
     uopRetainer.release()
 
+    //Let's define some logic in the execute lane [0]
     val process = new eu.Execute(id = 0) {
       //Get the RISC-V RS1/RS2 values from the register file
       val rs1 = eu(IntRegFile, RS1).asUInt

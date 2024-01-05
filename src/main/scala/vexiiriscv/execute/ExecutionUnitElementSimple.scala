@@ -11,15 +11,24 @@ import vexiiriscv.riscv.{MicroOp, RD, RfResource}
 
 
 object ExecuteUnitElementSimple{
-  class Api(implName : LaneLayer, val srcPlugin: SrcPlugin, val SEL : Payload[Bool], val rsUnsignedPlugin: RsUnsignedPlugin = null){
-    def add(microOp: MicroOp)(implicit iifpp: (IntFormatPlugin, Flow[Bits]) = null,
-                                       iwbpp: (WriteBackPlugin, Flow[Bits]) = null) = new {
-      val impl = implName.add(microOp)
+  class Api(layer : LaneLayer, val srcPlugin: SrcPlugin, val SEL : Payload[Bool], val rsUnsignedPlugin: RsUnsignedPlugin = null){
+    var iwbpp = Option.empty[(IntFormatPlugin, Flow[Bits])]
+    def setWriteback(ifp : IntFormatPlugin, bus : Flow[Bits]): Unit = {
+      iwbpp = Some(ifp -> bus)
+    }
+    def newWriteback(ifp: IntFormatPlugin, at : Int) : Flow[Bits] = {
+      val bus = ifp.access(at)
+      setWriteback(ifp, bus)
+      bus
+    }
+
+    def add(microOp: MicroOp) = new {
+      val impl = layer.add(microOp)
+      val spec = layer(microOp)
 
       decode(SEL -> True)
 
-      if (iifpp != null) iifpp._1.addMicroOp(iifpp._2, impl)
-      if (iwbpp != null) iwbpp._1.addMicroOp(iwbpp._2, impl)
+      iwbpp.foreach(v => v._1.addMicroOp(v._2, impl))
 
       def decode(decoding: DecodeListType = Nil): this.type = {
         impl.addDecoding(decoding)
