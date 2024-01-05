@@ -10,15 +10,14 @@ import vexiiriscv._
 import vexiiriscv.fetch.PcService
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
-
-import java.io.{File, IOException, InputStream, OutputStream, OutputStreamWriter, PrintStream, PrintWriter}
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 import vexiiriscv.test.konata.Backend
 import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 
+import java.io.{File, IOException, PrintWriter}
 import java.net.{ServerSocket, Socket}
 import java.util.Scanner
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 
 class TestOptions{

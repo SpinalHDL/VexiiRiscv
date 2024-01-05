@@ -1,13 +1,14 @@
 package vexiiriscv.execute
 
-
 import spinal.core._
+import spinal.core.sim.SpinalSimConfig
 import spinal.lib._
 import spinal.lib.pipeline.Stageable
 import vexiiriscv.Generate.args
 import vexiiriscv.{Global, ParamSimple, VexiiRiscv}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.riscv.{IntRegFile, RS1, RS2, Riscv}
+import vexiiriscv.tester.TestOptions
 
 //This plugin example will add a new instruction named SIMD_ADD which do the following :
 //
@@ -80,7 +81,7 @@ class SimdAddPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(la
 
 
 
-object Generate extends App {
+object VexiiSimdAddGen extends App {
   val param = new ParamSimple()
   val sc = SpinalConfig()
 
@@ -96,4 +97,32 @@ object Generate extends App {
     VexiiRiscv(pa.plugins)
   }
 }
+
+object VexiiSimdAddSim extends App{
+  val param = new ParamSimple()
+  val testOpt = new TestOptions()
+
+  val genConfig = SpinalConfig()
+  genConfig.includeSimulation
+
+  val simConfig = SpinalSimConfig()
+  simConfig.withFstWave
+  simConfig.withTestFolder
+  simConfig.withConfig(genConfig)
+
+  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+    help("help").text("prints this usage text")
+    testOpt.addOptions(this)
+    param.addOptions(this)
+  }.parse(args, Unit).nonEmpty)
+
+  println(s"With Vexiiriscv parm :\n - ${param.getName()}")
+  val compiled = simConfig.compile {
+    val pa = param.pluginsArea()
+    pa.plugins += new SimdAddPlugin(pa.early0)
+    VexiiRiscv(pa.plugins)
+  }
+  testOpt.test(compiled)
+}
+
 
