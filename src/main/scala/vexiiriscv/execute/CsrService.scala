@@ -127,6 +127,29 @@ trait CsrService {
 }
 
 class CsrHartApi(csrService: CsrService, hartId : Int){
+
+  def onWrite(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = csrService.onWrite(csrFilter, onlyOnFire){
+    when(csrService.writingHartId(hartId)){ body }
+  }
+  def writeWhen[T <: Data](value: T, cond: Bool, csrId: Int, bitOffset: Int = 0): Unit = {
+    onWrite(csrId, true) {
+      when(cond) {
+        value.assignFromBits(csrService.onWriteBits(bitOffset, widthOf(value) bits))
+      }
+    }
+  }
+
+  def onReadToWrite(csrFilter: Any)(body: => Unit) = csrService.onReadToWrite(csrFilter) {
+    when(csrService.readingHartId(hartId)) {
+      body
+    }
+  }
+  def readToWrite[T <: Data](value: T, csrFilter: Any, bitOffset: Int = 0): Unit = {
+    onReadToWrite(csrFilter) {
+      csrService.onReadToWriteBits(bitOffset, widthOf(value) bits) := value.asBits
+    }
+  }
+
   def read[T <: Data](value: T, csrFilter: Any, bitOffset: Int = 0): Unit = {
     val converted = value match {
       case v: Bits => v
@@ -151,7 +174,15 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     write(value, csrId, bitOffset)
   }
 
+  def readWrite(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, csrId, that._1)
+  def write(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, csrId, that._1)
+  def read(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, csrId, that._1)
+
   class Csr(csrFilter : Any) extends Area{
+      def onWrite(onlyOnFire: Boolean)(body: => Unit) = CsrHartApi.this.onWrite(csrFilter, onlyOnFire) {
+        body
+      }
+
       def read[T <: Data](value: T, bitOffset: Int = 0): Unit = {
         CsrHartApi.this.read(value, csrFilter, bitOffset)
       }

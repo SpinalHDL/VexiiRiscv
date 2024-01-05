@@ -171,7 +171,7 @@ class TestOptions{
     }
 
     val priv = dut.host[PrivilegedPlugin].io.harts(0)
-    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, null, mti = priv.int.m.timer, cd = cd){
+    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, mti = priv.int.m.timer, cd = cd){
       override def getClintTime(): Long = probe.cycle
     }
 

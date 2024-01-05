@@ -31,6 +31,7 @@ class ParamSimple(){
   var withLateAlu = false
   var withMul = true
   var withDiv = true
+  var privParam = PrivilegedParam.base
   var relaxedBranch = false
   var relaxedShift = false
   var relaxedSrc = false
@@ -40,8 +41,8 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 1
-    lanes = 1
+    decoders = 2
+    lanes = 2
     regFileSync = false
     withGShare = true
     withBtb = true
@@ -54,6 +55,8 @@ class ParamSimple(){
     relaxedShift = false
     relaxedSrc = true
     performanceCounters = 4
+    privParam.withSupervisor = true
+    privParam.withUser = true
   }
 
 
@@ -103,7 +106,7 @@ class ParamSimple(){
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
-    plugins += new riscv.RiscvPlugin(xlen, rvc, hartCount)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
       case true =>
@@ -210,7 +213,7 @@ class ParamSimple(){
     plugins += new CsrRamPlugin()
     plugins += new PerformanceCounterPlugin(additionalCounterCount = performanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(PrivilegedParam.full, 0 until hartCount, trapAt = 2)
+    plugins += new PrivilegedPlugin(privParam, 0 until hartCount, trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
 
     if(withLateAlu) {
