@@ -344,11 +344,6 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
       }
     }
 
-    // Implement read-only CSR space
-    when(cap.onDecodeWrite && cap.onDecodeAddress(11 downto 10) === U"11") {
-      cap.onDecodeTrap()
-    }
-
     val defaultTrap = new Area {
       val csrPrivilege = cap.onDecodeAddress(8, 2 bits)
       val csrReadOnly = cap.onDecodeAddress(10, 2 bits) === U"11"
@@ -357,15 +352,19 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
       }
     }
 
-
-    val tvecFilter = CsrListFilter(List(CSR.MTVEC) ++ p.withSupervisor.option(CSR.STVEC))
-    val epcFilter = CsrListFilter(List(CSR.MEPC) ++ p.withSupervisor.option(CSR.SEPC))
-    cap.onWrite(tvecFilter, false) {cap.onWriteBits(0, 2 bits) := 0}
-    cap.onWrite(epcFilter, false) {cap.onWriteBits(0, log2Up(Fetch.SLICE_BYTES) bits) := 0}
+    val readAnyWriteLegal = new Area {
+      val tvecFilter = CsrListFilter(List(CSR.MTVEC) ++ p.withSupervisor.option(CSR.STVEC))
+      val epcFilter = CsrListFilter(List(CSR.MEPC) ++ p.withSupervisor.option(CSR.SEPC))
+      cap.onWrite(tvecFilter, false) {
+        cap.onWriteBits(0, 2 bits) := 0
+      }
+      cap.onWrite(epcFilter, false) {
+        cap.onWriteBits(0, log2Up(Fetch.SLICE_BYTES) bits) := 0
+      }
+    }
 
 
     ramRetainers.csr.release()
-
     trapLock.await()
 
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
@@ -668,6 +667,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         }
       }
     }
+
     ramRetainers.port.release()
     buildBefore.release()
   }

@@ -63,7 +63,7 @@ class ParamSimple(){
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
     val r = new ArrayBuffer[String]()
-    r += s"rv${xlen}im"
+    r += s"rv${xlen}im${privParam.withSupervisor.mux("s","")}${privParam.withUser.mux("u","")}"
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
@@ -90,6 +90,8 @@ class ParamSimple(){
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
     opt[Unit]("with-mul") action { (v, c) => withMul = true }
     opt[Unit]("with-div") action { (v, c) => withDiv = true }
+    opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true }
+    opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
     opt[Unit]("without-div") action { (v, c) => withDiv = false }
     opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
