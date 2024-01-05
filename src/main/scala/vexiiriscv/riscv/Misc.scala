@@ -8,5 +8,5 @@ object Riscv{
   val XLEN = blocking[Int]
   val FLEN = blocking[Int]
   val LSLEN = blocking[Int]
-  val RVC, RVD, RVF, RVA = blocking[Boolean]
+  val RVC, RVM, RVD, RVF, RVA = blocking[Boolean]
 }

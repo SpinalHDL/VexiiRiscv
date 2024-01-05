@@ -22,7 +22,9 @@ class DivPlugin(val layer : LaneLayer,
                 val writebackAt : Int = 0) extends ExecutionUnitElementSimple(layer){
   import DivPlugin._
 
-  val logic = during build new Logic {
+  val logic = during setup new Logic {
+    awaitBuild()
+
     val formatBus = ifp.access(writebackAt)
     implicit val _ = ifp -> formatBus
 

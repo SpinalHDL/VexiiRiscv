@@ -46,8 +46,10 @@ abstract class Element[T](sp: ScopeProperty[Database] = Database) extends Nameab
   def get : T = getOn(sp.get)
   def apply: T = getOn(sp.get)
   def set(value: T): Unit = set(sp.get, value)
+  def isEmpty : Boolean = isEmpty(sp.get)
 
   // private API
+  def isEmpty(db: Database) : Boolean
   def getOn(db: Database) : T
   def set(db: Database, value: T) : Unit
 }
@@ -56,6 +58,7 @@ abstract class Element[T](sp: ScopeProperty[Database] = Database) extends Nameab
 class ElementValue[T](sp : ScopeProperty[Database] = Database) extends Element[T](sp) {
   def getOn(db: Database): T = db.storageGet(this)
   def set(db: Database, value: T) = db.storageUpdate(this, value)
+  override def isEmpty(db: Database): Boolean = ???
 }
 
 // Layered with a handle to allow blocking "get"
@@ -67,6 +70,7 @@ class ElementBlocking[T](sp : ScopeProperty[Database] = Database) extends Elemen
     assert(!getHandle(db).isLoaded)
     getHandle(db).load(value)
   }
+  override def isEmpty(db: Database): Boolean = !getHandle(db).isLoaded
 }
 
 // The body provide the processing to generate the value

@@ -29,7 +29,9 @@ class MulPlugin(val layer : LaneLayer,
                 var bufferedHigh : Option[Boolean] = None) extends ExecutionUnitElementSimple(layer){
   import MulPlugin._
 
-  val logic = during build new Logic {
+  val logic = during setup new Logic {
+    Riscv.RVM.set(true)
+    awaitBuild()
     import SrcKeys._
 
     if (bufferedHigh == None) bufferedHigh = Some(Riscv.XLEN >= 64)
