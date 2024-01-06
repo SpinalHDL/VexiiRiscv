@@ -167,8 +167,8 @@ class TestOptions{
     cd.forkStimulus(10)
     simSpeedPrinter.foreach(cd.forkSimSpeedPrinter)
 
-    failAfter.map(delayed(_)(simFailure("Reached Timeout")))
-    passAfter.map(delayed(_)(simSuccess()))
+    failAfter.foreach(delayed(_)(simFailure("Reached Timeout")))
+    passAfter.foreach(delayed(_)(simSuccess()))
 
 //    fork{
 //      while(true){
@@ -182,13 +182,13 @@ class TestOptions{
     val xlen = dut.database(Riscv.XLEN)
 
     // Rvls will check that the CPUs are doing things right
-    val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath))
+    val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath()))
     if (withRvlsCheck) {
       rvls.spinalSimFlusher(10 * 10000)
       rvls.spinalSimTime(10000)
     }
 
-    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath, "konata.log")))
+    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), "konata.log")))
     delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registred last
 
     // Collect traces from the CPUs behaviour
@@ -198,11 +198,11 @@ class TestOptions{
     probe.trace = false
 
     // Things to enable when we want to collect traces
-    val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath, "tracer.log")))
+    val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath(), "tracer.log")))
     onTrace {
-      if(traceWave) enableSimWave()
+      if (traceWave) enableSimWave()
       if (withRvlsCheck && traceSpikeLog) rvls.debug()
-      if(traceKonata) probe.trace = true
+      if (traceKonata) probe.trace = true
 
       tracerFile.foreach{f =>
         f.spinalSimFlusher(10 * 10000)
@@ -252,7 +252,7 @@ class TestOptions{
         val failSymbol = if(withFail) trunkPc(elf.getSymbolAddress("fail")) else -1
         probe.commitsCallbacks += { (hartId, pc) =>
           if (pc == passSymbol) delayed(1)(simSuccess())
-          if (pc == failSymbol) delayed(1)(simFailure("Software reach the fail symbole :("))
+          if (pc == failSymbol) delayed(1)(simFailure("Software reached the fail symbol :("))
         }
       }
     }
