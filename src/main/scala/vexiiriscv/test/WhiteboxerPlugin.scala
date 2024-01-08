@@ -9,7 +9,7 @@ import vexiiriscv.Global.{HART_COUNT, TRAP}
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
-import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin}
+import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin, TrapPlugin}
 import vexiiriscv.prediction.{BtbPlugin, LearnCmd, LearnPlugin}
 import vexiiriscv.regfile.{RegFileWrite, RegFileWriter, RegFileWriterService}
 import vexiiriscv.riscv.{Const, Riscv}
@@ -192,7 +192,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val trap = new Area {
       val ports = for(hartId <- 0 until HART_COUNT) yield new Area{
-        val priv = host[PrivilegedPlugin].logic.harts(hartId).trap
+        val priv = host[TrapPlugin].logic.harts(hartId).trap
         val valid = wrap(priv.whitebox.trap)
         val interrupt = wrap(priv.whitebox.interrupt)
         val cause = wrap(priv.whitebox.code)

@@ -215,7 +215,8 @@ class ParamSimple(){
     plugins += new CsrRamPlugin()
     plugins += new PerformanceCounterPlugin(additionalCounterCount = performanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(privParam, 0 until hartCount, trapAt = 2)
+    plugins += new PrivilegedPlugin(privParam, 0 until hartCount)
+    plugins += new TrapPlugin(trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
 
     if(withLateAlu) {
