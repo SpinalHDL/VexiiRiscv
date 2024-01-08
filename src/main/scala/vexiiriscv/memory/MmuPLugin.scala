@@ -5,7 +5,7 @@
 //import spinal.lib._
 //import spinal.lib.fsm._
 //import spinal.lib.misc.plugin.FiberPlugin
-//import spinal.lib.pipeline.{Payload, Stage}
+//import spinal.lib.misc.pipeline._
 //import vexiiriscv._
 //import Global._
 //import spinal.lib.misc.pipeline.{NodeBaseApi, Payload}
@@ -104,7 +104,7 @@
 //    storageSpecs.addRet(StorageSpec(p))
 //  }
 //
-//  override def newTranslationPort(stages: Seq[Stage],
+//  override def newTranslationPort(stages: Seq[NodeBaseApi],
 //                                  preAddress: Payload[UInt],
 //                                  allowRefill : Payload[Bool],
 //                                  usage : AddressTranslationPortUsage,
@@ -180,7 +180,7 @@
 //    val status = new Area{
 //      val mxr  = RegInit(False)
 //      val sum  = RegInit(False)
-//      val mprv = RegInit(False) clearWhen(priv.io.harts(0).xretAwayFromMachine)
+//      val mprv = RegInit(False) clearWhen(priv.hart(0).xretAwayFromMachine)
 //    }
 //
 //    for(offset <- List(CSR.MSTATUS, CSR.SSTATUS)) csr.readWrite(offset, 19 -> status.mxr, 18 -> status.sum)

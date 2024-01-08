@@ -240,7 +240,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       class InterruptsProxy {
         val priv = host[PrivilegedPlugin]
         val checkers = ArrayBuffer[InterruptChecker]()
-        for ((hart, hartId) <- priv.miaou.csrs.zipWithIndex) {
+        for ((hart, hartId) <- priv.logic.harts.zipWithIndex) {
           checkers += new InterruptChecker(hartId, hart.int.m.timer,  7)
           checkers += new InterruptChecker(hartId, hart.int.m.software,  3)
           checkers += new InterruptChecker(hartId, hart.int.m.external, 11)

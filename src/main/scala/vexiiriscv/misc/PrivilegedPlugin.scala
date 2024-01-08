@@ -50,13 +50,13 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends Fibe
   def implementUser = p.withUser
   def implementUserTrap = p.withUserTrap
 
-  def getPrivilege(hartId : UInt) : UInt = miaou.csrs.map(_.privilege).read(hartId)
+  def getPrivilege(hartId : UInt) : UInt = logic.harts.map(_.privilege).read(hartId)
 
   case class Delegator(var enable: Bool, privilege: Int)
   case class InterruptSpec(var cond: Bool, id: Int, privilege: Int, delegators: List[Delegator])
   case class ExceptionSpec(id: Int, delegators: List[Delegator])
-  override def getCommitMask(hartId: Int): Bits = miaou.csrs(hartId).commitMask
-  override def hasInflight(hartId: Int): Bool = miaou.csrs(hartId).hasInflight
+  override def getCommitMask(hartId: Int): Bits = logic.harts(hartId).commitMask
+  override def hasInflight(hartId: Int): Bool = logic.harts(hartId).hasInflight
 
   val misaIds = mutable.LinkedHashSet[Int]()
   def addMisa(id: Char): Unit = addMisa(id - 'A')
@@ -64,7 +64,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends Fibe
     misaIds += id
   }
 
-  val miaou = during setup new Area {
+  def hart(id : Int) = logic.harts(id)
+
+  val logic = during setup new Area {
     val cap = host[CsrAccessPlugin]
     val pp = host[PipelineBuilderPlugin]
     val pcs = host[PcService]
@@ -88,7 +90,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends Fibe
     assert(HART_COUNT.get == 1)
 
     val rdtime = in UInt (64 bits)
-    val csrs = for (hartId <- 0 until HART_COUNT) yield new Area {
+    val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
       val xretAwayFromMachine = False
       val commitMask = Bits(host.list[ExecuteLanePlugin].size bits)
       val hasInflight = Bool()
@@ -271,7 +273,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends Fibe
     val defaultTrap = new Area {
       val csrPrivilege = cap.onDecodeAddress(8, 2 bits)
       val csrReadOnly = cap.onDecodeAddress(10, 2 bits) === U"11"
-      when(csrReadOnly && cap.onDecodeWrite || csrPrivilege > csrs.reader(cap.onDecodeHartId)(_.privilege)) {
+      when(csrReadOnly && cap.onDecodeWrite || csrPrivilege > harts.reader(cap.onDecodeHartId)(_.privilege)) {
         cap.onDecodeTrap()
       }
     }

@@ -89,7 +89,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     trapLock.await()
 
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
-      val csr = priv.miaou.csrs(hartId)
+      val csr = priv.logic.harts(hartId)
 
       val crsPorts = withRam generate new Area{
         val read = crs.ramReadPort(CsrRamService.priority.TRAP)
