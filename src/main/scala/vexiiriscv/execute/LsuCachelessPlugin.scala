@@ -8,7 +8,7 @@ import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
 import vexiiriscv.misc.{AddressToMask, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
@@ -28,6 +28,7 @@ case class CachelessCmd(p : CachelessBusParam) extends Bundle{
   val size = UInt(log2Up(log2Up(p.dataWidth / 8) + 1) bits)
   val mask = Bits(p.dataWidth / 8 bits)
   val io = Bool() //This is for verification purposes, allowing RVLS to track stuff
+  val fromHart = Bool() //This is for verification purposes, allowing RVLS to track stuff
   val hartId = UInt(p.hartIdWidth bits)
 }
 
@@ -53,9 +54,10 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var addressAt: Int = 0,
                          var forkAt: Int = 0,
                          var joinAt: Int = 1,
-                         var wbAt: Int = 2) extends FiberPlugin{
+                         var wbAt: Int = 2) extends FiberPlugin with DBusAccessService{
 
   val FENCE_I_SEL = Payload(Bool())
+  val WITH_RSP = Payload(Bool())
 
   val logic = during setup new Area{
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
@@ -139,7 +141,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       val skip = CombInit[Bool](MISS_ALIGNED)
 
-      val cmdSent = RegInit(False) setWhen(bus.cmd.fire || skip) clearWhen(isReady)
+      val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
       bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest && !skip
       bus.cmd.write := ! LOAD
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
@@ -151,11 +153,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.cmd.size := SIZE.resized
       bus.cmd.mask := AddressToMask(bus.cmd.address, bus.cmd.size, Riscv.LSLEN/8)
       bus.cmd.io := tpk.IO
+      bus.cmd.fromHart := True
       bus.cmd.hartId := Global.HART_ID
       assert(tpk.REDO === False, "LsuCachelessPlugin expected translation port REDO False, but True")
 
       elp.freezeWhen(bus.cmd.isStall)
-
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
@@ -181,15 +183,40 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         val tooRisky = isValid && SEL && LOAD && (tpk.IO && elp.atRiskOfFlush(forkAt))
         redoPort := tooRisky
       }
+
+
+      WITH_RSP := bus.cmd.valid || cmdSent
+      val access = dbusAccesses.nonEmpty generate new Area{
+        assert(dbusAccesses.size == 1)
+        val allowIt = !(isValid && SEL) && !cmdSent
+        val cmd = dbusAccesses.head.cmd
+        cmd.ready := allowIt && !elp.isFreezed()
+        when(allowIt){
+          bus.cmd.valid := cmd.valid
+          bus.cmd.write := False
+          bus.cmd.address := cmd.address
+          bus.cmd.size := cmd.size
+          bus.cmd.fromHart := False
+        }
+      }
     }
 
     val onJoin = new joinCtrl.Area{
       val buffer = bus.rsp.toStream.queueLowLatency(joinAt-forkAt+1).combStage
       val READ_DATA = insert(buffer.data)
-      elp.freezeWhen(isValid && SEL && !buffer.valid && !up(Global.TRAP))
-      buffer.ready := isReady && SEL && !up(Global.TRAP)
+      elp.freezeWhen(WITH_RSP && !buffer.valid)
+      buffer.ready := WITH_RSP && isReady
       assert(!(isValid && hasCancelRequest && SEL && !LOAD && !up(Global.TRAP)), "LsuCachelessPlugin saw unexpected select && !LOAD && cancel request") //TODO add tpk.IO and along the way)) //TODO add tpk.IO and along the way
+      val access = dbusAccesses.nonEmpty generate new Area {
+        assert(dbusAccesses.size == 1)
+        val rsp = dbusAccesses.head.rsp
+        rsp.valid := !(isValid && SEL) && WITH_RSP
+        rsp.data := buffer.data
+        rsp.error := buffer.error
+      }
     }
+
+    for(eid <- forkAt + 1 to joinAt) elp.execute(eid).up(WITH_RSP).setAsReg().init(False)
 
     val onWb = new wbCtrl.Area{
       val rspSplits = onJoin.READ_DATA.subdivideIn(8 bits)

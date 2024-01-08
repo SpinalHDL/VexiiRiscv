@@ -276,6 +276,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   class ProbeTraceIo extends TraceIo {
     var sizel2 = 0
     var io = false
+    var fromHart = false
     var hartId = 0
   }
 
@@ -388,7 +389,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
     }
 
-//
+
     for(bus <- lsuClpb) {
       if(bus.cmd.valid.toBoolean && bus.cmd.ready.toBoolean){
         val trace = new ProbeTraceIo
@@ -397,6 +398,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         trace.address = bus.cmd.address.toLong
         trace.size = 1 << trace.sizel2
         trace.io = bus.cmd.io.toBoolean
+        trace.fromHart = bus.cmd.fromHart.toBoolean
         trace.hartId = bus.cmd.hartId.toInt
         val offset = trace.address.toInt & (trace.size - 1)
         trace.data = bus.cmd.data.toLong
@@ -405,7 +407,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
       if (bus.rsp.valid.toBoolean) {
         val trace = pendingIo.dequeue()
-        if(trace.io){
+        if(trace.fromHart && trace.io){
           if(!trace.write){
             trace.data = bus.rsp.data.toLong
           }
