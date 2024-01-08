@@ -109,13 +109,13 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
   def implementUser = p.withUser
   def implementUserTrap = p.withUserTrap
 
-  def getPrivilege(hartId : UInt) : UInt = logic.csrs.map(_.privilege).read(hartId)
+  def getPrivilege(hartId : UInt) : UInt = miaou.csrs.map(_.privilege).read(hartId)
 
   case class Delegator(var enable: Bool, privilege: Int)
   case class InterruptSpec(var cond: Bool, id: Int, privilege: Int, delegators: List[Delegator])
   case class ExceptionSpec(id: Int, delegators: List[Delegator])
-  override def getCommitMask(hartId: Int): Bits = io.harts(hartId).commitMask
-  override def hasInflight(hartId: Int): Bool = io.harts(hartId).hasInflight
+  override def getCommitMask(hartId: Int): Bits = miaou.csrs(hartId).commitMask
+  override def hasInflight(hartId: Int): Bool = miaou.csrs(hartId).hasInflight
 
   val misaIds = mutable.LinkedHashSet[Int]()
   def addMisa(id: Char): Unit = addMisa(id - 'A')
@@ -123,8 +123,31 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
     misaIds += id
   }
 
-  val io = during build new Area{
-    val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
+  val miaou = during setup new Area {
+    val cap = host[CsrAccessPlugin]
+    val pp = host[PipelineBuilderPlugin]
+    val pcs = host[PcService]
+    val withRam = host.get[CsrRamService].nonEmpty
+    val crs = withRam generate host[CsrRamService]
+    val buildBefore = retains(List(cap.csrLock) ++ withRam.option(crs.csrLock))
+
+    awaitBuild()
+    p.check()
+
+    addMisa('I')
+    if (RVC) addMisa('C')
+    if (RVF) addMisa('F')
+    if (RVD) addMisa('D')
+    if (p.withUser) addMisa('U')
+    if (p.withSupervisor) addMisa('S')
+
+    val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
+    CODE_WIDTH.set((4 +: causesWidthMins).max)
+
+    assert(HART_COUNT.get == 1)
+
+    val csrs = for (hartId <- 0 until HART_COUNT) yield new Area {
+      val xretAwayFromMachine = False
       val commitMask = Bits(host.list[ExecuteLanePlugin].size bits)
       val hasInflight = Bool()
       val rdtime = in UInt (64 bits)
@@ -142,7 +165,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
           val external = Verilator.public(in Bool())
         }
       }
-      val spec = new Area{
+      val spec = new Area {
         val interrupt = ArrayBuffer[InterruptSpec]()
         val exception = ArrayBuffer[ExceptionSpec]()
 
@@ -150,46 +173,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
           interrupt += InterruptSpec(cond, id, privilege, delegators)
         }
       }
-    }
-  }
 
-  val logic = during setup new Area{
-    val cap = host[CsrAccessPlugin]
-    val pp = host[PipelineBuilderPlugin]
-    val pcs = host[PcService]
-    val withRam = host.get[CsrRamService].nonEmpty
-    val crs = withRam generate host[CsrRamService]
-    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock))
-    val ramRetainers = withRam generate new Area{
-      val csr = crs.csrLock()
-      val port = crs.portLock()
-    }
-
-    awaitBuild()
-    p.check()
-
-    addMisa('I')
-    if (RVC) addMisa('C')
-    if (RVF) addMisa('F')
-    if (RVD) addMisa('D')
-    if (p.withUser) addMisa('U')
-    if (p.withSupervisor) addMisa('S')
-
-    val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
-    CODE_WIDTH.set((4 +: causesWidthMins).max)
-
-    assert(HART_COUNT.get == 1)
-
-    val csrs = for(hartId <- 0 until HART_COUNT) yield new Area{
-      val hartIo = io.harts(hartId)
       val api = cap.hart(hartId)
       val withFs = RVF || p.withSupervisor
       val privilege = RegInit(U"11")
       val withMachinePrivilege = privilege >= U"11"
       val withSupervisorPrivilege = privilege >= U"01"
-      val xretAwayFromMachine = False
 
-      val m = new Area{
+      val m = new Area {
         api.read(U(p.vendorId), CSR.MVENDORID) // MRO Vendor ID.
         api.read(U(p.archId), CSR.MARCHID) // MRO Architecture ID.
         api.read(U(p.impId), CSR.MIMPID) // MRO Implementation ID.
@@ -212,12 +203,18 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
 
           readWrite(7 -> mpie, 3 -> mie)
           read(11 -> mpp)
-          if(p.withUser) {
-            onWrite(true){
-              switch(cap.onWriteBits(12 downto 11)){
-                is(3){ mpp := 3 }
-                if(p.withSupervisor) is(1){ mpp := 1 }
-                is(0){ mpp := 0 }
+          if (p.withUser) {
+            onWrite(true) {
+              switch(cap.onWriteBits(12 downto 11)) {
+                is(3) {
+                  mpp := 3
+                }
+                if (p.withSupervisor) is(1) {
+                  mpp := 1
+                }
+                is(0) {
+                  mpp := 0
+                }
               }
             }
           }
@@ -229,13 +226,13 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         val cause = new api.Csr(CSR.MCAUSE) {
           val interrupt = RegInit(False)
           val code = Reg(CODE) init (0)
-          readWrite(XLEN-1 -> interrupt, 0 -> code)
+          readWrite(XLEN - 1 -> interrupt, 0 -> code)
         }
 
-        val ip =  new api.Csr(CSR.MIP) {
-          val meip = RegNext(hartIo.int.m.external) init (False)
-          val mtip = RegNext(hartIo.int.m.timer) init (False)
-          val msip = RegNext(hartIo.int.m.software) init (False)
+        val ip = new api.Csr(CSR.MIP) {
+          val meip = RegNext(int.m.external) init (False)
+          val mtip = RegNext(int.m.timer) init (False)
+          val msip = RegNext(int.m.software) init (False)
           read(11 -> meip, 7 -> mtip, 3 -> msip)
         }
 
@@ -254,22 +251,22 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
           readWrite(9 -> se, 5 -> st, 1 -> ss)
         }
 
-//        val tval = Reg(TVAL) init (0)
-//        val epc = Reg(PC) init (0)
-//        val tvec = Reg(PC) init (0)
+        //        val tval = Reg(TVAL) init (0)
+        //        val epc = Reg(PC) init (0)
+        //        val tvec = Reg(PC) init (0)
 
-//        api.onCsr(CSR.MTVAL).readWrite(tval)
-//        api.onCsr(CSR.MEPC).readWrite(epc)
-//        api.onCsr(CSR.MTVEC).readWrite(tvec)
+        //        api.onCsr(CSR.MTVAL).readWrite(tval)
+        //        api.onCsr(CSR.MEPC).readWrite(epc)
+        //        api.onCsr(CSR.MTVEC).readWrite(tvec)
 
         val tvec = crs.readWriteRam(CSR.MTVEC)
         val tval = crs.readWriteRam(CSR.MTVAL)
         val epc = crs.readWriteRam(CSR.MEPC)
         val scratch = crs.readWriteRam(CSR.MSCRATCH)
 
-        hartIo.spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = 3, delegators = Nil)
-        hartIo.spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = 3, delegators = Nil)
-        hartIo.spec.addInterrupt(ip.meip && ie.meie, id = 11, privilege = 3, delegators = Nil)
+        spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = 3, delegators = Nil)
+        spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = 3, delegators = Nil)
+        spec.addInterrupt(ip.meip && ie.meie, id = 11, privilege = 3, delegators = Nil)
       }
 
       val s = p.withSupervisor generate new Area {
@@ -279,7 +276,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
           readWrite(XLEN - 1 -> interrupt, 0 -> code)
         }
 
-        val status = new Area{
+        val status = new Area {
           val sie, spie = RegInit(False)
           val spp = RegInit(U"0")
 
@@ -291,7 +288,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
 
         val ip = new Area {
           val seipSoft = RegInit(False)
-          val seipInput = RegNext(hartIo.int.s.external)
+          val seipInput = RegNext(int.s.external)
           val seipOr = seipSoft || seipInput
           val stip = RegInit(False)
           val ssip = RegInit(False)
@@ -331,11 +328,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         api.readToWrite(ip.seipSoft, CSR.MIP, 9) //Avoid an external interrupt value to propagate to the soft external interrupt register.
 
 
-        hartIo.spec.addInterrupt(ip.ssip && ie.ssie, id = 1, privilege = 1, delegators = List(Delegator(m.ideleg.ss, 3)))
-        hartIo.spec.addInterrupt(ip.stip && ie.stie, id = 5, privilege = 1, delegators = List(Delegator(m.ideleg.st, 3)))
-        hartIo.spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = 1, delegators = List(Delegator(m.ideleg.se, 3)))
+        spec.addInterrupt(ip.ssip && ie.ssie, id = 1, privilege = 1, delegators = List(Delegator(m.ideleg.ss, 3)))
+        spec.addInterrupt(ip.stip && ie.stie, id = 5, privilege = 1, delegators = List(Delegator(m.ideleg.st, 3)))
+        spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = 1, delegators = List(Delegator(m.ideleg.se, 3)))
 
-        for ((id, enable) <- m.edeleg.mapping) hartIo.spec.exception += ExceptionSpec(id, List(Delegator(enable, 3)))
+        for ((id, enable) <- m.edeleg.mapping) spec.exception += ExceptionSpec(id, List(Delegator(enable, 3)))
 
         if (XLEN.get == 64) {
           api.read(CSR.MSTATUS, 32 -> U"10")
@@ -364,12 +361,22 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
     }
 
 
-    ramRetainers.csr.release()
+    buildBefore.release()
+  }
+
+  val logic = during setup new Area{
+    val cap = host[CsrAccessPlugin]
+    val pp = host[PipelineBuilderPlugin]
+    val pcs = host[PcService]
+    val withRam = host.get[CsrRamService].nonEmpty
+    val crs = withRam generate host[CsrRamService]
+    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock))
+    val ramPortRetainers = withRam generate crs.portLock()
+    awaitBuild()
     trapLock.await()
 
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
-      val hartIo = io.harts(hartId)
-      val csr = csrs(hartId)
+      val csr = miaou.csrs(hartId)
 
       val crsPorts = withRam generate new Area{
         val read = crs.ramReadPort(CsrRamService.priority.TRAP)
@@ -416,7 +423,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         while (privilegs.nonEmpty) {
           val p = privilegs.head
           when(privilegeAllowInterrupts(p)) {
-            for (i <- hartIo.spec.interrupt
+            for (i <- csr.spec.interrupt
                  if i.privilege <= p //EX : Machine timer interrupt can't go into supervisor mode
                  if privilegs.tail.forall(e => i.delegators.exists(_.privilege == e))) { // EX : Supervisor timer need to have machine mode delegator
               val delegUpOn = i.delegators.filter(_.privilege > p).map(_.enable).fold(True)(_ && _)
@@ -443,7 +450,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         }
 
         val pendingInterrupt = RegNext(valid) init (False)
-        hartIo.int.pending setWhen(pendingInterrupt)
+        csr.int.pending setWhen(pendingInterrupt)
       }
 
 
@@ -468,7 +475,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
           val exceptionTargetPrivilegeUncapped = U"11"
           val code = CombInit(pending.state.code)
           switch(code) {
-            for (s <- hartIo.spec.exception) {
+            for (s <- csr.spec.exception) {
               is(s.id) {
                 var exceptionPrivilegs = if (p.withSupervisor) List(1, 3) else List(3)
                 while (exceptionPrivilegs.length != 1) {
@@ -491,8 +498,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
 
         val trigger = new Area {
           val lanes = host.list[ExecuteLanePlugin] //TODO AREA filter the ones which may trap
-          hartIo.commitMask := B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(COMMIT))
-          hartIo.hasInflight := (for (self <- lanes; ctrlId <- 1 to self.executeAt + trapAt; sn = self.ctrl(ctrlId).up) yield sn.isValid && sn(HART_ID) === hartId).orR
+          csr.commitMask := B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(COMMIT))
+          csr.hasInflight := (for (self <- lanes; ctrlId <- 1 to self.executeAt + trapAt; sn = self.ctrl(ctrlId).up) yield sn.isValid && sn(HART_ID) === hartId).orR
           val oh = B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(TRAP))
           val valid = oh.orR
           val pc = OHMux.or(oh, lanes.map(_.execute(trapAt).down(PC)), true)
@@ -668,7 +675,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
       }
     }
 
-    ramRetainers.port.release()
+    ramPortRetainers.release()
     buildBefore.release()
   }
 }

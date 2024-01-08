@@ -6,6 +6,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.{Global, riscv}
 import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
+import spinal.core.fiber.Retainer
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
@@ -119,6 +120,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     val busParam = CachelessBusParam(addressWidth = Global.PHYSICAL_WIDTH, dataWidth = Riscv.LSLEN, hartIdWidth = Global.HART_ID_WIDTH)
     val bus = master(CachelessBus(busParam))
+
+    accessRetainer.await()
 
     val onAddress = new addressCtrl.Area{
       val RAW_ADDRESS = insert(srcp.ADD_SUB.asUInt)

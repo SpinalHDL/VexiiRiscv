@@ -50,6 +50,7 @@ class AddressTranslationRsp(s : AddressTranslationService, wakesCount : Int, val
 trait DBusAccessService{
   def newDBusAccess() : DBusAccess = dbusAccesses.addRet(new DBusAccess)
   val dbusAccesses = ArrayBuffer[DBusAccess]()
+  val accessRetainer = Retainer()
 }
 
 case class DBusAccess() extends Bundle {
