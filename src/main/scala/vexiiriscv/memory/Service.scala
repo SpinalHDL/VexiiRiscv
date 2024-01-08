@@ -43,19 +43,20 @@ class AddressTranslationRsp(s : AddressTranslationService, wakesCount : Int, val
     val BYPASS_TRANSLATION = Payload(Bool())
   }
   val wake = Bool()
-//  val pipelineLock = Retainer().retain()
 }
 
 
 trait DBusAccessService{
-  def newDBusAccess() : DBusAccess = dbusAccesses.addRet(new DBusAccess)
+  def accessRefillCount : Int
+  def accessWake: Bits
+  def newDBusAccess() : DBusAccess = dbusAccesses.addRet(new DBusAccess(accessRefillCount))
   val dbusAccesses = ArrayBuffer[DBusAccess]()
   val accessRetainer = Retainer()
 }
 
-case class DBusAccess() extends Bundle {
+case class DBusAccess(refillCount : Int) extends Bundle {
   val cmd = Stream(DBusAccessCmd())
-  val rsp = Flow(DBusAccessRsp())
+  val rsp = Flow(DBusAccessRsp(refillCount))
 }
 
 case class DBusAccessCmd() extends Bundle {
@@ -63,8 +64,11 @@ case class DBusAccessCmd() extends Bundle {
   val size = UInt(2 bits)
 }
 
-case class DBusAccessRsp() extends Bundle {
+case class DBusAccessRsp(refillCount : Int) extends Bundle {
   val data = Bits(Riscv.XLEN bits)
   val error = Bool()
   val redo = Bool()
+  val waitSlot = Bits(refillCount bits)
+  val waitAny  = Bool()
 }
+

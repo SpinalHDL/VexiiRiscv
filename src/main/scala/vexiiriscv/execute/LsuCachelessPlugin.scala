@@ -59,6 +59,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
   val FENCE_I_SEL = Payload(Bool())
   val WITH_RSP = Payload(Bool())
+  override def accessRefillCount: Int = 0
+  override def accessWake: Bits = B(0)
 
   val logic = during setup new Area{
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
