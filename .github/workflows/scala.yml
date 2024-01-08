@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: 2023 Everybody
+#
+# SPDX-License-Identifier: CC0-1.0
+
+name: Scala CI
+
+on: [push, pull_request] #push, pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: Install packages
+        run: source .github/workflows/tools.sh && install_packages
+
+      - name: Cache pip
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-v2
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Cache SBT
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.ivy2/cache
+            ~/.sbt
+          key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt') }}
+
+      - name: Cache tools
+        id: tools
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/tools
+          key: ${{ runner.os }}-tools_v7
+
+      - name: Setup env
+        run: echo "$HOME/tools/bin" >> $GITHUB_PATH
+
+      - name: Install cached tools
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: source .github/workflows/tools.sh && install_cached
+
+      - name: Install uncached tools
+        run: source .github/workflows/tools.sh && install_uncached
+
+      - name: Compile
+        run: sbt clean compile
+
+#      - name: Test
+#        run: NAXRISCV_REGRESSION_THREAD_COUNT=1 SBT_OPTS="-Xmx2G -XX:+UseConcMarkSweepGC -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=2G -Xss2M  -Duser.timezone=GMT" sbt test

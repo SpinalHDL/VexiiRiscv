@@ -16,7 +16,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
 import vexiiriscv.misc.{PerformanceCounterService, TrapService}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
-import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, Prediction}
+import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, LearnSource, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
 import scala.collection.mutable
@@ -31,10 +31,11 @@ object BranchPlugin extends AreaObject {
 class BranchPlugin(val layer : LaneLayer,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
-                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
+                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) with LearnSource {
   import BranchPlugin._
 
   def catchMissaligned = !Riscv.RVC
+  override def getLearnPort(): Option[Stream[LearnCmd]] = logic.jumpLogic.learn
 
   val logic = during setup new Logic{
     val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
@@ -79,7 +80,7 @@ class BranchPlugin(val layer : LaneLayer,
       spec.mayFlushUpTo(jumpAt)
     }
 
-    val age = eu.getExecuteAge(jumpAt)
+    val age = el.getExecuteAge(jumpAt)
     val pcPort = pcp.newJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
     val historyPort = hp.map(_.newPort(age, Execute.LANE_AGE_WIDTH))
     val flushPort = sp.newFlushPort(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
@@ -92,7 +93,7 @@ class BranchPlugin(val layer : LaneLayer,
     // leading to a simpler design.
     val withBtb = host.get[FetchWordPrediction].nonEmpty
 
-    val alu = new eu.Execute(aluAt) {
+    val alu = new el.Execute(aluAt) {
       val ss = SrcStageables
       val EQ = insert(srcp.SRC1 === srcp.SRC2)
 
@@ -136,7 +137,7 @@ class BranchPlugin(val layer : LaneLayer,
       }
     }
 
-    val jumpLogic = new eu.Execute(jumpAt) {
+    val jumpLogic = new el.Execute(jumpAt) {
       val wrongCond = withBtb.mux[Bool](Prediction.ALIGNED_JUMPED =/= alu.COND     , alu.COND )
       val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond)
       val doIt = isValid && SEL && needFix
@@ -234,7 +235,7 @@ class BranchPlugin(val layer : LaneLayer,
 
     }
 
-    val wbLogic = new eu.Execute(wbAt){
+    val wbLogic = new el.Execute(wbAt){
       wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
       wb.payload := alu.PC_FALSE.asBits.resized //PC RESIZED
     }

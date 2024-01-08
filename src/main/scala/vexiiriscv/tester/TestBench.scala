@@ -10,15 +10,14 @@ import vexiiriscv._
 import vexiiriscv.fetch.PcService
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
-
-import java.io.{File, IOException, InputStream, OutputStream, OutputStreamWriter, PrintStream, PrintWriter}
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 import vexiiriscv.test.konata.Backend
 import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 
+import java.io.{File, IOException, PrintWriter}
 import java.net.{ServerSocket, Socket}
 import java.util.Scanner
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 
 class TestOptions{
@@ -171,7 +170,7 @@ class TestOptions{
     }
 
     val priv = dut.host[PrivilegedPlugin].io.harts(0)
-    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, null, mti = priv.int.m.timer, cd = cd){
+    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, mti = priv.int.m.timer, cd = cd){
       override def getClintTime(): Long = probe.cycle
     }
 

@@ -5,6 +5,7 @@ import spinal.core.fiber.Handle
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
 import spinal.lib.{misc, _}
 import spinal.lib.misc.plugin.FiberPlugin
+import vexiiriscv.Global
 import vexiiriscv.fetch.InitService
 import vexiiriscv.riscv.Riscv
 
@@ -28,6 +29,8 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
     val casRetainer = cas.csrLock()
     awaitBuild()
     csrLock.await()
+
+    assert(Global.HART_COUNT.get == 1, "In general, all csrram access done by other plugins assume 1 hart, need to be update")
 
     val read = ramReadPort(CsrRamService.priority.CSR)
     val write = ramWritePort(CsrRamService.priority.CSR)

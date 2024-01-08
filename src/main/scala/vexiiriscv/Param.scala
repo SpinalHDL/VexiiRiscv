@@ -31,6 +31,7 @@ class ParamSimple(){
   var withLateAlu = false
   var withMul = true
   var withDiv = true
+  var privParam = PrivilegedParam.base
   var relaxedBranch = false
   var relaxedShift = false
   var relaxedSrc = false
@@ -40,8 +41,8 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 1
-    lanes = 1
+    decoders = 2
+    lanes = 2
     regFileSync = false
     withGShare = true
     withBtb = true
@@ -54,13 +55,15 @@ class ParamSimple(){
     relaxedShift = false
     relaxedSrc = true
     performanceCounters = 4
+    privParam.withSupervisor = true
+    privParam.withUser = true
   }
 
 
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
     val r = new ArrayBuffer[String]()
-    r += s"rv${xlen}im"
+    r += s"rv${xlen}im${privParam.withSupervisor.mux("s","")}${privParam.withUser.mux("u","")}"
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
@@ -87,6 +90,8 @@ class ParamSimple(){
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
     opt[Unit]("with-mul") action { (v, c) => withMul = true }
     opt[Unit]("with-div") action { (v, c) => withDiv = true }
+    opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true }
+    opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
     opt[Unit]("without-div") action { (v, c) => withDiv = false }
     opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
@@ -98,11 +103,12 @@ class ParamSimple(){
     opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
   }
 
-  def plugins() = {
+  def plugins() = pluginsArea.plugins
+  def pluginsArea() = new Area {
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
-    plugins += new riscv.RiscvPlugin(xlen, rvc, hartCount)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
       case true =>
@@ -209,7 +215,7 @@ class ParamSimple(){
     plugins += new CsrRamPlugin()
     plugins += new PerformanceCounterPlugin(additionalCounterCount = performanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(PrivilegedParam.full, 0 until hartCount, trapAt = 2)
+    plugins += new PrivilegedPlugin(privParam, 0 until hartCount, trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
 
     if(withLateAlu) {
@@ -251,8 +257,6 @@ class ParamSimple(){
     }
 
     plugins += new WhiteboxerPlugin()
-
-    plugins
   }
 }
 

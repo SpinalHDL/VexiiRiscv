@@ -51,7 +51,7 @@ class CsrAccessPlugin(layer : LaneLayer,
   override def onReadHartId: UInt = apiIo.onReadHartId
   override def onReadHalt(): Unit = apiIo.onReadHalt := True
 
-  override def onReadToWriteBits: Bits = ???
+  override def onReadToWriteBits: Bits = apiIo.onReadToWriteBits
 
   override def isWriting: Bool = apiIo.isWriting
   override def onWriteHalt(): Unit = apiIo.onWriteHalt := True
@@ -177,14 +177,15 @@ class CsrAccessPlugin(layer : LaneLayer,
 
         assert(!(up(LANE_SEL) && SEL && hasCancelRequest), "CsrAccessPlugin saw forbidden select && cancel request")
         val imm = IMM(UOP)
+        val csrAddress = UOP(Const.csrRange)
         val immZero = imm.z === 0
         val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
         val csrWrite = !(CSR_MASK && srcZero)
         val csrRead = !(!CSR_MASK && !rd.ENABLE)
         val sels = grouped.map(e => e._1 -> Bool().setName("COMB_CSR_" + filterToName(e._1)))
         for ((filter, sel) <- sels) sel := (filter match {
-          case filter: Int => UOP(Const.csrRange) === filter
-          case filter: CsrListFilter => filter.mapping.map(UOP(Const.csrRange) === _).orR
+          case filter: Int => csrAddress === filter
+          case filter: CsrListFilter => filter.mapping.map(csrAddress === _).orR
         })
         val implemented = sels.values.orR
 
@@ -222,7 +223,7 @@ class CsrAccessPlugin(layer : LaneLayer,
         apiIo.onDecodeRead := csrRead
         apiIo.onDecodeWrite := csrWrite
         apiIo.onDecodeHartId := Global.HART_ID
-        apiIo.onDecodeAddress := UOP(Const.csrRange).asUInt
+        apiIo.onDecodeAddress := csrAddress.asUInt
 
         val iLogic = integrated generate new Area{
           connectRegs()

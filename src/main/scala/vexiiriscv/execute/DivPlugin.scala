@@ -22,9 +22,10 @@ class DivPlugin(val layer : LaneLayer,
                 val writebackAt : Int = 0) extends ExecutionUnitElementSimple(layer){
   import DivPlugin._
 
-  val logic = during build new Logic {
-    val formatBus = ifp.access(writebackAt)
-    implicit val _ = ifp -> formatBus
+  val logic = during setup new Logic {
+    awaitBuild()
+
+    val formatBus = newWriteback(ifp, writebackAt)
 
     add(Rvi.DIV ).decode(REM -> False).rsUnsigned(true  , true )
     add(Rvi.DIVU).decode(REM -> False).rsUnsigned(false , false)
@@ -49,7 +50,7 @@ class DivPlugin(val layer : LaneLayer,
 
     uopRetainer.release()
 
-    val processing = new eu.Execute(divAt) {
+    val processing = new el.Execute(divAt) {
       val div = DivRadix4(width = XLEN.get)
 
       DIV_REVERT_RESULT := (RS1_REVERT ^ (RS2_REVERT && !REM)) && !(RS2_FORMATED === 0 && RS2_SIGNED && !REM) //RS2_SIGNED == RS1_SIGNED anyway
@@ -63,7 +64,7 @@ class DivPlugin(val layer : LaneLayer,
 
       val unscheduleRequest = RegNext(hasCancelRequest) clearWhen (isReady) init (False)
       val freeze = isValid && SEL && !div.io.rsp.valid & !unscheduleRequest
-      eu.freezeWhen(freeze)
+      el.freezeWhen(freeze)
 
       val selected = REM ? div.io.rsp.remain otherwise div.io.rsp.result
 
@@ -71,7 +72,7 @@ class DivPlugin(val layer : LaneLayer,
       DIV_RESULT := twoComplement(B(selected), DIV_REVERT_RESULT).asBits.resized
     }
 
-    val writeback = new eu.Execute(writebackAt){
+    val writeback = new el.Execute(writebackAt){
       formatBus.valid := SEL
       formatBus.payload := DIV_RESULT
     }

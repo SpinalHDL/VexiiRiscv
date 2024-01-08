@@ -6,11 +6,11 @@ import spinal.lib._
 import spinal.lib.fsm._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global._
-import vexiiriscv.execute.{CsrAccessPlugin, CsrRamPlugin, CsrRamService, ExecuteLanePlugin}
+import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamPlugin, CsrRamService, ExecuteLanePlugin}
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
-import vexiiriscv.fetch.PcService
+import vexiiriscv.fetch.{Fetch, PcService}
 import vexiiriscv.schedule.Ages
 
 import scala.collection.mutable
@@ -18,7 +18,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 object PrivilegedParam{
-  def full = PrivilegedParam(
+  def base = PrivilegedParam(
     withSupervisor = false,
     withUser       = false,
     withUserTrap   = false,
@@ -31,15 +31,19 @@ object PrivilegedParam{
   )
 }
 
-case class PrivilegedParam(withSupervisor : Boolean,
-                           withUser: Boolean,
-                           withUserTrap: Boolean,
-                           withRdTime : Boolean,
-                           withDebug: Boolean,
-                           debugTriggers : Int,
-                           vendorId: Int,
-                           archId: Int,
-                           impId: Int)
+case class PrivilegedParam(var withSupervisor : Boolean,
+                           var withUser: Boolean,
+                           var withUserTrap: Boolean,
+                           var withRdTime : Boolean,
+                           var withDebug: Boolean,
+                           var debugTriggers : Int,
+                           var vendorId: Int,
+                           var archId: Int,
+                           var impId: Int){
+  def check(): Unit = {
+    assert(!(withSupervisor && !withUser))
+  }
+}
 
 
 case class TrapSpec(bus : Flow[Trap], age : Int)
@@ -162,6 +166,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
     }
 
     awaitBuild()
+    p.check()
 
     addMisa('I')
     if (RVC) addMisa('C')
@@ -207,7 +212,15 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
 
           readWrite(7 -> mpie, 3 -> mie)
           read(11 -> mpp)
-          if(p.withUser) write(11 -> mpp)
+          if(p.withUser) {
+            onWrite(true){
+              switch(cap.onWriteBits(12 downto 11)){
+                is(3){ mpp := 3 }
+                if(p.withSupervisor) is(1){ mpp := 1 }
+                is(0){ mpp := 0 }
+              }
+            }
+          }
           read(XLEN - 1 -> sd)
           if (withFs) readWrite(13 -> fs)
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")
@@ -216,7 +229,6 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         val cause = new api.Csr(CSR.MCAUSE) {
           val interrupt = RegInit(False)
           val code = Reg(CODE) init (0)
-
           readWrite(XLEN-1 -> interrupt, 0 -> code)
         }
 
@@ -232,12 +244,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
           readWrite(11 -> meie, 7 -> mtie, 3 -> msie)
         }
 
-        val medeleg = p.withSupervisor generate new api.Csr(CSR.MEDELEG) {
+        val edeleg = p.withSupervisor generate new api.Csr(CSR.MEDELEG) {
           val iam, bp, eu, es, ipf, lpf, spf = RegInit(False)
           val mapping = mutable.LinkedHashMap(0 -> iam, 3 -> bp, 8 -> eu, 9 -> es, 12 -> ipf, 13 -> lpf, 15 -> spf)
           for ((id, enable) <- mapping) readWrite(id -> enable)
         }
-        val mideleg = p.withSupervisor generate new api.Csr(CSR.MIDELEG) {
+        val ideleg = p.withSupervisor generate new api.Csr(CSR.MIDELEG) {
           val st, se, ss = RegInit(False)
           readWrite(9 -> se, 5 -> st, 1 -> ss)
         }
@@ -254,22 +266,107 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         val tval = crs.readWriteRam(CSR.MTVAL)
         val epc = crs.readWriteRam(CSR.MEPC)
         val scratch = crs.readWriteRam(CSR.MSCRATCH)
-//        for(i <- 0 until 16) cap.readWriteRam(CSR.MHPMCOUNTER3+i)
-
-
-//        for (i <- 0 until 4) cap.readWrite(CSR.MHPMCOUNTER3+i, 0 -> Reg(Bits(32 bits)).init(0))
-
 
         hartIo.spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = 3, delegators = Nil)
         hartIo.spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = 3, delegators = Nil)
         hartIo.spec.addInterrupt(ip.meip && ie.meie, id = 11, privilege = 3, delegators = Nil)
       }
+
+      val s = p.withSupervisor generate new Area {
+        val cause = new api.Csr(CSR.SCAUSE) {
+          val interrupt = RegInit(False)
+          val code = Reg(CODE) init (0)
+          readWrite(XLEN - 1 -> interrupt, 0 -> code)
+        }
+
+        val status = new Area{
+          val sie, spie = RegInit(False)
+          val spp = RegInit(U"0")
+
+          api.read(CSR.SSTATUS, XLEN - 1 -> m.status.sd)
+          for (offset <- List(CSR.MSTATUS, CSR.SSTATUS)) {
+            api.readWrite(offset, 8 -> spp, 5 -> spie, 1 -> sie)
+          }
+        }
+
+        val ip = new Area {
+          val seipSoft = RegInit(False)
+          val seipInput = RegNext(hartIo.int.s.external)
+          val seipOr = seipSoft || seipInput
+          val stip = RegInit(False)
+          val ssip = RegInit(False)
+
+          val seipMasked = seipOr && m.ideleg.se
+          val stipMasked = stip && m.ideleg.st
+          val ssipMasked = ssip && m.ideleg.ss
+        }
+
+        val ie = new Area {
+          val seie, stie, ssie = RegInit(False)
+        }
+
+        val tvec = crs.readWriteRam(CSR.STVEC)
+        val tval = crs.readWriteRam(CSR.STVAL)
+        val epc = crs.readWriteRam(CSR.SEPC)
+        val scratch = crs.readWriteRam(CSR.SSCRATCH)
+
+        if (withFs) api.readWrite(CSR.SSTATUS, 13 -> m.status.fs)
+
+        def mapMie(machineCsr: Int, supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
+          api.read(reg, machineCsr, bitId)
+          api.write(reg, machineCsr, bitId)
+          api.read(reg && machineDeleg, supervisorCsr, bitId)
+          if (sWrite) api.writeWhen(reg, machineDeleg, supervisorCsr, bitId)
+        }
+
+        mapMie(CSR.MIE, CSR.SIE, 9, ie.seie, m.ideleg.se)
+        mapMie(CSR.MIE, CSR.SIE, 5, ie.stie, m.ideleg.st)
+        mapMie(CSR.MIE, CSR.SIE, 1, ie.ssie, m.ideleg.ss)
+
+        api.read(ip.seipOr, CSR.MIP, 9)
+        api.write(ip.seipSoft, CSR.MIP, 9)
+        api.read(ip.seipOr && m.ideleg.se, CSR.SIP, 9)
+        mapMie(CSR.MIP, CSR.SIP, 5, ip.stip, m.ideleg.st, sWrite = false)
+        mapMie(CSR.MIP, CSR.SIP, 1, ip.ssip, m.ideleg.ss)
+        api.readToWrite(ip.seipSoft, CSR.MIP, 9) //Avoid an external interrupt value to propagate to the soft external interrupt register.
+
+
+        hartIo.spec.addInterrupt(ip.ssip && ie.ssie, id = 1, privilege = 1, delegators = List(Delegator(m.ideleg.ss, 3)))
+        hartIo.spec.addInterrupt(ip.stip && ie.stie, id = 5, privilege = 1, delegators = List(Delegator(m.ideleg.st, 3)))
+        hartIo.spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = 1, delegators = List(Delegator(m.ideleg.se, 3)))
+
+        for ((id, enable) <- m.edeleg.mapping) hartIo.spec.exception += ExceptionSpec(id, List(Delegator(enable, 3)))
+
+        if (XLEN.get == 64) {
+          api.read(CSR.MSTATUS, 32 -> U"10")
+          api.read(CSR.SSTATUS, 32 -> U"10")
+        }
+      }
+    }
+
+    val defaultTrap = new Area {
+      val csrPrivilege = cap.onDecodeAddress(8, 2 bits)
+      val csrReadOnly = cap.onDecodeAddress(10, 2 bits) === U"11"
+      when(csrReadOnly && cap.onDecodeWrite || csrPrivilege > csrs.reader(cap.onDecodeHartId)(_.privilege)) {
+        cap.onDecodeTrap()
+      }
+    }
+
+    val readAnyWriteLegal = new Area {
+      val tvecFilter = CsrListFilter(List(CSR.MTVEC) ++ p.withSupervisor.option(CSR.STVEC))
+      val epcFilter = CsrListFilter(List(CSR.MEPC) ++ p.withSupervisor.option(CSR.SEPC))
+      cap.onWrite(tvecFilter, false) {
+        cap.onWriteBits(0, 2 bits) := 0
+      }
+      cap.onWrite(epcFilter, false) {
+        cap.onWriteBits(0, log2Up(Fetch.SLICE_BYTES) bits) := 0
+      }
     }
 
 
     ramRetainers.csr.release()
-
     trapLock.await()
+
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
       val hartIo = io.harts(hartId)
       val csr = csrs(hartId)
@@ -307,9 +404,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
         privilegeAllowInterrupts += 3 -> (csr.m.status.mie || !csr.withMachinePrivilege)
 
         if (p.withSupervisor) {
-          ???
-//          privilegs = 1 :: privilegs
-//          privilegeAllowInterrupts += 1 -> ((s.status.sie && !csr.withMachinePrivilege) || !csr.withSupervisorPrivilege)
+          privilegs = 1 :: privilegs
+          privilegeAllowInterrupts += 1 -> ((csr.s.status.sie && !csr.withMachinePrivilege) || !csr.withSupervisorPrivilege)
         }
 
         if (p.withUserTrap) {
@@ -363,7 +459,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
             val sourcePrivilege = state.tval(1 downto 0).asUInt
             val targetPrivilege = privilegeMux(sourcePrivilege)(
               csr.m.status.mpp,
-              ???//U"0" @@ supervisor.sstatus.spp
+              U"0" @@ csr.s.status.spp
             )
           }
         }
@@ -474,7 +570,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
             crsPorts.write.valid := True
             crsPorts.write.address := privilegeMux(buffer.trap.targetPrivilege)(
               csr.m.tval.getAddress(),
-              ??? //csr.s.tval.getAddress()
+              csr.s.tval.getAddress()
             )
             crsPorts.write.data := S(buffer.trap.tval).resize(XLEN).asBits
             when(crsPorts.write.ready) {
@@ -485,7 +581,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
             crsPorts.write.valid := True
             crsPorts.write.address := privilegeMux(buffer.trap.targetPrivilege)(
               csr.m.epc.getAddress(),
-              ??? //csr.s.epc.getAddress()
+              csr.s.epc.getAddress()
             )
             crsPorts.write.data := S(pending.pc, XLEN bits).asBits //TODO PC sign extends ? (DONE)
             when(crsPorts.write.ready) {
@@ -498,7 +594,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
             crsPorts.read.valid := True
             crsPorts.read.address := privilegeMux(buffer.trap.targetPrivilege)(
               csr.m.tvec.getAddress(),
-              ???//csr.m.tvec.getAddress()
+              csr.s.tvec.getAddress()
             )
             when(crsPorts.read.ready) {
               goto(TRAP_APPLY)
@@ -509,12 +605,25 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
             pcPort.valid := True
             pcPort.pc := U(readed).resized //PC RESIZED
 
-            csr.m.status.mie := False
-            csr.m.status.mpie := csr.m.status.mie
-            if(p.withUser) csr.m.status.mpp := csr.privilege
-            csr.m.cause.code := buffer.trap.code
-            csr.m.cause.interrupt := buffer.trap.interrupt
             csr.privilege := buffer.trap.targetPrivilege
+            switch(buffer.trap.targetPrivilege) {
+              is(3) {
+                csr.m.status.mie := False
+                csr.m.status.mpie := csr.m.status.mie
+                if (p.withUser) csr.m.status.mpp := csr.privilege
+
+                csr.m.cause.code := buffer.trap.code
+                csr.m.cause.interrupt := buffer.trap.interrupt
+              }
+              p.withSupervisor generate is(1) {
+                csr.s.status.sie := False
+                csr.s.status.spie := csr.s.status.sie
+                if (p.withUser) csr.s.status.spp := csr.privilege(0, 1 bits)
+
+                csr.s.cause.code := buffer.trap.code
+                csr.s.cause.interrupt := buffer.trap.interrupt
+              }
+            }
 
             whitebox.trap := True
             whitebox.interrupt := buffer.trap.interrupt
@@ -528,7 +637,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
             crsPorts.read.valid := True
             crsPorts.read.address := privilegeMux(xretPrivilege)(
               csr.m.epc.getAddress(),
-              ??? //csr.s.epc.getAddress()
+              csr.s.epc.getAddress()
             )
             when(crsPorts.read.ready) {
               goto(XRET_APPLY)
@@ -548,18 +657,17 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int], trapAt : Int
                 csr.m.status.mpie := True
               }
               p.withSupervisor generate is(1) {
-                ???
-//                      s.sstatus.spp := U"0"
-//                      s.sstatus.sie := supervisor.sstatus.spie
-//                      s.sstatus.spie := True
+                csr.s.status.spp := U"0"
+                csr.s.status.sie := csr.s.status.spie
+                csr.s.status.spie := True
               }
             }
             goto(RUNNING)
           }
         }
       }
-
     }
+
     ramRetainers.port.release()
     buildBefore.release()
   }
