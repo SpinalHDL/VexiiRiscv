@@ -10,9 +10,10 @@ import spinal.core.fiber.Retainer
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
-import vexiiriscv.misc.{AddressToMask, TrapService}
+import vexiiriscv.misc.{AddressToMask, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
+import vexiiriscv.decode.Decode.INSTRUCTION_SLICE_COUNT_WIDTH
 import vexiiriscv.schedule.{ReschedulePlugin, ScheduleService}
 
 import scala.collection.mutable
@@ -67,15 +68,13 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host[AddressTranslationService]
-    val rp = host[RedoPlugin]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
     val buildBefore = retains(elp.pipelineLock, ats.elaborationLock)
-    val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, rp.elaborationLock, ts.trapLock, ss.elaborationLock)
+    val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock)
     awaitBuild()
 
     val trapPort = ts.newTrap(layer.el.getAge(forkAt), Execute.LANE_AGE_WIDTH)
-    val redoPort = withSpeculativeLoadFlush generate rp.newPort(forkAt)
     val flushPort = ss.newFlushPort(layer.el.getExecuteAge(addressAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
@@ -145,7 +144,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val RS2 = elp(IntRegFile, riscv.RS2)
       assert(bus.cmd.ready, "LsuCachelessPlugin expected bus.cmd.ready to be True, but False") // For now
 
-      val skip = CombInit[Bool](MISS_ALIGNED)
+      val skip = False
 
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
       bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest && !skip
@@ -172,24 +171,33 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       flushPort.self := False
 
       //TODO handle case were address isn't in the range of the virtual address ?
-      trapPort.valid :=  isValid && SEL && MISS_ALIGNED
-      trapPort.exception := True
-      trapPort.code := LOAD.mux[Bits](CSR.MCAUSE_ENUM.LOAD_MISALIGNED, CSR.MCAUSE_ENUM.STORE_MISALIGNED).andMask(MISS_ALIGNED).resized
-      trapPort.tval  := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
+      trapPort.valid :=  False
       trapPort.hartId := Global.HART_ID
       trapPort.laneAge := Execute.LANE_AGE
+      trapPort.exception.assignDontCare()
+      trapPort.code.assignDontCare()
+      trapPort.tval.assignDontCare()
 
-      when(isValid && SEL && MISS_ALIGNED){
+      if(withSpeculativeLoadFlush) when(LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)){
+        skip := True
+        trapPort.exception := False
+        trapPort.code := TrapReason.JUMP
+        trapPort.tval(0, INSTRUCTION_SLICE_COUNT_WIDTH + 1 bits) := 0
+      }
+
+      when(MISS_ALIGNED){
+        skip := True
+        trapPort.exception := True
+        trapPort.code := LOAD.mux[Bits](CSR.MCAUSE_ENUM.LOAD_MISALIGNED, CSR.MCAUSE_ENUM.STORE_MISALIGNED).andMask(MISS_ALIGNED).resized
+        trapPort.tval := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
+      }
+
+      when(isValid && SEL && skip){
+        trapPort.valid := True
         flushPort.valid := True
         bypass(Global.TRAP) := True
         bypass(Global.COMMIT) := False
       }
-
-      val speculLoad = withSpeculativeLoadFlush generate new Area {
-        val tooRisky = isValid && SEL && LOAD && (tpk.IO && elp.atRiskOfFlush(forkAt))
-        redoPort := tooRisky
-      }
-
 
       WITH_RSP := bus.cmd.valid || cmdSent
       val access = dbusAccesses.nonEmpty generate new Area{

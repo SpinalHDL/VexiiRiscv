@@ -2,6 +2,8 @@ package vexiiriscv.sandbox
 
 import spinal.core._
 import spinal.lib.graphic.Rgb
+import spinal.lib.misc.database.Database
+import spinal.lib.misc.database.Database.blocking
 
 object PlayScope extends App{
   SpinalVerilog(new Component{
@@ -81,5 +83,69 @@ object Miaouuuu9 extends App{
         val cnt = out(modCnt.counter.resize(8))
 //      })
     }.setName("TestComb")
+  }
+}
+
+object Miaouuuu10 extends App{
+
+  import spinal.core._
+  import spinal.core.fiber._
+  import spinal.lib.misc.plugin._
+  import spinal.lib.CountOne
+  import vexiiriscv._
+  import scala.collection.mutable.ArrayBuffer
+
+  case class AlphaPlugin_P(
+                            a :Int ,
+                            b :Int
+                          )
+  object AlphaPlugin_P extends AreaObject{
+    val P = Database.blocking[AlphaPlugin_P]
+    val P2 = Database.blocking[AlphaPlugin_P]
+  }
+  class AlphaPlugin(var p:AlphaPlugin_P) extends FiberPlugin{
+    import AlphaPlugin_P._
+
+    val logic = during setup new Area{
+      awaitBuild()
+
+      P.set(p)
+      host.get[BetaPlugin].map{b =>
+        P2.set(P.copy(a = b.p.a))
+      }
+
+      val ain = in UInt(P.a bits)
+      val bin = in UInt(P.b bits)
+      val cout= out (ain + bin)
+    }
+  }
+  case class BetaPlugin_P(
+                           a :Int ,
+                           b :Int
+                         )
+  object BetaPlugin_P extends AreaObject{
+    val P = blocking[BetaPlugin_P]
+    val P2 = blocking[BetaPlugin_P]
+  }
+  class BetaPlugin(var p:BetaPlugin_P) extends FiberPlugin{
+    import BetaPlugin_P._
+    val sp = during setup new Area{
+      awaitBuild()
+      P.set(p)
+      host.get[AlphaPlugin].map{a =>
+        P2.set(P.copy(b = a.p.b + 2))
+      }
+
+      val ain = in UInt(P.a bits)
+      val bin = in UInt(P.b bits)
+      val cout= out (ain + bin)
+    }
+  }
+
+  SpinalVerilog{
+    val plugins = ArrayBuffer[FiberPlugin]()
+    plugins += new AlphaPlugin((AlphaPlugin_P(a = 8, b = 8)))
+    plugins += new BetaPlugin((BetaPlugin_P(a = 12, b = 12)))
+    VexiiRiscv(plugins)
   }
 }

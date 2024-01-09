@@ -39,10 +39,6 @@ class EnvPlugin(layer : LaneLayer,
     if (ps.implementSupervisor) add(Rvi.SRET).decode(OP -> EnvPluginOp.PRIV_RET)
     if (ps.implementUserTrap)   add(Rvi.URET).decode(OP -> EnvPluginOp.PRIV_RET)
 
-    val uopList = ArrayBuffer(Rvi.ECALL, Rvi.EBREAK, Rvi.MRET)
-    if (ps.implementSupervisor) uopList += (Rvi.SRET)
-    if (ps.implementUserTrap) uopList += (Rvi.URET)
-
     for (uop <- uopList; spec = layer(uop)) {
       spec.setCompletion(executeAt)
       spec.mayFlushUpTo(executeAt)

@@ -11,7 +11,7 @@ import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
 import vexiiriscv.decode.Decode
-import vexiiriscv.decode.Decode.INSTRUCTION_WIDTH
+import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
 import vexiiriscv.fetch.{Fetch, PcService}
 import vexiiriscv.schedule.Ages
 
@@ -285,7 +285,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   goto(XRET_EPC)
                 }
                 is(TrapReason.JUMP) {
-                  jumpTarget := pending.pc + U(pending.state.tval(0, log2Up(Decode.INSTRUCTION_WIDTH/Fetch.SLICE_WIDTH+1) bits))
+                  jumpTarget := pending.pc + U(pending.state.tval(0, INSTRUCTION_SLICE_COUNT_WIDTH+1 bits)) //TODO OPT the adder may not be necessary if only used as a redo (in some config)
                   goto(JUMP)
                 }
                 default {

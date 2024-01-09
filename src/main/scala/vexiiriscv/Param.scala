@@ -194,7 +194,7 @@ class ParamSimple(){
     val early0 = new LaneLayer("early0", lane0, priority = 0)
     plugins += lane0
 
-    plugins += new RedoPlugin("lane0")
+//    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += new BarrelShifterPlugin(early0, formatAt = relaxedShift.toInt)
