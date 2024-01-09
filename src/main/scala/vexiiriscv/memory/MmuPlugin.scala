@@ -243,7 +243,7 @@ class MmuPlugin(var spec : MmuSpec,
 
       val storage = storages.find(_.self == ps.ss).get
 
-
+//TODO
 //      readStage(ALLOW_REFILL) := (if(allowRefill != null) readStage(allowRefill) else True)
 //      val allowRefillBypass = for(stageId <- pp.readAt to pp.ctrlAt) yield new Area{
 //        val stage = ps.stages(stageId)
@@ -284,10 +284,10 @@ class MmuPlugin(var spec : MmuSpec,
 
         val requireMmuLockup  = satp.mode === spec.satpMode
         val needRefill        = isValid && !hit && requireMmuLockup
-        val askRefill         = needRefill && ALLOW_REFILL
+        val askRefill         = needRefill// && ALLOW_REFILL
         val askRefillAddress = ctrlStage(ps.preAddress)
 
-        assert(HART_COUNT.get == 0)
+        assert(HART_COUNT.get == 1)
         val isMachine = priv.getPrivilege(0) === U"11"
         val isSupervisor = priv.getPrivilege(0) === U"01"
         val isUser = priv.getPrivilege(0) === U"00"

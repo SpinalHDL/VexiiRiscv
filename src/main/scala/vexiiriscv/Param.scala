@@ -6,6 +6,7 @@ import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
+import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.riscv.IntRegFile
@@ -57,6 +58,7 @@ class ParamSimple(){
     performanceCounters = 4
     privParam.withSupervisor = true
     privParam.withUser = true
+    withMmu = true
   }
 
 
@@ -111,7 +113,12 @@ class ParamSimple(){
     plugins += new riscv.RiscvPlugin(xlen, hartCount)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
-      case true =>
+      case true => plugins += new memory.MmuPlugin(
+        spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
+        ioRange = ioRange,
+        fetchRange = fetchRange,
+        physicalWidth = 32
+      )
     }
 
     plugins += new misc.PipelineBuilderPlugin()
@@ -200,8 +207,30 @@ class ParamSimple(){
       forkAt    = 0,
       joinAt    = 1,
       wbAt      = 2,
-      translationStorageParameter = null,
-      translationPortParameter = null
+      translationStorageParameter = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 4,
+            depth = 32
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 2,
+            depth = 32
+          )
+        ),
+        priority = 1
+      ),
+      translationPortParameter = withMmu match {
+        case false => null
+        case true => MmuPortParameter(
+          readAt = 0,
+          hitsAt = 0,
+          ctrlAt = 0,
+          rspAt = 0
+        )
+      }
     )
 
     if(withMul) {

@@ -8,8 +8,8 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.pipeline.Stageable
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
-import vexiiriscv.decode.Decode.{UOP, rfaKeys}
-import vexiiriscv.misc.TrapService
+import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, UOP, rfaKeys}
+import vexiiriscv.misc.{TrapReason, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{CSR, Const, IMM, IntRegFile, RD, RS1, Rvi}
 
@@ -39,7 +39,7 @@ class CsrAccessPlugin(layer : LaneLayer,
 
   override def onDecodeTrap(): Unit = apiIo.onDecodeTrap := True
   override def onDecodeUntrap(): Unit = apiIo.onDecodeTrap := False
-  override def onDecodeFlushPipeline(): Unit = ???
+  override def onDecodeFlushPipeline(): Unit = apiIo.onDecodeFlushPipeline
   override def onDecodeRead: Bool = apiIo.onDecodeRead
   override def onDecodeWrite: Bool = apiIo.onDecodeWrite
   override def onDecodeHartId: UInt = apiIo.onDecodeHartId
@@ -65,7 +65,7 @@ class CsrAccessPlugin(layer : LaneLayer,
 
   val apiIo = during build new Area{
     val onDecodeTrap = False
-//    val onDecodeFlushPipeline(): Unit
+    val onDecodeFlushPipeline = False
     val onDecodeRead = Bool()
     val onDecodeWrite = Bool()
     val onDecodeHartId = Global.HART_ID()
@@ -112,6 +112,7 @@ class CsrAccessPlugin(layer : LaneLayer,
     val wbWi = integrated generate iwb.access(injectAt)
     for(op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI).map(layer(_))){
       op.dontFlushFrom(injectAt)
+      op.mayFlushUpTo(injectAt)
       if (!integrated) ??? //elp.setRdOutOfPip(op)
       if (integrated) iwb.addMicroOp(wbWi, op)
       //      dp.fenceYounger(op)
@@ -247,6 +248,9 @@ class CsrAccessPlugin(layer : LaneLayer,
         trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
         trapPort.tval := UOP
 
+        val flushReg = RegInit(False) setWhen(flushPort.valid) clearWhen(!elp.isFreezed())
+        flushPort.valid setWhen(flushReg)
+
         IDLE whenIsActive {
           (regs.sels.values, sels.values).zipped.foreach(_ := _)
 
@@ -259,6 +263,12 @@ class CsrAccessPlugin(layer : LaneLayer,
               iLogic.freeze := False
             } otherwise {
               goto(READ)
+              when(apiIo.onDecodeFlushPipeline){
+                trapPort.valid := True
+                trapPort.exception := False
+                trapPort.code := TrapReason.JUMP
+                trapPort.tval := B(INSTRUCTION_SLICE_COUNT +^ 1).resized
+              }
             }
           }
         }

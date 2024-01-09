@@ -10,6 +10,8 @@ import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamPlugin, CsrRamS
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
+import vexiiriscv.decode.Decode
+import vexiiriscv.decode.Decode.INSTRUCTION_WIDTH
 import vexiiriscv.fetch.{Fetch, PcService}
 import vexiiriscv.schedule.Ages
 
@@ -69,6 +71,7 @@ case class TrapPending() extends Bundle{
 object TrapReason{
   val INTERRUPT = 0
   val PRIV_RET = 1
+  val JUMP = 2
 }
 
 
@@ -236,6 +239,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val PROCESS = new State()
           val TRAP_EPC, TRAP_TVAL, TRAP_TVEC, TRAP_APPLY = new State()
           val XRET_EPC, XRET_APPLY = new State()
+          val JUMP = new State()
 
           val inflightTrap = trapPendings.map(_(hartId)).orR
           val holdPort = pcs.newHoldPort(hartId)
@@ -265,6 +269,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             }
           }
 
+          val jumpTarget = Reg(PC)
           PROCESS.whenIsActive{
             when(pending.state.exception || buffer.trap.interrupt) {
               goto(TRAP_TVAL)
@@ -278,6 +283,10 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                 }
                 is(TrapReason.PRIV_RET) {
                   goto(XRET_EPC)
+                }
+                is(TrapReason.JUMP) {
+                  jumpTarget := pending.pc + U(pending.state.tval(0, log2Up(Decode.INSTRUCTION_WIDTH/Fetch.SLICE_WIDTH+1) bits))
+                  goto(JUMP)
                 }
                 default {
                   assert(False, "Unexpected trap reason")
@@ -382,6 +391,12 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                 csr.s.status.spie := True
               }
             }
+            goto(RUNNING)
+          }
+
+          JUMP.whenIsActive {
+            pcPort.valid := True
+            pcPort.pc := jumpTarget //PC RESIZED
             goto(RUNNING)
           }
         }

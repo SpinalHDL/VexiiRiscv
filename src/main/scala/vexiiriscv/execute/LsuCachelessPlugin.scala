@@ -128,13 +128,14 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val onAddress = new addressCtrl.Area{
       val RAW_ADDRESS = insert(srcp.ADD_SUB.asUInt)
 
+      val translationStorage = ats.newStorage(translationStorageParameter)
       val translationPort = ats.newTranslationPort(
         nodes = Seq(forkCtrl.down),
         rawAddress = RAW_ADDRESS,
         allowRefill = insert(True),
         usage = AddressTranslationPortUsage.LOAD_STORE,
         portSpec = translationPortParameter,
-        storageSpec = translationStorageParameter
+        storageSpec = translationStorage
       )
     }
 
@@ -218,6 +219,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         rsp.valid := !(isValid && SEL) && WITH_RSP
         rsp.data := buffer.data
         rsp.error := buffer.error
+        rsp.redo := False
+        rsp.waitAny := False
       }
     }
 
