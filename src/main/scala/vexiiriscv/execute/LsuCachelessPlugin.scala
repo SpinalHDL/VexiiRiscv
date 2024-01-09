@@ -181,7 +181,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         trapPort.code := TrapReason.JUMP
         trapPort.tval(0, INSTRUCTION_SLICE_COUNT_WIDTH + 1 bits) := 0
       }
-      
+
       when(tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)) {
         skip := True
         trapPort.exception := True

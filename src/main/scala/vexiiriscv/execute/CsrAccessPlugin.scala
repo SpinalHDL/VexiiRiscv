@@ -39,7 +39,7 @@ class CsrAccessPlugin(layer : LaneLayer,
 
   override def onDecodeTrap(): Unit = apiIo.onDecodeTrap := True
   override def onDecodeUntrap(): Unit = apiIo.onDecodeTrap := False
-  override def onDecodeFlushPipeline(): Unit = apiIo.onDecodeFlushPipeline
+  override def onDecodeFlushPipeline(): Unit = apiIo.onDecodeFlushPipeline := True
   override def onDecodeRead: Bool = apiIo.onDecodeRead
   override def onDecodeWrite: Bool = apiIo.onDecodeWrite
   override def onDecodeHartId: UInt = apiIo.onDecodeHartId
@@ -249,21 +249,26 @@ class CsrAccessPlugin(layer : LaneLayer,
         trapPort.tval := UOP
 
         val flushReg = RegInit(False) setWhen(flushPort.valid) clearWhen(!elp.isFreezed())
-        flushPort.valid setWhen(flushReg)
+        when(flushReg) {
+          flushPort.valid := True
+          bypass(Global.TRAP) := True
+        }
 
         IDLE whenIsActive {
           (regs.sels.values, sels.values).zipped.foreach(_ := _)
 
           when(onDecodeDo) {
             when(trap) {
-              flushPort.valid := True
-              trapPort.valid := True
               bypass(Global.TRAP) := True
               bypass(Global.COMMIT) := False
+              flushPort.valid := True
+              trapPort.valid := True
               iLogic.freeze := False
             } otherwise {
               goto(READ)
               when(apiIo.onDecodeFlushPipeline){
+                bypass(Global.TRAP) := True
+                flushPort.valid := True
                 trapPort.valid := True
                 trapPort.exception := False
                 trapPort.code := TrapReason.JUMP
@@ -397,12 +402,12 @@ class CsrAccessPlugin(layer : LaneLayer,
         }
       }
 
-      val completion = Flow(CompletionPayload()) //TODO is it realy necessary to have this port ?
+      val completion = Flow(CompletionPayload()) //Only used when !integrated
       completion.valid := False
       completion.uopId := regs.uopId
       completion.hartId := regs.hartId
       completion.trap := inject(Global.TRAP)
-      completion.commit := !inject(Global.TRAP)
+      completion.commit := inject(Global.COMMIT)
 
       integrated match {
         case true => {

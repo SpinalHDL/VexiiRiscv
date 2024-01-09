@@ -193,6 +193,7 @@ class MmuPlugin(var spec : MmuSpec,
     csr.writeCancel(CSR.SATP, satpModeWrite =/= 0 && satpModeWrite =/= spec.satpMode)
     //    csr.readWriteRam(CSR.SATP) not suported by writeCancel
 
+    //TODO !!!! MISS SPEC : Changes to the sstatus fields SUM and MXR take effect immediately, without the need to execute an SFENCE.VMA instruction.
     csr.onDecode(CSR.SATP){
       csr.onDecodeFlushPipeline()
       invalidatePort.cmd.valid := True
