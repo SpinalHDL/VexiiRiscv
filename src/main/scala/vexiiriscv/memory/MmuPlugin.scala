@@ -152,7 +152,6 @@ class MmuPlugin(var spec : MmuSpec,
 
     accessLock.release()
 
-    elaborationLock.await()
 
 
     val ALLOW_REFILL = Payload(Bool())
@@ -201,6 +200,8 @@ class MmuPlugin(var spec : MmuSpec,
 
     csrLock.release()
 
+
+    elaborationLock.await()
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
     val storages = for(ss <- storageSpecs) yield new Composite(ss, "logic", false){

@@ -7,7 +7,8 @@ import spinal.lib.misc.database.Database._
 import spinal.lib.misc.pipeline._
 import vexiiriscv._
 import vexiiriscv.Global._
-import vexiiriscv.misc.TrapService
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
+import vexiiriscv.misc.{TrapReason, TrapService}
 import vexiiriscv.riscv.CSR
 
 case class CachelessBusParam(addressWidth : Int, dataWidth : Int, idCount : Int, cmdPersistence : Boolean){
@@ -41,6 +42,9 @@ object FetchCachelessPlugin{
 }
 
 class FetchCachelessPlugin(var wordWidth : Int,
+                           var translationStorageParameter: Any,
+                           var translationPortParameter: Any,
+                           var addressAt : Int = 0,
                            var forkAt : Int = 0,
                            var joinAt : Int = 1,
                            var cmdForkPersistence : Boolean = true) extends FiberPlugin{
@@ -48,7 +52,8 @@ class FetchCachelessPlugin(var wordWidth : Int,
   val logic = during setup new Area{
     val pp = host[FetchPipelinePlugin]
     val ts = host[TrapService]
-    val buildBefore = retains(pp.elaborationLock)
+    val ats = host[AddressTranslationService]
+    val buildBefore = retains(pp.elaborationLock, ats.elaborationLock)
     val trapLock =  ts.trapLock()
     awaitBuild()
 
@@ -86,18 +91,35 @@ class FetchCachelessPlugin(var wordWidth : Int,
       }
     }
 
+    val onAddress = new pp.Fetch(addressAt) {
+      val translationStorage = ats.newStorage(translationStorageParameter)
+      val translationPort = ats.newTranslationPort(
+        nodes = Seq(down),
+        rawAddress = Fetch.WORD_PC,
+        allowRefill = insert(True),
+        usage = AddressTranslationPortUsage.FETCH,
+        portSpec = translationPortParameter,
+        storageSpec = translationStorage
+      )
+    }
+    val tpk = onAddress.translationPort.keys
+
     val fork = new pp.Fetch(forkAt){
       val fresh = (forkAt == 0).option(host[PcPlugin].forcedSpawn())
       val cmdFork = forkStream(fresh)
       bus.cmd.arbitrationFrom(cmdFork.haltWhen(buffer.full))
       bus.cmd.id := buffer.reserveId
-      bus.cmd.address := Fetch.WORD_PC
+      bus.cmd.address := tpk.TRANSLATED
       bus.cmd.address(Fetch.SLICE_RANGE) := 0
 
       BUFFER_ID := buffer.reserveId
 
-      when(up.isMoving) {
-        buffer.reserveId.increment()
+      when(tpk.REDO) {
+        bus.cmd.valid := False
+      }otherwise {
+        when(up.isMoving) {
+          buffer.reserveId.increment()
+        }
       }
     }
 
@@ -111,12 +133,39 @@ class FetchCachelessPlugin(var wordWidth : Int,
         rsp.assignSomeByName(bus.rsp.payload)
       }
       Fetch.WORD := rsp.word
-      TRAP := isValid && !haltIt && rsp.error
+
+      TRAP := False
       trapPort.valid := TRAP
-      trapPort.exception := True
       trapPort.tval := Fetch.WORD_PC.asBits
-      trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
       trapPort.hartId := Global.HART_ID
+      trapPort.exception.assignDontCare()
+      trapPort.code.assignDontCare()
+
+      when(rsp.error){
+        TRAP := True
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
+      }
+
+      when(tpk.PAGE_FAULT || !tpk.ALLOW_EXECUTE) {
+        TRAP := True
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT
+      }
+
+      when(tpk.ACCESS_FAULT) {
+        TRAP := True
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
+      }
+
+      when(tpk.REDO){
+        TRAP := True
+        trapPort.exception := False
+        trapPort.code := TrapReason.WAIT_MMU
+      }
+
+      TRAP.clearWhen(!isValid || haltIt)
 
       haltWhen(haltIt)
     }

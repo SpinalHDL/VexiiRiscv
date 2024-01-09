@@ -58,7 +58,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var joinAt: Int = 1,
                          var wbAt: Int = 2) extends FiberPlugin with DBusAccessService{
 
-  val FENCE_I_SEL = Payload(Bool())
   val WITH_RSP = Payload(Bool())
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
@@ -101,7 +100,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     }
 
     layer.add(Rvi.FENCE) //TODO
-    layer.add(Rvi.FENCE_I) //TODO
 
     layer(Rvi.FENCE).setCompletion(joinAt)
     for(uop <- frontend.stores) layer(uop).setCompletion(joinAt)
@@ -160,7 +158,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.cmd.io := tpk.IO
       bus.cmd.fromHart := True
       bus.cmd.hartId := Global.HART_ID
-      assert(tpk.REDO === False, "LsuCachelessPlugin expected translation port REDO False, but True")
 
       elp.freezeWhen(bus.cmd.isStall)
 
@@ -183,6 +180,12 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         trapPort.exception := False
         trapPort.code := TrapReason.JUMP
         trapPort.tval(0, INSTRUCTION_SLICE_COUNT_WIDTH + 1 bits) := 0
+      }
+
+      when(tpk.REDO){
+        skip := True
+        trapPort.exception := False
+        trapPort.code := TrapReason.WAIT_MMU
       }
 
       when(MISS_ALIGNED){

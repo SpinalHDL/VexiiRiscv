@@ -157,7 +157,31 @@ class ParamSimple(){
     plugins += new fetch.FetchCachelessPlugin(
       forkAt = 0,
       joinAt = 1, //You can for instance allow the external memory to have more latency by changing this
-      wordWidth = 32*decoders
+      wordWidth = 32*decoders,
+      translationStorageParameter = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 4,
+            depth = 32
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 2,
+            depth = 32
+          )
+        ),
+        priority = 0
+      ),
+      translationPortParameter = withMmu match {
+        case false => null
+        case true => MmuPortParameter(
+          readAt = 0,
+          hitsAt = 0,
+          ctrlAt = 0,
+          rspAt = 0
+        )
+      }
     )
 
     plugins += new decode.DecodePipelinePlugin()

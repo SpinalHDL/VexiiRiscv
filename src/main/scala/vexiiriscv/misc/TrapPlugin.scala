@@ -72,6 +72,9 @@ object TrapReason{
   val INTERRUPT = 0
   val PRIV_RET = 1
   val JUMP = 2
+  val FENCE_I = 3
+  val SFENCE_VMA = 4
+  val WAIT_MMU = 5
 }
 
 
@@ -270,6 +273,12 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           }
 
           val jumpTarget = Reg(PC)
+          jumpTarget := pending.pc + pending.state.code.mux(
+            TrapReason.JUMP -> U(pending.state.tval(0, INSTRUCTION_SLICE_COUNT_WIDTH+1 bits) << Fetch.SLICE_RANGE_LOW),
+            TrapReason.WAIT_MMU -> U(0, 3 bits),
+            default -> U(4)
+          )
+
           PROCESS.whenIsActive{
             when(pending.state.exception || buffer.trap.interrupt) {
               goto(TRAP_TVAL)
@@ -284,8 +293,17 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                 is(TrapReason.PRIV_RET) {
                   goto(XRET_EPC)
                 }
+                is(TrapReason.FENCE_I) {
+                  goto(JUMP) //TODO
+                }
+                is(TrapReason.SFENCE_VMA) {
+                  goto(JUMP) //TODO
+                }
+                is(TrapReason.WAIT_MMU) {
+                  //TODO wait until mmu is done instead of trying again directly
+                  goto(JUMP)
+                }
                 is(TrapReason.JUMP) {
-                  jumpTarget := pending.pc + U(pending.state.tval(0, INSTRUCTION_SLICE_COUNT_WIDTH+1 bits)) //TODO OPT the adder may not be necessary if only used as a redo (in some config)
                   goto(JUMP)
                 }
                 default {
