@@ -8,7 +8,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
-import vexiiriscv.misc.{TrapReason, TrapService}
+import vexiiriscv.misc.{TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.CSR
 
 case class CachelessBusParam(addressWidth : Int, dataWidth : Int, idCount : Int, cmdPersistence : Boolean){
@@ -162,7 +162,8 @@ class FetchCachelessPlugin(var wordWidth : Int,
       when(tpk.REDO){
         TRAP := True
         trapPort.exception := False
-        trapPort.code := TrapReason.WAIT_MMU
+        trapPort.code := TrapReason.MMU_REFILL
+        trapPort.tval(1 downto 0) := TrapArg.FETCH
       }
 
       TRAP.clearWhen(!isValid || haltIt)

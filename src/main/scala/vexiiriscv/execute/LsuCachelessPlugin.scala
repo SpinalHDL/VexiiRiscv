@@ -10,7 +10,7 @@ import spinal.core.fiber.Retainer
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
-import vexiiriscv.misc.{AddressToMask, TrapReason, TrapService}
+import vexiiriscv.misc.{AddressToMask, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
 import vexiiriscv.decode.Decode.INSTRUCTION_SLICE_COUNT_WIDTH
@@ -199,7 +199,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       when(tpk.REDO) {
         skip := True
         trapPort.exception := False
-        trapPort.code := TrapReason.WAIT_MMU
+        trapPort.code := TrapReason.MMU_REFILL
+        trapPort.tval(1 downto 0) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
       }
 
       when(MISS_ALIGNED){

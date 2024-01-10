@@ -13,6 +13,7 @@ import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
 import vexiiriscv.fetch.{Fetch, PcService}
+import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.schedule.Ages
 
 import scala.collection.mutable
@@ -74,7 +75,13 @@ object TrapReason{
   val JUMP = 2
   val FENCE_I = 3
   val SFENCE_VMA = 4
-  val WAIT_MMU = 5
+  val MMU_REFILL = 5
+}
+
+object TrapArg{
+  val LOAD = 0
+  val STORE = 1
+  val FETCH = 2
 }
 
 
@@ -87,9 +94,10 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     val cap = host[CsrAccessPlugin]
     val pp = host[PipelineBuilderPlugin]
     val pcs = host[PcService]
+    val ats = host[AddressTranslationService]
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
-    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock))
+    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.elaborationLock))
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
     trapLock.await()
@@ -242,6 +250,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val PROCESS = new State()
           val TRAP_EPC, TRAP_TVAL, TRAP_TVEC, TRAP_APPLY = new State()
           val XRET_EPC, XRET_APPLY = new State()
+          val ATS_RSP = ats.mayNeedRedo generate new State()
           val JUMP = new State()
 
           val inflightTrap = trapPendings.map(_(hartId)).orR
@@ -264,6 +273,11 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             }
           }
 
+          val atsRefill = ats.mayNeedRedo generate ats.newRefillPort()
+          if(ats.mayNeedRedo) {
+            atsRefill.cmd.valid := False
+            atsRefill.cmd.address := pending.state.tval.asUInt
+          }
 
           RUNNING.whenIsActive {
             when(trigger.valid) {
@@ -275,7 +289,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val jumpTarget = Reg(PC)
           jumpTarget := pending.pc + pending.state.code.mux(
             TrapReason.JUMP -> U(pending.state.tval(0, INSTRUCTION_SLICE_COUNT_WIDTH+1 bits) << Fetch.SLICE_RANGE_LOW),
-            TrapReason.WAIT_MMU -> U(0, 3 bits),
+            TrapReason.MMU_REFILL -> U(0, 3 bits),
             default -> U(4)
           )
 
@@ -299,9 +313,11 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                 is(TrapReason.SFENCE_VMA) {
                   goto(JUMP) //TODO
                 }
-                is(TrapReason.WAIT_MMU) {
-                  //TODO wait until mmu is done instead of trying again directly
-                  goto(JUMP)
+                if(ats.mayNeedRedo) is(TrapReason.MMU_REFILL) {
+                  atsRefill.cmd.valid := True
+                  when(atsRefill.cmd.ready){
+                    goto(ATS_RSP)
+                  }
                 }
                 is(TrapReason.JUMP) {
                   goto(JUMP)
@@ -309,6 +325,25 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                 default {
                   assert(False, "Unexpected trap reason")
                 }
+              }
+            }
+          }
+
+          if(ats.mayNeedRedo) ATS_RSP.whenIsActive{
+            when(atsRefill.rsp.valid){
+              goto(JUMP) //TODO shave one cycle
+              when(atsRefill.rsp.pageFault || atsRefill.rsp.accessFault){
+                pending.state.exception := True
+                switch(atsRefill.rsp.pageFault ## pending.state.tval(1 downto 0)){
+                  def add(k : Int, v : Int) = is(k){pending.state.code := v}
+                  add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
+                  add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
+                  add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT)
+                  add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT)
+                  add(TrapArg.LOAD  | 4, CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT)
+                  add(TrapArg.STORE | 4, CSR.MCAUSE_ENUM.STORE_PAGE_FAULT)
+                }
+                goto(TRAP_TVAL)
               }
             }
           }
@@ -324,6 +359,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
               goto(TRAP_EPC)
             }
           }
+
           TRAP_EPC.whenIsActive {
             crsPorts.write.valid := True
             crsPorts.write.address := privilegeMux(buffer.trap.targetPrivilege)(

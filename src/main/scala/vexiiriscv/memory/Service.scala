@@ -17,9 +17,27 @@ object AddressTranslationPortUsage{
   object LOAD_STORE extends AddressTranslationPortUsage
 }
 
+case class AddressTranslationRefillCmd(storageWidth : Int) extends Bundle{
+  val address = MIXED_ADDRESS()
+  val storageId = UInt(storageWidth bits)
+}
+
+case class AddressTranslationRefillRsp() extends Bundle{
+  val pageFault, accessFault = Bool()
+}
+
+case class AddressTranslationRefill(storageWidth : Int) extends Bundle{
+  val cmd = Stream(AddressTranslationRefillCmd(storageWidth))
+  val rsp = Flow(AddressTranslationRefillRsp())
+}
+
 trait AddressTranslationService extends Area {
-  val elaborationLock = Retainer()
+  def mayNeedRedo : Boolean
+  val storageLock = Retainer()
+  val portsLock = Retainer()
   def newStorage(pAny: Any): Any
+  def getStorageId(s : Any) : Int
+  def getStorageIdWidth() : Int
 
   def newTranslationPort(nodes: Seq[NodeBaseApi],
                          rawAddress: Payload[UInt],
@@ -27,6 +45,9 @@ trait AddressTranslationService extends Area {
                          usage: AddressTranslationPortUsage,
                          portSpec: Any,
                          storageSpec: Any): AddressTranslationRsp
+
+  val refillPorts = ArrayBuffer[AddressTranslationRefill]()
+  def newRefillPort() = refillPorts.addRet(AddressTranslationRefill())
 }
 
 class AddressTranslationRsp(s : AddressTranslationService, wakesCount : Int, val wayCount : Int) extends Area{
@@ -42,7 +63,6 @@ class AddressTranslationRsp(s : AddressTranslationService, wakesCount : Int, val
     val WAYS_PHYSICAL  = Payload(Vec.fill(wayCount)(PHYSICAL_ADDRESS()))
     val BYPASS_TRANSLATION = Payload(Bool())
   }
-  val wake = Bool()
 }
 
 
