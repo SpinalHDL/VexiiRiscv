@@ -210,7 +210,7 @@ class MmuPlugin(var spec : MmuSpec,
     csrLock.release()
 
 
-    elaborationLock.await()
+    portsLock.await()
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
     val storages = for(ss <- storageSpecs) yield new Composite(ss, "logic", false){
@@ -362,7 +362,7 @@ class MmuPlugin(var spec : MmuSpec,
       IDLE whenIsActive {
         when(arbiter.io.output.valid) {
           portOhReg := arbiter.io.chosenOH
-          storageOhReg := OHToUInt(arbiter.io.output.storageId)
+          storageOhReg := UIntToOh(arbiter.io.output.storageId)
           virtual := arbiter.io.output.address
           load.address := (satp.ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
           arbiter.io.output.ready := True
@@ -417,12 +417,12 @@ class MmuPlugin(var spec : MmuSpec,
         val accessFault = !pageFault && load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0
 
         def doneLogic() : Unit = {
-          for(storage <- storages){
+          for((storage, sid) <- storages.zipWithIndex){
             val storageLevelId = storage.self.p.levels.filter(_.id <= levelId).map(_.id).max
             val storageLevel = storage.sl.find(_.slp.id == storageLevelId).get
             val specLevel = storageLevel.level
 
-            val sel = (storageOhReg.asBools, ports).zipped.toList.filter(_._2.storage == storage).map(_._1).orR
+            val sel = storageOhReg(sid)
             storageLevel.write.mask                 := UIntToOh(storageLevel.allocId).andMask(sel)
             storageLevel.write.address              := virtual(storageLevel.lineRange)
             storageLevel.write.data.valid           := True

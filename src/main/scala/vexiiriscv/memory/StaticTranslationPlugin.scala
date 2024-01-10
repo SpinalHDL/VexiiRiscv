@@ -52,7 +52,7 @@ class StaticTranslationPlugin(var physicalWidth: Int,
     PC_WIDTH.set(physicalWidth)
     TVAL_WIDTH.set(physicalWidth)
 
-    elaborationLock.await()
+    portsLock.await()
     assert(refillPorts.isEmpty)
   }
 }

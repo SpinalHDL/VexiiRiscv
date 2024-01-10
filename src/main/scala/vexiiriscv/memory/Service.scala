@@ -47,7 +47,7 @@ trait AddressTranslationService extends Area {
                          storageSpec: Any): AddressTranslationRsp
 
   val refillPorts = ArrayBuffer[AddressTranslationRefill]()
-  def newRefillPort() = refillPorts.addRet(AddressTranslationRefill())
+  def newRefillPort() = refillPorts.addRet(AddressTranslationRefill(getStorageIdWidth()))
 }
 
 class AddressTranslationRsp(s : AddressTranslationService, wakesCount : Int, val wayCount : Int) extends Area{

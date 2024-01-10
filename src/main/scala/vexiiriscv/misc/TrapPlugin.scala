@@ -97,9 +97,11 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     val ats = host[AddressTranslationService]
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
-    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.elaborationLock))
+    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock))
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
+
+    TRAP_ARG_WIDTH.set(10) //TODO
     trapLock.await()
 
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
@@ -277,6 +279,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           if(ats.mayNeedRedo) {
             atsRefill.cmd.valid := False
             atsRefill.cmd.address := pending.state.tval.asUInt
+            atsRefill.cmd.storageId := pending.state.tval(2, ats.getStorageIdWidth() bits).asUInt
           }
 
           RUNNING.whenIsActive {

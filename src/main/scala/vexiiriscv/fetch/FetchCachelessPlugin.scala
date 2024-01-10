@@ -53,11 +53,15 @@ class FetchCachelessPlugin(var wordWidth : Int,
     val pp = host[FetchPipelinePlugin]
     val ts = host[TrapService]
     val ats = host[AddressTranslationService]
-    val buildBefore = retains(pp.elaborationLock, ats.elaborationLock)
+    val buildBefore = retains(pp.elaborationLock, ats.portsLock)
+    val atsStorageLock = retains(ats.storageLock)
     val trapLock =  ts.trapLock()
     awaitBuild()
 
     Fetch.WORD_WIDTH.set(wordWidth)
+
+    val translationStorage = ats.newStorage(translationStorageParameter)
+    atsStorageLock.release()
 
     val trapPort = ts.newTrap(pp.getAge(joinAt), 0)
     trapLock.release()
@@ -92,7 +96,6 @@ class FetchCachelessPlugin(var wordWidth : Int,
     }
 
     val onAddress = new pp.Fetch(addressAt) {
-      val translationStorage = ats.newStorage(translationStorageParameter)
       val translationPort = ats.newTranslationPort(
         nodes = Seq(down),
         rawAddress = Fetch.WORD_PC,
@@ -163,7 +166,8 @@ class FetchCachelessPlugin(var wordWidth : Int,
         TRAP := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
-        trapPort.tval(1 downto 0) := TrapArg.FETCH
+        trapPort.tval(0, 2 bits) := TrapArg.FETCH
+        trapPort.tval(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       }
 
       TRAP.clearWhen(!isValid || haltIt)

@@ -69,7 +69,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val ats = host[AddressTranslationService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
-    val buildBefore = retains(elp.pipelineLock, ats.elaborationLock)
+    val buildBefore = retains(elp.pipelineLock, ats.portsLock)
+    val atsStorageLock = retains(ats.storageLock)
     val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock)
     awaitBuild()
 
@@ -106,6 +107,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     retainer.release()
 
+    val translationStorage = ats.newStorage(translationStorageParameter)
+    atsStorageLock.release()
+
     val injectCtrl = elp.ctrl(0)
     val inject = new injectCtrl.Area {
       SIZE := Decode.UOP(13 downto 12).asUInt
@@ -125,7 +129,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val onAddress = new addressCtrl.Area{
       val RAW_ADDRESS = insert(srcp.ADD_SUB.asUInt)
 
-      val translationStorage = ats.newStorage(translationStorageParameter)
       val translationPort = ats.newTranslationPort(
         nodes = Seq(forkCtrl.down),
         rawAddress = RAW_ADDRESS,
@@ -200,7 +203,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
-        trapPort.tval(1 downto 0) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
+        trapPort.tval(0, 2 bits) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
+        trapPort.tval(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       }
 
       when(MISS_ALIGNED){
