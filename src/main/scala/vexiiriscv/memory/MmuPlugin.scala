@@ -128,7 +128,7 @@ class MmuPlugin(var spec : MmuSpec,
         usage       = usage,
         pp          = pp,
         ss          = ss,
-        rsp         = new AddressTranslationRsp(this, 1 /*, stages(pp.rspAt)*/, ss.p.levels.map(_.ways).sum)
+        rsp         = new AddressTranslationRsp(this /*, stages(pp.rspAt)*/, ss.p.levels.map(_.ways).sum)
       )
     ).rsp
   }
@@ -482,38 +482,38 @@ class MmuPlugin(var spec : MmuSpec,
         }
       }
     }
-//TODO
-//    val invalidate = new Area{
-//      val requested = RegInit(True) setWhen(invalidatePort.cmd.valid)
-//      val canStart = True
-//      val depthMax = storageSpecs.map(_.p.levels.map(_.depth).max).max
-//      val counter = Reg(UInt(log2Up(depthMax)+1 bits)) init(0)
-//      val done = counter.msb
-//      when(!done){
+//TODO what's about adding flush handling in the Trap FSM ?
+    val invalidate = new Area{
+      val requested = RegInit(True) setWhen(invalidatePort.cmd.valid)
+      val canStart = True
+      val depthMax = storageSpecs.map(_.p.levels.map(_.depth).max).max
+      val counter = Reg(UInt(log2Up(depthMax)+1 bits)) init(0)
+      val done = counter.msb
+      when(!done){
+        assert(HART_COUNT.get == 1) //        refill.portsRequest := False
+        counter := counter + 1
+        for(storage <- storages;
+            sl <- storage.sl){
+          sl.write.mask := (default -> true)
+          sl.write.address := counter.resized
+          sl.write.data.valid := False
+        }
+      }
+
+//      fetch.getStage(0).haltIt(!done || requested) //TODO ? maybe not
+
+      when(requested && canStart){
+        counter := 0
+        requested := False
 //        refill.portsRequest := False
-//        counter := counter + 1
-//        for(storage <- storages;
-//            sl <- storage.sl){
-//          sl.write.mask := (default -> true)
-//          sl.write.address := counter.resized
-//          sl.write.data.valid := False
-//        }
-//      }
-//
-//      fetch.getStage(0).haltIt(!done || requested)
-//
-//      when(requested && canStart){
-//        counter := 0
-//        requested := False
-//        refill.portsRequest := False
-//      }
-//
-//      when(refill.busy || getServicesOf[PostCommitBusy].map(_.postCommitBusy).orR){
-//        canStart := False
-//      }
-//
-//      invalidatePort.rsp.valid setWhen(done.rise(False))
-//    }
+      }
+
+      when(refill.busy){
+        canStart := False
+      }
+
+      invalidatePort.rsp.valid setWhen(done.rise(False))
+    }
 //    fetch.release()
 
 //    core.fiber.hardFork(refill.build())

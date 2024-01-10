@@ -137,7 +137,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
-        address := c(p.logic.srcp.ADD_SUB).asUInt.resized //PC RESIZED
+        address := c(p.logic.onFork.tpk.TRANSLATED)
         data := host.find[IntFormatPlugin](_.laneName == p.layer.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
       })
     }

@@ -50,7 +50,7 @@ trait AddressTranslationService extends Area {
   def newRefillPort() = refillPorts.addRet(AddressTranslationRefill(getStorageIdWidth()))
 }
 
-class AddressTranslationRsp(s : AddressTranslationService, wakesCount : Int, val wayCount : Int) extends Area{
+class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) extends Area{
   val keys = new Area {
     setName("MMU")
     val TRANSLATED = Payload(PHYSICAL_ADDRESS)

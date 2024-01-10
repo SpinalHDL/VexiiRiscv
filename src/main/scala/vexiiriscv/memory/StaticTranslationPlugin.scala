@@ -22,7 +22,7 @@ class StaticTranslationPlugin(var physicalWidth: Int,
                                   usage: AddressTranslationPortUsage,
                                   portSpec: Any,
                                   storageSpec: Any): AddressTranslationRsp = {
-    new AddressTranslationRsp(this, 0, wayCount = 0) {
+    new AddressTranslationRsp(this, wayCount = 0) {
       val node = nodes.last
       import node._
       import keys._
