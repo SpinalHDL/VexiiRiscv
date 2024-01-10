@@ -235,7 +235,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       csr.onDecode(csrFilter){ //TODO test
         when(csr.onDecodeAddress(9 downto 8) === 0){
           when(csr.onDecodeWrite || !privOk){
-            csr.onDecodeTrap()
+            csr.onDecodeException()
           }
         }
       }

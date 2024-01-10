@@ -40,14 +40,6 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
     elaborationLock.await()
     val injectStage = pp.fetch(0).up
 
-    // Used to wait until everybody is ready after reset
-    val init = new Area {
-      val requests = host.list[InitService]
-      val booted = RegNext(True) init(False)
-      booted clearWhen(requests.map(_.initHold()).orR)
-    }
-
-
     assert(Global.HART_COUNT.get == 1)
     val forcedSpawn = jumps.map(_.bus.valid).orR
 
@@ -111,11 +103,6 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
       harts(0).output.ready := ready
       Fetch.WORD_PC := harts(0).output.payload
       HART_ID := 0
-
-      when(!init.booted){
-        valid := False
-        harts.foreach(_.output.ready := False)
-      }
 
       Fetch.ID.assignDontCare()
       harts.onSel(HART_ID) { hart =>

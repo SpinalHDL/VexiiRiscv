@@ -37,13 +37,14 @@ class CsrAccessPlugin(layer : LaneLayer,
 
   import CsrFsm._
 
+  override def onDecodeException(): Unit = apiIo.onDecodeException := True
+  override def onDecodeUnException(): Unit = apiIo.onDecodeException := False
   override def onDecodeTrap(): Unit = apiIo.onDecodeTrap := True
-  override def onDecodeUntrap(): Unit = apiIo.onDecodeTrap := False
-  override def onDecodeFlushPipeline(): Unit = apiIo.onDecodeFlushPipeline := True
   override def onDecodeRead: Bool = apiIo.onDecodeRead
   override def onDecodeWrite: Bool = apiIo.onDecodeWrite
   override def onDecodeHartId: UInt = apiIo.onDecodeHartId
   override def onDecodeAddress: UInt = apiIo.onDecodeAddress
+  override def onDecodeTrapCode: Bits = apiIo.onDecodeTrapCode
 
 
   override def isReading: Bool = apiIo.isReading
@@ -64,12 +65,13 @@ class CsrAccessPlugin(layer : LaneLayer,
   override def onWriteMovingOff: Bool = apiIo.onWriteMovingOff
 
   val apiIo = during build new Area{
+    val onDecodeException = False
     val onDecodeTrap = False
-    val onDecodeFlushPipeline = False
     val onDecodeRead = Bool()
     val onDecodeWrite = Bool()
     val onDecodeHartId = Global.HART_ID()
     val onDecodeAddress = CSR_ADDRESS()
+    val onDecodeTrapCode = Global.CODE().assignDontCare()
     val isReading = Bool()
     val onReadAddress = CSR_ADDRESS()
     val onReadHalt = False
@@ -205,7 +207,7 @@ class CsrAccessPlugin(layer : LaneLayer,
 
 
 
-        val trap = !implemented || apiIo.onDecodeTrap
+        val trap = !implemented || apiIo.onDecodeException
 
         def connectRegs(): Unit = {
           regs.hartId := Global.HART_ID
@@ -267,13 +269,12 @@ class CsrAccessPlugin(layer : LaneLayer,
               iLogic.freeze := False
             } otherwise {
               goto(READ)
-              when(apiIo.onDecodeFlushPipeline){
+              when(apiIo.onDecodeTrap){
                 bypass(Global.TRAP) := True
                 flushPort.valid := True
                 trapPort.valid := True
                 trapPort.exception := False
-                trapPort.code := TrapReason.JUMP
-                trapPort.arg := B(INSTRUCTION_SLICE_COUNT +^ 1).resized
+                trapPort.code := apiIo.onDecodeTrapCode
               }
             }
           }

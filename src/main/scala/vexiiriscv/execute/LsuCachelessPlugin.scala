@@ -177,13 +177,12 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.tval := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
-      trapPort.arg.assignDontCare()
+      trapPort.arg := 0
 
       if(withSpeculativeLoadFlush) when(LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)){
         skip := True
         trapPort.exception := False
-        trapPort.code := TrapReason.JUMP
-        trapPort.arg(0, INSTRUCTION_SLICE_COUNT_WIDTH + 1 bits) := 0
+        trapPort.code := TrapReason.REDO
       }
 
       when(tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)) {
@@ -200,12 +199,12 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         trapPort.code(1) setWhen (!LOAD)
       }
 
+      trapPort.arg(0, 2 bits) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
+      trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REDO) {
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
-        trapPort.arg(0, 2 bits) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
-        trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       }
 
       when(MISS_ALIGNED){

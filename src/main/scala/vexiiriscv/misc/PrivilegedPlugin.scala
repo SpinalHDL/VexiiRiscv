@@ -274,7 +274,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends Fibe
       val csrPrivilege = cap.onDecodeAddress(8, 2 bits)
       val csrReadOnly = cap.onDecodeAddress(10, 2 bits) === U"11"
       when(csrReadOnly && cap.onDecodeWrite || csrPrivilege > harts.reader(cap.onDecodeHartId)(_.privilege)) {
-        cap.onDecodeTrap()
+        cap.onDecodeException()
       }
     }
 

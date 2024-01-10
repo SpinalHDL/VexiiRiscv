@@ -11,8 +11,8 @@ import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
 import vexiiriscv.decode.Decode
-import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
-import vexiiriscv.fetch.{Fetch, PcService}
+import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
+import vexiiriscv.fetch.{Fetch, InitService, PcService}
 import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.schedule.Ages
 
@@ -73,10 +73,11 @@ case class TrapPending() extends Bundle{
 object TrapReason{
   val INTERRUPT = 0
   val PRIV_RET = 1
-  val JUMP = 2
-  val FENCE_I = 3
-  val SFENCE_VMA = 4
-  val MMU_REFILL = 5
+  val REDO = 2
+  val NEXT = 3
+  val FENCE_I = 4
+  val SFENCE_VMA = 5
+  val MMU_REFILL = 6
 }
 
 object TrapArg{
@@ -102,11 +103,13 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
 
-    val trapArgWidths = ArrayBuffer[Int](2)
+    val trapArgWidths = ArrayBuffer[Int](0)
     if(ats.mayNeedRedo) trapArgWidths += 2+ats.getStorageIdWidth()
     TRAP_ARG_WIDTH.set(trapArgWidths.max)
 
     trapLock.await()
+
+    val initHold = Bool()
 
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
       val csr = priv.logic.harts(hartId)
@@ -194,6 +197,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val arbiter = new AgedArbiter(requests)
           val state = arbiter.down.toReg
           val pc = Reg(PC)
+          val slices = Reg(UInt(INSTRUCTION_SLICE_COUNT_WIDTH+1 bits))
 
           val xret = new Area {
             val sourcePrivilege = state.arg(1 downto 0).asUInt
@@ -236,8 +240,10 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val oh = B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(TRAP))
           val valid = oh.orR
           val pc = OHMux.or(oh, lanes.map(_.execute(trapAt).down(PC)), true)
+          val slices = OHMux.or(oh, lanes.map(_.execute(trapAt).down(INSTRUCTION_SLICE_COUNT)), true)
           when(valid) {
             pending.pc := pc
+            pending.slices := slices+1
           }
         }
 
@@ -252,8 +258,8 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
         pcPort.hartId := hartId
         pcPort.pc.assignDontCare()
         val fsm = new StateMachine {
-          val RUNNING = makeInstantEntry()
-          val PROCESS = new State()
+          val RESET = makeInstantEntry()
+          val RUNNING, PROCESS = new State()
           val TRAP_EPC, TRAP_TVAL, TRAP_TVEC, TRAP_APPLY = new State()
           val XRET_EPC, XRET_APPLY = new State()
           val ATS_RSP = ats.mayNeedRedo generate new State()
@@ -262,6 +268,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val inflightTrap = trapPendings.map(_(hartId)).orR
           val holdPort = pcs.newHoldPort(hartId)
           holdPort := inflightTrap || !isActive(RUNNING)
+
 
           val buffer = new Area {
             val sampleIt = False
@@ -279,12 +286,31 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             }
           }
 
-          val atsRefill = ats.mayNeedRedo generate ats.newRefillPort()
-          if(ats.mayNeedRedo) {
-            atsRefill.cmd.valid := False
-            atsRefill.cmd.address := pending.state.tval.asUInt
-            atsRefill.cmd.storageId := pending.state.arg(2, ats.getStorageIdWidth() bits).asUInt
+          val resetToRunConditions = ArrayBuffer[Bool](!initHold)
+          val atsPorts = ats.mayNeedRedo generate new Area{
+            val refill = ats.newRefillPort()
+            refill.cmd.valid := False
+            refill.cmd.address := pending.state.tval.asUInt
+            refill.cmd.storageId := pending.state.arg(2, ats.getStorageIdWidth() bits).asUInt
+
+            val invalidate = ats.newInvalidationPort()
+            invalidate.cmd.valid := False
+            invalidate.cmd.hartId := hartId
+
+            val invalidated = RegInit(False) setWhen(invalidate.cmd.fire)
+            invalidate.cmd.valid setWhen(!invalidated)
+            resetToRunConditions += invalidated
           }
+
+
+          // Used to wait until everybody is ready after reset
+
+          RESET.whenIsActive{
+            when(resetToRunConditions.andR){
+              goto(RUNNING)
+            }
+          }
+
 
           RUNNING.whenIsActive {
             when(trigger.valid) {
@@ -294,10 +320,14 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           }
 
           val jumpTarget = Reg(PC)
-          jumpTarget := pending.pc + pending.state.code.mux(
-            TrapReason.JUMP -> U(pending.state.arg(0, INSTRUCTION_SLICE_COUNT_WIDTH+1 bits) << Fetch.SLICE_RANGE_LOW),
-            TrapReason.MMU_REFILL -> U(0, 3 bits),
-            default -> U(4)
+          val jumpOffset = UInt(INSTRUCTION_SLICE_COUNT_WIDTH+1 bits)
+          jumpTarget := pending.pc + (jumpOffset << Fetch.SLICE_RANGE_LOW)
+          jumpOffset := pending.slices.andMask(
+            List(
+              TrapReason.NEXT,
+              TrapReason.FENCE_I,
+              TrapReason.SFENCE_VMA
+            ).map(pending.state.code === _).orR
           )
 
           PROCESS.whenIsActive{
@@ -317,17 +347,23 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                 is(TrapReason.FENCE_I) {
                   goto(JUMP) //TODO
                 }
-                is(TrapReason.SFENCE_VMA) {
+                is(TrapReason.REDO) {
                   goto(JUMP) //TODO
                 }
-                if(ats.mayNeedRedo) is(TrapReason.MMU_REFILL) {
-                  atsRefill.cmd.valid := True
-                  when(atsRefill.cmd.ready){
-                    goto(ATS_RSP)
+                is(TrapReason.NEXT) {
+                  goto(JUMP) //TODO
+                }
+                is(TrapReason.SFENCE_VMA) {
+                  atsPorts.invalidate.cmd.valid := True
+                  when(atsPorts.invalidate.cmd.ready) {
+                    goto(JUMP)
                   }
                 }
-                is(TrapReason.JUMP) {
-                  goto(JUMP)
+                if(ats.mayNeedRedo) is(TrapReason.MMU_REFILL) {
+                  atsPorts.refill.cmd.valid := True
+                  when(atsPorts.refill.cmd.ready){
+                    goto(ATS_RSP)
+                  }
                 }
                 default {
                   assert(False, "Unexpected trap reason")
@@ -337,11 +373,11 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           }
 
           if(ats.mayNeedRedo) ATS_RSP.whenIsActive{
-            when(atsRefill.rsp.valid){
+            when(atsPorts.refill.rsp.valid){
               goto(JUMP) //TODO shave one cycle
-              when(atsRefill.rsp.pageFault || atsRefill.rsp.accessFault){
+              when(atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
                 pending.state.exception := True
-                switch(atsRefill.rsp.pageFault ## pending.state.arg(1 downto 0)){
+                switch(atsPorts.refill.rsp.pageFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
                   add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
                   add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
@@ -466,6 +502,8 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
 
     ramPortRetainers.release()
     buildBefore.release()
+
+    initHold := host.list[InitService].map(_.initHold()).orR
   }
 }
 

@@ -31,6 +31,14 @@ case class AddressTranslationRefill(storageWidth : Int) extends Bundle{
   val rsp = Flow(AddressTranslationRefillRsp())
 }
 
+case class AddressTranslationInvalidationCmd() extends Bundle {
+  val hartId = HART_ID()
+}
+
+case class AddressTranslationInvalidation() extends Bundle {
+  val cmd = Stream(AddressTranslationInvalidationCmd())
+}
+
 trait AddressTranslationService extends Area {
   def mayNeedRedo : Boolean
   val storageLock = Retainer()
@@ -48,6 +56,9 @@ trait AddressTranslationService extends Area {
 
   val refillPorts = ArrayBuffer[AddressTranslationRefill]()
   def newRefillPort() = refillPorts.addRet(AddressTranslationRefill(getStorageIdWidth()))
+
+  val invalidationPorts = ArrayBuffer[AddressTranslationInvalidation]()
+  def newInvalidationPort() = invalidationPorts.addRet(AddressTranslationInvalidation())
 }
 
 class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) extends Area{

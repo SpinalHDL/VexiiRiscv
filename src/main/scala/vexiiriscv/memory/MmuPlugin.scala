@@ -11,7 +11,7 @@ import Global._
 import spinal.lib.misc.pipeline.{NodeBaseApi, Payload}
 import vexiiriscv.execute.{CsrAccessPlugin, CsrRamService}
 import vexiiriscv.memory.AddressTranslationPortUsage.LOAD_STORE
-import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin}
+import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin, TrapReason}
 import vexiiriscv.riscv.CSR
 import vexiiriscv.riscv.Riscv._
 
@@ -156,13 +156,9 @@ class MmuPlugin(var spec : MmuSpec,
     assert(VIRTUAL_WIDTH.get == XLEN.get || XLEN.get > VIRTUAL_WIDTH.get && VIRTUAL_WIDTH.get > physicalWidth)
 
     val accessBus = access.newDBusAccess()
-    val invalidatePort = FlowCmdRsp().setIdleAll()
 
     accessLock.release()
 
-
-
-    val ALLOW_REFILL = Payload(Bool())
     def physCap(range : Range) = (range.high min physicalWidth-1) downto range.low
 
     case class StorageEntry(levelId : Int, depth : Int) extends Bundle {
@@ -203,13 +199,12 @@ class MmuPlugin(var spec : MmuSpec,
 
     //TODO !!!! MISS SPEC : Changes to the sstatus fields SUM and MXR take effect immediately, without the need to execute an SFENCE.VMA instruction.
     csr.onDecode(CSR.SATP){
-      csr.onDecodeFlushPipeline()
-      invalidatePort.cmd.valid := True
+      csr.onDecodeTrap()
+      csr.onDecodeTrapCode := TrapReason.SFENCE_VMA
+//      invalidatePort.cmd.valid := True
     }
 
     csrLock.release()
-
-
     portsLock.await()
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
@@ -251,19 +246,6 @@ class MmuPlugin(var spec : MmuSpec,
       import ps._
 
       val storage = storages.find(_.self == ps.ss).get
-
-//TODO
-//      readStage(ALLOW_REFILL) := (if(allowRefill != null) readStage(allowRefill) else True)
-//      val allowRefillBypass = for(stageId <- pp.readAt to pp.ctrlAt) yield new Area{
-//        val stage = ps.stages(stageId)
-//        val reg = RegInit(True)
-//        stage.overloaded(ALLOW_REFILL) := stage(ALLOW_REFILL) && !storage.refillOngoing && reg
-//        reg := stage.overloaded(ALLOW_REFILL)
-//        when(stage.isRemoved || !stage.isStuck){
-//          reg := True
-//        }
-//      }
-
       val read = for (sl <- storage.sl) yield new Area {
         val readAddress = readStage(ps.preAddress)(sl.lineRange)
         for ((way, wayId) <- sl.ways.zipWithIndex) {
@@ -338,11 +320,7 @@ class MmuPlugin(var spec : MmuSpec,
       val CMD, RSP = List.fill(spec.levels.size)(new State)
 
       val busy = !isActive(IDLE)
-
-
       val virtual = Reg(UInt(MIXED_WIDTH bits))
-
-
 
       val cacheRefill = Reg(Bits(access.accessRefillCount bits)) init(0)
       val cacheRefillAny = Reg(Bool()) init(False)
@@ -482,37 +460,34 @@ class MmuPlugin(var spec : MmuSpec,
         }
       }
     }
-//TODO what's about adding flush handling in the Trap FSM ?
+
+    //Assume no mmu access are done to the given hart while being invalidated
     val invalidate = new Area{
-      val requested = RegInit(True) setWhen(invalidatePort.cmd.valid)
-      val canStart = True
+      val arbiter = StreamArbiterFactory().roundRobin.transactionLock.buildOn(invalidationPorts.map(_.cmd))
       val depthMax = storageSpecs.map(_.p.levels.map(_.depth).max).max
-      val counter = Reg(UInt(log2Up(depthMax)+1 bits)) init(0)
-      val done = counter.msb
-      when(!done){
-        assert(HART_COUNT.get == 1) //        refill.portsRequest := False
-        counter := counter + 1
-        for(storage <- storages;
-            sl <- storage.sl){
+      val counter = Reg(UInt(log2Up(depthMax) bits))
+      val busy = RegInit(False)
+
+      arbiter.io.output.ready := False
+      when(!busy){
+        counter := 0
+        when (arbiter.io.output.valid) {
+          busy := True
+        }
+      } otherwise {
+        assert(HART_COUNT.get == 1)
+        for (storage <- storages;
+             sl <- storage.sl) {
           sl.write.mask := (default -> true)
           sl.write.address := counter.resized
           sl.write.data.valid := False
         }
+        counter := counter + 1
+        when(counter.andR){
+          busy := False
+          arbiter.io.output.ready := True
+        }
       }
-
-//      fetch.getStage(0).haltIt(!done || requested) //TODO ? maybe not
-
-      when(requested && canStart){
-        counter := 0
-        requested := False
-//        refill.portsRequest := False
-      }
-
-      when(refill.busy){
-        canStart := False
-      }
-
-      invalidatePort.rsp.valid setWhen(done.rise(False))
     }
 //    fetch.release()
 

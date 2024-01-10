@@ -143,7 +143,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
-      trapPort.arg.assignDontCare()
+      trapPort.arg := 0
 
       when(rsp.error){
         TRAP := True
@@ -163,12 +163,13 @@ class FetchCachelessPlugin(var wordWidth : Int,
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
       }
 
+
+      trapPort.arg(0, 2 bits) := TrapArg.FETCH
+      trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REDO){
         TRAP := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
-        trapPort.arg(0, 2 bits) := TrapArg.FETCH
-        trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       }
 
       TRAP.clearWhen(!isValid || haltIt)
