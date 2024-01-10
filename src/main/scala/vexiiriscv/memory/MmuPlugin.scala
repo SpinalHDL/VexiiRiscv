@@ -9,7 +9,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv._
 import Global._
 import spinal.lib.misc.pipeline.{NodeBaseApi, Payload}
-import vexiiriscv.execute.{CsrAccessPlugin, CsrRamService}
+import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamService}
 import vexiiriscv.memory.AddressTranslationPortUsage.LOAD_STORE
 import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin, TrapReason}
 import vexiiriscv.riscv.CSR
@@ -197,12 +197,12 @@ class MmuPlugin(var spec : MmuSpec,
     csr.writeCancel(CSR.SATP, satpModeWrite =/= 0 && satpModeWrite =/= spec.satpMode)
     //    csr.readWriteRam(CSR.SATP) not suported by writeCancel
 
-    //TODO !!!! MISS SPEC : Changes to the sstatus fields SUM and MXR take effect immediately, without the need to execute an SFENCE.VMA instruction.
     csr.onDecode(CSR.SATP){
       csr.onDecodeTrap()
       csr.onDecodeTrapCode := TrapReason.SFENCE_VMA
-//      invalidatePort.cmd.valid := True
     }
+
+    csr.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUS, CSR.SSTATUS))
 
     csrLock.release()
     portsLock.await()

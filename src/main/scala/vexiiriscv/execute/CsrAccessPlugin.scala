@@ -133,6 +133,17 @@ class CsrAccessPlugin(layer : LaneLayer,
 
     csrLock.await()
 
+    val trapNextOnWriteFilter = CsrListFilter(trapNextOnWrite.flatMap{
+      case e : CsrListFilter => e.mapping
+    }.toList)
+
+    onDecode(trapNextOnWriteFilter) {
+      when(onDecodeWrite) {
+        onDecodeTrap()
+        onDecodeTrapCode := TrapReason.NEXT
+      }
+    }
+
 //    val useRamRead = spec.exists(_.isInstanceOf[CsrRamSpec])
 //    val useRamWrite = spec.exists(_.isInstanceOf[CsrRamSpec])
 //    val useRam = spec.exists(_.isInstanceOf[CsrRamSpec])

@@ -31,6 +31,7 @@ trait CsrService {
   val onReadingHartIdMap = mutable.LinkedHashMap[Int, Bool]()
   val isReadingHartIdCsrMap = mutable.LinkedHashMap[(Int, Any), Bool]()
   val onWritingHartIdMap = mutable.LinkedHashMap[Int, Bool]()
+  val trapNextOnWrite = mutable.LinkedHashSet[Any]()
 
   def onDecode(csrFilter : Any, priority : Int = 0)(body : => Unit) = spec += CsrOnDecode(csrFilter, priority, () => body)
   def onDecodeException() : Unit
