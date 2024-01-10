@@ -76,7 +76,7 @@ class WriteBackPlugin(val laneName : String,
       bypass(DATA) := merged
 
       val write = Flow(RegFileWriter(rf))
-      write.valid := down.isFiring && hits.orR && rfa.ENABLE && !Global.TRAP
+      write.valid := down.isFiring && hits.orR && rfa.ENABLE && Global.COMMIT
       write.hartId := HART_ID
       write.uopId := UOP_ID
       write.data := muxed
@@ -86,7 +86,7 @@ class WriteBackPlugin(val laneName : String,
     val writeCtrl = eu.execute(writeAt)
     val write = new writeCtrl.Area{
       val port = rfp.newWrite(false, sharingKey = laneName)
-      port.valid := isValid && isReady && !hasCancelRequest && rfa.ENABLE && SEL && !Global.TRAP
+      port.valid := isValid && isReady && !hasCancelRequest && rfa.ENABLE && SEL && Global.COMMIT
       port.address := HART_ID @@ rfa.PHYS
       port.data := DATA
       port.hartId := HART_ID
