@@ -439,7 +439,7 @@ class MmuPlugin(var spec : MmuSpec,
             }
 
             refillPorts.onMask(portOhReg){port =>
-              port.rsp.valid := sel
+              port.rsp.valid := True
               port.rsp.pageFault := pageFault
               port.rsp.accessFault := accessFault
             }

@@ -247,6 +247,7 @@ class CsrAccessPlugin(layer : LaneLayer,
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
         trapPort.tval := UOP
+        trapPort.arg := 0
 
         val flushReg = RegInit(False) setWhen(flushPort.valid) clearWhen(!elp.isFreezed())
         when(flushReg) {
@@ -272,7 +273,7 @@ class CsrAccessPlugin(layer : LaneLayer,
                 trapPort.valid := True
                 trapPort.exception := False
                 trapPort.code := TrapReason.JUMP
-                trapPort.tval := B(INSTRUCTION_SLICE_COUNT +^ 1).resized
+                trapPort.arg := B(INSTRUCTION_SLICE_COUNT +^ 1).resized
               }
             }
           }

@@ -25,6 +25,7 @@ case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
   val exception = Bool()
   val tval = TVAL()
   val code = CODE()
+  val arg = TRAP_ARG()
   val laneAge = full generate UInt(laneAgeWidth bits)
   val hartId = full generate HART_ID()
 
@@ -101,7 +102,10 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
 
-    TRAP_ARG_WIDTH.set(10) //TODO
+    val trapArgWidths = ArrayBuffer[Int](2)
+    if(ats.mayNeedRedo) trapArgWidths += 2+ats.getStorageIdWidth()
+    TRAP_ARG_WIDTH.set(trapArgWidths.max)
+
     trapLock.await()
 
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
@@ -192,7 +196,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val pc = Reg(PC)
 
           val xret = new Area {
-            val sourcePrivilege = state.tval(1 downto 0).asUInt
+            val sourcePrivilege = state.arg(1 downto 0).asUInt
             val targetPrivilege = privilegeMux(sourcePrivilege)(
               csr.m.status.mpp,
               U"0" @@ csr.s.status.spp
@@ -279,7 +283,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           if(ats.mayNeedRedo) {
             atsRefill.cmd.valid := False
             atsRefill.cmd.address := pending.state.tval.asUInt
-            atsRefill.cmd.storageId := pending.state.tval(2, ats.getStorageIdWidth() bits).asUInt
+            atsRefill.cmd.storageId := pending.state.arg(2, ats.getStorageIdWidth() bits).asUInt
           }
 
           RUNNING.whenIsActive {
@@ -291,7 +295,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
 
           val jumpTarget = Reg(PC)
           jumpTarget := pending.pc + pending.state.code.mux(
-            TrapReason.JUMP -> U(pending.state.tval(0, INSTRUCTION_SLICE_COUNT_WIDTH+1 bits) << Fetch.SLICE_RANGE_LOW),
+            TrapReason.JUMP -> U(pending.state.arg(0, INSTRUCTION_SLICE_COUNT_WIDTH+1 bits) << Fetch.SLICE_RANGE_LOW),
             TrapReason.MMU_REFILL -> U(0, 3 bits),
             default -> U(4)
           )
@@ -337,7 +341,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
               goto(JUMP) //TODO shave one cycle
               when(atsRefill.rsp.pageFault || atsRefill.rsp.accessFault){
                 pending.state.exception := True
-                switch(atsRefill.rsp.pageFault ## pending.state.tval(1 downto 0)){
+                switch(atsRefill.rsp.pageFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
                   add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
                   add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
@@ -418,7 +422,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             goto(RUNNING)
           }
 
-          val xretPrivilege = U(pending.state.tval(1 downto 0))
+          val xretPrivilege = U(pending.state.arg(1 downto 0))
           XRET_EPC.whenIsActive{
             crsPorts.read.valid := True
             crsPorts.read.address := privilegeMux(xretPrivilege)(
@@ -436,7 +440,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
 
             csr.privilege := pending.xret.targetPrivilege
             csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege < 3)
-            switch(pending.state.tval(1 downto 0)) {
+            switch(pending.state.arg(1 downto 0)) {
               is(3) {
                 if(priv.p.withUser) csr.m.status.mpp := 0
                 csr.m.status.mie := csr.m.status.mpie

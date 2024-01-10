@@ -74,6 +74,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock)
     awaitBuild()
 
+    val translationStorage = ats.newStorage(translationStorageParameter)
+    atsStorageLock.release()
+
     val trapPort = ts.newTrap(layer.el.getAge(forkAt), Execute.LANE_AGE_WIDTH)
     val flushPort = ss.newFlushPort(layer.el.getExecuteAge(addressAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
@@ -106,9 +109,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     for(uop <- frontend.stores) layer(uop).setCompletion(joinAt)
 
     retainer.release()
-
-    val translationStorage = ats.newStorage(translationStorageParameter)
-    atsStorageLock.release()
 
     val injectCtrl = elp.ctrl(0)
     val inject = new injectCtrl.Area {
@@ -174,15 +174,16 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.valid :=  False
       trapPort.hartId := Global.HART_ID
       trapPort.laneAge := Execute.LANE_AGE
+      trapPort.tval := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
-      trapPort.tval.assignDontCare()
+      trapPort.arg.assignDontCare()
 
       if(withSpeculativeLoadFlush) when(LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)){
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.JUMP
-        trapPort.tval(0, INSTRUCTION_SLICE_COUNT_WIDTH + 1 bits) := 0
+        trapPort.arg(0, INSTRUCTION_SLICE_COUNT_WIDTH + 1 bits) := 0
       }
 
       when(tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)) {
@@ -203,15 +204,14 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
-        trapPort.tval(0, 2 bits) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
-        trapPort.tval(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+        trapPort.arg(0, 2 bits) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
+        trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       }
 
       when(MISS_ALIGNED){
         skip := True
         trapPort.exception := True
         trapPort.code := LOAD.mux[Bits](CSR.MCAUSE_ENUM.LOAD_MISALIGNED, CSR.MCAUSE_ENUM.STORE_MISALIGNED).andMask(MISS_ALIGNED).resized
-        trapPort.tval := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
       }
 
       when(isValid && SEL && skip){

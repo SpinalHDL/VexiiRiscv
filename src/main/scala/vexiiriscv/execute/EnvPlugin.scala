@@ -59,8 +59,9 @@ class EnvPlugin(layer : LaneLayer,
 
       trapPort.valid := False
       trapPort.exception := True
-      trapPort.code.assignDontCare()
       trapPort.tval := B(PC).andMask(OP === EnvPluginOp.EBREAK) //That's what spike do
+      trapPort.code.assignDontCare()
+      trapPort.arg.assignDontCare()
 
       val privilege = ps.getPrivilege(HART_ID)
       val xretPriv = Decode.UOP(29 downto 28).asUInt
@@ -78,7 +79,7 @@ class EnvPlugin(layer : LaneLayer,
             commit := True
             trapPort.exception := False
             trapPort.code := TrapReason.PRIV_RET
-            trapPort.tval(1 downto 0) := xretPriv.asBits
+            trapPort.arg(1 downto 0) := xretPriv.asBits
           } otherwise {
             trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
           }

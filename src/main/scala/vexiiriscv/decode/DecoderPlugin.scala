@@ -146,13 +146,14 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
       trapPort.laneAge := laneId
       trapPort.hartId := Global.HART_ID
+      trapPort.arg := 0
 
       when(interruptPending){
         trapPort.code := TrapReason.INTERRUPT
       }
 
       val completionPort = Flow(CompletionPayload())
-      completionPort.valid := False
+      completionPort.valid := isValid && Global.TRAP && up.transactionSpawn
       completionPort.hartId := Global.HART_ID
       completionPort.uopId := Decode.UOP_ID
       completionPort.trap := True
@@ -161,9 +162,6 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       when(isValid && (!LEGAL || interruptPending)) {
         bypass(Global.TRAP) := True
         trapPort.valid := !up(Global.TRAP)
-        when(up.transactionSpawn){
-          completionPort.valid := True
-        }
       }
 
       //Will also flush instructions after a fetch trap
