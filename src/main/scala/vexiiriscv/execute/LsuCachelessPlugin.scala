@@ -13,13 +13,13 @@ import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService
 import vexiiriscv.misc.{AddressToMask, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
-import vexiiriscv.decode.Decode.INSTRUCTION_SLICE_COUNT_WIDTH
+import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT_WIDTH, UOP}
 import vexiiriscv.schedule.{ReschedulePlugin, ScheduleService}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-case class CachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth : Int){
+case class CachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth : Int, withAmo : Boolean){
 
 }
 
@@ -32,6 +32,8 @@ case class CachelessCmd(p : CachelessBusParam) extends Bundle{
   val io = Bool() //This is for verification purposes, allowing RVLS to track stuff
   val fromHart = Bool() //This is for verification purposes, allowing RVLS to track stuff
   val hartId = UInt(p.hartIdWidth bits)
+  val amoEnable = p.withAmo generate Bool()
+  val amoOp = p.withAmo generate Bits(5 bits)
 }
 
 case class CachelessRsp(p : CachelessBusParam) extends Bundle{
@@ -50,6 +52,7 @@ case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave 
 }
 
 class LsuCachelessPlugin(var layer : LaneLayer,
+                         var withAmo : Boolean,
                          var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
@@ -73,6 +76,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val atsStorageLock = retains(ats.storageLock)
     val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock)
     awaitBuild()
+    Riscv.RVA.set(withAmo)
 
     val translationStorage = ats.newStorage(translationStorageParameter)
     atsStorageLock.release()
@@ -83,7 +87,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     // IntFormatPlugin specification
     val iwb = ifp.access(wbAt)
-    for(load <- frontend.loads){
+    val amos = Riscv.RVA.get.option(frontend.amos.uops).toList.flatten
+    for(load <- frontend.loads ++ amos){
       val spec = Rvi.loadSpec(load)
       val op = layer(load)
       ifp.addMicroOp(iwb, op)
@@ -97,16 +102,16 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
     }
 
-    for(store <- frontend.stores){
+    for(store <- frontend.stores ++ amos){
       val op = layer(store)
       op.addRsSpec(RS2, forkAt)
       op.dontFlushFrom(forkAt+1)
     }
 
     layer.add(Rvi.FENCE) //TODO
-
     layer(Rvi.FENCE).setCompletion(joinAt)
-    for(uop <- frontend.stores) layer(uop).setCompletion(joinAt)
+
+    for(uop <- frontend.stores if layer(uop).completion.isEmpty) layer(uop).setCompletion(joinAt)
 
     retainer.release()
 
@@ -121,7 +126,12 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val joinCtrl = elp.execute(joinAt)
     val wbCtrl = elp.execute(wbAt)
 
-    val busParam = CachelessBusParam(addressWidth = Global.PHYSICAL_WIDTH, dataWidth = Riscv.LSLEN, hartIdWidth = Global.HART_ID_WIDTH)
+    val busParam = CachelessBusParam(
+      addressWidth = Global.PHYSICAL_WIDTH,
+      dataWidth = Riscv.LSLEN,
+      hartIdWidth = Global.HART_ID_WIDTH,
+      withAmo = withAmo
+    )
     val bus = master(CachelessBus(busParam))
 
     accessRetainer.await()
@@ -161,6 +171,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.cmd.io := tpk.IO
       bus.cmd.fromHart := True
       bus.cmd.hartId := Global.HART_ID
+      if(withAmo) {
+        bus.cmd.amoEnable := LR || SC || AMO
+        bus.cmd.amoOp     := UOP(31 downto 27)
+      }
+      //TODO amo AQ/RL
 
       elp.freezeWhen(bus.cmd.isStall)
 

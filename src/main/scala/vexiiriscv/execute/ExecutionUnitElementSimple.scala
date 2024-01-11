@@ -26,6 +26,7 @@ object ExecuteUnitElementSimple{
 
     val uopList = ArrayBuffer[MicroOp]()
     def add(microOp: MicroOp) = new {
+      val uop = microOp
       uopList += microOp
       val impl = layer.add(microOp)
       val spec = layer(microOp)

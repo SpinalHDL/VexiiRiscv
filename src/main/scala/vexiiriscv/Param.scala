@@ -32,6 +32,7 @@ class ParamSimple(){
   var withLateAlu = false
   var withMul = true
   var withDiv = true
+  var withAmo = false
   var privParam = PrivilegedParam.base
   var relaxedBranch = false
   var relaxedShift = false
@@ -59,6 +60,7 @@ class ParamSimple(){
     privParam.withSupervisor = true
     privParam.withUser = true
     withMmu = true
+    withAmo = true
   }
 
 
@@ -76,6 +78,7 @@ class ParamSimple(){
     if (withLateAlu) r += "la"
     if (withMul) r += "m"
     if (withDiv) r += "d"
+    if (withAmo) r += "a"
     if (relaxedBranch) r += "rbra"
     if (relaxedShift) r += "rsft"
     if (relaxedSrc) r += "rsrc"
@@ -226,6 +229,7 @@ class ParamSimple(){
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
     plugins += new LsuCachelessPlugin(
       layer     = early0,
+      withAmo   = withAmo,
       withSpeculativeLoadFlush = true,
       addressAt = 0,
       forkAt    = 0,

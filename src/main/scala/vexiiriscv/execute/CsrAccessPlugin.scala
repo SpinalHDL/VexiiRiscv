@@ -45,6 +45,10 @@ class CsrAccessPlugin(layer : LaneLayer,
   override def onDecodeHartId: UInt = apiIo.onDecodeHartId
   override def onDecodeAddress: UInt = apiIo.onDecodeAddress
   override def onDecodeTrapCode: Bits = apiIo.onDecodeTrapCode
+  def onDecodeTrap(code : Int) : Unit = {
+    onDecodeTrap()
+    onDecodeTrapCode := code
+  }
 
 
   override def isReading: Bool = apiIo.isReading

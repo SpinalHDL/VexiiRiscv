@@ -232,12 +232,11 @@ case class CsrRamWrite(addressWidth : Int, dataWidth : Int, priority : Int) exte
 
 
 object CsrRamService{
-  //Priorities are arranged in a way to improve ports.ready timings
   val priority = new {
-    val INIT    = 0
-    val TRAP    = 1
-    val COUNTER = 2
-    val CSR     = 3  //This is the very critical path
+    val INIT = 0
+    val CSR = 1
+    val TRAP = 2
+    val COUNTER = 3
   }
 }
 //usefull for, for instance, mscratch scratch mtvec stvec mepc sepc mtval stval satp pmp stuff
