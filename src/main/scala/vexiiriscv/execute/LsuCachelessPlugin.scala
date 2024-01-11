@@ -212,7 +212,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.tval := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
-      trapPort.arg := 0
+      trapPort.arg.allowOverride() := 0
 
       if(withSpeculativeLoadFlush) when(LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)){
         skip := True

@@ -143,7 +143,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
-      trapPort.arg := 0
+      trapPort.arg.allowOverride() := 0
 
       when(rsp.error){
         TRAP := True

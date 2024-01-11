@@ -104,7 +104,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
 
-    val trapArgWidths = ArrayBuffer[Int](0)
+    val trapArgWidths = ArrayBuffer[Int](2)
     if(ats.mayNeedRedo) trapArgWidths += 2+ats.getStorageIdWidth()
     TRAP_ARG_WIDTH.set(trapArgWidths.max)
 
@@ -363,8 +363,12 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   }
                 }
                 is(TrapReason.SFENCE_VMA) {
-                  atsPorts.invalidate.cmd.valid := True
-                  when(atsPorts.invalidate.cmd.ready) {
+                  if(ats.mayNeedRedo) {
+                    atsPorts.invalidate.cmd.valid := True
+                    when(atsPorts.invalidate.cmd.ready) {
+                      goto(JUMP)
+                    }
+                  } else {
                     goto(JUMP)
                   }
                 }
