@@ -3,7 +3,7 @@ package vexiiriscv.test
 import spinal.core._
 import spinal.core.sim._
 
-abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, mti : Bool = null, cd : ClockDomain = null) {
+abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : Bool = null, mti : Bool = null, cd : ClockDomain = null) {
   val PUTC = 0
   val PUT_HEX = 0x8
   val CLINT_BASE = 0x10000
@@ -42,6 +42,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, mti : B
         case PUT_DEC => print(f"${BigInt(data.map(_.toByte).reverse.toArray)}%d")
         case MACHINE_EXTERNAL_INTERRUPT_CTRL => mei #= data(0).toBoolean
         case SUPERVISOR_EXTERNAL_INTERRUPT_CTRL => sei #= data(0).toBoolean
+        case CLINT_BASE => msi #= (data(0).toInt & 1).toBoolean
         case CLINT_CMP => {
           val v = BigInt(data.map(_.toByte).reverse.toArray).toLong
           data.size match {

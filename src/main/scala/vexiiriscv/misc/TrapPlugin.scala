@@ -78,6 +78,7 @@ object TrapReason{
   val FENCE_I = 4
   val SFENCE_VMA = 5
   val MMU_REFILL = 6
+  val WFI = 7
 }
 
 object TrapArg{
@@ -269,6 +270,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val holdPort = pcs.newHoldPort(hartId)
           holdPort := inflightTrap || !isActive(RUNNING)
 
+          val wfi = False //Whitebox
 
           val buffer = new Area {
             val sampleIt = False
@@ -326,7 +328,8 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             List(
               TrapReason.NEXT,
               TrapReason.FENCE_I,
-              TrapReason.SFENCE_VMA
+              TrapReason.SFENCE_VMA,
+              TrapReason.WFI
             ).map(pending.state.code === _).orR
           )
 
@@ -348,10 +351,16 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   goto(JUMP) //TODO
                 }
                 is(TrapReason.REDO) {
-                  goto(JUMP) //TODO
+                  goto(JUMP)
                 }
                 is(TrapReason.NEXT) {
-                  goto(JUMP) //TODO
+                  goto(JUMP)
+                }
+                is(TrapReason.WFI) {
+                  wfi := True
+                  when(interrupt.valid) {
+                    goto(JUMP)
+                  }
                 }
                 is(TrapReason.SFENCE_VMA) {
                   atsPorts.invalidate.cmd.valid := True

@@ -63,7 +63,7 @@ class TestOptions{
     opt[Long]("fail-after") action { (v, c) => failAfter = Some(v) }
     opt[Long]("pass-after") action { (v, c) => passAfter = Some(v) }
     opt[Double]("sim-speed-printer") action { (v, c) => simSpeedPrinter = Some(v) }
-    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0), 16) -> new File(v(1)) }
+    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x",""), 16) -> new File(v(1)) }
     opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
@@ -138,7 +138,7 @@ class TestOptions{
     val mem = SparseMemory(seed = 0)
     // Load the binaries
     for ((offset, file) <- bins) {
-      mem.loadBin(offset - 0x80000000l, file)
+      mem.loadBin(offset, file)
       if (withRvlsCheck) rvls.loadBin(offset, file)
       tracerFile.foreach(_.loadBin(0, file))
     }
@@ -172,7 +172,7 @@ class TestOptions{
     }
 
     val priv = dut.host[PrivilegedPlugin].logic.harts(0)
-    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, mti = priv.int.m.timer, cd = cd){
+    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
       override def getClintTime(): Long = probe.cycle
     }
 
@@ -197,6 +197,7 @@ class TestOptions{
         doIt
       }
 
+      //TODO backpresure
       cmdReady.setFactor(2.0f)
       rspDriver.setFactor(2.0f)
     }
@@ -349,6 +350,7 @@ class TestOptions{
         doIt
       }
 
+      //TODO backpresure
       cmdReady.setFactor(2.0f)
       rspDriver.setFactor(2.0f)
     }

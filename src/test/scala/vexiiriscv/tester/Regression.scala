@@ -89,6 +89,12 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv]){
     tests += t
   }
 
+
+//           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/fw_jump.bin,0x80000000 \\
+//           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/linux.dtb,0x80F80000 \\
+//           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/Image,0x80400000 \\
+//           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/rootfs.cpio,0x81000000 \\
+
   implicit val ec = ExecutionContext.global
   val jobs = ArrayBuffer[AsyncJob]()
   for(t <- tests){

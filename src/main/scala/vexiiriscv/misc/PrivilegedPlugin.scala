@@ -81,6 +81,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends Fibe
     if (RVC) addMisa('C')
     if (RVF) addMisa('F')
     if (RVD) addMisa('D')
+    if (RVA) addMisa('A')
+    if (RVM) addMisa('M')
     if (p.withUser) addMisa('U')
     if (p.withSupervisor) addMisa('S')
 

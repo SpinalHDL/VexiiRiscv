@@ -481,8 +481,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
 
   def checkCommits(): Unit = {
+    val wfi = proxies.wfi.toInt
     for(hart <- harts) {
-      if (hart.lastCommitAt + 100l < cycle) {
+      if(((wfi >> hart.hartId) & 1) != 0){
+        hart.lastCommitAt = cycle
+      }
+      if (hart.lastCommitAt + 400l < cycle) {
         val status = if (hart.microOpAllocPtr != hart.microOpRetirePtr) f"waiting on uop 0x${hart.microOpRetirePtr}%X" else f"last uop id 0x${hart.lastUopId}%X"
         simFailure(f"Vexii didn't commited anything since too long, $status")
       }

@@ -194,6 +194,8 @@ class WhiteboxerPlugin extends FiberPlugin{
       })
     }
 
+    val wfi = wrap(host[TrapPlugin].logic.harts.map(_.trap.fsm.wfi).asBits)
+
     val perf = new Area{
       val dispatch = host[DispatchPlugin]
       val executeFreezed = wrap(host[ExecutePipelinePlugin].isFreezed())
@@ -235,6 +237,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val perf = new PerfProxy()
       val trap = self.trap.ports.indices.map(new TrapProxy(_)).toArray
       val interrupts = new InterruptsProxy()
+      val wfi = self.wfi.simProxy()
 
       def interrupt(hartId : Int, intId : Int, value : Boolean)
 

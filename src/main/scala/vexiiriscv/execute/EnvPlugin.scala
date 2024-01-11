@@ -15,7 +15,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 object EnvPluginOp extends SpinalEnum{
-  val ECALL, EBREAK, PRIV_RET, FENCE_I, SFENCE_VMA = newElement()
+  val ECALL, EBREAK, PRIV_RET, FENCE_I, SFENCE_VMA, WFI = newElement()
 }
 
 class EnvPlugin(layer : LaneLayer,
@@ -40,6 +40,7 @@ class EnvPlugin(layer : LaneLayer,
     if (ps.implementUserTrap)   add(Rvi.URET).decode(OP -> EnvPluginOp.PRIV_RET)
 
     add(Rvi.FENCE_I).decode(OP -> EnvPluginOp.FENCE_I)
+    add(Rvi.WFI).decode(OP -> EnvPluginOp.WFI)
     if (ps.implementSupervisor) add(Rvi.SFENCE_VMA).decode(OP -> EnvPluginOp.SFENCE_VMA)
 
     for (uop <- uopList; spec = layer(uop)) {
@@ -83,6 +84,12 @@ class EnvPlugin(layer : LaneLayer,
           } otherwise {
             trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
           }
+        }
+
+        is(EnvPluginOp.WFI) {
+          commit := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.WFI
         }
 
         is(EnvPluginOp.FENCE_I) {
