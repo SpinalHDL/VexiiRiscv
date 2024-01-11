@@ -133,7 +133,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.wbCtrl
-        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(TRAP) && !c(p.logic.onAddress.translationPort.keys.IO)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.LOAD) || c(AguPlugin.AMO)) && !c(TRAP) && !c(p.logic.onAddress.translationPort.keys.IO)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
@@ -160,6 +160,23 @@ class WhiteboxerPlugin extends FiberPlugin{
         size := bus.cmd.size.resized
         address := bus.cmd.address
         data := bus.cmd.data
+      })
+    }
+
+    val storeConditional = new Area {
+      val fire = Bool()
+      val hartId = Global.HART_ID()
+      val uopId = Decode.UOP_ID()
+      val miss = Bool()
+
+      SimPublic(fire, hartId, uopId, miss)
+
+      val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
+        val c = p.logic.wbCtrl
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.SC)) && !c(TRAP)
+        hartId := c(Global.HART_ID)
+        uopId := c(Decode.UOP_ID)
+        miss := c(p.logic.onJoin.SC_MISS)
       })
     }
 
@@ -212,6 +229,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val flushes = self.reschedules.flushes.map(new FlushProxy(_)).toArray
       val loadExecute = new LoadExecuteProxy()
       val storeCommit = new StoreCommitProxy()
+      val storeConditional = new StoreConditionalProxy()
       val storeBroadcast = new StoreBroadcastProxy()
       val learns = self.prediction.learns.map(learn => new LearnProxy(learn)).toArray
       val perf = new PerfProxy()
@@ -353,8 +371,15 @@ class WhiteboxerPlugin extends FiberPlugin{
       val data = storeCommit.data.simProxy()
     }
 
+    class StoreConditionalProxy {
+      val fire = storeConditional.fire.simProxy()
+      val hartId = storeConditional.hartId.simProxy()
+      val uopId = storeConditional.uopId.simProxy()
+      val miss = storeConditional.miss.simProxy()
+    }
+
     class StoreBroadcastProxy {
-      val fire = storeCommit.fire.simProxy()
+      val fire = storeBroadcast.fire.simProxy()
       val hartId = storeBroadcast.hartId.simProxy()
       val uopId = storeBroadcast.uopId.simProxy()
     }

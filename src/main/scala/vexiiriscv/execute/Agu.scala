@@ -33,17 +33,17 @@ class AguFrontend(
 
   layer.el.setDecodingDefault(SEL, False)
 
-  val loads = ArrayBuffer[MicroOp](Rvi.LB, Rvi.LH, Rvi.LW, Rvi.LBU, Rvi.LHU)
-  if (XLEN.get == 64) loads ++= List(Rvi.LD, Rvi.LWU)
-  if (RVF) loads ++= List(Rvfd.FLW)
-  if (RVD) loads ++= List(Rvfd.FLD)
-  for (op <- loads) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LR -> False, LOAD -> True)
+  val writingRf = ArrayBuffer[MicroOp](Rvi.LB, Rvi.LH, Rvi.LW, Rvi.LBU, Rvi.LHU)
+  if (XLEN.get == 64) writingRf ++= List(Rvi.LD, Rvi.LWU)
+  if (RVF) writingRf ++= List(Rvfd.FLW)
+  if (RVD) writingRf ++= List(Rvfd.FLD)
+  for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LR -> False, LOAD -> True)
 
   // Store stuff
   val storeOps = List(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.S)
-  val stores = ArrayBuffer[MicroOp](Rvi.SB, Rvi.SH, Rvi.SW)
-  if (XLEN.get == 64) stores ++= List(Rvi.SD)
-  for (store <- stores) add(store).srcs(storeOps).decode(AMO -> False, SC -> False, LOAD -> False, FLOAT -> False)
+  val writingMem = ArrayBuffer[MicroOp](Rvi.SB, Rvi.SH, Rvi.SW)
+  if (XLEN.get == 64) writingMem ++= List(Rvi.SD)
+  for (store <- writingMem) add(store).srcs(storeOps).decode(AMO -> False, SC -> False, LOAD -> False, FLOAT -> False)
   if (RVF) add(Rvfd.FSW).srcs(storeOps).decode(AMO -> False, SC -> False, LOAD -> False, FLOAT -> True)
   if (RVD) add(Rvfd.FSD).srcs(storeOps).decode(AMO -> False, SC -> False, LOAD -> False, FLOAT -> True)
 
@@ -59,13 +59,13 @@ class AguFrontend(
       Rvi.AMOMIND, Rvi.AMOMAXD, Rvi.AMOMINUD, Rvi.AMOMAXUD
     )
     for (amo <- uops) add(amo).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> True, SC -> False, LOAD -> False, FLOAT -> False)
-    stores += add(Rvi.SCW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> False, SC -> True, LOAD -> False, FLOAT -> False).uop
-    loads += Rvi.SCW
-    loads  += add(Rvi.LRW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True).uop
+    writingMem += add(Rvi.SCW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> False, SC -> True, LOAD -> False, FLOAT -> False).uop
+    writingRf += Rvi.SCW
+    writingRf  += add(Rvi.LRW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True).uop
     if(XLEN.get == 64){
-      stores += add(Rvi.SCD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> False, SC -> True, LOAD -> False, FLOAT -> False).uop
-      loads += Rvi.SCD
-      loads += add(Rvi.LRD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True).uop
+      writingMem += add(Rvi.SCD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> False, SC -> True, LOAD -> False, FLOAT -> False).uop
+      writingRf += Rvi.SCD
+      writingRf += add(Rvi.LRD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True).uop
     }
 //    assert(false, "Rvi.LR and atomic may need reformat info, CachelessPlugin may use loads list for it, need to add to loads. Also store completion need to be handled")
   }

@@ -29,19 +29,44 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv]){
 
   val nsf = new File("ext/NaxSoftware")
 
-  val rejectedTests = mutable.LinkedHashSet("rv32ui-p-simple", "rv32ui-p-fence_i", "rv64ui-p-simple", "rv64ui-p-fence_i")
+  val rejectedTests = mutable.LinkedHashSet("rv32ui-p-simple", "rv32ui-p-fence_i", "rv64ui-p-simple", "rv64ui-p-fence_i", "rv32ua-p-lrsc", "rv64ua-p-lrsc")
 
   //rvi tests
   val riscvTestsFile = new File(nsf, "riscv-tests")
   val riscvTests = riscvTestsFile.listFiles().sorted
   val rvi = riscvTests.filter{t => val n = t.getName; n.startsWith(s"rv${xlen}ui-p-") && !n.contains(".") && !rejectedTests.contains(n) }
-  val rvm = riscvTests.filter{t => val n = t.getName; n.startsWith(s"rv${xlen}um-p-") && !n.contains(".")}
-  for(elf <- rvi ++ rvm) {
+  val rvm = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}um-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
+  val rva = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ua-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
+
+  val riscvTestsFrom2 = ArrayBuffer[File]()
+  riscvTestsFrom2 ++= rvi
+  riscvTestsFrom2 ++= rvm
+  if(dut.database(Riscv.RVA)) riscvTestsFrom2 ++= rva
+
+  for(elf <- riscvTestsFrom2) {
     val t = newTest()
     t.elfs += elf
     t.failAfter = Some(100000)
     t.startSymbol = Some("test_2")
     t.testName = Some("riscv-tests/" + elf.getName)
+    tests += t
+  }
+
+  {
+    val t = newTest()
+    t.elfs += new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc")
+    t.failAfter = Some(1000000)
+    t.startSymbol = Some("test_2")
+    t.passSymbolName = "test_5"
+    t.testName = Some(s"riscv-tests/rv${xlen}ua-p-lrsc")
+    tests += t
+  }
+  {
+    val t = newTest()
+    t.elfs += new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc")
+    t.failAfter = Some(100000)
+    t.startSymbol = Some("test_6")
+    t.testName = Some(s"riscv-tests/rv${xlen}ua-p-lrsc")
     tests += t
   }
 

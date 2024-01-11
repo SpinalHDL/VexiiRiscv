@@ -151,10 +151,10 @@ object Rvi extends AreaObject {
   loadSpec(LWU) = LoadSpec(32, false)
 
   loadSpec(LRW) = LoadSpec(32, true)
-  loadSpec(SCW) = LoadSpec(32, true)
+  loadSpec(SCW) = LoadSpec(8, true) //8 bits to allow sc to only write the 8 lsb (less logic)
 
-  loadSpec(LRD) = LoadSpec(64, true)
-  loadSpec(SCD) = LoadSpec(64, true)
+  loadSpec(LRD) = LoadSpec(32, true)
+  loadSpec(SCD) = LoadSpec(8, true)
 
   loadSpec(AMOSWAPW) = LoadSpec(32, true)
   loadSpec(AMOADDW) = LoadSpec(32, true)

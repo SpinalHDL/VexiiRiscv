@@ -364,6 +364,19 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       uop.lsuLen = bytes
     }
 
+    if (storeConditional.fire.toBoolean) {
+      val hartId = storeConditional.hartId.toInt
+      val uopId = storeConditional.uopId.toInt
+      val hart = harts(hartId)
+      val uop = hart.microOp(uopId)
+      val miss = storeConditional.miss.toBoolean
+      if (miss) uop.storeValid = false
+      uop.isSc = true
+      uop.scFailure = miss
+    }
+
+
+
 
     csr.foreach (csr => if (csr.valid.toBoolean) {
       val hartId = csr.hartId.toInt
