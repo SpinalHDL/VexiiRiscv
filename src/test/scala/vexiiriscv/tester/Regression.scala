@@ -6,6 +6,8 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.{AsyncJob, MultithreadedFunSuite}
+import vexiiriscv.memory.MmuPlugin
+import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.{Global, ParamSimple, VexiiRiscv}
 
@@ -16,16 +18,71 @@ import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.ExecutionContext
 import scala.reflect.io.Path.jfile2path
 
-class RegressionSingle(compiled : SimCompiled[VexiiRiscv]){
+class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String] = Nil) {
   val dut = compiled.dut
   val xlen = dut.database(Riscv.XLEN)
+  val priv = dut.host.get[PrivilegedPlugin]
+  val mmu = dut.host.get[MmuPlugin]
+
+  val rvc = dut.database(Riscv.RVC)
+  val rvf = dut.database(Riscv.RVF)
+  val rvd = dut.database(Riscv.RVD)
+  val rva = dut.database(Riscv.RVA)
+
+  var arch = ""
+  var archLinux = ""
+
+  if (xlen == 64) {
+    arch = "rv64im"
+    archLinux = "rv64im"
+  } else {
+    arch = "rv32im"
+    archLinux = "rv32im"
+  }
+
+  if (rva) {
+    arch += "a"
+    archLinux += "a"
+  }
+  if (rvf) {
+    arch += "f"
+    archLinux += "f"
+  }
+  if (rvd) {
+    arch += "d"
+    archLinux += "d"
+  }
+  if(rvc) {
+    arch += "c"
+    archLinux += "c"
+  }
+
 
   def newTest() = {
     val t = new TestOptions()
-//    t.traceWave = true
+    tests += t
     t
   }
+
+  def newArgs() = {
+    val t = new TestArgs()
+    testArgs += t
+    t.noStdin()
+    t
+  }
+  //
+//
+//  def newTest(args : Seq[String]) = {
+//    val t = newTest()
+//    assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+//      help("help").text("prints this usage text")
+//      t.addOptions(this)
+//    }.parse(args, Unit).nonEmpty)
+//    t
+//  }
+
   val tests = ArrayBuffer[TestOptions]()
+  val testArgs = ArrayBuffer[TestArgs]()
 
   val nsf = new File("ext/NaxSoftware")
 
@@ -34,62 +91,115 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv]){
   //rvi tests
   val riscvTestsFile = new File(nsf, "riscv-tests")
   val riscvTests = riscvTestsFile.listFiles().sorted
-  val rvi = riscvTests.filter{t => val n = t.getName; n.startsWith(s"rv${xlen}ui-p-") && !n.contains(".") && !rejectedTests.contains(n) }
-  val rvm = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}um-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
-  val rva = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ua-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
+  val rvti = riscvTests.filter{ t => val n = t.getName; n.startsWith(s"rv${xlen}ui-p-") && !n.contains(".") && !rejectedTests.contains(n) }
+  val rvtm = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}um-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
+  val rvta = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ua-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
 
   val riscvTestsFrom2 = ArrayBuffer[File]()
-  riscvTestsFrom2 ++= rvi
-  riscvTestsFrom2 ++= rvm
-  if(dut.database(Riscv.RVA)) riscvTestsFrom2 ++= rva
+  riscvTestsFrom2 ++= rvti
+  riscvTestsFrom2 ++= rvtm
+  if(dut.database(Riscv.RVA)) riscvTestsFrom2 ++= rvta
 
   for(elf <- riscvTestsFrom2) {
-    val t = newTest()
-    t.elfs += elf
-    t.failAfter = Some(100000)
-    t.startSymbol = Some("test_2")
-    t.testName = Some("riscv-tests/" + elf.getName)
-    tests += t
+    val args = newArgs()
+    args.loadElf(elf)
+    args.failAfter(100000)
+    args.startSymbol("test_2")
+    args.name("riscv-tests/" + elf.getName)
   }
 
   {
-    val t = newTest()
-    t.elfs += new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc")
-    t.failAfter = Some(1000000)
-    t.startSymbol = Some("test_2")
-    t.passSymbolName = "test_5"
-    t.testName = Some(s"riscv-tests/rv${xlen}ua-p-lrsc")
-    tests += t
+    val args = newArgs()
+    args.loadElf(new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc"))
+    args.failAfter(1000000)
+    args.startSymbol("test_2")
+    args.passSymbol("test_5")
+    args.name(s"riscv-tests/rv${xlen}ua-p-lrsc")
   }
   {
-    val t = newTest()
-    t.elfs += new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc")
-    t.failAfter = Some(100000)
-    t.startSymbol = Some("test_6")
-    t.testName = Some(s"riscv-tests/rv${xlen}ua-p-lrsc")
-    tests += t
+    val args = newArgs()
+    args.loadElf(new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc"))
+    args.failAfter(100000)
+    args.startSymbol("test_6")
+    args.name(s"riscv-tests/rv${xlen}ua-p-lrsc")
   }
 
   val archTests = new File(nsf, s"riscv-arch-test/rv${xlen}i_m/I").listFiles().filter(_.getName.endsWith(".elf"))
   for (elf <- archTests) {
-    val t = newTest()
-    t.elfs += elf
-    t.failAfter = Some(10000000)
-    t.testName = Some("riscv-arch-test/I/" + elf.getName.replace(".elf",""))
-    tests += t
+    val args = newArgs()
+    args.loadElf(elf)
+    args.failAfter(10000000)
+    args.name("riscv-arch-test/I/" + elf.getName.replace(".elf",""))
   }
 
 
-  val regulars = List("dhrystone", "coremark")
+  val regulars = ArrayBuffer("dhrystone", "coremark", "machine_vexii")
+  priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor", s"mmu_sv${if(xlen == 32) 32 else 39}"))
   for(name <- regulars){
-    val t = newTest()
-    t.elfs += new File(nsf, s"baremetal/$name/build/rv${xlen}ima/$name.elf")
-    t.failAfter = Some(300000000)
-    t.testName = Some(name)
-    tests += t
+    val args = newArgs()
+    args.loadElf(new File(nsf, s"baremetal/$name/build/rv${xlen}ima/$name.elf"))
+    args.failAfter(300000000)
+    args.name(s"regular/$name")
   }
 
+  val freertos = List(
+    "blocktim", "countsem", "EventGroupsDemo", "flop", "integer", "QPeek",
+    "QueueSet", "recmutex", "semtest", "TaskNotify", "dynamic",
+    "GenQTest", "PollQ", "QueueOverwrite", "QueueSetPolling", "sp_flop", "test1"
+  )
+  for(name <- freertos.take(4)){
+    val args = newArgs()
+    args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${arch}/freertosDemo.elf"))
+    args.failAfter(300000000)
+    args.name(s"freertos/$name")
+  }
 
+  priv.filter(_.p.withSupervisor).foreach{ _ =>
+    val path = s"ext/NaxSoftware/buildroot/images/$archLinux"
+    val args = newArgs()
+    args.failAfter(4000000000l)
+    args.name("buildroot")
+    args.loadBin(0x80000000l, s"$path/fw_jump.bin")
+    args.loadBin(0x80F80000l, s"$path/linux.dtb")
+    args.loadBin(0x80400000l, s"$path/Image")
+    args.loadBin(0x81000000l, s"$path/rootfs.cpio")
+
+//    val t = newTest()
+//    t.elfs += new File(nsf, f"baremetal/freertosDemo/build/${name}/${arch}/freertosDemo.elf")
+//    t.failAfter = Some(300000000)
+//    t.testName = Some(s"buildroot")
+
+//           --load-bin {imagePath}/fw_jump.bin,0x80000000 \\
+//           --load-bin {imagePath}/linux.dtb,0x80F80000 \\
+//           --load-bin {imagePath}/Image,0x80400000 \\
+//           --load-bin {imagePath}/rootfs.cpio,0x81000000 \\
+//           --no-stdin                  \\
+//           --no-putc-flush          \\
+//           --seed={str(random.randint(0, 100000000))} \\
+//           --getc "buildroot login" \\
+//           --putc "root" \\
+//           --getc "#" \\
+//           --putc "cat /proc/cpuinfo" \\
+//           --getc "#" \\
+//           --putc "echo 1+2+3*4 | bc" \\
+//           --getc "#" \\
+//           --putc "micropython" \\
+//           --getc ">>> " \\
+//           --putc "import math" \\
+//           --getc ">>> " \\
+//           --putc "math.sin(math.pi/4)" \\
+//           --getc ">>> " \\
+//           --putc "from sys import exit" \\
+//           --getc ">>> " \\
+//           --putc "exit()" \\
+//           --getc "#" \\
+//           --putc "ls /" \\
+//           --getc "#" \\
+//           --success \\
+//    tests += t
+  }
+
+//  --load-bin 0x80000000,ext/NaxSoftware/buildroot/images/rv32ima/fw_jump.bin --load-bin 0x80F80000,ext/NaxSoftware/buildroot/images/rv32ima/linux.dtb --load-bin 0x80400000,ext/NaxSoftware/buildroot/images/rv32ima/Image --load-bin 0x81000000,ext/NaxSoftware/buildroot/images/rv32ima/rootfs.cpio
 //           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/fw_jump.bin,0x80000000 \\
 //           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/linux.dtb,0x80F80000 \\
 //           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/Image,0x80400000 \\
@@ -97,14 +207,33 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv]){
 
   implicit val ec = ExecutionContext.global
   val jobs = ArrayBuffer[AsyncJob]()
-  for(t <- tests){
+
+  val tp = new File(compiled.simConfig.getTestPath(""))
+  FileUtils.forceMkdir(tp)
+  val argsFile = new BufferedWriter(new FileWriter(new File(tp, "args")))
+  argsFile.write(dutArgs.mkString(" "))
+  argsFile.close()
+
+  for(args <- testArgs){
+    val t = newTest()
+    assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+      help("help").text("prints this usage text")
+      t.addOptions(this)
+    }.parse(args.args, Unit).nonEmpty)
+    t
     val testPath = new File(compiled.simConfig.getTestPath(t.testName.get))
     val passFile = new File(testPath, "PASS")
     val failFile = new File(testPath, "FAIL")
+
     val testName = t.testName.get
     if(!passFile.exists()){
       val stdoutHost = Console.out
       val job = new AsyncJob(toStdout = false, logsPath = testPath)({
+        FileUtils.forceMkdir(testPath)
+        val argsFile = new BufferedWriter(new FileWriter(new File(testPath, "args")))
+        argsFile.write(args.args.mkString(" "))
+        argsFile.close()
+
         t.test(compiled)
         FileUtils.deleteQuietly(failFile)
         val bf = new BufferedWriter(new FileWriter(passFile))
@@ -126,14 +255,13 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv]){
 }
 
 object RegressionSingle extends App{
-  def test(name : String, plugins : => Seq[Hostable]): Unit = {
+  def test(name : String, plugins : => Seq[Hostable], dutArgs : Seq[String]): Unit = {
     val simConfig = SpinalSimConfig()
     simConfig.withFstWave
     simConfig.setTestPath("regression/$COMPILED_tests/$TEST")
 
-    val param = new ParamSimple()
     val compiled = SpinalConfig.synchronized(simConfig.compile(VexiiRiscv(plugins).setDefinitionName(s"VexiiRiscv_$name")))
-    val regression = new RegressionSingle(compiled)
+    val regression = new RegressionSingle(compiled, dutArgs)
     println("*" * 80)
     val fails = regression.jobs.filter(_.failed)
     if (fails.size == 0) {
@@ -147,8 +275,8 @@ object RegressionSingle extends App{
     throw new Exception()
   }
 
-  def test(ps : ParamSimple): Unit = {
-    test(ps.getName(), ps.plugins())
+  def test(ps : ParamSimple, dutArgs : Seq[String] = Nil): Unit = {
+    test(ps.getName(), ps.plugins(), dutArgs)
   }
 
   def test(args : String) : Unit = test(args.split(" "))
@@ -158,7 +286,7 @@ object RegressionSingle extends App{
       help("help").text("prints this usage text")
       param.addOptions(this)
     }.parse(args, Unit).nonEmpty)
-    test(param)
+    test(param, args)
   }
 
   test(args)
@@ -177,22 +305,24 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }.parse(args, Unit).nonEmpty)
 
     testMp(param.getName()) {
-      RegressionSingle.test(param)
+      RegressionSingle.test(param, args)
     }
   }
 
-  val md = "--with-mul --with-div"
+  val md = "--with-mul --with-div --performance-counters 4"
   for(issues <- 1 to 2; rf <- List("", "--regfile-async"); bpf <- List(0,1,2,3,100); xlen <- List(64, 32)){
     val base = s"--decoders $issues --lanes $issues --xlen $xlen $md --allow-bypass-from $bpf"
     addTest(s"$base $rf")
     if(bpf == 0 || bpf == 100) {
       addTest(s"$base $rf --with-btb")
       addTest(s"$base $rf --with-btb --with-ras")
-      addTest(s"$base $rf --with-btb --with-ras --with-gshare")
+      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-supervisor --withAmo")
     }
     if(bpf == 0) {
       addTest(s"$base $rf --with-late-alu")
       addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-late-alu")
+      addTest(s"$base $rf --with-late-alu")
+      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-late-alu --with-supervisor --withAmo")
     }
   }
 

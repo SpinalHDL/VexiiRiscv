@@ -32,6 +32,14 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   }
 
   def getClintTime() : Long
+  def getC(data : Array[Byte]): Unit = {
+    if (System.in.available() != 0) {
+      data(0) = System.in.read().toByte
+    } else {
+      for (i <- 0 until data.size) data(i) = 0xFF.toByte
+    }
+  }
+
 
   def access(write : Boolean, address : Long, data : Array[Byte]) : Boolean = {
     val addressPatched = address - offset
@@ -69,16 +77,8 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
           simRandom.nextBytes(data)
           return true;
         }
-        case GETC => {
-          if (System.in.available() != 0) {
-            data(0) = System.in.read().toByte
-          } else {
-            for (i <- 0 until data.size) data(i) = 0xFF.toByte
-          }
-        }
-        case RANDOM => {
-          simRandom.nextBytes(data)
-        }
+        case GETC => getC(data)
+        case RANDOM => simRandom.nextBytes(data)
         case CLINT_TIME => readLong(getClintTime())
         case CLINT_TIMEH => readLong(getClintTime() >> 32)
         case _ => {

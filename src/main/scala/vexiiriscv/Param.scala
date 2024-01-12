@@ -95,7 +95,8 @@ class ParamSimple(){
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
     opt[Unit]("with-mul") action { (v, c) => withMul = true }
     opt[Unit]("with-div") action { (v, c) => withDiv = true }
-    opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true }
+    opt[Unit]("with-amo") action { (v, c) => withAmo = true }
+    opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
     opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
     opt[Unit]("without-div") action { (v, c) => withDiv = false }

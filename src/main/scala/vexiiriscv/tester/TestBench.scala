@@ -19,6 +19,31 @@ import java.util.Scanner
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+class TestArgs{
+  val args = ArrayBuffer[String]()
+  def dualSim() : this.type = {args ++= List("--dual-sim"); this }
+  def withWave() : this.type = {args ++= List("--with-wave"); this }
+  def withKonata() : this.type = {args ++= List("--with-konata"); this }
+  def withRvlsLog() : this.type = {args ++= List("--with-rvls-log"); this }
+  def withSpikeLog() : this.type = {args ++= List("--with-spike-log"); this }
+  def printStats() : this.type = {args ++= List("--print-stats"); this }
+  def traceAll() : this.type = {args ++= List("--trace-all"); this }
+  def noProbe() : this.type = {args ++= List("--no-probe"); this }
+  def noRvlsCheck() : this.type = {args ++= List("--no-rvls-check"); this }
+  def noStdin() : this.type = {args ++= List("--no-stdin"); this }
+
+  def name(name : String) : this.type = {args ++= List("--name", name); this }
+  def failAfter(value : Long) : this.type = {args ++= List("--fail-after", value.toString); this }
+  def passAfter(value : Long) : this.type = {args ++= List("--pass-after", value.toString); this }
+  def simSpeedPrinter(value : Double) : this.type = {args ++= List("--sim-speed-printer", value.toString); this }
+  def loadElf(value : String) : this.type = {args ++= List("--load-elf", value); this }
+  def loadElf(value : File) : this.type = loadElf(value.getAbsolutePath)
+  def startSymbol(value : String) : this.type = {args ++= List("--start-symbol", value); this }
+  def passSymbol(value : String) : this.type = {args ++= List("--pass-symbol", value); this }
+  def startSymbolOffset(value : Int) : this.type = {args ++= List("--start-symbol-offset", value.toString); this }
+
+  def loadBin(address : Long, file : String) : this.type = {args ++= List("--load-bin", f"0x${address.toHexString},$file"); this }
+}
 
 class TestOptions{
   var dualSim = false // Double simulation, one ahead of the other which will trigger wave capture of the second simulation when it fail
@@ -28,6 +53,7 @@ class TestOptions{
   var traceSpikeLog = false
   var printStats = false
   var withProbe = true
+  var withStdIn = true
   var simSpeedPrinter = Option.empty[Double]
   var withRvls = new File("ext/rvls/build/apps/rvls.so").exists()
   var withRvlsCheck = withRvls
@@ -56,6 +82,7 @@ class TestOptions{
     opt[Unit]("with-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("with-rvls-log") action { (v, c) => traceRvlsLog = true }
     opt[Unit]("with-spike-log") action { (v, c) => traceSpikeLog = true }
+    opt[Unit]("no-stdin") action { (v, c) => withStdIn = false }
     opt[Unit]("print-stats") action { (v, c) => printStats = true }
     opt[Unit]("trace-all") action { (v, c) => traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true; printStats = true }
     opt[Unit]("no-probe") action { (v, c) => withProbe = false; }
@@ -174,6 +201,10 @@ class TestOptions{
     val priv = dut.host[PrivilegedPlugin].logic.harts(0)
     val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
       override def getClintTime(): Long = probe.cycle
+
+      override def getC(data: Array[Byte]) = {
+        if(withStdIn) return super.getC(data)
+      }
     }
 
     val fclp = dut.host.get[fetch.FetchCachelessPlugin].map { p =>
