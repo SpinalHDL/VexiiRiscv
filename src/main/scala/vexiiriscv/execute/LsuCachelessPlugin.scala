@@ -293,12 +293,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     for(eid <- forkAt + 1 to joinAt) elp.execute(eid).up(WITH_RSP).setAsReg().init(False)
 
     val onWb = new wbCtrl.Area{
-      val RSP_DATA = insert(this(onJoin.READ_DATA))
-      if(withAmo) when(!LOAD && SC){
-        RSP_DATA(0) := onJoin.SC_MISS
-        RSP_DATA(7 downto 1) := 0
-      }
-      val rspSplits = RSP_DATA.subdivideIn(8 bits)
+      val rspSplits = onJoin.READ_DATA.subdivideIn(8 bits)
       val rspShifted = Bits(LSLEN bits)
       val wordBytes = LSLEN/8
 
@@ -314,6 +309,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       iwb.valid := SEL
       iwb.payload := rspShifted
+
+      if (withAmo) when(!LOAD && SC) {
+        iwb.payload(0) := onJoin.SC_MISS
+        iwb.payload(7 downto 1) := 0
+      }
     }
 
     buildBefore.release()
