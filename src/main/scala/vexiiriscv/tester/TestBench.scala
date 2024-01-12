@@ -46,6 +46,8 @@ class TestArgs{
   def fsmPutc(value : String) : this.type = {args ++= List("--fsm-putc", value); this }
   def fsmPutcLr() : this.type = {args ++= List("--fsm-putc-lr"); this }
   def fsmSleep(value : Long) : this.type = {args ++= List("--fsm-sleep", value.toString); this }
+  def ibusReadyFactor(value : Double) : this.type = {args ++= List("--ibus-ready-factor", value.toString); this }
+  def dbusReadyFactor(value : Double) : this.type = {args ++= List("--dbus-ready-factor", value.toString); this }
 
   def loadBin(address : Long, file : String) : this.type = {args ++= List("--load-bin", f"0x${address.toHexString},$file"); this }
 }
@@ -105,6 +107,8 @@ class TestOptions{
   var testName = Option.empty[String]
   var passSymbolName = "pass"
   val fsmTasks = mutable.Queue[FsmTask]()
+  var ibusReadyFactor = 1.01f
+  var dbusReadyFactor = 1.01f
 
   def getTestName() = testName.getOrElse("test")
 
@@ -135,6 +139,8 @@ class TestOptions{
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
+    opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
+    opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
 
     opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasks += new FsmPutc(v) }
     opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasks += new FsmPutc("\n") }
@@ -235,8 +241,9 @@ class TestOptions{
       val withPass = elf.getELFSymbol(passSymbolName) != null
       val withFail = elf.getELFSymbol("fail") != null
       if (withPass || withFail) {
-        val passSymbol = if(withPass) elf.getSymbolAddress(passSymbolName) else -1
-        val failSymbol = if(withFail) elf.getSymbolAddress("fail") else -1
+        def trunkPc(pc : Long) = (xlen == 32).mux(pc & 0xFFFFFFFFl, pc)
+        val passSymbol = if(withPass) trunkPc(elf.getSymbolAddress(passSymbolName)) else -1
+        val failSymbol = if(withFail) trunkPc(elf.getSymbolAddress("fail")) else -1
         probe.commitsCallbacks += { (hartId, pc) =>
           if (pc == passSymbol) delayed(1)(simSuccess())
           if (pc == failSymbol) delayed(1)(simFailure("Software reach the fail symbole :("))
@@ -273,8 +280,8 @@ class TestOptions{
       }
 
       //TODO backpresure
-      cmdReady.setFactor(2.0f)
-      rspDriver.setFactor(2.0f)
+      cmdReady.setFactor(ibusReadyFactor)
+      rspDriver.setFactor(ibusReadyFactor)
     }
 
     val lsclp = dut.host.get[execute.LsuCachelessPlugin].map { p =>
@@ -416,8 +423,8 @@ class TestOptions{
       }
 
       //TODO backpresure
-      cmdReady.setFactor(2.0f)
-      rspDriver.setFactor(2.0f)
+      cmdReady.setFactor(dbusReadyFactor)
+      rspDriver.setFactor(dbusReadyFactor)
 
 
 

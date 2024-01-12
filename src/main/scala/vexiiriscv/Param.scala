@@ -57,11 +57,11 @@ class ParamSimple(){
     relaxedShift = false
     relaxedSrc = true
     performanceCounters = 4
-    privParam.withSupervisor = true
-    privParam.withUser = true
-    withMmu = true
-    withAmo = true
-    xlen = 64
+    privParam.withSupervisor = false
+    privParam.withUser = false
+    withMmu = false
+    withAmo = false
+    xlen = 32
   }
 
 

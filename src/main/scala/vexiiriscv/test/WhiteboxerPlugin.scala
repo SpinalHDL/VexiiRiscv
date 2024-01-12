@@ -42,7 +42,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val fire = wrap(c.up.isFiring)
       val spawn = wrap(c.up.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
-      val pc = wrap(c(Global.PC).asSInt.resize(64 bits))
+      val pc = wrap(Global.expendPc(c(Global.PC), 64).asSInt)
       val fetchId = wrap(c(Fetch.ID))
       val decodeId = wrap(c(Decode.DOP_ID))
     }

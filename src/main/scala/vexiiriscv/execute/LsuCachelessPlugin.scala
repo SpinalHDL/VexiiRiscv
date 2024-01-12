@@ -172,7 +172,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val tpk =  onAddress.translationPort.keys
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && onAddress.RAW_ADDRESS(i - 1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
       val RS2 = elp(IntRegFile, riscv.RS2)
-      assert(bus.cmd.ready, "LsuCachelessPlugin expected bus.cmd.ready to be True, but False") // For now
 
       val skip = False
 
@@ -281,7 +280,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp
-        rsp.valid := !(isValid && SEL) && WITH_RSP
+        rsp.valid := !(isValid && SEL) && WITH_RSP && buffer.valid
         rsp.data := buffer.data
         rsp.error := buffer.error
         rsp.redo := False

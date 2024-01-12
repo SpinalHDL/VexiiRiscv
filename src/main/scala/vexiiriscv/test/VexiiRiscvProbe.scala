@@ -135,8 +135,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           case None => "M"
         }
         tracer.newCpuMemoryView(hartId, 16, 16) //TODO readIds writeIds
-        tracer.newCpu(hartId, s"RV${xlen}IMA", csrp, cpu.database(PC_WIDTH), hartId)
-        val pc = pcExtends(0x80000000l)
+        tracer.newCpu(hartId, s"RV${xlen}IMA", csrp, 63, hartId)
+        val pc = if(xlen == 32) 0x80000000l else 0x80000000l
         tracer.setPc(hartId, pc)
         this
       }

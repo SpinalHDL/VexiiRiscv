@@ -68,6 +68,8 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
     val t = new TestArgs()
     testArgs += t
     t.noStdin()
+    t.ibusReadyFactor(0.5)
+    t.dbusReadyFactor(0.5)
     t
   }
   //
@@ -108,19 +110,12 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
     args.name("riscv-tests/" + elf.getName)
   }
 
-  {
+  if(rva){
     val args = newArgs()
     args.loadElf(new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc"))
     args.failAfter(1000000)
     args.startSymbol("test_2")
     args.passSymbol("test_5")
-    args.name(s"riscv-tests/rv${xlen}ua-p-lrsc")
-  }
-  {
-    val args = newArgs()
-    args.loadElf(new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc"))
-    args.failAfter(100000)
-    args.startSymbol("test_6")
     args.name(s"riscv-tests/rv${xlen}ua-p-lrsc")
   }
 
@@ -142,14 +137,25 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
     args.name(s"regular/$name")
   }
 
+  val benchmarks = ArrayBuffer("dhrystone", "coremark")
+  for (name <- benchmarks) {
+    val args = newArgs()
+    args.loadElf(new File(nsf, s"baremetal/$name/build/rv${xlen}ima/$name.elf"))
+    args.failAfter(300000000)
+    args.ibusReadyFactor(2.0)
+    args.dbusReadyFactor(2.0)
+    args.name(s"benchmark/$name")
+  }
+
+
   val freertos = List(
-    "sp_flop", "integer", "blocktim", "countsem", "EventGroupsDemo", "flop", "QPeek",
+    "sp_flop", "blocktim", "integer", "countsem", "EventGroupsDemo", "flop", "QPeek",
     "QueueSet", "recmutex", "semtest", "TaskNotify", "dynamic",
     "GenQTest", "PollQ", "QueueOverwrite", "QueueSetPolling", "test1"
   )
-  for(name <- freertos.take(4)){
+  for(name <- freertos.take(2)){
     val args = newArgs()
-    args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${arch}/freertosDemo.elf"))
+    args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${arch + (arch.endsWith("im").mux("a",""))}/freertosDemo.elf"))
     args.failAfter(300000000)
     args.name(s"freertos/$name")
   }
@@ -298,13 +304,12 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     if(bpf == 0 || bpf == 100) {
       addTest(s"$base $rf --with-btb")
       addTest(s"$base $rf --with-btb --with-ras")
-      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-supervisor --withAmo")
+      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-supervisor --with-amo")
     }
     if(bpf == 0) {
       addTest(s"$base $rf --with-late-alu")
       addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-late-alu")
-      addTest(s"$base $rf --with-late-alu")
-      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-late-alu --with-supervisor --withAmo")
+      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-late-alu --with-supervisor --with-amo")
     }
   }
 

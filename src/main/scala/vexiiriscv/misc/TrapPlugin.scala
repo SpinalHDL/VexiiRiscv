@@ -410,7 +410,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
               csr.m.tval.getAddress(),
               csr.s.tval.getAddress()
             )
-            crsPorts.write.data := S(buffer.trap.tval).resize(XLEN).asBits
+            crsPorts.write.data := Global.expendPc(buffer.trap.tval.asUInt, XLEN).asBits
             when(crsPorts.write.ready) {
               goto(TRAP_EPC)
             }
@@ -422,7 +422,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
               csr.m.epc.getAddress(),
               csr.s.epc.getAddress()
             )
-            crsPorts.write.data := S(pending.pc, XLEN bits).asBits //TODO PC sign extends ? (DONE)
+            crsPorts.write.data := Global.expendPc(pending.pc, XLEN).asBits
             when(crsPorts.write.ready) {
               goto(TRAP_TVEC)
             }

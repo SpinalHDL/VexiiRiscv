@@ -18,6 +18,12 @@ object Global extends AreaRoot{
   val CODE_WIDTH = blocking[Int]
   val TRAP_ARG_WIDTH = blocking[Int]
 
+  def pcWithSignMsb = PHYSICAL_WIDTH < MIXED_WIDTH
+  def expendPc(pc : UInt, width : Int) = Global.pcWithSignMsb.mux(
+    pc.asSInt.resize(width bits).asUInt,
+    pc.resize(width bits)
+  )
+
 
   val VIRTUAL_ADDRESS = Payload(UInt(VIRTUAL_WIDTH bits))
   val MIXED_ADDRESS = Payload(UInt(MIXED_WIDTH bits))
