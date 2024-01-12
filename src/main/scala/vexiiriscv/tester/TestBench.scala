@@ -380,16 +380,6 @@ class TestOptions{
                   write()
                 }
               }
-
-//            AMOSWAP = 0x01
-//            AMOADD = 0x00
-//            AMOXOR = 0x04
-//            AMOAND = 0x0C
-//            AMOOR = 0x08
-//            AMOMIN = 0x10
-//            AMOMAX = 0x14
-//            AMOMINU = 0x18
-//            AMOMAXU = 0x1c
             }
           }
           p.data #= bytes

@@ -163,8 +163,8 @@ object Rvi extends AreaObject {
   loadSpec(AMOORW) = LoadSpec(32, true)
   loadSpec(AMOMINW) = LoadSpec(32, true)
   loadSpec(AMOMAXW) = LoadSpec(32, true)
-  loadSpec(AMOMINUW) = LoadSpec(32, false)
-  loadSpec(AMOMAXUW) = LoadSpec(32, false)
+  loadSpec(AMOMINUW) = LoadSpec(32, true)
+  loadSpec(AMOMAXUW) = LoadSpec(32, true)
 
   loadSpec(AMOSWAPD) = LoadSpec(64, true)
   loadSpec(AMOADDD) = LoadSpec(64, true)
@@ -173,8 +173,8 @@ object Rvi extends AreaObject {
   loadSpec(AMOORD) = LoadSpec(64, true)
   loadSpec(AMOMIND) = LoadSpec(64, true)
   loadSpec(AMOMAXD) = LoadSpec(64, true)
-  loadSpec(AMOMINUD) = LoadSpec(64, false)
-  loadSpec(AMOMAXUD) = LoadSpec(64, false)
+  loadSpec(AMOMINUD) = LoadSpec(64, true)
+  loadSpec(AMOMAXUD) = LoadSpec(64, true)
 }
 
 
