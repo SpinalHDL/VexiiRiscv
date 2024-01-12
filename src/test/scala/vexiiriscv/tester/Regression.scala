@@ -164,46 +164,28 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
     args.loadBin(0x80400000l, s"$path/Image")
     args.loadBin(0x81000000l, s"$path/rootfs.cpio")
 
-//    val t = newTest()
-//    t.elfs += new File(nsf, f"baremetal/freertosDemo/build/${name}/${arch}/freertosDemo.elf")
-//    t.failAfter = Some(300000000)
-//    t.testName = Some(s"buildroot")
-
-//           --load-bin {imagePath}/fw_jump.bin,0x80000000 \\
-//           --load-bin {imagePath}/linux.dtb,0x80F80000 \\
-//           --load-bin {imagePath}/Image,0x80400000 \\
-//           --load-bin {imagePath}/rootfs.cpio,0x81000000 \\
-//           --no-stdin                  \\
-//           --no-putc-flush          \\
-//           --seed={str(random.randint(0, 100000000))} \\
-//           --getc "buildroot login" \\
-//           --putc "root" \\
-//           --getc "#" \\
-//           --putc "cat /proc/cpuinfo" \\
-//           --getc "#" \\
-//           --putc "echo 1+2+3*4 | bc" \\
-//           --getc "#" \\
-//           --putc "micropython" \\
-//           --getc ">>> " \\
-//           --putc "import math" \\
-//           --getc ">>> " \\
-//           --putc "math.sin(math.pi/4)" \\
-//           --getc ">>> " \\
-//           --putc "from sys import exit" \\
-//           --getc ">>> " \\
-//           --putc "exit()" \\
-//           --getc "#" \\
-//           --putc "ls /" \\
-//           --getc "#" \\
-//           --success \\
-//    tests += t
+    args.fsmGetc("buildroot login:")
+    args.fsmSleep(100000*10)
+    args.fsmPutc("root"); args.fsmPutcLr()
+    args.fsmGetc("#")
+    args.fsmPutc("cat /proc/cpuinfo"); args.fsmPutcLr()
+    args.fsmGetc("#")
+    args.fsmPutc("echo 1+2+3*4 | bc"); args.fsmPutcLr()
+    args.fsmGetc("#")
+    args.fsmPutc("micropython"); args.fsmPutcLr()
+    args.fsmGetc(">>> ")
+    args.fsmPutc("import math"); args.fsmPutcLr()
+    args.fsmGetc(">>> ")
+    args.fsmPutc("math.sin(math.pi/4)"); args.fsmPutcLr()
+    args.fsmGetc(">>> ")
+    args.fsmPutc("from sys import exit"); args.fsmPutcLr()
+    args.fsmGetc(">>> ")
+    args.fsmPutc("exit()"); args.fsmPutcLr()
+    args.fsmGetc("#")
+    args.fsmPutc("ls /"); args.fsmPutcLr()
+    args.fsmGetc("#")
+    args.fsmSuccess()
   }
-
-//  --load-bin 0x80000000,ext/NaxSoftware/buildroot/images/rv32ima/fw_jump.bin --load-bin 0x80F80000,ext/NaxSoftware/buildroot/images/rv32ima/linux.dtb --load-bin 0x80400000,ext/NaxSoftware/buildroot/images/rv32ima/Image --load-bin 0x81000000,ext/NaxSoftware/buildroot/images/rv32ima/rootfs.cpio
-//           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/fw_jump.bin,0x80000000 \\
-//           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/linux.dtb,0x80F80000 \\
-//           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/Image,0x80400000 \\
-//           --load-bin ext/NaxSoftware/buildroot/images/rv32ima/rootfs.cpio,0x81000000 \\
 
   implicit val ec = ExecutionContext.global
   val jobs = ArrayBuffer[AsyncJob]()
@@ -211,7 +193,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
   val tp = new File(compiled.simConfig.getTestPath(""))
   FileUtils.forceMkdir(tp)
   val argsFile = new BufferedWriter(new FileWriter(new File(tp, "args")))
-  argsFile.write(dutArgs.mkString(" "))
+  argsFile.write(dutArgs.map(v => if (v.contains(" ")) s"'$v'" else v).mkString(" "))
   argsFile.close()
 
   for(args <- testArgs){
@@ -231,7 +213,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
       val job = new AsyncJob(toStdout = false, logsPath = testPath)({
         FileUtils.forceMkdir(testPath)
         val argsFile = new BufferedWriter(new FileWriter(new File(testPath, "args")))
-        argsFile.write(args.args.mkString(" "))
+        argsFile.write(args.args.map(v => if(v.contains(" ")) s"'$v'" else v).mkString(" "))
         argsFile.close()
 
         t.test(compiled)

@@ -31,6 +31,7 @@ class TestArgs{
   def noProbe() : this.type = {args ++= List("--no-probe"); this }
   def noRvlsCheck() : this.type = {args ++= List("--no-rvls-check"); this }
   def noStdin() : this.type = {args ++= List("--no-stdin"); this }
+  def fsmSuccess() : this.type = {args ++= List("--fsm-success"); this }
 
   def name(name : String) : this.type = {args ++= List("--name", name); this }
   def failAfter(value : Long) : this.type = {args ++= List("--fail-after", value.toString); this }
@@ -41,8 +42,46 @@ class TestArgs{
   def startSymbol(value : String) : this.type = {args ++= List("--start-symbol", value); this }
   def passSymbol(value : String) : this.type = {args ++= List("--pass-symbol", value); this }
   def startSymbolOffset(value : Int) : this.type = {args ++= List("--start-symbol-offset", value.toString); this }
+  def fsmGetc(value : String) : this.type = {args ++= List("--fsm-getc", value); this }
+  def fsmPutc(value : String) : this.type = {args ++= List("--fsm-putc", value); this }
+  def fsmPutcLr() : this.type = {args ++= List("--fsm-putc-lr"); this }
+  def fsmSleep(value : Long) : this.type = {args ++= List("--fsm-sleep", value.toString); this }
 
   def loadBin(address : Long, file : String) : this.type = {args ++= List("--load-bin", f"0x${address.toHexString},$file"); this }
+}
+
+trait FsmHal{
+  def putc(value : String) : Unit
+  def next() : Unit
+}
+trait FsmTask{
+  def start(hal : FsmHal) : Unit = {}
+  def getc(hal : FsmHal, c : Char) : Unit = {}
+}
+class FsmGetc(value : String) extends FsmTask{
+  val buffer = new StringBuilder()
+  override def getc(hal : FsmHal, c: Char): Unit = {
+    buffer += c
+    if(buffer.toString().endsWith(value)){
+      hal.next()
+    }
+  }
+}
+class FsmPutc(value : String) extends FsmTask{
+  override def start(hal: FsmHal): Unit = {
+    hal.putc(value)
+    hal.next()
+  }
+}
+class FsmSleep(value : Long) extends FsmTask{
+  override def start(hal: FsmHal): Unit = {
+    delayed(value) {
+      hal.next()
+    }
+  }
+}
+class FsmSuccess extends FsmTask{
+  override def start(hal: FsmHal): Unit = simSuccess()
 }
 
 class TestOptions{
@@ -65,6 +104,7 @@ class TestOptions{
   val elfs = ArrayBuffer[File]()
   var testName = Option.empty[String]
   var passSymbolName = "pass"
+  val fsmTasks = mutable.Queue[FsmTask]()
 
   def getTestName() = testName.getOrElse("test")
 
@@ -95,6 +135,12 @@ class TestOptions{
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
+
+    opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasks += new FsmPutc(v) }
+    opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasks += new FsmPutc("\n") }
+    opt[String]("fsm-getc") unbounded() action { (v, c) => fsmTasks += new FsmGetc(v) }
+    opt[Long]("fsm-sleep") unbounded() action { (v, c) => fsmTasks += new FsmSleep(v) }
+    opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasks += new FsmSuccess() }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
@@ -201,11 +247,9 @@ class TestOptions{
     val priv = dut.host[PrivilegedPlugin].logic.harts(0)
     val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
       override def getClintTime(): Long = probe.cycle
-
-      override def getC(data: Array[Byte]) = {
-        if(withStdIn) return super.getC(data)
-      }
     }
+    peripheral.withStdIn = withStdIn
+
 
     val fclp = dut.host.get[fetch.FetchCachelessPlugin].map { p =>
       val bus = p.logic.bus
@@ -384,6 +428,18 @@ class TestOptions{
       //TODO backpresure
       cmdReady.setFactor(2.0f)
       rspDriver.setFactor(2.0f)
+
+
+
+      val hal = new FsmHal{
+        override def next(): Unit = {
+          if (fsmTasks.nonEmpty) fsmTasks.dequeue()
+          if (fsmTasks.nonEmpty) fsmTasks.head.start(this)
+        }
+        override def putc(value: String): Unit = peripheral.getcQueue ++= value.map(_.toByte)
+      }
+      if (fsmTasks.nonEmpty) fsmTasks.head.start(hal)
+      peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
     }
 
     if(printStats) onSimEnd{

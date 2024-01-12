@@ -61,6 +61,7 @@ class ParamSimple(){
     privParam.withUser = true
     withMmu = true
     withAmo = true
+    xlen = 64
   }
 
 

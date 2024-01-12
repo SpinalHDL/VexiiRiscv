@@ -3,6 +3,9 @@ package vexiiriscv.test
 import spinal.core._
 import spinal.core.sim._
 
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
 abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : Bool = null, mti : Bool = null, cd : ClockDomain = null) {
   val PUTC = 0
   val PUT_HEX = 0x8
@@ -31,13 +34,23 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
     }
   }
 
+
   def getClintTime() : Long
-  def getC(data : Array[Byte]): Unit = {
-    if (System.in.available() != 0) {
-      data(0) = System.in.read().toByte
-    } else {
-      for (i <- 0 until data.size) data(i) = 0xFF.toByte
+
+  val putcListeners = ArrayBuffer[Char => Unit]()
+  def putc(c : Char) : Unit = {putcListeners.foreach(_(c))}
+
+
+  var withStdIn = true
+  var getcQueue = mutable.Queue[Byte]()
+  def getc(data : Array[Byte]): Unit = {
+    if(getcQueue.nonEmpty){
+      data(0) = getcQueue.dequeue(); return
     }
+    if (withStdIn && System.in.available() > 0) {
+      data(0) = System.in.read().toByte; return
+    }
+    for (i <- 0 until data.size) data(i) = 0xFF.toByte
   }
 
 
@@ -45,7 +58,13 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
     val addressPatched = address - offset
     if(write){
       addressPatched.toInt match {
-        case PUTC => print(data(0).toChar)
+        case PUTC => {
+          val c = data(0).toChar
+          print(c.toString match {
+            case s => s
+          })
+          putc(c)
+        }
         case PUT_HEX => print(data.reverse.map(v => f"$v%02x").mkString(""))
         case PUT_DEC => print(f"${BigInt(data.map(_.toByte).reverse.toArray)}%d")
         case MACHINE_EXTERNAL_INTERRUPT_CTRL => mei #= data(0).toBoolean
@@ -77,7 +96,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
           simRandom.nextBytes(data)
           return true;
         }
-        case GETC => getC(data)
+        case GETC => getc(data)
         case RANDOM => simRandom.nextBytes(data)
         case CLINT_TIME => readLong(getClintTime())
         case CLINT_TIMEH => readLong(getClintTime() >> 32)
