@@ -266,6 +266,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
           bus.cmd.address := cmd.address
           bus.cmd.size := cmd.size
           bus.cmd.fromHart := False
+          bus.cmd.io := False
+          if(withAmo) bus.cmd.amoEnable := False
         }
       }
     }
