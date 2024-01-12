@@ -31,15 +31,17 @@ trait CsrService {
   val onReadingHartIdMap = mutable.LinkedHashMap[Int, Bool]()
   val isReadingHartIdCsrMap = mutable.LinkedHashMap[(Int, Any), Bool]()
   val onWritingHartIdMap = mutable.LinkedHashMap[Int, Bool]()
+  val trapNextOnWrite = mutable.LinkedHashSet[Any]()
 
   def onDecode(csrFilter : Any, priority : Int = 0)(body : => Unit) = spec += CsrOnDecode(csrFilter, priority, () => body)
-  def onDecodeTrap() : Unit
-  def onDecodeUntrap() : Unit
-  def onDecodeFlushPipeline() : Unit
+  def onDecodeException() : Unit
+  def onDecodeUnException() : Unit
+  def onDecodeTrap(): Unit
   def onDecodeRead : Bool
   def onDecodeWrite : Bool
   def onDecodeHartId : UInt
-  def onDecodeAddress : UInt
+  def onDecodeAddress: UInt
+  def onDecodeTrapCode: Bits
 
   def isReading : Bool
   def onRead (csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = spec += CsrOnRead(csrFilter, onlyOnFire, () => body)
@@ -230,12 +232,11 @@ case class CsrRamWrite(addressWidth : Int, dataWidth : Int, priority : Int) exte
 
 
 object CsrRamService{
-  //Priorities are arranged in a way to improve ports.ready timings
   val priority = new {
-    val INIT    = 0
-    val TRAP    = 1
-    val COUNTER = 2
-    val CSR     = 3  //This is the very critical path
+    val INIT = 0
+    val CSR = 1
+    val TRAP = 2
+    val COUNTER = 3
   }
 }
 //usefull for, for instance, mscratch scratch mtvec stvec mepc sepc mtval stval satp pmp stuff

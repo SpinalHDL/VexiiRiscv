@@ -8,8 +8,8 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.pipeline.Stageable
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
-import vexiiriscv.decode.Decode.{UOP, rfaKeys}
-import vexiiriscv.misc.TrapService
+import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, UOP, rfaKeys}
+import vexiiriscv.misc.{TrapReason, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{CSR, Const, IMM, IntRegFile, RD, RS1, Rvi}
 
@@ -37,13 +37,18 @@ class CsrAccessPlugin(layer : LaneLayer,
 
   import CsrFsm._
 
+  override def onDecodeException(): Unit = apiIo.onDecodeException := True
+  override def onDecodeUnException(): Unit = apiIo.onDecodeException := False
   override def onDecodeTrap(): Unit = apiIo.onDecodeTrap := True
-  override def onDecodeUntrap(): Unit = apiIo.onDecodeTrap := False
-  override def onDecodeFlushPipeline(): Unit = ???
   override def onDecodeRead: Bool = apiIo.onDecodeRead
   override def onDecodeWrite: Bool = apiIo.onDecodeWrite
   override def onDecodeHartId: UInt = apiIo.onDecodeHartId
   override def onDecodeAddress: UInt = apiIo.onDecodeAddress
+  override def onDecodeTrapCode: Bits = apiIo.onDecodeTrapCode
+  def onDecodeTrap(code : Int) : Unit = {
+    onDecodeTrap()
+    onDecodeTrapCode := code
+  }
 
 
   override def isReading: Bool = apiIo.isReading
@@ -64,12 +69,13 @@ class CsrAccessPlugin(layer : LaneLayer,
   override def onWriteMovingOff: Bool = apiIo.onWriteMovingOff
 
   val apiIo = during build new Area{
+    val onDecodeException = False
     val onDecodeTrap = False
-//    val onDecodeFlushPipeline(): Unit
     val onDecodeRead = Bool()
     val onDecodeWrite = Bool()
     val onDecodeHartId = Global.HART_ID()
     val onDecodeAddress = CSR_ADDRESS()
+    val onDecodeTrapCode = Global.CODE().assignDontCare()
     val isReading = Bool()
     val onReadAddress = CSR_ADDRESS()
     val onReadHalt = False
@@ -112,6 +118,7 @@ class CsrAccessPlugin(layer : LaneLayer,
     val wbWi = integrated generate iwb.access(injectAt)
     for(op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI).map(layer(_))){
       op.dontFlushFrom(injectAt)
+      op.mayFlushUpTo(injectAt)
       if (!integrated) ??? //elp.setRdOutOfPip(op)
       if (integrated) iwb.addMicroOp(wbWi, op)
       //      dp.fenceYounger(op)
@@ -129,6 +136,17 @@ class CsrAccessPlugin(layer : LaneLayer,
     ioRetainer.release()
 
     csrLock.await()
+
+    val trapNextOnWriteFilter = CsrListFilter(trapNextOnWrite.flatMap{
+      case e : CsrListFilter => e.mapping
+    }.toList)
+
+    onDecode(trapNextOnWriteFilter) {
+      when(onDecodeWrite) {
+        onDecodeTrap()
+        onDecodeTrapCode := TrapReason.NEXT
+      }
+    }
 
 //    val useRamRead = spec.exists(_.isInstanceOf[CsrRamSpec])
 //    val useRamWrite = spec.exists(_.isInstanceOf[CsrRamSpec])
@@ -204,7 +222,7 @@ class CsrAccessPlugin(layer : LaneLayer,
 
 
 
-        val trap = !implemented || apiIo.onDecodeTrap
+        val trap = !implemented || apiIo.onDecodeException
 
         def connectRegs(): Unit = {
           regs.hartId := Global.HART_ID
@@ -245,20 +263,34 @@ class CsrAccessPlugin(layer : LaneLayer,
         trapPort.valid := False
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
-        trapPort.tval := UOP
+        trapPort.tval := UOP.resized
+        trapPort.arg := 0
+
+        val flushReg = RegInit(False) setWhen(flushPort.valid) clearWhen(!elp.isFreezed())
+        when(flushReg) {
+          flushPort.valid := True
+          bypass(Global.TRAP) := True
+        }
 
         IDLE whenIsActive {
           (regs.sels.values, sels.values).zipped.foreach(_ := _)
 
           when(onDecodeDo) {
             when(trap) {
-              flushPort.valid := True
-              trapPort.valid := True
               bypass(Global.TRAP) := True
               bypass(Global.COMMIT) := False
+              flushPort.valid := True
+              trapPort.valid := True
               iLogic.freeze := False
             } otherwise {
               goto(READ)
+              when(apiIo.onDecodeTrap){
+                bypass(Global.TRAP) := True
+                flushPort.valid := True
+                trapPort.valid := True
+                trapPort.exception := False
+                trapPort.code := apiIo.onDecodeTrapCode
+              }
             }
           }
         }
@@ -387,12 +419,12 @@ class CsrAccessPlugin(layer : LaneLayer,
         }
       }
 
-      val completion = Flow(CompletionPayload()) //TODO is it realy necessary to have this port ?
+      val completion = Flow(CompletionPayload()) //Only used when !integrated
       completion.valid := False
       completion.uopId := regs.uopId
       completion.hartId := regs.hartId
       completion.trap := inject(Global.TRAP)
-      completion.commit := !inject(Global.TRAP)
+      completion.commit := inject(Global.COMMIT)
 
       integrated match {
         case true => {

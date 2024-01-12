@@ -25,9 +25,10 @@ case class FlushCmd(age : Int, laneAgeWidth : Int, withUopId : Boolean) extends 
   val self = Bool()
 }
 
-case class TrapCmd(age : Int, pcWidth : Int, tvalWidth : Int, causeWidth : Int) extends Bundle {
+case class TrapCmd(age : Int, pcWidth : Int, tvalWidth : Int, causeWidth : Int, trapArgWidth : Int) extends Bundle {
   val cause      = UInt(causeWidth bits)
   val tval       = Bits(tvalWidth bits)
+  val arg        = Bits(trapArgWidth bits)
   val skipCommit = Bool() //Want to skip commit for exceptions, but not for [jump, ebreak, redo]
 }
 

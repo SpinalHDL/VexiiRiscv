@@ -198,6 +198,7 @@ class BranchPlugin(val layer : LaneLayer,
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.FETCH_MISSALIGNED
         trapPort.tval := B(alu.PC_TRUE)
+        trapPort.arg := 0
 
         when(doIt && MISSALIGNED){
           trapPort.valid := True
@@ -237,7 +238,7 @@ class BranchPlugin(val layer : LaneLayer,
 
     val wbLogic = new el.Execute(wbAt){
       wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
-      wb.payload := alu.PC_FALSE.asBits.resized //PC RESIZED
+      wb.payload := Global.expendPc(alu.PC_FALSE, Riscv.XLEN).asBits
     }
   }
 }

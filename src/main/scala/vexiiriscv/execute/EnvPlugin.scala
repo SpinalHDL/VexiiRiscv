@@ -15,7 +15,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 object EnvPluginOp extends SpinalEnum{
-  val ECALL, EBREAK, PRIV_RET = newElement()
+  val ECALL, EBREAK, PRIV_RET, FENCE_I, SFENCE_VMA, WFI = newElement()
 }
 
 class EnvPlugin(layer : LaneLayer,
@@ -39,9 +39,9 @@ class EnvPlugin(layer : LaneLayer,
     if (ps.implementSupervisor) add(Rvi.SRET).decode(OP -> EnvPluginOp.PRIV_RET)
     if (ps.implementUserTrap)   add(Rvi.URET).decode(OP -> EnvPluginOp.PRIV_RET)
 
-    val uopList = ArrayBuffer(Rvi.ECALL, Rvi.EBREAK, Rvi.MRET)
-    if (ps.implementSupervisor) uopList += (Rvi.SRET)
-    if (ps.implementUserTrap) uopList += (Rvi.URET)
+    add(Rvi.FENCE_I).decode(OP -> EnvPluginOp.FENCE_I)
+    add(Rvi.WFI).decode(OP -> EnvPluginOp.WFI)
+    if (ps.implementSupervisor) add(Rvi.SFENCE_VMA).decode(OP -> EnvPluginOp.SFENCE_VMA)
 
     for (uop <- uopList; spec = layer(uop)) {
       spec.setCompletion(executeAt)
@@ -60,8 +60,9 @@ class EnvPlugin(layer : LaneLayer,
 
       trapPort.valid := False
       trapPort.exception := True
-      trapPort.code.assignDontCare()
       trapPort.tval := B(PC).andMask(OP === EnvPluginOp.EBREAK) //That's what spike do
+      trapPort.code.assignDontCare()
+      trapPort.arg.assignDontCare()
 
       val privilege = ps.getPrivilege(HART_ID)
       val xretPriv = Decode.UOP(29 downto 28).asUInt
@@ -79,9 +80,29 @@ class EnvPlugin(layer : LaneLayer,
             commit := True
             trapPort.exception := False
             trapPort.code := TrapReason.PRIV_RET
-            trapPort.tval(1 downto 0) := xretPriv.asBits
+            trapPort.arg(1 downto 0) := xretPriv.asBits
           } otherwise {
             trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
+          }
+        }
+
+        is(EnvPluginOp.WFI) {
+          commit := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.WFI
+        }
+
+        is(EnvPluginOp.FENCE_I) {
+          commit := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.FENCE_I
+        }
+
+        if (ps.implementSupervisor) {
+          is(EnvPluginOp.SFENCE_VMA) {
+            commit := True
+            trapPort.exception := False
+            trapPort.code := TrapReason.SFENCE_VMA
           }
         }
       }

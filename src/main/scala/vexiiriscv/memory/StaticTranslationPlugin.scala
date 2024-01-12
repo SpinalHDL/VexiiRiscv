@@ -11,15 +11,18 @@ import vexiiriscv.riscv.Riscv
 class StaticTranslationPlugin(var physicalWidth: Int,
                               var ioRange: UInt => Bool,
                               var fetchRange: UInt => Bool) extends FiberPlugin with AddressTranslationService {
-
+  override def mayNeedRedo: Boolean = false
   override def newStorage(pAny: Any): Any = { }
+  override def getStorageId(s: Any): Int = 0
+  override def getStorageIdWidth(): Int = 0
+
   override def newTranslationPort(nodes: Seq[NodeBaseApi],
                                   rawAddress: Payload[UInt],
                                   allowRefill: Payload[Bool],
                                   usage: AddressTranslationPortUsage,
                                   portSpec: Any,
                                   storageSpec: Any): AddressTranslationRsp = {
-    new AddressTranslationRsp(this, 0, wayCount = 0) {
+    new AddressTranslationRsp(this, wayCount = 0) {
       val node = nodes.last
       import node._
       import keys._
@@ -32,7 +35,6 @@ class StaticTranslationPlugin(var physicalWidth: Int,
       ALLOW_WRITE := True
       PAGE_FAULT := False
       ACCESS_FAULT := False
-      wake := True
       ALLOW_EXECUTE clearWhen (!fetchRange(TRANSLATED))
     }
   }
@@ -49,5 +51,8 @@ class StaticTranslationPlugin(var physicalWidth: Int,
     MIXED_WIDTH.set(physicalWidth)
     PC_WIDTH.set(physicalWidth)
     TVAL_WIDTH.set(physicalWidth)
+
+    portsLock.await()
+    assert(refillPorts.isEmpty)
   }
 }

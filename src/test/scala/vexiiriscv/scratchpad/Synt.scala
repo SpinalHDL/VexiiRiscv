@@ -56,5 +56,11 @@ Artix 7 -> 129 Mhz 3920 LUT 1753 FF
 Artix 7 -> 90 Mhz 2014 LUT 1231 FF
 Artix 7 -> 146 Mhz 2107 LUT 1231 FF
 
+vexii_1i ->
+Artix 7 -> 90 Mhz 2087 LUT 1267 FF
+Artix 7 -> 145 Mhz 2167 LUT 1267 FF
 
+vexii_1i ->
+Artix 7 -> 90 Mhz 2090 LUT 1292 FF
+Artix 7 -> 149 Mhz 2222 LUT 1292 FF
  */

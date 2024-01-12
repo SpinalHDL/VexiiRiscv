@@ -9,6 +9,8 @@ import vexiiriscv.decode.DecodeListType
 import vexiiriscv.execute.RsUnsignedPlugin.RS1_SIGNED
 import vexiiriscv.riscv.{MicroOp, RD, RfResource}
 
+import scala.collection.mutable.ArrayBuffer
+
 
 object ExecuteUnitElementSimple{
   class Api(layer : LaneLayer, val srcPlugin: SrcPlugin, val SEL : Payload[Bool], val rsUnsignedPlugin: RsUnsignedPlugin = null){
@@ -22,7 +24,10 @@ object ExecuteUnitElementSimple{
       bus
     }
 
+    val uopList = ArrayBuffer[MicroOp]()
     def add(microOp: MicroOp) = new {
+      val uop = microOp
+      uopList += microOp
       val impl = layer.add(microOp)
       val spec = layer(microOp)
 

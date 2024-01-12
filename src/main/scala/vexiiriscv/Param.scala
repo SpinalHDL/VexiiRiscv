@@ -6,6 +6,7 @@ import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
+import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.riscv.IntRegFile
@@ -31,6 +32,7 @@ class ParamSimple(){
   var withLateAlu = false
   var withMul = true
   var withDiv = true
+  var withAmo = false
   var privParam = PrivilegedParam.base
   var relaxedBranch = false
   var relaxedShift = false
@@ -55,8 +57,11 @@ class ParamSimple(){
     relaxedShift = false
     relaxedSrc = true
     performanceCounters = 4
-    privParam.withSupervisor = true
-    privParam.withUser = true
+    privParam.withSupervisor = false
+    privParam.withUser = false
+    withMmu = false
+    withAmo = false
+    xlen = 32
   }
 
 
@@ -74,6 +79,7 @@ class ParamSimple(){
     if (withLateAlu) r += "la"
     if (withMul) r += "m"
     if (withDiv) r += "d"
+    if (withAmo) r += "a"
     if (relaxedBranch) r += "rbra"
     if (relaxedShift) r += "rsft"
     if (relaxedSrc) r += "rsrc"
@@ -90,7 +96,8 @@ class ParamSimple(){
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
     opt[Unit]("with-mul") action { (v, c) => withMul = true }
     opt[Unit]("with-div") action { (v, c) => withDiv = true }
-    opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true }
+    opt[Unit]("with-amo") action { (v, c) => withAmo = true }
+    opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
     opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
     opt[Unit]("without-div") action { (v, c) => withDiv = false }
@@ -111,7 +118,12 @@ class ParamSimple(){
     plugins += new riscv.RiscvPlugin(xlen, hartCount)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
-      case true =>
+      case true => plugins += new memory.MmuPlugin(
+        spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
+        ioRange = ioRange,
+        fetchRange = fetchRange,
+        physicalWidth = 32
+      )
     }
 
     plugins += new misc.PipelineBuilderPlugin()
@@ -150,7 +162,31 @@ class ParamSimple(){
     plugins += new fetch.FetchCachelessPlugin(
       forkAt = 0,
       joinAt = 1, //You can for instance allow the external memory to have more latency by changing this
-      wordWidth = 32*decoders
+      wordWidth = 32*decoders,
+      translationStorageParameter = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 4,
+            depth = 32
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 2,
+            depth = 32
+          )
+        ),
+        priority = 0
+      ),
+      translationPortParameter = withMmu match {
+        case false => null
+        case true => MmuPortParameter(
+          readAt = 0,
+          hitsAt = 0,
+          ctrlAt = 0,
+          rspAt = 0
+        )
+      }
     )
 
     plugins += new decode.DecodePipelinePlugin()
@@ -187,7 +223,7 @@ class ParamSimple(){
     val early0 = new LaneLayer("early0", lane0, priority = 0)
     plugins += lane0
 
-    plugins += new RedoPlugin("lane0")
+//    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += new BarrelShifterPlugin(early0, formatAt = relaxedShift.toInt)
@@ -195,13 +231,36 @@ class ParamSimple(){
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
     plugins += new LsuCachelessPlugin(
       layer     = early0,
+      withAmo   = withAmo,
       withSpeculativeLoadFlush = true,
       addressAt = 0,
       forkAt    = 0,
       joinAt    = 1,
       wbAt      = 2,
-      translationStorageParameter = null,
-      translationPortParameter = null
+      translationStorageParameter = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 4,
+            depth = 32
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 2,
+            depth = 32
+          )
+        ),
+        priority = 1
+      ),
+      translationPortParameter = withMmu match {
+        case false => null
+        case true => MmuPortParameter(
+          readAt = 0,
+          hitsAt = 0,
+          ctrlAt = 0,
+          rspAt = 0
+        )
+      }
     )
 
     if(withMul) {
@@ -215,7 +274,8 @@ class ParamSimple(){
     plugins += new CsrRamPlugin()
     plugins += new PerformanceCounterPlugin(additionalCounterCount = performanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(privParam, 0 until hartCount, trapAt = 2)
+    plugins += new PrivilegedPlugin(privParam, 0 until hartCount)
+    plugins += new TrapPlugin(trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
 
     if(withLateAlu) {

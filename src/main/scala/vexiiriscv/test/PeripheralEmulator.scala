@@ -3,7 +3,10 @@ package vexiiriscv.test
 import spinal.core._
 import spinal.core.sim._
 
-abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, mti : Bool = null, cd : ClockDomain = null) {
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
+abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : Bool = null, mti : Bool = null, cd : ClockDomain = null) {
   val PUTC = 0
   val PUT_HEX = 0x8
   val CLINT_BASE = 0x10000
@@ -31,17 +34,42 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, mti : B
     }
   }
 
+
   def getClintTime() : Long
+
+  val putcListeners = ArrayBuffer[Char => Unit]()
+  def putc(c : Char) : Unit = {putcListeners.foreach(_(c))}
+
+
+  var withStdIn = true
+  var getcQueue = mutable.Queue[Byte]()
+  def getc(data : Array[Byte]): Unit = {
+    if(getcQueue.nonEmpty){
+      data(0) = getcQueue.dequeue(); return
+    }
+    if (withStdIn && System.in.available() > 0) {
+      data(0) = System.in.read().toByte; return
+    }
+    for (i <- 0 until data.size) data(i) = 0xFF.toByte
+  }
+
 
   def access(write : Boolean, address : Long, data : Array[Byte]) : Boolean = {
     val addressPatched = address - offset
     if(write){
       addressPatched.toInt match {
-        case PUTC => print(data(0).toChar)
+        case PUTC => {
+          val c = data(0).toChar
+          print(c.toString match {
+            case s => s
+          })
+          putc(c)
+        }
         case PUT_HEX => print(data.reverse.map(v => f"$v%02x").mkString(""))
         case PUT_DEC => print(f"${BigInt(data.map(_.toByte).reverse.toArray)}%d")
         case MACHINE_EXTERNAL_INTERRUPT_CTRL => mei #= data(0).toBoolean
         case SUPERVISOR_EXTERNAL_INTERRUPT_CTRL => sei #= data(0).toBoolean
+        case CLINT_BASE => msi #= (data(0).toInt & 1).toBoolean
         case CLINT_CMP => {
           val v = BigInt(data.map(_.toByte).reverse.toArray).toLong
           data.size match {
@@ -68,16 +96,8 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, mti : B
           simRandom.nextBytes(data)
           return true;
         }
-        case GETC => {
-          if (System.in.available() != 0) {
-            data(0) = System.in.read().toByte
-          } else {
-            for (i <- 0 until data.size) data(i) = 0xFF.toByte
-          }
-        }
-        case RANDOM => {
-          simRandom.nextBytes(data)
-        }
+        case GETC => getc(data)
+        case RANDOM => simRandom.nextBytes(data)
         case CLINT_TIME => readLong(getClintTime())
         case CLINT_TIMEH => readLong(getClintTime() >> 32)
         case _ => {

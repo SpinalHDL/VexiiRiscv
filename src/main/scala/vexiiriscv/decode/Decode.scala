@@ -28,7 +28,8 @@ object Decode extends AreaObject {
   val UOP_ID = Payload(UInt(UOP_ID_WIDTH bits))
   def laneIds = 0 until LANES
 
-  val INSTRUCTION_SLICE_COUNT = Payload(UInt(log2Up(INSTRUCTION_WIDTH/Fetch.SLICE_WIDTH) bits)) // minus one => RVC => 0, normal => 1
+  def INSTRUCTION_SLICE_COUNT_WIDTH = log2Up(INSTRUCTION_WIDTH/Fetch.SLICE_WIDTH)
+  val INSTRUCTION_SLICE_COUNT = Payload(UInt(INSTRUCTION_SLICE_COUNT_WIDTH bits)) // minus one => RVC => 0, normal => 1
 }
 
 case class AccessKeys(physWidth : Int, rfMapping : Seq[RegfileSpec]) extends Area{

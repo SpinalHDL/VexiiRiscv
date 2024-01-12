@@ -3,6 +3,7 @@ package vexiiriscv.test
 import rvls.spinal.{TraceBackend, TraceIo}
 import spinal.core._
 import spinal.core.sim._
+import vexiiriscv.Global.PC_WIDTH
 import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.LsuCachelessPlugin
@@ -134,8 +135,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           case None => "M"
         }
         tracer.newCpuMemoryView(hartId, 16, 16) //TODO readIds writeIds
-        tracer.newCpu(hartId, s"RV${xlen}IMA", csrp, 32, hartId)
-        val pc = pcExtends(0x80000000l)
+        tracer.newCpu(hartId, s"RV${xlen}IMA", csrp, 63, hartId)
+        val pc = if(xlen == 32) 0x80000000l else 0x80000000l
         tracer.setPc(hartId, pc)
         this
       }
@@ -276,6 +277,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   class ProbeTraceIo extends TraceIo {
     var sizel2 = 0
     var io = false
+    var fromHart = false
     var hartId = 0
   }
 
@@ -299,7 +301,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         val ctx = hart.decode(decodeId)
         if(spawn){
           val fetchId = decode.fetchId.toInt
-          ctx.pc = pcExtends(decode.pc.toLong)
+          ctx.pc = decode.pc.toLong
           ctx.fetchId = fetchId
           ctx.spawnAt = cycle
           ctx.fireAt = -1
@@ -363,6 +365,19 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       uop.lsuLen = bytes
     }
 
+    if (storeConditional.fire.toBoolean) {
+      val hartId = storeConditional.hartId.toInt
+      val uopId = storeConditional.uopId.toInt
+      val hart = harts(hartId)
+      val uop = hart.microOp(uopId)
+      val miss = storeConditional.miss.toBoolean
+      if (miss) uop.storeValid = false
+      uop.isSc = true
+      uop.scFailure = miss
+    }
+
+
+
 
     csr.foreach (csr => if (csr.valid.toBoolean) {
       val hartId = csr.hartId.toInt
@@ -388,7 +403,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       }
     }
 
-//
+
     for(bus <- lsuClpb) {
       if(bus.cmd.valid.toBoolean && bus.cmd.ready.toBoolean){
         val trace = new ProbeTraceIo
@@ -397,6 +412,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         trace.address = bus.cmd.address.toLong
         trace.size = 1 << trace.sizel2
         trace.io = bus.cmd.io.toBoolean
+        trace.fromHart = bus.cmd.fromHart.toBoolean
         trace.hartId = bus.cmd.hartId.toInt
         val offset = trace.address.toInt & (trace.size - 1)
         trace.data = bus.cmd.data.toLong
@@ -405,7 +421,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
       if (bus.rsp.valid.toBoolean) {
         val trace = pendingIo.dequeue()
-        if(trace.io){
+        if(trace.fromHart && trace.io){
           if(!trace.write){
             trace.data = bus.rsp.data.toLong
           }
@@ -466,8 +482,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
 
   def checkCommits(): Unit = {
+    val wfi = proxies.wfi.toInt
     for(hart <- harts) {
-      if (hart.lastCommitAt + 100l < cycle) {
+      if(((wfi >> hart.hartId) & 1) != 0){
+        hart.lastCommitAt = cycle
+      }
+      if (hart.lastCommitAt + 400l < cycle) {
         val status = if (hart.microOpAllocPtr != hart.microOpRetirePtr) f"waiting on uop 0x${hart.microOpRetirePtr}%X" else f"last uop id 0x${hart.lastUopId}%X"
         simFailure(f"Vexii didn't commited anything since too long, $status")
       }
