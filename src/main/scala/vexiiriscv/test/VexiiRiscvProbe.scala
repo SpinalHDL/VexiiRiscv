@@ -3,6 +3,7 @@ package vexiiriscv.test
 import rvls.spinal.{TraceBackend, TraceIo}
 import spinal.core._
 import spinal.core.sim._
+import vexiiriscv.Global.PC_WIDTH
 import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.LsuCachelessPlugin
@@ -134,7 +135,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           case None => "M"
         }
         tracer.newCpuMemoryView(hartId, 16, 16) //TODO readIds writeIds
-        tracer.newCpu(hartId, s"RV${xlen}IMA", csrp, 32, hartId)
+        tracer.newCpu(hartId, s"RV${xlen}IMA", csrp, cpu.database(PC_WIDTH), hartId)
         val pc = pcExtends(0x80000000l)
         tracer.setPc(hartId, pc)
         this
@@ -300,7 +301,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         val ctx = hart.decode(decodeId)
         if(spawn){
           val fetchId = decode.fetchId.toInt
-          ctx.pc = pcExtends(decode.pc.toLong)
+          ctx.pc = decode.pc.toLong
           ctx.fetchId = fetchId
           ctx.spawnAt = cycle
           ctx.fireAt = -1

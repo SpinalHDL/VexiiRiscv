@@ -143,9 +143,9 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
   }
 
   val freertos = List(
-    "blocktim", "countsem", "EventGroupsDemo", "flop", "integer", "QPeek",
+    "sp_flop", "integer", "blocktim", "countsem", "EventGroupsDemo", "flop", "QPeek",
     "QueueSet", "recmutex", "semtest", "TaskNotify", "dynamic",
-    "GenQTest", "PollQ", "QueueOverwrite", "QueueSetPolling", "sp_flop", "test1"
+    "GenQTest", "PollQ", "QueueOverwrite", "QueueSetPolling", "test1"
   )
   for(name <- freertos.take(4)){
     val args = newArgs()
@@ -193,7 +193,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
   val tp = new File(compiled.simConfig.getTestPath(""))
   FileUtils.forceMkdir(tp)
   val argsFile = new BufferedWriter(new FileWriter(new File(tp, "args")))
-  argsFile.write(dutArgs.map(v => if (v.contains(" ")) s"'$v'" else v).mkString(" "))
+  argsFile.write(dutArgs.map(v => if (v.contains(" ")) '"' + v + '"' else v).mkString(" "))
   argsFile.close()
 
   for(args <- testArgs){
@@ -213,7 +213,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
       val job = new AsyncJob(toStdout = false, logsPath = testPath)({
         FileUtils.forceMkdir(testPath)
         val argsFile = new BufferedWriter(new FileWriter(new File(testPath, "args")))
-        argsFile.write(args.args.map(v => if(v.contains(" ")) s"'$v'" else v).mkString(" "))
+        argsFile.write(args.args.map(v => if(v.contains(" ")) '"' + v + '"' else v).mkString(" "))
         argsFile.close()
 
         t.test(compiled)
