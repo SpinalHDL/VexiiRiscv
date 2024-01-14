@@ -409,9 +409,7 @@ class ParamSimple(){
 
       plugins += new SrcPlugin(early1, executeAt = 0, relaxedRs = relaxedSrc)
       plugins += new IntAluPlugin(early1, formatAt = 0)
-      // TODO change!
-      //plugins += shifter(early1, shiftAt = 2, formatAt = 2)
-      plugins += new BarrelShifterPlugin(early1, formatAt = relaxedShift.toInt)
+      plugins += shifter(early1, formatAt = relaxedShift.toInt)
       plugins += new IntFormatPlugin("lane1")
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
 

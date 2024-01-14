@@ -18,17 +18,21 @@ object IterativeShifterPlugin extends AreaObject {
 
 class IterativeShifterPlugin(val layer: LaneLayer,
                              val shiftAt: Int = 0,
-                             val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
+                             val formatAt: Int = 0,
+                             val leftShifts: Seq[Int] = Seq(),
+                             val rightShifts: Seq[Int] = Seq(1, 8),
+                             val lateResult: Boolean = false) extends ExecutionUnitElementSimple(layer) {
+  assert(leftShifts.isEmpty || leftShifts.contains(1), "If left shifts are used, left shift by 1 must be enabled")
+  assert(rightShifts.contains(1), "At least right shift by 1 to the right must be enabled")
+
   import IterativeShifterPlugin._
   val SHIFT_RESULT = Payload(Bits(Riscv.XLEN bits))
-  val SHIFT_DONE = Payload(Bool())
 
   val logic = during setup new Logic {
     awaitBuild()
     import SrcKeys._
 
-    val wb = ifp.access(formatAt)
-    implicit val _ = ifp -> wb
+    val wb = newWriteback(ifp, formatAt)
 
     //TODO why using SRC1 ? why not directly RS1 => less combinatorial path, also not sure about SRC2 is really worth it (for only 5/ 6 bits)
     add(Rvi.SLL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True, ARITHMETIC -> False)
@@ -61,48 +65,111 @@ class IterativeShifterPlugin(val layer: LaneLayer,
       val selected = isValid && SEL
 
       val amplitudeWidth = if(Riscv.XLEN.get == 64) 6 else 5
-      val shamt = srcp.SRC2.resize(amplitudeWidth bit).asUInt
-      val zeroShift = shamt === 0
+      val shamt = if(Riscv.XLEN.get==32) {
+        srcp.SRC2.resize(amplitudeWidth bit).asUInt
+      } else {
+        // SxxW instructions only use lower 5 bit of SRC2, not 6
+        (srcp.SRC2.resize(amplitudeWidth bit).asBits & B(6 bit, 5 -> !IS_W, default -> True)).asUInt
+      }
 
       val busy = RegInit(False)
-      val amplitudeReg = Reg(cloneOf(shamt))
-      val amplitude = busy ? amplitudeReg | shamt
-      val done = amplitude(4 downto 1) === 0
+      val flipped = RegInit(False)
+      val amplitude:UInt = Reg(cloneOf(shamt))
+
+      val done = if(lateResult) {
+        amplitude === 0 & !flipped & busy
+      } else {
+        val rightShiftDone = !LEFT & busy & rightShifts.map(amplitude === _).reduce(_ | _)
+        val leftShiftDone = if(leftShifts.isEmpty) {
+          // we need to fully shift since we still need to flip back
+          busy & amplitude === 0
+        } else {
+          busy & leftShifts.map(amplitude === _).reduce(_ | _)
+        }
+
+        // done comes one cycle "early", in the cycle we do the last action (shift / flip)
+        shamt === 0 | leftShiftDone | rightShiftDone
+      }
 
       val signExtended =
         if(Riscv.XLEN.get == 64)
-          IS_W_RIGHT ? srcp.SRC1(31).asSInt.resize(32).resize(64).asBits | srcp.SRC1.asBits
+          IS_W_RIGHT ? (B(32 bit, default -> (ARITHMETIC & srcp.SRC1(31))) ## srcp.SRC1.asBits(31 downto 0)) | srcp.SRC1.asBits
         else
-          srcp.SRC1.asBits
+          CombInit(srcp.SRC1.asBits)
 
-      val shiftReg = Reg(cloneOf(srcp.SRC1.asBits))
-      val shifted = cloneOf(srcp.SRC1.asBits)
-      val shiftInput = busy ? shiftReg | signExtended
-      val shiftResult = zeroShift ? signExtended | shifted
+      val shiftReg:Bits = Reg(cloneOf(srcp.SRC1.asBits))
 
-      shifted := (LEFT & True).mux(
-        True -> (shiftInput |<< 1),
-        default -> (((ARITHMETIC && srcp.SRC1.msb) ## shiftInput) >> 1)
-      )
-
-      when(selected && !zeroShift && !done) {
-        busy := True
-        shiftReg := shiftResult
-        amplitudeReg := amplitude - 1
+      val muxed = cloneOf(srcp.SRC1.asBits)
+      val cond = when(selected & !busy) {
+        flipped := False  
+        muxed := signExtended
+        amplitude := shamt
+        busy := (if(!lateResult) shamt =/= 0 else True)
       }
-      when(!eu.isFreezed()) {
+
+      val condFlipped = if(leftShifts.nonEmpty) {
+        cond
+      } else if(Riscv.XLEN.get == 32) {
+        val doFlip = LEFT & ((busy & !flipped) | (if(lateResult) (busy & amplitude === 0) else done))
+        println("having flip")
+        cond.elsewhen(doFlip) {
+          flipped := !flipped
+          muxed := shiftReg.reversed
+        }
+      } else {
+        val doFlip = LEFT & ((busy & !flipped) | (if(lateResult) (busy & amplitude === 0) else done))
+        println("having flip 64")
+        cond.elsewhen(doFlip && !IS_W) {
+          flipped := !flipped
+          muxed := shiftReg.reversed
+        }.elsewhen(doFlip & IS_W) {
+          flipped := !flipped
+          muxed(31 downto 0) := shiftReg(31 downto 0).reversed
+          muxed(63 downto 32) := 0
+        }
+      }
+
+      val leftShifted = leftShifts.sorted.reverse.foldLeft(condFlipped)((f, n) => f.elsewhen(LEFT & amplitude >= n) { // TODO check synthesis for these
+        println(s"having left shift by $n")
+        amplitude := amplitude - n
+        muxed := shiftReg |<< n
+      })
+
+      val rightShifted = rightShifts.sorted.reverse.dropRight(1).foldLeft(leftShifted)((f, n) => f.elsewhen(amplitude >= n) {
+        println(s"having right shift by $n")
+        amplitude := amplitude - n
+        muxed := ((((ARITHMETIC && srcp.SRC1.msb) #* n) ## shiftReg) >> n)
+      })
+
+      rightShifted.otherwise {
+        println(s"having right shift by 1")
+        amplitude := amplitude - 1
+        muxed := (((ARITHMETIC && srcp.SRC1.msb) ## shiftReg) >> 1)
+      }
+
+      shiftReg := muxed
+
+      when((busy && done) || unscheduleRequest) {
         busy := False
       }
 
-      val freeze = selected && !zeroShift && !done && !unscheduleRequest
-      eu.freezeWhen(freeze)
+      val freeze = selected && !done && !unscheduleRequest
+      el.freezeWhen(freeze)
 
-      SHIFT_DONE := selected && done
-      SHIFT_RESULT := shiftResult
+      val result = (if (lateResult) shiftReg else muxed)
+      val extendedResult = if(Riscv.XLEN.get == 32) {
+        result
+      } else {
+        // TODO move masking to shifter
+        // mask if SLLW, sign extended if SxxW instruction
+        (result & ((!IS_W #* 32) ## (True #* 32))) | (((result(31) & ARITHMETIC & IS_W) #* 32) ## (False #* 32))
+      }
+
+      SHIFT_RESULT := extendedResult
     }
 
-    val format = new eu.Execute(formatAt) {
-      wb.valid := SHIFT_DONE
+    val format = new el.Execute(formatAt) {
+      wb.valid := SEL
       wb.payload := SHIFT_RESULT
     }
   }
