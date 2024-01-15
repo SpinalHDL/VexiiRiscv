@@ -34,7 +34,8 @@ class IterativeShifterPlugin(val layer: LaneLayer,
 
     val wb = newWriteback(ifp, formatAt)
 
-    //TODO why using SRC1 ? why not directly RS1 => less combinatorial path, also not sure about SRC2 is really worth it (for only 5/ 6 bits)
+    // we use RS1 directly, keep SRC1.RF source here for hazard detection
+    // TODO not sure about SRC2 is really worth it (for only 5/ 6 bits)
     add(Rvi.SLL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True, ARITHMETIC -> False)
     add(Rvi.SRL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, ARITHMETIC -> False)
     add(Rvi.SRA).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, ARITHMETIC -> True)
@@ -59,7 +60,6 @@ class IterativeShifterPlugin(val layer: LaneLayer,
 
     uopRetainer.release()
 
-    // SxxIW with amplitude[5] == 0 is reserved - so we just ignore it
     val shift = new el.Execute(shiftAt) {
       val unscheduleRequest = RegNext(isCancel).clearWhen(isReady).init(False)
       val selected = isValid && SEL
@@ -71,10 +71,12 @@ class IterativeShifterPlugin(val layer: LaneLayer,
         // SxxW instructions only use lower 5 bit of SRC2, not 6
         (srcp.SRC2.resize(amplitudeWidth bit).asBits & B(6 bit, 5 -> !IS_W, default -> True)).asUInt
       }
+      val rs1 = el(IntRegFile, RS1).asBits
 
       val busy = RegInit(False)
-      val flipped = RegInit(False)
-      val amplitude:UInt = Reg(cloneOf(shamt))
+      val flipped = Reg(Bool())
+      val amplitude = Reg(cloneOf(shamt))
+      val shiftReg = Reg(cloneOf(srcp.SRC1.asBits))
 
       val done = if(lateResult) {
         amplitude === 0 & !flipped & busy
@@ -93,11 +95,10 @@ class IterativeShifterPlugin(val layer: LaneLayer,
 
       val signExtended =
         if(Riscv.XLEN.get == 64)
-          IS_W_RIGHT ? (B(32 bit, default -> (ARITHMETIC & srcp.SRC1(31))) ## srcp.SRC1.asBits(31 downto 0)) | srcp.SRC1.asBits
+          IS_W_RIGHT ? (B(32 bit, default -> (ARITHMETIC & rs1(31))) ## rs1(31 downto 0)) | rs1
         else
-          CombInit(srcp.SRC1.asBits)
+          CombInit(rs1)
 
-      val shiftReg:Bits = Reg(cloneOf(srcp.SRC1.asBits))
       val muxed = cloneOf(srcp.SRC1.asBits)
 
       // right-shift 1 is the fallback, no check needed - drop the 1 on the loop
