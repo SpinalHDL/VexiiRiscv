@@ -16,6 +16,17 @@ object IterativeShifterPlugin extends AreaObject {
   val IS_W_RIGHT = Payload(Bool())
 }
 
+/** Iterative Shifter
+  *
+  * The default parameters are optimized for 6-input LUT devices (since it will
+  * use 4:1 muxes (load/shift 1/shift 8/flip), but additional shifts can be
+  * added to increase performance.
+  * Only 2**n shift distances are well supported, other distances will lead
+  * to suboptimal shift sequence if needed multiple times.
+  *
+  * lateResult can be used to make the done logic slighly smaller, which should not be
+  * needed for the default configuration. Enabling it costs 1 cycle for all shifts.
+  */
 class IterativeShifterPlugin(val layer: LaneLayer,
                              val shiftAt: Int = 0,
                              val formatAt: Int = 0,
