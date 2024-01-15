@@ -98,53 +98,53 @@ class IterativeShifterPlugin(val layer: LaneLayer,
           CombInit(srcp.SRC1.asBits)
 
       val shiftReg:Bits = Reg(cloneOf(srcp.SRC1.asBits))
-
       val muxed = cloneOf(srcp.SRC1.asBits)
-      val cond = when(selected & !busy) {
-        flipped := False  
-        muxed := signExtended
-        amplitude := shamt
-        busy := (if(!lateResult) shamt =/= 0 else True)
-      }
 
-      val condFlipped = if(leftShifts.nonEmpty) {
-        cond
-      } else if(Riscv.XLEN.get == 32) {
-        val doFlip = LEFT & ((busy & !flipped) | (if(lateResult) (busy & amplitude === 0) else done))
-        println("having flip")
-        cond.elsewhen(doFlip) {
-          flipped := !flipped
-          muxed := shiftReg.reversed
-        }
-      } else {
-        val doFlip = LEFT & ((busy & !flipped) | (if(lateResult) (busy & amplitude === 0) else done))
-        println("having flip 64")
-        cond.elsewhen(doFlip && !IS_W) {
-          flipped := !flipped
-          muxed := shiftReg.reversed
-        }.elsewhen(doFlip & IS_W) {
-          flipped := !flipped
-          muxed(31 downto 0) := shiftReg(31 downto 0).reversed
-          muxed(63 downto 32) := 0
-        }
-      }
-
-      val leftShifted = leftShifts.sorted.reverse.foldLeft(condFlipped)((f, n) => f.elsewhen(LEFT & amplitude >= n) { // TODO check synthesis for these
-        println(s"having left shift by $n")
-        amplitude := amplitude - n
-        muxed := shiftReg |<< n
-      })
-
-      val rightShifted = rightShifts.sorted.reverse.dropRight(1).foldLeft(leftShifted)((f, n) => f.elsewhen(amplitude >= n) {
+      // right-shift 1 is the fallback, no check needed - drop the 1 on the loop
+      amplitude := amplitude - 1
+      muxed := (((ARITHMETIC && srcp.SRC1.msb) ## shiftReg) >> 1)
+      rightShifts.sorted.drop(1).foreach(n => when(amplitude >= n) {
         println(s"having right shift by $n")
         amplitude := amplitude - n
         muxed := ((((ARITHMETIC && srcp.SRC1.msb) #* n) ## shiftReg) >> n)
       })
 
-      rightShifted.otherwise {
-        println(s"having right shift by 1")
-        amplitude := amplitude - 1
-        muxed := (((ARITHMETIC && srcp.SRC1.msb) ## shiftReg) >> 1)
+      leftShifts.sorted.foreach(n => when(LEFT & amplitude >= n) { // TODO check synthesis for these
+        println(s"having left shift by $n")
+        amplitude := amplitude - n
+        muxed := shiftReg |<< n
+      })
+
+      // we only need flip if there is no left shift
+      if (leftShifts.isEmpty && Riscv.XLEN.get == 32) {
+        val doFlip = LEFT & ((busy & !flipped) | (if (lateResult) (busy & amplitude === 0) else done))
+        println("having flip")
+        when(doFlip) {
+          amplitude := amplitude // prevent amplitude changes from matches with conditions above, TODO check synthesis
+          flipped := !flipped
+          muxed := shiftReg.reversed
+        }
+      } else if(leftShifts.isEmpty) {
+        val doFlip = LEFT & ((busy & !flipped) | (if (lateResult) (busy & amplitude === 0) else done))
+        println("having flip 64")
+        when(doFlip & IS_W) {
+          amplitude := amplitude
+          flipped := !flipped
+          muxed(31 downto 0) := shiftReg(31 downto 0).reversed
+          muxed(63 downto 32) := 0
+        }
+        when(doFlip && !IS_W) {
+          amplitude := amplitude
+          flipped := !flipped
+          muxed := shiftReg.reversed
+        }
+      }
+
+      when(selected & !busy) {
+        flipped := False  
+        muxed := signExtended
+        amplitude := shamt
+        busy := (if(!lateResult) shamt =/= 0 else True)
       }
 
       shiftReg := muxed
