@@ -1,5 +1,7 @@
 package vexiiriscv.misc
 
+import spinal.core._
+
 import spinal.core.Area
 import spinal.core.fiber.Retainer
 import spinal.lib.misc.pipeline

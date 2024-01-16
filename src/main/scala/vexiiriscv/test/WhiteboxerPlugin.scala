@@ -203,10 +203,10 @@ class WhiteboxerPlugin extends FiberPlugin{
       val candidatesCount = wrap(CountOne(dispatch.logic.candidates.map(_.ctx.valid)))
       val dispatchFeedCount = CountOne(dispatch.logic.feeds.map(_.isValid))
 
-      val executeFreezedCounter = wrap(Counter(1 << 60l, executeFreezed).value)
-      val dispatchHazardsCounter = wrap(Counter(1 << 60l, dispatchHazards).value)
-      val candidatesCountCounters = (0 to dispatch.logic.candidates.size).map(id => wrap(Counter(1 << 60l, candidatesCount === id).value))
-      val dispatchFeedCounters = (0 to dispatch.logic.feeds.size).map(id => wrap(Counter(1 << 60l, dispatchFeedCount === id).value))
+      val executeFreezedCounter = wrap(Counter(1l << 60l, executeFreezed).value)
+      val dispatchHazardsCounter = wrap(Counter(1l << 60l, dispatchHazards).value)
+      val candidatesCountCounters = (0 to dispatch.logic.candidates.size).map(id => wrap(Counter(1l << 60l, candidatesCount === id).value))
+      val dispatchFeedCounters = (0 to dispatch.logic.feeds.size).map(id => wrap(Counter(1l << 60l, dispatchFeedCount === id).value))
     }
 
     val trap = new Area {

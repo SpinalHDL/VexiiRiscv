@@ -167,7 +167,7 @@ class MmuPlugin(var spec : MmuSpec,
       val valid = Bool()
       val virtualAddress  = UInt(vw-log2Up(depth) bits)
       val physicalAddress = UInt(pw bits)
-      val allowRead, allowWrite, allowExecute, allowUser = Bool
+      val allowRead, allowWrite, allowExecute, allowUser = Bool()
 
       def hit(address : UInt) = /*valid && */virtualAddress === address(spec.levels(levelId).virtualOffset + log2Up(depth), vw - log2Up(depth) bits)
       def physicalAddressFrom(address : UInt) = physicalAddress @@ address(0, spec.levels(levelId).physicalOffset bits)

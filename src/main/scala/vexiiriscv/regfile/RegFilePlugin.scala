@@ -110,10 +110,11 @@ class RegFilePlugin(var spec : RegfileSpec,
       val latches = latchBased generate ???
 
 
-      val io = latchBased match {
-        case false => fpga.io
-//        case true => latches.io
-      }
+      val io = !latchBased generate fpga.io
+      // latchBased match {
+      //  case false => fpga.io
+      //  case true => latches.io
+      //}
     }
 
 

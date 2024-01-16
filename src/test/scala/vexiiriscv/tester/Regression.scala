@@ -208,7 +208,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
       help("help").text("prints this usage text")
       t.addOptions(this)
     }.parse(args.args, Unit).nonEmpty)
-    t
+    
     val testPath = new File(compiled.simConfig.getTestPath(t.testName.get))
     val passFile = new File(testPath, "PASS")
     val failFile = new File(testPath, "FAIL")
