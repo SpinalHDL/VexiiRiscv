@@ -10,6 +10,7 @@ import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.PipelineService
 import vexiiriscv.prediction.{FetchWordPrediction, Prediction}
 import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv}
+import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -37,9 +38,25 @@ class AlignerPlugin2(fetchAt : Int,
     val buildBefore = retains(fpp.elaborationLock, dpp.elaborationLock)
     awaitBuild()
 
+    Decode.LANES.set(lanes)
+    Decode.INSTRUCTION_WIDTH.get
+
+    assert(Decode.INSTRUCTION_WIDTH.get * Decode.LANES == Fetch.WORD_WIDTH.get)
+    assert(!Riscv.RVC)
+    assert(isPow2(Decode.LANES.get))
+
+    elaborationLock.await()
+
     val scannerSlices = Fetch.SLICE_COUNT * 2
 
     val MASK_BACK, MASK_FRONT = Payload(Bits(Fetch.SLICE_COUNT bits))
+
+
+    val maskGen = new fpp.Fetch(fetchAt - 1) {
+      val frontMasks = (0 until Fetch.SLICE_COUNT).map(i => B((1 << Fetch.SLICE_COUNT) - (1 << i), Fetch.SLICE_COUNT bits))
+      MASK_FRONT := frontMasks.read(Fetch.WORD_PC(Fetch.SLICE_RANGE.get))
+      //TODO MASK_BACK
+    }
 
     val up = fpp.fetch(fetchAt).down
     val downCtrl = dpp.ctrl(0)
@@ -55,15 +72,13 @@ class AlignerPlugin2(fetchAt : Int,
       val hm = HardMap(hmElements)
     }
 
-
-
     // Provide the fetched data in a buffer agnostic way
     val slices = new Area {
-      val data = Vec.fill(scannerSlices)(Bits(Fetch.SLICE_COUNT bits))
+      val data = Vec.fill(scannerSlices)(Bits(Fetch.SLICE_WIDTH bits))
       val mask = Bits(scannerSlices bits)
 
-      val readCtxs = ArrayBuffer[(Seq[Int], Bits, SliceCtx)]()
-      def readCtx(slices : Seq[Int], oh : Bits) : SliceCtx = readCtxs.addRet ((slices, oh, SliceCtx()))._3
+      val readCtxs = ArrayBuffer[(Seq[Int], Bits, Bits, SliceCtx)]()
+      def readCtx(slices : Seq[Int], oh : Bits, usage : Bits) : SliceCtx = readCtxs.addRet ((slices, oh, usage, SliceCtx()))._4
     }
 
     val slicesInstructions = (0 until scannerSlices).map(sid =>
@@ -90,19 +105,20 @@ class AlignerPlugin2(fetchAt : Int,
     val usedMask = Vec.fill(Decode.LANES.get+1)(Bits(scannerSlices bits))
     usedMask(0) := 0
     val extractors = for (eid <- 0 until Decode.LANES) yield new Area {
-      val usableSliceRange = eid until Fetch.SLICE_COUNT //Can be tweek to generate smaller designs
+      val usableSliceRange = eid until scannerSlices //Can be tweek to generate smaller designs
       val usableMask = usableSliceRange.map(sid => scanners(sid).valid && !usedMask(eid)(sid)).asBits
       val slicesOh = OHMasking.firstV2(usableMask)
-      usedMask(eid+1) := usedMask(eid) | MuxOH.or(slicesOh, usableSliceRange.map(sid => scanners(sid).usageMask), true)
+      val usageMask = MuxOH.or(slicesOh, usableSliceRange.map(sid => scanners(sid).usageMask), true)
+      usedMask(eid+1) := usedMask(eid) | usageMask
 
       val valid = slicesOh.orR
-      val ctx = slices.readCtx(usableSliceRange, slicesOh)
+      val ctx = slices.readCtx(usableSliceRange, slicesOh, usageMask)
     }
 
     val feeder = new Area{
       val harts = for (hartId <- Global.hartsIds) yield new Area {
         val dopId = Reg(Decode.DOP_ID) init (0)
-        when(downNode.isFiring && up(Global.HART_ID) === hartId) {
+        when(downNode.isFiring && downNode(Global.HART_ID) === hartId) {
           dopId := downCtrl.lane(Decode.LANES-1)(Decode.DOP_ID) + 1
         }
       }
@@ -115,16 +131,15 @@ class AlignerPlugin2(fetchAt : Int,
 
         val valid = CombInit(extractor.valid)
         lane.up(lane.LANE_SEL)       := valid
-        lane(Decode.INSTRUCTION)     := extractor.ctx.instruction
-        lane(Decode.INSTRUCTION_RAW) := extractor.ctx.instruction
-        lane(Global.PC)              := extractor.ctx.pc
-        lane(Decode.DOP_ID)          := (laneId match {
-          case 0 => harts.map(_.dopId).read(up(Global.HART_ID))
+        lane.up(Decode.INSTRUCTION)     := extractor.ctx.instruction
+        lane.up(Decode.INSTRUCTION_RAW) := extractor.ctx.instruction
+        lane.up(Global.PC)              := extractor.ctx.pc
+        lane.up(Decode.DOP_ID)          := (laneId match {
+          case 0 => harts.map(_.dopId).read(downNode(Global.HART_ID))
           case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1).isValid.asUInt
         })
-        for (e <- firstSliceData) lane(e).assignFrom(extractor.ctx.hm.apply(e))
-        for (e <- lastSliceData) lane(e).assignFrom(extractor.ctx.hm.apply(e))
-        lane(Global.TRAP) := False //TODO
+        for (e <- firstSliceData ++ lastSliceData) lane.up(e).assignFrom(extractor.ctx.hm.apply(e))
+        lane.up(Global.TRAP) := False //TODO
 //        lane(Global.TRAP) := up(Global.TRAP)
 //        val onBtb = withBtb generate new Area{
 //          assert(!Riscv.RVC)
@@ -144,8 +159,9 @@ class AlignerPlugin2(fetchAt : Int,
 
 
     val buffer = new Area {
+      val bufferedSlices = Fetch.WORD_WIDTH/Fetch.SLICE_WIDTH
       val data = Reg(Fetch.WORD)
-      val mask = Reg(MASK_FRONT) init (0)
+      val mask = Reg(MASK_FRONT) init(0)
       val pc = Reg(Fetch.WORD_PC())
       val trap = Reg(Bool()) init (False)
       val hm = Reg(HardMap(hmElements))
@@ -153,88 +169,41 @@ class AlignerPlugin2(fetchAt : Int,
       slices.data.assignFromBits(up(Fetch.WORD) ## data)
       slices.mask := (up.valid ? up(MASK_FRONT) | B(0)) ## mask
 
+      val downFire = downNode.isReady || downNode.isCancel
+
       val haltUp = (mask & ~ usedMask.last.dropHigh(Fetch.SLICE_COUNT).andMask(downFire)).orR
       up.ready := !haltUp
 
-      val downFire = downNode.ready || downNode.cancel
       when(downFire){
         mask := 0
       }
-      when(up.isFiring){
+      when(up.isValid && up.isReady){
         data := up(Fetch.WORD)
-        mask := up(MASK_FRONT) & usedMask.last.takeHigh(Fetch.SLICE_COUNT).orMask(!downFire)
+        mask := up(MASK_FRONT) & ~ usedMask.last.takeHigh(Fetch.SLICE_COUNT).andMask(downFire)
         trap := up(Global.TRAP)
         pc   := up(Fetch.WORD_PC)
         for(e <- hmElements) hm(e).assignFrom(up(e))
       }
 
+      val age = Ages.DECODE - Ages.STAGE
+      val flushIt = host[ReschedulePlugin].isFlushedAt(age, U(0), U(0)).getOrElse(False)
+      when(flushIt) {
+        mask := 0
+      }
 
-      for((ids, oh, ctx) <- slices.readCtxs){
-        //        val instruction = OhMux.or(slicesOh, usableSliceRange.map(sid => slicesInstructions(sid)), true)
-        //        val pc = slices.getPc()
+      val readers = for((ids, oh, usage, ctx) <- slices.readCtxs) yield new Area{
+        val idsBuffer = ids.filter(_ < bufferedSlices)
+        val idsUp = ids.filter(_ >= bufferedSlices)
+        val firstFromBuffer = idsBuffer.map(oh(_)).orR
+        val lastFromBuffer = idsUp.map(usage(_)).norR
+        ctx.instruction := OhMux.or(oh, ids.map(sid => slicesInstructions(sid)), true)
+        ctx.pc := firstFromBuffer.mux(pc, up(Fetch.WORD_PC))
+        ctx.pc(Fetch.SLICE_RANGE) := OHToUInt((0 until Fetch.SLICE_COUNT).map(off => ids.filter(_ % Fetch.SLICE_COUNT == off).map(oh(_)).orR))
+        for (e <- firstSliceData) ctx.hm(e).assignFrom(firstFromBuffer.mux(hm(e), up(e)))
+        for (e <- lastSliceData) ctx.hm(e).assignFrom(lastFromBuffer.mux(hm(e), up(e)))
       }
     }
 
-      //    val connectors = ArrayBuffer[Link]()
-//    Decode.LANES.set(lanes)
-//    Decode.INSTRUCTION_WIDTH.get
-//
-//    assert(Decode.INSTRUCTION_WIDTH.get*Decode.LANES == Fetch.WORD_WIDTH.get)
-//    assert(!Riscv.RVC)
-//    assert(isPow2(Decode.LANES.get))
-//
-//    elaborationLock.await()
-//
-//    val withBtb = host.get[FetchWordPrediction].nonEmpty
-
-//    val up = fpp.fetch(fetchAt).down
-//    val downCtrl = dpp.ctrl(0)
-//    val downNode = downCtrl.link.up
-//    val connector = CtrlLink(up, downNode)
-//    connectors += connector
-//
-//
-//
-//    val feeder = new Area{
-//      val harts = for (hartId <- Global.hartsIds) yield new Area {
-//        val dopId = Reg(Decode.DOP_ID) init (0)
-//        when(downNode.isFiring && up(Global.HART_ID) === hartId) {
-//          dopId := downCtrl.lane(Decode.LANES-1)(Decode.DOP_ID) + 1
-//        }
-//      }
-//
-//      val instructionSlices = up(Fetch.WORD).subdivideIn(Decode.LANES.get slices)
-//      val lane = for(laneId <- Decode.laneIds) new Area{
-//        val lane = downCtrl.lane(laneId)
-//        val pcLaneLow = log2Up(Decode.INSTRUCTION_WIDTH/8)
-//        val pcLaneRange = pcLaneLow + log2Up(Decode.LANES) -1 downto pcLaneLow
-//
-//        lane.up(lane.LANE_SEL)       := up.valid && up(Fetch.WORD_PC)(pcLaneRange) <= laneId
-//        lane(Decode.INSTRUCTION) := instructionSlices(laneId)
-//        lane(Decode.INSTRUCTION_RAW) := instructionSlices(laneId)
-//        lane(Global.PC)              := up(Fetch.WORD_PC)
-//        lane(Global.PC)(pcLaneRange) := laneId
-//        lane(Fetch.ID)               := up(Fetch.ID)
-//        lane(Decode.DOP_ID)          := (laneId match {
-//          case 0 => harts.map(_.dopId).read(up(Global.HART_ID))
-//          case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1).isValid.asUInt
-//        })
-//        lane(Prediction.BRANCH_HISTORY) := up(Prediction.BRANCH_HISTORY)
-//        for(e <- lastSliceData) lane(e).assignFrom(up.apply(e))
-//        lane(Global.TRAP) := up(Global.TRAP)
-//
-//        val onBtb = withBtb generate new Area{
-//          assert(!Riscv.RVC)
-//          val afterPrediction = lane(Global.PC)(Fetch.SLICE_RANGE) > up(Prediction.WORD_JUMP_SLICE)
-//          val didPrediction = !afterPrediction && lane(Global.PC)(Fetch.SLICE_RANGE) + lane(Decode.INSTRUCTION_SLICE_COUNT) >= up(Prediction.WORD_JUMP_SLICE) //TODO take care of : what's about the prediction landed on a slice which map nobody ?
-//          lane(Prediction.ALIGNED_JUMPED) := up(Prediction.WORD_JUMPED) && didPrediction
-//          lane(Prediction.ALIGNED_JUMPED_PC) := up(Prediction.WORD_JUMP_PC)
-//          lane.up(lane.LANE_SEL) clearWhen(up(Prediction.WORD_JUMPED) && afterPrediction)
-//          lane(Prediction.ALIGNED_SLICES_BRANCH) := up(Prediction.WORD_SLICES_BRANCH)
-//          lane(Prediction.ALIGNED_SLICES_TAKEN) := up(Prediction.WORD_SLICES_TAKEN)
-//        }
-//      }
-//    }
     buildBefore.release()
   }
 }

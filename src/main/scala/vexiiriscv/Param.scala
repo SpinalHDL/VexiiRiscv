@@ -46,9 +46,9 @@ class ParamSimple(){
     decoders = 1
     lanes = 1
     regFileSync = false
-    withGShare = true
-    withBtb = true
-    withRas = true
+    withGShare = false
+    withBtb = false
+    withRas = false
 //    withMul = false
 //    withDiv = false
     withLateAlu = false
@@ -61,7 +61,7 @@ class ParamSimple(){
     privParam.withUser = true
     withMmu = true
     withAmo = true
-    xlen = 64
+//    xlen = 64
   }
 
 
@@ -190,7 +190,7 @@ class ParamSimple(){
     )
 
     plugins += new decode.DecodePipelinePlugin()
-    plugins += new decode.AlignerPlugin(
+    plugins += new decode.AlignerPlugin2(
       fetchAt = 1,
       lanes = decoders
     )
