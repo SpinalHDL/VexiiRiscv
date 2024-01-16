@@ -86,13 +86,13 @@ cd ../..
 It's currently very very early, but you can run the generation via : 
 
 ```shell
-sbt "test:runMain vexiiriscv.Generate"
+sbt "Test/runMain vexiiriscv.Generate"
 ```
 
 You can get a list of the supported parameters via :
 
 ```shell
-sbt "test:runMain vexiiriscv.Generate --help"
+sbt "Test/runMain vexiiriscv.Generate --help"
 ```
 
 
@@ -103,7 +103,7 @@ Note that Vexiiriscv use mostly an opt-in configuration. So, most performance re
 ```shell
 sbt
 compile
-test:runMain vexiiriscv.tester.TestBench --load-elf ext/NaxSoftware/baremetal/dhrystone/build/rv32ima/dhrystone.elf --trace-all
+Test/runMain vexiiriscv.tester.TestBench --load-elf ext/NaxSoftware/baremetal/dhrystone/build/rv32ima/dhrystone.elf --trace-all
 ```
 
 This will generate a simWorkspace/VexiiRiscv/test folder which contains :
