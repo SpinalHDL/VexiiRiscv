@@ -112,8 +112,10 @@ class IterativeShifterPlugin(val layer: LaneLayer,
 
       leftShifts.sorted.foreach(n => when(LEFT & amplitude >= n) { // TODO check synthesis for these
         println(s"having left shift by $n")
+        // mask away bits shifted into upper 32 bit in case of SLLW instruction
+        val mask_w = (True #* (32 - n)) ## (!IS_W #* n) ## (True #* 32)
         amplitude := amplitude - n
-        muxed := shiftReg |<< n
+        muxed := (shiftReg |<< n) & mask_w
       })
 
       // we only need flip if there is no left shift
@@ -157,21 +159,17 @@ class IterativeShifterPlugin(val layer: LaneLayer,
       val freeze = selected && !done && !unscheduleRequest
       el.freezeWhen(freeze)
 
-      val result = (if (lateResult) shiftReg else muxed)
-      val extendedResult = if(Riscv.XLEN.get == 32) {
-        result
-      } else {
-        // TODO move masking to shifter
-        // mask if SLLW, sign extended if SxxW instruction
-        (result & ((!IS_W #* 32) ## (True #* 32))) | (((result(31) & ARITHMETIC & IS_W) #* 32) ## (False #* 32))
-      }
-
-      SHIFT_RESULT := extendedResult
+      SHIFT_RESULT := (if (lateResult) shiftReg else muxed)
     }
 
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
       wb.payload := SHIFT_RESULT
+      if(Riscv.XLEN.get == 64) {
+        when(ARITHMETIC & IS_W) {
+          wb.payload(32, 32 bit).setAllTo(SHIFT_RESULT(31))
+        }
+      }
     }
   }
 }
