@@ -251,7 +251,6 @@ class BtbPlugin(var sets : Int,
 
           val layersLogic = for (i <- 0 until chunks) yield new Area {
             def e = chunksLogic(i)
-
             val doIt = chunksMask(i) && e.readRsp.ENTRY.isBranch
             val shifted = layers(i).history.dropHigh(1) ## e.predict.TAKEN
             layers(i + 1).history := doIt.mux(shifted, layers(i).history)
@@ -262,13 +261,13 @@ class BtbPlugin(var sets : Int,
 
           val slicePerChunk = SLICE_COUNT/chunks
           for(chunk <- 0 until chunks){
+            val cl = chunksLogic(chunk)
             for(slice <- 0 until slicePerChunk){
               val i = slice + chunk*slicePerChunk
-              WORD_SLICES_BRANCH(i) := chunksLogic(i).hitCalc.HIT && chunksLogic(i).readRsp.ENTRY.isBranch && chunksLogic(i).readRsp.ENTRY.sliceLow === slice
-              WORD_SLICES_TAKEN(i) := chunksLogic(i).predict.TAKEN
+              WORD_SLICES_BRANCH(i) := cl.hitCalc.HIT && cl.readRsp.ENTRY.isBranch && cl.readRsp.ENTRY.sliceLow === slice
+              WORD_SLICES_TAKEN(i) := cl.predict.TAKEN
             }
           }
-
         }
       }
     }

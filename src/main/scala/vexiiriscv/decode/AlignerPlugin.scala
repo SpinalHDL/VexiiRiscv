@@ -25,12 +25,9 @@ import scala.collection.mutable.ArrayBuffer
 
 //Warning, if it start to hold stats => you need to notify TrapService when flush is pending
 class AlignerPlugin(fetchAt : Int,
-                    lanes : Int = 1) extends FiberPlugin with PipelineService{
+                    lanes : Int = 1) extends FiberPlugin with PipelineService with AlignerService{
   override def getLinks(): Seq[Link] = logic.connectors
 
-  val lastSliceData = mutable.LinkedHashSet[NamedType[_ <: Data]]()
-
-  val elaborationLock = Retainer()
   val logic = during setup new Area{
     val fpp = host[FetchPipelinePlugin]
     val dpp = host[DecodePipelinePlugin]

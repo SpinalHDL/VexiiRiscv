@@ -72,7 +72,7 @@ class DecodePredictionPlugin(var decodeAt: Int,
         when(fixIt) {
           forgetPort.valid := True
           forgetPort.hartId := HART_ID
-          forgetPort.pcOnLastSlice := PC; assert(!Riscv.RVC)
+          forgetPort.pcOnLastSlice := PC + (Decode.INSTRUCTION_SLICE_COUNT << Fetch.SLICE_RANGE_LOW.get)
         }
 
 

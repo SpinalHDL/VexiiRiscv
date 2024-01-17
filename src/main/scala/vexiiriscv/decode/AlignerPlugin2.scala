@@ -24,14 +24,11 @@ import scala.collection.mutable.ArrayBuffer
  * - dispatch on lanes
  */
 
+
 //Warning, if it start to hold stats => you need to notify TrapService when flush is pending
 class AlignerPlugin2(fetchAt : Int,
-                     lanes : Int = 1) extends FiberPlugin with PipelineService{
-  override def getLinks(): Seq[Link] = Nil //logic.connectors
+                     lanes : Int = 1) extends FiberPlugin with AlignerService{
 
-  val lastSliceData, firstSliceData = mutable.LinkedHashSet[NamedType[_ <: Data]]()
-
-  val elaborationLock = Retainer()
   val logic = during setup new Area{
     val fpp = host[FetchPipelinePlugin]
     val dpp = host[DecodePipelinePlugin]
@@ -45,16 +42,16 @@ class AlignerPlugin2(fetchAt : Int,
     assert(isPow2(Decode.LANES.get))
 
     elaborationLock.await()
-
+    val withBtb = host.get[FetchWordPrediction].nonEmpty
     val scannerSlices = Fetch.SLICE_COUNT * 2
-
     val MASK_BACK, MASK_FRONT = Payload(Bits(Fetch.SLICE_COUNT bits))
 
 
     val maskGen = new fpp.Fetch(fetchAt - 1) {
       val frontMasks = (0 until Fetch.SLICE_COUNT).map(i => B((1 << Fetch.SLICE_COUNT) - (1 << i), Fetch.SLICE_COUNT bits))
+      val backMasks = (0 until Fetch.SLICE_COUNT).map(i => B((2 << i)-1, Fetch.SLICE_COUNT bits))
       MASK_FRONT := frontMasks.read(Fetch.WORD_PC(Fetch.SLICE_RANGE.get))
-      //TODO MASK_BACK
+      MASK_BACK  := B(backMasks.read(Prediction.WORD_JUMP_SLICE)).andR(Prediction.WORD_SLICES_TAKEN)
     }
 
     val up = fpp.fetch(fetchAt).down
@@ -64,11 +61,20 @@ class AlignerPlugin2(fetchAt : Int,
 
     firstSliceData += Fetch.ID
     lastSliceData += Prediction.BRANCH_HISTORY
+    if(withBtb) lastSliceData ++= List(
+      Prediction.WORD_SLICES_BRANCH,
+      Prediction.WORD_SLICES_TAKEN,
+      Prediction.WORD_JUMP_PC,
+      Prediction.WORD_JUMPED,
+      Prediction.WORD_JUMP_SLICE
+    )
+
     val hmElements = (firstSliceData ++ lastSliceData).toSeq
     case class SliceCtx() extends Bundle {
       val pc = Global.PC()
       val instruction = Decode.INSTRUCTION()
       val hm = HardMap(hmElements)
+      val trap = Bool()
     }
 
     // Provide the fetched data in a buffer agnostic way
@@ -150,18 +156,18 @@ class AlignerPlugin2(fetchAt : Int,
           case _ => downCtrl.lane(laneId-1)(Decode.DOP_ID) + downCtrl.lane(laneId-1).isValid.asUInt
         })
         for (e <- firstSliceData ++ lastSliceData) lane.up(e).assignFrom(extractor.ctx.hm.apply(e))
-        lane.up(Global.TRAP) := False //TODO
-//        lane(Global.TRAP) := up(Global.TRAP)
-//        val onBtb = withBtb generate new Area{
-//          assert(!Riscv.RVC)
-//          val afterPrediction = lane(Global.PC)(Fetch.SLICE_RANGE) > up(Prediction.WORD_JUMP_SLICE)
-//          val didPrediction = !afterPrediction && lane(Global.PC)(Fetch.SLICE_RANGE) + lane(Decode.INSTRUCTION_SLICE_COUNT) >= up(Prediction.WORD_JUMP_SLICE) //TODO take care of : what's about the prediction landed on a slice which map nobody ?
-//          lane(Prediction.ALIGNED_JUMPED) := up(Prediction.WORD_JUMPED) && didPrediction
-//          lane(Prediction.ALIGNED_JUMPED_PC) := up(Prediction.WORD_JUMP_PC)
-//          lane.up(lane.LANE_SEL) clearWhen(up(Prediction.WORD_JUMPED) && afterPrediction)
-//          lane(Prediction.ALIGNED_SLICES_BRANCH) := up(Prediction.WORD_SLICES_BRANCH)
-//          lane(Prediction.ALIGNED_SLICES_TAKEN) := up(Prediction.WORD_SLICES_TAKEN)
-//        }
+        lane.up(Global.TRAP) := extractor.ctx.trap
+        val onBtb = withBtb generate new Area{
+          val pcLastSlice = lane.up(Global.PC)(Fetch.SLICE_RANGE) + lane.up(Decode.INSTRUCTION_SLICE_COUNT)
+          val afterPrediction = pcLastSlice > lane.up(Prediction.WORD_JUMP_SLICE)
+          //TODO !!! take care of : what's about the prediction landed on a slice which map nobody ?
+          val didPrediction = !afterPrediction && pcLastSlice >= lane.up(Prediction.WORD_JUMP_SLICE)
+          lane.up(Prediction.ALIGNED_JUMPED) := lane.up(Prediction.WORD_JUMPED) && didPrediction
+          lane.up(Prediction.ALIGNED_JUMPED_PC) := lane.up(Prediction.WORD_JUMP_PC)
+          lane.up(lane.LANE_SEL) clearWhen(lane.up(Prediction.WORD_JUMPED) && afterPrediction)
+          lane.up(Prediction.ALIGNED_SLICES_BRANCH) := lane.up(Prediction.WORD_SLICES_BRANCH)
+          lane.up(Prediction.ALIGNED_SLICES_TAKEN) := lane.up(Prediction.WORD_SLICES_TAKEN)
+        }
       }
 
       downNode.valid := lanes.map(_.valid).orR
@@ -211,6 +217,7 @@ class AlignerPlugin2(fetchAt : Int,
         spec.ctx.instruction := OhMux.or(spec.first.map(_.oh).asBits, spec.first.map(e => slicesInstructions(e.sid)), true)
         spec.ctx.pc := firstFromBuffer.mux(pc, up(Fetch.WORD_PC))
         spec.ctx.pc(Fetch.SLICE_RANGE) := OHToUInt((0 until Fetch.SLICE_COUNT).map(off => spec.first.filter(_.sid % Fetch.SLICE_COUNT == off).map(_.oh).orR))
+        spec.ctx.trap := firstFromBuffer && trap || !lastFromBuffer && up(Global.TRAP)
         for (e <- firstSliceData) spec.ctx.hm(e).assignFrom(firstFromBuffer.mux(hm(e), up(e)))
         for (e <- lastSliceData) spec.ctx.hm(e).assignFrom(lastFromBuffer.mux(hm(e), up(e)))
       }
