@@ -78,6 +78,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
     hmKeys.add(MAY_FLUSH)
     hmKeys.add(DONT_FLUSH)
     hmKeys.add(DONT_FLUSH_FROM_LANES)
+    hmKeys.add(Decode.INSTRUCTION_SLICE_COUNT)
     dp.addMicroOpDecodingDefault(MAY_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH_FROM_LANES, False)

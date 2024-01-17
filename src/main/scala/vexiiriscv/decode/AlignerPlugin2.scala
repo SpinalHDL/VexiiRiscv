@@ -9,7 +9,7 @@ import vexiiriscv.{Global, decode}
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.PipelineService
 import vexiiriscv.prediction.{FetchWordPrediction, Prediction}
-import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv}
+import vexiiriscv.riscv.{INSTRUCTION_SIZE, Riscv, RvcDecompressor}
 import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 
 import scala.collection.mutable
@@ -42,7 +42,6 @@ class AlignerPlugin2(fetchAt : Int,
     Decode.INSTRUCTION_WIDTH.get
 
     assert(Decode.INSTRUCTION_WIDTH.get * Decode.LANES == Fetch.WORD_WIDTH.get)
-    assert(!Riscv.RVC)
     assert(isPow2(Decode.LANES.get))
 
     elaborationLock.await()
@@ -114,6 +113,7 @@ class AlignerPlugin2(fetchAt : Int,
       val usableSliceRange = eid until scannerSlices //Can be tweek to generate smaller designs
       val usableMask = usableSliceRange.map(sid => scanners(sid).valid && !usedMask(eid)(sid)).asBits
       val slicesOh = OHMasking.firstV2(usableMask)
+      val localMask = MuxOH.or(slicesOh, usableSliceRange.map(sid => scanners(sid).checker.map(_.required).asBits()), true)
       val usageMask = MuxOH.or(slicesOh, usableSliceRange.map(sid => scanners(sid).usageMask), true)
       usedMask(eid+1) := usedMask(eid) | usageMask
 
@@ -136,9 +136,14 @@ class AlignerPlugin2(fetchAt : Int,
         val extractor = extractors(laneId)
 
         val valid = CombInit(extractor.valid)
-        lane.up(lane.LANE_SEL)       := valid
-        lane.up(Decode.INSTRUCTION)     := extractor.ctx.instruction
+        lane.up(lane.LANE_SEL)          := valid
+        val isRvc = extractor.ctx.instruction(1 downto 0) =/= 3
+        if(Riscv.RVC){
+          val dec = RvcDecompressor(extractor.ctx.instruction, rvf = Riscv.RVF, rvd = Riscv.RVD, Riscv.XLEN)
+          lane.up(Decode.INSTRUCTION) := isRvc.mux(dec.inst, extractor.ctx.instruction)
+        }
         lane.up(Decode.INSTRUCTION_RAW) := extractor.ctx.instruction
+        lane.up(Decode.INSTRUCTION_SLICE_COUNT) := OHToUInt(OHMasking.lastV2(extractor.localMask))
         lane.up(Global.PC)              := extractor.ctx.pc
         lane.up(Decode.DOP_ID)          := (laneId match {
           case 0 => harts.map(_.dopId).read(downNode(Global.HART_ID))
@@ -181,19 +186,20 @@ class AlignerPlugin2(fetchAt : Int,
       up.ready := !haltUp
 
       when(downFire){
-        mask := 0
+        mask := mask & ~usedMask.last.takeLow(Fetch.SLICE_COUNT)
       }
-      when(up.isValid && up.isReady){
+      when(up.isValid && up.isReady && !up.isCancel){
         data := up(Fetch.WORD)
-        mask := up(MASK_FRONT) & ~ usedMask.last.takeHigh(Fetch.SLICE_COUNT).andMask(downFire)
+        mask := up(MASK_FRONT) & ~usedMask.last.takeHigh(Fetch.SLICE_COUNT).andMask(downFire)
         trap := up(Global.TRAP)
         pc   := up(Fetch.WORD_PC)
         for(e <- hmElements) hm(e).assignFrom(up(e))
       }
 
+      //TODO improve the flush condition ?
       val age = Ages.DECODE - Ages.STAGE
       val flushIt = host[ReschedulePlugin].isFlushedAt(age, U(0), U(0)).getOrElse(False)
-      when(flushIt) {
+      when(flushIt/* && !(downNode.isValid && !downNode.isReady)*/) {
         mask := 0
       }
 

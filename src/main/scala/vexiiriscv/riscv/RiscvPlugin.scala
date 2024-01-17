@@ -7,10 +7,11 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
 
 class RiscvPlugin(var xlen : Int,
-                  var hartCount : Int) extends FiberPlugin{
+                  var hartCount : Int,
+                  var rvc : Boolean) extends FiberPlugin{
 
   val logic = during build new Area{
-    if(Riscv.RVC.isEmpty) Riscv.RVC.set(false)
+    if(Riscv.RVC.isEmpty) Riscv.RVC.set(rvc)
     if(Riscv.RVM.isEmpty) Riscv.RVM.set(false)
     if(Riscv.RVF.isEmpty) Riscv.RVF.set(false)
     if(Riscv.RVD.isEmpty) Riscv.RVD.set(false)

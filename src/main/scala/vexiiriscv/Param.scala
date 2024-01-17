@@ -17,7 +17,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class ParamSimple(){
   var xlen = 32
-  var rvc = false
+  var rvc = true
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
@@ -43,8 +43,8 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 1
-    lanes = 1
+    decoders = 2
+    lanes = 2
     regFileSync = false
     withGShare = false
     withBtb = false
@@ -115,7 +115,7 @@ class ParamSimple(){
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvc = rvc)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
       case true => plugins += new memory.MmuPlugin(
