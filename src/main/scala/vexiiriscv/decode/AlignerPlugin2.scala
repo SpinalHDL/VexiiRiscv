@@ -44,14 +44,13 @@ class AlignerPlugin2(fetchAt : Int,
     elaborationLock.await()
     val withBtb = host.get[FetchWordPrediction].nonEmpty
     val scannerSlices = Fetch.SLICE_COUNT * 2
-    val MASK_BACK, MASK_FRONT = Payload(Bits(Fetch.SLICE_COUNT bits))
+    val FETCH_MASK = Payload(Bits(Fetch.SLICE_COUNT bits))
 
 
-    val maskGen = new fpp.Fetch(fetchAt - 1) {
+    val maskGen = new fpp.Fetch(fetchAt) { //Could be move up for better timings, partialy
       val frontMasks = (0 until Fetch.SLICE_COUNT).map(i => B((1 << Fetch.SLICE_COUNT) - (1 << i), Fetch.SLICE_COUNT bits))
       val backMasks = (0 until Fetch.SLICE_COUNT).map(i => B((2 << i)-1, Fetch.SLICE_COUNT bits))
-      MASK_FRONT := frontMasks.read(Fetch.WORD_PC(Fetch.SLICE_RANGE.get))
-      MASK_BACK  := B(backMasks.read(Prediction.WORD_JUMP_SLICE)).andR(Prediction.WORD_SLICES_TAKEN)
+      FETCH_MASK := frontMasks.read(Fetch.WORD_PC(Fetch.SLICE_RANGE.get)) & backMasks.read(Prediction.WORD_JUMP_SLICE).orMask(!Prediction.WORD_JUMPED)
     }
 
     val up = fpp.fetch(fetchAt).down
@@ -178,13 +177,13 @@ class AlignerPlugin2(fetchAt : Int,
     val buffer = new Area {
       val bufferedSlices = Fetch.WORD_WIDTH/Fetch.SLICE_WIDTH
       val data = Reg(Fetch.WORD)
-      val mask = Reg(MASK_FRONT) init(0)
+      val mask = Reg(FETCH_MASK) init(0)
       val pc = Reg(Fetch.WORD_PC())
       val trap = Reg(Bool()) init (False)
       val hm = Reg(HardMap(hmElements))
 
       slices.data.assignFromBits(up(Fetch.WORD) ## data)
-      slices.mask := (up.valid ? up(MASK_FRONT) | B(0)) ## mask
+      slices.mask := (up.valid ? up(FETCH_MASK) | B(0)) ## mask
 
       val downFire = downNode.isReady || downNode.isCancel
 
@@ -196,7 +195,7 @@ class AlignerPlugin2(fetchAt : Int,
       }
       when(up.isValid && up.isReady && !up.isCancel){
         data := up(Fetch.WORD)
-        mask := up(MASK_FRONT) & ~usedMask.last.takeHigh(Fetch.SLICE_COUNT).andMask(downFire)
+        mask := up(FETCH_MASK) & ~usedMask.last.takeHigh(Fetch.SLICE_COUNT).andMask(downFire)
         trap := up(Global.TRAP)
         pc   := up(Fetch.WORD_PC)
         for(e <- hmElements) hm(e).assignFrom(up(e))
