@@ -109,8 +109,8 @@ class BtbPlugin(var sets : Int,
     val mem = Mem.fill(sets)(Vec.fill(chunks)(BtbEntry())) //TODO bypass read durring write ?
     if(GenerationFlags.simulation){
       val rand = new Random(42)
-      mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
-//      mem.initBigInt(List.fill(mem.wordCount)(BigInt(0)))
+//      mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
+      mem.initBigInt(List.fill(mem.wordCount)(BigInt(0))) //TODO integrate this in some regression, as it exercise bad prediction cutting RVC a lot <3
     }
 
     val onLearn = new Area{

@@ -26,6 +26,7 @@ object Prediction extends AreaObject{
   val ALIGNED_JUMPED_PC = Payload(Global.PC)
   val ALIGNED_SLICES_BRANCH = Payload(Bits(Fetch.SLICE_COUNT bits))
   val ALIGNED_SLICES_TAKEN = Payload(Bits(Fetch.SLICE_COUNT bits))
+  val ALIGN_REDO = Payload(Bool()) //Used when for instance when a prediction cut an instruction in two => need to redo it and forget that prediction
 
   //Used by decode predictor to correct the history
   val BRANCH_HISTORY_WIDTH = blocking[Int]
