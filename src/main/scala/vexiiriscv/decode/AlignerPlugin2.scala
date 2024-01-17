@@ -77,8 +77,14 @@ class AlignerPlugin2(fetchAt : Int,
       val data = Vec.fill(scannerSlices)(Bits(Fetch.SLICE_WIDTH bits))
       val mask = Bits(scannerSlices bits)
 
-      val readCtxs = ArrayBuffer[(Seq[Int], Bits, Bits, SliceCtx)]()
-      def readCtx(slices : Seq[Int], oh : Bits, usage : Bits) : SliceCtx = readCtxs.addRet ((slices, oh, usage, SliceCtx()))._4
+      case class ReadCtxFirst(sid : Int, oh : Bool)
+      case class ReadCtxSpec(first : Seq[ReadCtxFirst], usage : Bits, ctx : SliceCtx)
+      val readCtxs = ArrayBuffer[ReadCtxSpec]()
+      def readCtx(slices : Seq[Int], oh : Bits, usage : Bits) : SliceCtx = readCtxs.addRet(ReadCtxSpec(
+        (slices, oh.asBools).zipped.toSeq.map(e => ReadCtxFirst(e._1, e._2)),
+        usage,
+        SliceCtx()
+      )).ctx
     }
 
     val slicesInstructions = (0 until scannerSlices).map(sid =>
@@ -191,16 +197,16 @@ class AlignerPlugin2(fetchAt : Int,
         mask := 0
       }
 
-      val readers = for((ids, oh, usage, ctx) <- slices.readCtxs) yield new Area{
-        val idsBuffer = ids.filter(_ < bufferedSlices)
-        val idsUp = ids.filter(_ >= bufferedSlices)
-        val firstFromBuffer = idsBuffer.map(oh(_)).orR
-        val lastFromBuffer = idsUp.map(usage(_)).norR
-        ctx.instruction := OhMux.or(oh, ids.map(sid => slicesInstructions(sid)), true)
-        ctx.pc := firstFromBuffer.mux(pc, up(Fetch.WORD_PC))
-        ctx.pc(Fetch.SLICE_RANGE) := OHToUInt((0 until Fetch.SLICE_COUNT).map(off => ids.filter(_ % Fetch.SLICE_COUNT == off).map(oh(_)).orR))
-        for (e <- firstSliceData) ctx.hm(e).assignFrom(firstFromBuffer.mux(hm(e), up(e)))
-        for (e <- lastSliceData) ctx.hm(e).assignFrom(lastFromBuffer.mux(hm(e), up(e)))
+      val readers = for(spec <- slices.readCtxs) yield new Area{
+        val idsBuffer = spec.first.filter(_.sid < bufferedSlices)
+        val idsUp = spec.first.filter(_.sid >= bufferedSlices)
+        val firstFromBuffer = idsBuffer.map(e => e.oh).orR
+        val lastFromBuffer = idsUp.map(e => spec.usage(e.sid)).norR
+        spec.ctx.instruction := OhMux.or(spec.first.map(_.oh).asBits, spec.first.map(e => slicesInstructions(e.sid)), true)
+        spec.ctx.pc := firstFromBuffer.mux(pc, up(Fetch.WORD_PC))
+        spec.ctx.pc(Fetch.SLICE_RANGE) := OHToUInt((0 until Fetch.SLICE_COUNT).map(off => spec.first.filter(_.sid % Fetch.SLICE_COUNT == off).map(_.oh).orR))
+        for (e <- firstSliceData) spec.ctx.hm(e).assignFrom(firstFromBuffer.mux(hm(e), up(e)))
+        for (e <- lastSliceData) spec.ctx.hm(e).assignFrom(lastFromBuffer.mux(hm(e), up(e)))
       }
     }
 
