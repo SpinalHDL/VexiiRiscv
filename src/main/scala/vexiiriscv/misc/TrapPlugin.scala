@@ -244,7 +244,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val slices = OHMux.or(oh, lanes.map(_.execute(trapAt).down(INSTRUCTION_SLICE_COUNT)), true)
           when(valid) {
             pending.pc := pc
-            pending.slices := slices+1
+            pending.slices := slices.resize(INSTRUCTION_SLICE_COUNT_WIDTH+1)+1
           }
         }
 

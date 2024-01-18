@@ -17,13 +17,18 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.ExecutionContext
 import scala.reflect.io.Path.jfile2path
+import scala.util.Random
 
-class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String] = Nil) {
+class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
+                       dutArgs : Seq[String] = Nil,
+                       freertosCount : Int = sys.env.getOrElse("VEXIIRISCV_REGRESSION_FREERTOS_COUNT", "1").toInt,
+                       withBuildroot: Boolean = sys.env.getOrElse("VEXIIRISCV_REGRESSION_BUILDROOT_ENABLED", "1").toInt.toBoolean) {
   val dut = compiled.dut
   val xlen = dut.database(Riscv.XLEN)
   val priv = dut.host.get[PrivilegedPlugin]
   val mmu = dut.host.get[MmuPlugin]
 
+  val rvm = dut.database(Riscv.RVM)
   val rvc = dut.database(Riscv.RVC)
   val rvf = dut.database(Riscv.RVF)
   val rvd = dut.database(Riscv.RVD)
@@ -33,13 +38,16 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
   var archLinux = ""
 
   if (xlen == 64) {
-    arch = "rv64im"
-    archLinux = "rv64im"
+    arch = "rv64i"
+    archLinux = "rv64i"
   } else {
-    arch = "rv32im"
-    archLinux = "rv32im"
+    arch = "rv32i"
+    archLinux = "rv32i"
   }
-
+  if (rvm) {
+    arch += "m"
+    archLinux += "m"
+  }
   if (rva) {
     arch += "a"
     archLinux += "a"
@@ -55,6 +63,11 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
   if(rvc) {
     arch += "c"
     archLinux += "c"
+  }
+
+
+  if(List("im", "imc").exists(arch.endsWith)){
+    arch = arch.replace("im", "ima")
   }
 
 
@@ -99,7 +112,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
 
   val riscvTestsFrom2 = ArrayBuffer[File]()
   riscvTestsFrom2 ++= rvti
-  riscvTestsFrom2 ++= rvtm
+  if(rvm) riscvTestsFrom2 ++= rvtm
   if(dut.database(Riscv.RVA)) riscvTestsFrom2 ++= rvta
 
   for(elf <- riscvTestsFrom2) {
@@ -119,28 +132,37 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
     args.name(s"riscv-tests/rv${xlen}ua-p-lrsc")
   }
 
-  val archTests = new File(nsf, s"riscv-arch-test/rv${xlen}i_m/I").listFiles().filter(_.getName.endsWith(".elf"))
-  for (elf <- archTests) {
-    val args = newArgs()
-    args.loadElf(elf)
-    args.failAfter(10000000)
-    args.name("riscv-arch-test/I/" + elf.getName.replace(".elf",""))
+  def doArchTest(from : String) = {
+    val folder = s"riscv-arch-test/rv${xlen}i_m/$from"
+    val elfs = new File(nsf, folder).listFiles().filter(_.getName.endsWith(".elf"))
+    for (elf <- elfs) {
+      val args = newArgs()
+      args.loadElf(elf)
+      args.failAfter(10000000)
+      args.name(folder + "/" + elf.getName.replace(".elf", ""))
+    }
   }
 
+  doArchTest("I")
+  doArchTest("Zifencei")
+  doArchTest("privilege")
+  if (rvm) doArchTest("M")
+  if (rvc) doArchTest("C")
 
-  val regulars = ArrayBuffer("dhrystone", "coremark", "machine_vexii")
+
+  val regulars = ArrayBuffer("dhrystone", "coremark_vexii", "machine_vexii")
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor", s"mmu_sv${if(xlen == 32) 32 else 39}"))
   for(name <- regulars){
     val args = newArgs()
-    args.loadElf(new File(nsf, s"baremetal/$name/build/rv${xlen}ima/$name.elf"))
+    args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
     args.failAfter(300000000)
     args.name(s"regular/$name")
   }
 
-  val benchmarks = ArrayBuffer("dhrystone", "coremark")
+  val benchmarks = ArrayBuffer("dhrystone", "coremark_vexii")
   for (name <- benchmarks) {
     val args = newArgs()
-    args.loadElf(new File(nsf, s"baremetal/$name/build/rv${xlen}ima/$name.elf"))
+    args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
     args.failAfter(300000000)
     args.ibusReadyFactor(2.0)
     args.dbusReadyFactor(2.0)
@@ -153,17 +175,17 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
     "QueueSet", "recmutex", "semtest", "TaskNotify", "dynamic",
     "GenQTest", "PollQ", "QueueOverwrite", "QueueSetPolling", "test1"
   )
-  for(name <- freertos.take(2)){
+  if(rvm) for(name <- freertos.take(freertosCount)){
     val args = newArgs()
     args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${arch + (arch.endsWith("im").mux("a",""))}/freertosDemo.elf"))
     args.failAfter(300000000)
     args.name(s"freertos/$name")
   }
 
-  priv.filter(_.p.withSupervisor).foreach{ _ =>
+  if(withBuildroot && rvm && rva) priv.filter(_.p.withSupervisor).foreach{ _ =>
     val path = s"ext/NaxSoftware/buildroot/images/$archLinux"
     val args = newArgs()
-    args.failAfter(4000000000l)
+    args.failAfter(10000000000l)
     args.name("buildroot")
     args.loadBin(0x80000000l, s"$path/fw_jump.bin")
     args.loadBin(0x80F80000l, s"$path/linux.dtb")
@@ -247,7 +269,6 @@ object RegressionSingle extends App{
     val simConfig = SpinalSimConfig()
     simConfig.withFstWave
     simConfig.setTestPath("regression/$COMPILED_tests/$TEST")
-
     val compiled = SpinalConfig.synchronized(simConfig.compile(VexiiRiscv(plugins).setDefinitionName(s"VexiiRiscv_$name")))
     val regression = new RegressionSingle(compiled, dutArgs)
     println("*" * 80)
@@ -284,7 +305,8 @@ object RegressionSingle extends App{
 class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REGRESSION_THREAD_COUNT", "0").toInt){
   FileUtils.deleteQuietly(new File("regression"))
 
-  def addTest(args: String): Unit = addTest(args.split("\\s+"))
+  val testsAdded = mutable.LinkedHashSet[String]()
+  def addTest(args: String): Unit = addTest(args.replace("  ", " ").split("\\s+"))
   def addTest(args: Seq[String]): Unit = {
     val param = new ParamSimple()
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
@@ -292,25 +314,54 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       param.addOptions(this)
     }.parse(args, Unit).nonEmpty)
 
-    testMp(param.getName()) {
+    val paramName = param.getName()
+    if(testsAdded.contains(paramName)) return
+    testsAdded += paramName
+    testMp(paramName) {
       RegressionSingle.test(param, args)
     }
   }
 
-  val md = "--with-mul --with-div --performance-counters 4"
-  for(issues <- 1 to 2; rf <- List("", "--regfile-async"); bpf <- List(0,1,2,3,100); xlen <- List(64, 32)){
-    val base = s"--decoders $issues --lanes $issues --xlen $xlen $md --allow-bypass-from $bpf"
-    addTest(s"$base $rf")
-    if(bpf == 0 || bpf == 100) {
-      addTest(s"$base $rf --with-btb")
-      addTest(s"$base $rf --with-btb --with-ras")
-      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-supervisor --with-amo")
-    }
-    if(bpf == 0) {
-      addTest(s"$base $rf --with-late-alu")
-      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-late-alu")
-      addTest(s"$base $rf --with-btb --with-ras --with-gshare --with-late-alu --with-supervisor --with-amo")
+
+  abstract class Dimensions(val name : String){
+    def getPositions() : Seq[String]
+  }
+
+  val dimensions = ArrayBuffer[Dimensions]()
+  def addDim(name : String, poses : Seq[String]) = dimensions += new Dimensions(name){
+    override def getPositions(): Seq[String] = poses
+  }
+
+  addDim("lanes", List(1, 2).map(v => s"--lanes $v"))
+  addDim("rf", List("--regfile-sync", "--regfile-async"))
+  addDim("bypass", List(0,0,0,1,2,3,100).map(v => s"--allow-bypass-from $v")) //More weight to fully bypassed configs
+  addDim("xlen", List(32, 64).map(v => s"--xlen $v"))
+  addDim("prediction", List("--with-btb", "--with-btb --with-ras", "--with-btb --with-ras --with-gshare"))
+  addDim("priv", List("", "--with-supervisor", "--with-user"))
+  addDim("rvm", List("--without-mul --without-div", "--with-mul --with-div"))
+  addDim("rva", List("", "--with-mul --with-div --with-rva"))
+  addDim("rvc", List("", "--with-mul --with-div --with-rvc"))
+  addDim("late-alu", List("", "--with-late-alu"))
+
+  val default = "--with-mul --with-div --performance-counters 4"
+
+  // Add a simple test for each dimensions's positions
+  for(dim <- dimensions){
+    for(pos <- dim.getPositions()) {
+      addTest(default + " " + pos)
     }
   }
 
+  // Generate random parameters
+  val random = new Random(42)
+  for(i <- 0 until 50){
+    val args = ArrayBuffer[String]()
+    args += default
+    for (dim <- dimensions) {
+      args += dim.getPositions().randomPick(random)
+    }
+    addTest(args.mkString(" "))
+  }
 }
+
+//cd $PWD && find . -name FAIL && find . -name PASS | wc -l && find . -name FAIL | wc -l

@@ -30,7 +30,30 @@ object IntegrationSynthBench extends App{
     relaxedShift = false
     relaxedSrc = true
     performanceCounters = 0
+    withRvc = false
     Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i"))
+  })
+
+  rtls += Rtl(sc.generateVerilog {
+    val param = new ParamSimple
+    import param._
+    decoders = 1
+    lanes = 1
+    regFileSync = false
+    withGShare = true
+    withBtb = true
+    withRas = true
+    //    withMul = false
+    //    withDiv = false
+    withLateAlu = false
+    allowBypassFrom = 0
+    relaxedBranch = false
+    relaxedShift = false
+    relaxedSrc = true
+    performanceCounters = 0
+    withAlignerBuffer = true
+    withRvc = true
+    Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i_rvc"))
   })
 //  rtls += Rtl(sc.generateVerilog {
 //    val param = new ParamSimple
@@ -63,4 +86,13 @@ Artix 7 -> 145 Mhz 2167 LUT 1267 FF
 vexii_1i ->
 Artix 7 -> 90 Mhz 2090 LUT 1292 FF
 Artix 7 -> 149 Mhz 2222 LUT 1292 FF
+
+
+vexii_1i ->
+Artix 7 -> 90 Mhz 2057 LUT 1293 FF
+Artix 7 -> 139 Mhz 2195 LUT 1293 FF
+vexii_1i_rvc ->
+Artix 7 -> 83 Mhz 2286 LUT 1462 FF
+Artix 7 -> 119 Mhz 2462 LUT 1462 FF
+
  */

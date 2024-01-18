@@ -11,7 +11,7 @@ import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 import Prediction._
 import vexiiriscv.execute.BranchPlugin
 import Fetch._
-import vexiiriscv.decode.AlignerPlugin
+import vexiiriscv.decode.{AlignerPlugin, AlignerService}
 
 import scala.util.Random
 
@@ -32,7 +32,7 @@ class GSharePlugin(var historyWidth : Int,
     val fpp = host[FetchPipelinePlugin]
     val ls = host[LearnService]
     val dp = host[DispatchPlugin]
-    val ap = host[AlignerPlugin]
+    val ap = host[AlignerService]
     val buildBefore = retains(fpp.elaborationLock)
     val retainer = retains(ls.learnLock, dp.elaborationLock, ap.elaborationLock)
     awaitBuild()

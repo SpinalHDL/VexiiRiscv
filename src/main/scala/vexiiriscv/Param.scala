@@ -17,7 +17,8 @@ import scala.collection.mutable.ArrayBuffer
 
 class ParamSimple(){
   var xlen = 32
-  var rvc = false
+  var withRvc = false
+  var withAlignerBuffer = false
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
@@ -32,7 +33,7 @@ class ParamSimple(){
   var withLateAlu = false
   var withMul = true
   var withDiv = true
-  var withAmo = false
+  var withRva = false
   var privParam = PrivilegedParam.base
   var relaxedBranch = false
   var relaxedShift = false
@@ -57,18 +58,25 @@ class ParamSimple(){
     relaxedShift = false
     relaxedSrc = true
     performanceCounters = 4
-    privParam.withSupervisor = false
-    privParam.withUser = false
-    withMmu = false
-    withAmo = false
+    privParam.withSupervisor = true
+    privParam.withUser = true
+    withMmu = true
+    withRva = true
+    withRvc = false
     xlen = 32
   }
 
 
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
+    var isa = s"rv${xlen}i"
+    if (withMul) isa += "m"
+    if (withRva) isa += "a"
+    if (withRvc) isa += "c"
+    if (privParam.withSupervisor) isa += "s"
+    if (privParam.withUser) isa += "u"
     val r = new ArrayBuffer[String]()
-    r += s"rv${xlen}im${privParam.withSupervisor.mux("s","")}${privParam.withUser.mux("u","")}"
+    r += isa
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
@@ -77,12 +85,11 @@ class ParamSimple(){
     if (withRas) r += "ras"
     if (withGShare) r += "gshare"
     if (withLateAlu) r += "la"
-    if (withMul) r += "m"
-    if (withDiv) r += "d"
-    if (withAmo) r += "a"
+    if (withAlignerBuffer) r += "ab"
     if (relaxedBranch) r += "rbra"
     if (relaxedShift) r += "rsft"
     if (relaxedSrc) r += "rsrc"
+    if(performanceCounters != 0) r += s"pc$performanceCounters"
     r.mkString("_")
   }
 
@@ -94,18 +101,22 @@ class ParamSimple(){
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
-    opt[Unit]("with-mul") action { (v, c) => withMul = true }
-    opt[Unit]("with-div") action { (v, c) => withDiv = true }
-    opt[Unit]("with-amo") action { (v, c) => withAmo = true }
+    opt[Unit]("with-mul") unbounded() action { (v, c) => withMul = true }
+    opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
+    opt[Unit]("with-rva") action { (v, c) => withRva = true }
+    opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
     opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
     opt[Unit]("without-div") action { (v, c) => withDiv = false }
+    opt[Unit]("with-mul") action { (v, c) => withMul = true }
+    opt[Unit]("with-div") action { (v, c) => withDiv = true }
     opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
-    opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true }
+    opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0 }
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
+    opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
   }
@@ -115,7 +126,7 @@ class ParamSimple(){
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvc = withRvc)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
       case true => plugins += new memory.MmuPlugin(
@@ -190,9 +201,10 @@ class ParamSimple(){
     )
 
     plugins += new decode.DecodePipelinePlugin()
-    plugins += new decode.AlignerPlugin(
+    plugins += new decode.AlignerPlugin2(
       fetchAt = 1,
-      lanes = decoders
+      lanes = decoders,
+      withBuffer = withAlignerBuffer
     )
     plugins += new decode.DecoderPlugin(
       decodeAt = 1
@@ -231,7 +243,7 @@ class ParamSimple(){
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
     plugins += new LsuCachelessPlugin(
       layer     = early0,
-      withAmo   = withAmo,
+      withAmo   = withRva,
       withSpeculativeLoadFlush = true,
       addressAt = 0,
       forkAt    = 0,

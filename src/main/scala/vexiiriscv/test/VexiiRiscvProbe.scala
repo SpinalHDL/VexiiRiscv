@@ -3,6 +3,7 @@ package vexiiriscv.test
 import rvls.spinal.{TraceBackend, TraceIo}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.misc.database.Element
 import vexiiriscv.Global.PC_WIDTH
 import vexiiriscv._
 import vexiiriscv.decode.Decode
@@ -25,11 +26,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
   val hartsIds = List(0)
 
-  val xlen = cpu.database(Riscv.XLEN)
-  val hartsCount = cpu.database(Global.HART_COUNT)
-  val fetchIdWidth = cpu.database(Fetch.ID_WIDTH)
-  val decodeIdWidth = cpu.database(Decode.DOP_ID_WIDTH)
-  val microOpIdWidth = cpu.database(Decode.UOP_ID_WIDTH)
+  def get[T](e : Element[T]) = cpu.database(e)
+  val xlen = get(Riscv.XLEN)
+  val hartsCount = get(Global.HART_COUNT)
+  val fetchIdWidth = get(Fetch.ID_WIDTH)
+  val decodeIdWidth = get(Decode.DOP_ID_WIDTH)
+  val microOpIdWidth = get(Decode.UOP_ID_WIDTH)
   val microOpIdMask = (1 << microOpIdWidth)-1
   val withFetch = true //cpu.host[FetchPipelinePlugin].idToFetch.keys.max > 1
 
@@ -134,8 +136,14 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           case Some(x) => "M" + x.p.withSupervisor.mux("S", "") + x.p.withUser.mux("U", "")
           case None => "M"
         }
+        var isa = s"RV${xlen}I"
+        if (get(Riscv.RVM)) isa += "M"
+        if (get(Riscv.RVA)) isa += "A"
+        if (get(Riscv.RVF)) isa += "F"
+        if (get(Riscv.RVD)) isa += "D"
+        if (get(Riscv.RVC)) isa += "C"
         tracer.newCpuMemoryView(hartId, 16, 16) //TODO readIds writeIds
-        tracer.newCpu(hartId, s"RV${xlen}IMA", csrp, 63, hartId)
+        tracer.newCpu(hartId, isa, csrp, 63, hartId)
         val pc = if(xlen == 32) 0x80000000l else 0x80000000l
         tracer.setPc(hartId, pc)
         this

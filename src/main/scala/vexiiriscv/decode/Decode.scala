@@ -16,6 +16,7 @@ object Decode extends AreaObject {
   val DOP_ID_WIDTH = blocking[Int]
   val UOP_ID_WIDTH = blocking[Int]
 
+  val DECOMPRESSION_FAULT = Payload(Bool())
   val INSTRUCTION = Payload(Bits(INSTRUCTION_WIDTH bits))
   val INSTRUCTION_RAW = Payload(Bits(INSTRUCTION_WIDTH bits))
   val UOP = Payload(Bits(UOP_WIDTH bits))
@@ -28,7 +29,8 @@ object Decode extends AreaObject {
   val UOP_ID = Payload(UInt(UOP_ID_WIDTH bits))
   def laneIds = 0 until LANES
 
-  def INSTRUCTION_SLICE_COUNT_WIDTH = log2Up(INSTRUCTION_WIDTH/Fetch.SLICE_WIDTH)
+  def INSTRUCTION_SLICE_COUNT_MAX = INSTRUCTION_WIDTH / Fetch.SLICE_WIDTH
+  def INSTRUCTION_SLICE_COUNT_WIDTH = log2Up(INSTRUCTION_SLICE_COUNT_MAX)
   val INSTRUCTION_SLICE_COUNT = Payload(UInt(INSTRUCTION_SLICE_COUNT_WIDTH bits)) // minus one => RVC => 0, normal => 1
 }
 

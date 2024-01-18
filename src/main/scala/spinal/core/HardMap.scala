@@ -5,6 +5,14 @@ import spinal.idslplugin.Location
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+object HardMap{
+  def apply(content : Seq[NamedType[_ <: Data]]) : HardMap = {
+    val ret = new HardMap()
+    content.foreach(e => ret.add(e))
+    ret
+  }
+}
+
 class HardMap extends MultiData {
   val storage = mutable.LinkedHashMap[NamedType[Data], Data]()
   var elementsCache : ArrayBuffer[(String, Data)] = null

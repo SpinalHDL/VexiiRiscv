@@ -124,6 +124,7 @@ class BranchPlugin(val layer : LaneLayer,
       val sliceShift = Fetch.SLICE_RANGE_LOW.get
       val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH)); PC_TRUE(0) := False //PC RESIZED
       val PC_FALSE = insert(PC + (slices << sliceShift))
+      val PC_LAST_SLICE = PC + (Decode.INSTRUCTION_SLICE_COUNT << sliceShift)
 
 
       // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
@@ -142,7 +143,6 @@ class BranchPlugin(val layer : LaneLayer,
       val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond)
       val doIt = isValid && SEL && needFix
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
-      val pcOnLastSlice = PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
 
 
       val history = new Area{
@@ -217,10 +217,10 @@ class BranchPlugin(val layer : LaneLayer,
 
       val learn = isLastOfLane.option(Stream(LearnCmd(ls.learnCtxElements.toSeq)))
       learn.foreach { learn =>
-        learn.valid := isValid && isReady && !hasCancelRequest && pluginsOnLane.map(p => apply(p.SEL)).orR
+        learn.valid := isValid && isReady && !isCancel && pluginsOnLane.map(p => apply(p.SEL)).orR
         learn.taken := alu.COND
         learn.pcTarget := alu.PC_TRUE
-        learn.pcOnLastSlice := pcOnLastSlice
+        learn.pcOnLastSlice := alu.PC_LAST_SLICE
         learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
         learn.isPush := (IS_JAL || IS_JALR) && rdLink
         learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)

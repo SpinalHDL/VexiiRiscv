@@ -15,7 +15,10 @@ trait CtrlLaneApi{
 
   def isValid: Bool = up(LANE_SEL)
   def isReady : Bool = _c.isReady
-  def hasCancelRequest : Bool
+  def isCancel : Bool = upIsCancel
+
+  def upIsCancel : Bool
+  def downIsCancel : Bool
 
   def apply[T <: Data](that: Payload[T]): T = _c.apply(that, laneName)
   def apply[T <: Data](that: Payload[T], subKey : Any): T = _c.apply(that, laneName + "_" + subKey.toString)
@@ -27,15 +30,15 @@ trait CtrlLaneApi{
   def bypass[T <: Data](that: Payload[T]): T =  _c.bypass(that, laneName)
 
 
-  class NodeMirror(node : Node) extends NodeBaseApi {
+  abstract class NodeMirror(node : Node) extends NodeBaseApi {
     override def valid = node(LANE_SEL, laneName)
     override def ready = node.ready
-    override def cancel = node.cancel //TODO not that great ?-
+    override def cancel = ??? //node.cancel //TODO not that great ?-
     override def isValid: Bool = node(LANE_SEL, laneName)
     override def isReady: Bool = node.isReady
     override def isFiring = valid && isReady && !isCancel
     override def isMoving = valid && (isReady || isCancel)
-    override def isCancel: Bool = node.isCancel
+//    override def isCancel: Bool = node.isCancel
     override def isCanceling = valid && isCancel
     override def apply(key: NamedTypeKey) = ???
     override def apply[T <: Data](key: Payload[T]) = node(key, laneName)
@@ -43,8 +46,12 @@ trait CtrlLaneApi{
     def transactionSpawn = valid && !RegNext(valid, False).clearWhen(isReady || isCancel)
   }
 
-  def up = new NodeMirror(_c.up)
-  def down = new NodeMirror(_c.down)
+  def up = new NodeMirror(_c.up){
+    override def isCancel: Bool = upIsCancel
+  }
+  def down = new NodeMirror(_c.down){
+    override def isCancel: Bool = downIsCancel
+  }
 
   implicit def stageablePiped2[T <: Data](stageable: Payload[T]): T = this (stageable)
   implicit def bundlePimper[T <: Bundle](stageable: Payload[T]): BundlePimper[T] = new BundlePimper[T](this (stageable))
@@ -59,5 +66,6 @@ class CtrlLaneMirror(from : CtrlLaneApi) extends spinal.core.Area with CtrlLaneA
   override def ctrlLink: CtrlLink = from.ctrlLink
   override def laneName: String = from.laneName
   override def LANE_SEL: Payload[Bool] = from.LANE_SEL
-  override def hasCancelRequest: Bool = from.hasCancelRequest
+  override def upIsCancel: Bool = from.upIsCancel
+  override def downIsCancel: Bool = from.downIsCancel
 }

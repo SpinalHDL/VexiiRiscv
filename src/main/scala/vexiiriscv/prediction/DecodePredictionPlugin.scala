@@ -52,9 +52,8 @@ class DecodePredictionPlugin(var decodeAt: Int,
         val IS_ANY = insert(decodeSpec.any.build(Decode.INSTRUCTION, dp.covers()))
       }
 
-      //TODO Make BTB learn on this
       val fixer = new dpp.LaneArea(jumpAt, slotId){
-        val fixIt = up.isValid && ALIGNED_JUMPED && !decoder.IS_ANY
+        val fixIt = up.isValid && (ALIGNED_JUMPED && !decoder.IS_ANY || Prediction.ALIGN_REDO)
         val fixed = RegInit(False) setWhen(fixIt) clearWhen(up.isReady || up.isCancel)
 
         val flushPort = flushPorts(slotId)
@@ -72,7 +71,7 @@ class DecodePredictionPlugin(var decodeAt: Int,
         when(fixIt) {
           forgetPort.valid := True
           forgetPort.hartId := HART_ID
-          forgetPort.pcOnLastSlice := PC; assert(!Riscv.RVC)
+          forgetPort.pcOnLastSlice := PC + (Decode.INSTRUCTION_SLICE_COUNT << Fetch.SLICE_RANGE_LOW.get)
         }
 
 

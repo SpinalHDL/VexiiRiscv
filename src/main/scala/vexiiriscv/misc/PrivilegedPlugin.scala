@@ -159,6 +159,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends Fibe
           }
           read(XLEN - 1 -> sd)
           if (withFs) readWrite(13 -> fs)
+          if (p.withUser && XLEN.get == 64) read(32 -> U"10")
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")
         }
 
@@ -215,6 +216,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends Fibe
           for (offset <- List(CSR.MSTATUS, CSR.SSTATUS)) {
             api.readWrite(offset, 8 -> spp, 5 -> spie, 1 -> sie)
           }
+          if (XLEN.get == 64) api.read(CSR.SSTATUS, 32 -> U"10")
         }
 
         val ip = new Area {
@@ -264,11 +266,6 @@ class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends Fibe
         spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = 1, delegators = List(Delegator(m.ideleg.se, 3)))
 
         for ((id, enable) <- m.edeleg.mapping) spec.exception += ExceptionSpec(id, List(Delegator(enable, 3)))
-
-        if (XLEN.get == 64) {
-          api.read(CSR.MSTATUS, 32 -> U"10")
-          api.read(CSR.SSTATUS, 32 -> U"10")
-        }
       }
     }
 

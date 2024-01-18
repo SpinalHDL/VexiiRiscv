@@ -136,7 +136,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
         }).asUInt
       }
 
-      LEGAL := Symplify(Decode.INSTRUCTION, encodings.all)
+      LEGAL := Symplify(Decode.INSTRUCTION, encodings.all) && !Decode.DECOMPRESSION_FAULT
 
       val interruptPending = interrupt.buffered(Global.HART_ID)
       val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)
