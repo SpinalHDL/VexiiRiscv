@@ -26,8 +26,13 @@ import scala.collection.mutable.ArrayBuffer
 
 
 //Warning, if it start to hold stats => you need to notify TrapService when flush is pending
+/*
+withBuffer => A Fetch.WORD sized buffer will be added to allow unaligned instruction to be read
+!withBuffer => Fetch lanes directly feed Decode lanes without muxes
+ */
 class AlignerPlugin2(fetchAt : Int,
-                     lanes : Int = 1) extends FiberPlugin with AlignerService{
+                     lanes : Int,
+                     withBuffer : Boolean) extends FiberPlugin with AlignerService{
 
   val logic = during setup new Area{
     val fpp = host[FetchPipelinePlugin]
@@ -38,20 +43,28 @@ class AlignerPlugin2(fetchAt : Int,
     Decode.LANES.set(lanes)
     Decode.INSTRUCTION_WIDTH.get
 
-    assert(Decode.INSTRUCTION_WIDTH.get * Decode.LANES == Fetch.WORD_WIDTH.get)
+    if(!withBuffer) assert(Decode.INSTRUCTION_WIDTH.get * Decode.LANES == Fetch.WORD_WIDTH.get)
     assert(isPow2(Decode.LANES.get))
 
     elaborationLock.await()
     val withBtb = host.get[FetchWordPrediction].nonEmpty
-    val scannerSlices = Fetch.SLICE_COUNT * 2
+    val scannerSlices = Fetch.SLICE_COUNT * (1+withBuffer.toInt)
     val FETCH_MASK, FETCH_LAST = Payload(Bits(Fetch.SLICE_COUNT bits)) //You can assume that if a given bit of FETCH_LAST is set, you can assume it is valid data
 
 
     val maskGen = new fpp.Fetch(fetchAt) { //Could be move up for better timings, partialy
       val frontMasks = (0 until Fetch.SLICE_COUNT).map(i => B((1 << Fetch.SLICE_COUNT) - (1 << i), Fetch.SLICE_COUNT bits))
-      val backMasks = (0 until Fetch.SLICE_COUNT).map(i => B((2 << i)-1, Fetch.SLICE_COUNT bits))
-      FETCH_MASK := frontMasks.read(Fetch.WORD_PC(Fetch.SLICE_RANGE.get)) & backMasks.read(Prediction.WORD_JUMP_SLICE).orMask(!Prediction.WORD_JUMPED)
-      FETCH_LAST := withBtb.mux(UIntToOh(Prediction.WORD_JUMP_SLICE).andMask(isValid && Prediction.WORD_JUMPED), B(0))
+      val backMasks = (0 until Fetch.SLICE_COUNT).map(i => B((2 << i) - 1, Fetch.SLICE_COUNT bits))
+      withBtb match {
+        case false => {
+          FETCH_MASK := frontMasks.read(Fetch.WORD_PC(Fetch.SLICE_RANGE.get))
+          FETCH_LAST.clearAll()
+        }
+        case true => {
+          FETCH_MASK := frontMasks.read(Fetch.WORD_PC(Fetch.SLICE_RANGE.get)) & backMasks.read(Prediction.WORD_JUMP_SLICE).orMask(!Prediction.WORD_JUMPED)
+          FETCH_LAST := withBtb.mux(UIntToOh(Prediction.WORD_JUMP_SLICE).andMask(isValid && Prediction.WORD_JUMPED), B(0))
+        }
+      }
     }
 
     val up = fpp.fetch(fetchAt).down
@@ -100,7 +113,7 @@ class AlignerPlugin2(fetchAt : Int,
     //TODO prediction disruption
     //Find out which slices would have enough data to be the start of an instruction
     val scanners = for (i <- 0 until scannerSlices) yield new Area {
-      val usageMask = B(0, scannerSlices bits)
+      val usageMask = B(0, scannerSlices bits).allowOverride()
       val checker = for(lid <- 0 until Decode.INSTRUCTION_SLICE_COUNT_MAX) yield new Area{
         val sid = i+lid
         val required = lid match {
@@ -112,7 +125,7 @@ class AlignerPlugin2(fetchAt : Int,
           case 1 => slices.data(i)(1 downto 0) === 3
         }
         if(sid < scannerSlices) usageMask(sid) := required
-        val redo = (sid < scannerSlices && withBtb).mux(required && slices.last(sid) && !last, False)
+        val redo = (sid < scannerSlices && withBtb && withBuffer && Riscv.RVC).mux(required && slices.last(sid) && !last, False)
         val present = (sid < scannerSlices).mux(slices.mask(sid), False)
         val valid = lid match {
           case 0 => CombInit(present)
@@ -126,7 +139,7 @@ class AlignerPlugin2(fetchAt : Int,
     val usedMask = Vec.fill(Decode.LANES.get+1)(Bits(scannerSlices bits))
     usedMask(0) := 0
     val extractors = for (eid <- 0 until Decode.LANES) yield new Area {
-      val usableSliceRange = eid until scannerSlices //Can be tweek to generate smaller designs
+      val usableSliceRange = if(withBuffer) eid until scannerSlices else eid to eid //Can be tweek to generate smaller designs
       val usableMask = usableSliceRange.map(sid => scanners(sid).valid && !usedMask(eid)(sid)).asBits
       val slicesOh = OHMasking.firstV2(usableMask)
       val redo = MuxOH.or(slicesOh, usableSliceRange.map(sid => scanners(sid).redo), true)
@@ -154,13 +167,22 @@ class AlignerPlugin2(fetchAt : Int,
 
         val valid = CombInit(extractor.valid)
         lane.up(lane.LANE_SEL) := valid
-        val isRvc = extractor.ctx.instruction(1 downto 0) =/= 3
-        if(Riscv.RVC){
-          val dec = RvcDecompressor(extractor.ctx.instruction, rvf = Riscv.RVF, rvd = Riscv.RVD, Riscv.XLEN)
-          lane.up(Decode.INSTRUCTION) := isRvc.mux(dec.inst, extractor.ctx.instruction)
-          lane.up(Decode.DECOMPRESSION_FAULT) := isRvc && dec.illegal
-        }
+
+        lane.up(Decode.INSTRUCTION) := extractor.ctx.instruction
+        lane.up(Decode.DECOMPRESSION_FAULT) := False
         lane.up(Decode.INSTRUCTION_RAW) := extractor.ctx.instruction
+        val withRvc = Riscv.RVC.get generate new Area {
+          val isRvc = extractor.ctx.instruction(1 downto 0) =/= 3
+          val dec = RvcDecompressor(extractor.ctx.instruction, rvf = Riscv.RVF, rvd = Riscv.RVD, Riscv.XLEN)
+          when(isRvc) {
+            lane.up(Decode.INSTRUCTION) := dec.inst
+            lane.up(Decode.DECOMPRESSION_FAULT) := dec.illegal
+            when(dec.illegal){
+              lane.up(Decode.INSTRUCTION_RAW)(Decode.INSTRUCTION_WIDTH-1 downto 16) := 0 //To match spike
+            }
+          }
+        }
+
         lane.up(Decode.INSTRUCTION_SLICE_COUNT) := OHToUInt(OHMasking.lastV2(extractor.localMask))
         lane.up(Global.PC)              := extractor.ctx.pc
         lane.up(Decode.DOP_ID)          := (laneId match {
@@ -169,6 +191,7 @@ class AlignerPlugin2(fetchAt : Int,
         })
         for (e <- firstSliceData ++ lastSliceData) lane.up(e).assignFrom(extractor.ctx.hm.apply(e))
         lane.up(Global.TRAP) := extractor.ctx.trap
+
         val onBtb = withBtb generate new Area{
           val pcLastSlice = lane.up(Global.PC)(Fetch.SLICE_RANGE) + lane.up(Decode.INSTRUCTION_SLICE_COUNT)
 //          val afterPrediction = pcLastSlice > lane.up(Prediction.WORD_JUMP_SLICE)
@@ -188,7 +211,7 @@ class AlignerPlugin2(fetchAt : Int,
 
 
 
-    val buffer = new Area {
+    val buffer = withBuffer generate new Area {
       val bufferedSlices = Fetch.WORD_WIDTH/Fetch.SLICE_WIDTH
       val data = Reg(Fetch.WORD)
       val mask = Reg(FETCH_MASK) init (0)
@@ -238,6 +261,28 @@ class AlignerPlugin2(fetchAt : Int,
         spec.ctx.trap := firstFromBuffer && trap || !lastFromBuffer && up(Global.TRAP)
         for (e <- firstSliceData) spec.ctx.hm(e).assignFrom(firstFromBuffer.mux(hm(e), up(e)))
         for (e <- lastSliceData) spec.ctx.hm(e).assignFrom(lastFromBuffer.mux(hm(e), up(e)))
+      }
+    }
+
+    val nobuffer = !withBuffer generate new Area {
+      assert(!Riscv.RVC)
+      assert(Decode.INSTRUCTION_WIDTH.get*Decode.LANES == Fetch.WORD_WIDTH.get)
+
+      slices.data.assignFromBits(up(Fetch.WORD))
+      slices.mask := up(FETCH_MASK).andMask(up.valid)
+      slices.last := 0
+
+      up.ready := downNode.isReady
+
+
+      val readers = for ((spec, sid) <- slices.readCtxs.zipWithIndex) yield new Area {
+        assert(spec.first.size == 1 && spec.first.head.sid == sid)
+        spec.ctx.instruction := slicesInstructions(sid)
+        spec.ctx.pc := up(Fetch.WORD_PC)
+        spec.ctx.pc(Fetch.SLICE_RANGE) := sid
+        spec.ctx.trap := up(Global.TRAP)
+        for (e <- firstSliceData) spec.ctx.hm(e).assignFrom(up(e))
+        for (e <- lastSliceData) spec.ctx.hm(e).assignFrom(up(e))
       }
     }
 

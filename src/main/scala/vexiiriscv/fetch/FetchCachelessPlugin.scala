@@ -137,8 +137,12 @@ class FetchCachelessPlugin(var wordWidth : Int,
       }
       Fetch.WORD := rsp.word
 
+      //trapSent is required, as the CPU will continue to fetch stuff as long as the trap request do not reach decode stages
+      assert(Global.HART_COUNT.get == 1) //Would require proper clearWhen(up.isCancel) and trapSent per hart
+      val trapSent = RegInit(False) setWhen(trapPort.valid) clearWhen(up.isCancel)
+
       TRAP := False
-      trapPort.valid := TRAP
+      trapPort.valid := TRAP && !trapSent
       trapPort.tval := Fetch.WORD_PC.asBits
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()

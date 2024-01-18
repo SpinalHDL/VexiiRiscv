@@ -105,7 +105,6 @@ object RvcDecompressor{
       if(xlen == 32 && rvf) is(23){ret.inst := swspImm(11 downto 5) ## i(6 downto 2)  ## x2 ## B"010" ## swspImm(4 downto 0) ## B"0100111" } // C.FSwSP
       if(xlen == 64) is(23){ret.inst := sdspImm(11 downto 5) ## i(6 downto 2)  ## x2 ## B"011" ## sdspImm(4 downto 0) ## B"0100011" } // C.SDSP
     }
-
     ret
   }
 }
