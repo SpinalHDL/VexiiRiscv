@@ -3,8 +3,6 @@ package vexiiriscv
 import spinal.core._
 import spinal.lib.LatencyAnalysis
 import spinal.lib.misc.PathTracer
-import vexiiriscv._
-import vexiiriscv.VexiiRiscv
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.execute.{LsuCachelessPlugin, SrcPlugin}
 
