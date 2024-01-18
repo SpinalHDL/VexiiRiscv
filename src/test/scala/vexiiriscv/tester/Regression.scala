@@ -24,6 +24,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
   val priv = dut.host.get[PrivilegedPlugin]
   val mmu = dut.host.get[MmuPlugin]
 
+  val rvm = dut.database(Riscv.RVM)
   val rvc = dut.database(Riscv.RVC)
   val rvf = dut.database(Riscv.RVF)
   val rvd = dut.database(Riscv.RVD)
@@ -119,20 +120,29 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
     args.name(s"riscv-tests/rv${xlen}ua-p-lrsc")
   }
 
-  val archTests = new File(nsf, s"riscv-arch-test/rv${xlen}i_m/I").listFiles().filter(_.getName.endsWith(".elf"))
-  for (elf <- archTests) {
-    val args = newArgs()
-    args.loadElf(elf)
-    args.failAfter(10000000)
-    args.name("riscv-arch-test/I/" + elf.getName.replace(".elf",""))
+  def doArchTest(from : String) = {
+    val folder = s"riscv-arch-test/rv${xlen}i_m/$from"
+    val elfs = new File(nsf, folder).listFiles().filter(_.getName.endsWith(".elf"))
+    for (elf <- elfs) {
+      val args = newArgs()
+      args.loadElf(elf)
+      args.failAfter(10000000)
+      args.name(folder + "/" + elf.getName.replace(".elf", ""))
+    }
   }
+
+  doArchTest("I")
+  doArchTest("Zifencei")
+  doArchTest("privilege")
+  if (rvm) doArchTest("M")
+  if (rvc) doArchTest("C")
 
 
   val regulars = ArrayBuffer("dhrystone", "coremark", "machine_vexii")
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor", s"mmu_sv${if(xlen == 32) 32 else 39}"))
   for(name <- regulars){
     val args = newArgs()
-    args.loadElf(new File(nsf, s"baremetal/$name/build/rv${xlen}ima/$name.elf"))
+    args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
     args.failAfter(300000000)
     args.name(s"regular/$name")
   }
@@ -140,7 +150,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv], dutArgs : Seq[String]
   val benchmarks = ArrayBuffer("dhrystone", "coremark")
   for (name <- benchmarks) {
     val args = newArgs()
-    args.loadElf(new File(nsf, s"baremetal/$name/build/rv${xlen}ima/$name.elf"))
+    args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
     args.failAfter(300000000)
     args.ibusReadyFactor(2.0)
     args.dbusReadyFactor(2.0)
