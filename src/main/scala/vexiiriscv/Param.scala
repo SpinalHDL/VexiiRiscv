@@ -51,7 +51,7 @@ class ParamSimple(){
     withRas = true
 //    withMul = false
 //    withDiv = false
-    withLateAlu = false
+    withLateAlu = true
     allowBypassFrom = 0
     relaxedBranch = false
     relaxedShift = false

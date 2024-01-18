@@ -16,6 +16,7 @@ object Decode extends AreaObject {
   val DOP_ID_WIDTH = blocking[Int]
   val UOP_ID_WIDTH = blocking[Int]
 
+  val DECOMPRESSION_FAULT = Payload(Bool())
   val INSTRUCTION = Payload(Bits(INSTRUCTION_WIDTH bits))
   val INSTRUCTION_RAW = Payload(Bits(INSTRUCTION_WIDTH bits))
   val UOP = Payload(Bits(UOP_WIDTH bits))

@@ -62,7 +62,7 @@ class DivPlugin(val layer : LaneLayer,
       div.io.flush := isReady
       div.io.rsp.ready := False
 
-      val unscheduleRequest = RegNext(hasCancelRequest) clearWhen (isReady) init (False)
+      val unscheduleRequest = RegNext(isCancel) clearWhen (isReady) init (False)
       val freeze = isValid && SEL && !div.io.rsp.valid & !unscheduleRequest
       el.freezeWhen(freeze)
 

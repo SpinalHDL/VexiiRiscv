@@ -158,6 +158,7 @@ class AlignerPlugin2(fetchAt : Int,
         if(Riscv.RVC){
           val dec = RvcDecompressor(extractor.ctx.instruction, rvf = Riscv.RVF, rvd = Riscv.RVD, Riscv.XLEN)
           lane.up(Decode.INSTRUCTION) := isRvc.mux(dec.inst, extractor.ctx.instruction)
+          lane.up(Decode.DECOMPRESSION_FAULT) := isRvc && dec.illegal
         }
         lane.up(Decode.INSTRUCTION_RAW) := extractor.ctx.instruction
         lane.up(Decode.INSTRUCTION_SLICE_COUNT) := OHToUInt(OHMasking.lastV2(extractor.localMask))

@@ -217,7 +217,7 @@ class BranchPlugin(val layer : LaneLayer,
 
       val learn = isLastOfLane.option(Stream(LearnCmd(ls.learnCtxElements.toSeq)))
       learn.foreach { learn =>
-        learn.valid := isValid && isReady && !hasCancelRequest && pluginsOnLane.map(p => apply(p.SEL)).orR
+        learn.valid := isValid && isReady && !isCancel && pluginsOnLane.map(p => apply(p.SEL)).orR
         learn.taken := alu.COND
         learn.pcTarget := alu.PC_TRUE
         learn.pcOnLastSlice := alu.PC_LAST_SLICE

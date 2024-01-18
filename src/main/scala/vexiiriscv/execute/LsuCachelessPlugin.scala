@@ -176,7 +176,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val skip = False
 
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
-      bus.cmd.valid := isValid && SEL && !cmdSent && !hasCancelRequest && !skip
+      bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip
       bus.cmd.write := !LOAD
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>
@@ -278,7 +278,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val READ_DATA = insert(buffer.data)
       elp.freezeWhen(WITH_RSP && !buffer.valid)
       buffer.ready := WITH_RSP && isReady
-      assert(!(isValid && hasCancelRequest && SEL && !LOAD && !up(Global.TRAP)), "LsuCachelessPlugin saw unexpected select && !LOAD && cancel request") //TODO add tpk.IO and along the way)) //TODO add tpk.IO and along the way
+      assert(!(isValid && isCancel && SEL && !LOAD && !up(Global.TRAP)), "LsuCachelessPlugin saw unexpected select && !LOAD && cancel request") //TODO add tpk.IO and along the way)) //TODO add tpk.IO and along the way
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp

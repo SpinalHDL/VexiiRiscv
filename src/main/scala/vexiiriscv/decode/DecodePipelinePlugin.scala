@@ -32,10 +32,10 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
 
     class LaneArea(laneId : Int) extends CtrlLaneMirror(lane(laneId))
     class LaneImpl(laneId: Int) extends Area with CtrlLaneApi {
-      val cancel = Bool()
       override def ctrlLink: CtrlLink = link
       override def laneName: String = laneId.toString
-      override def hasCancelRequest = cancel
+      override val upIsCancel = Bool()
+      override val downIsCancel = Bool()
     }
   }
 
@@ -65,7 +65,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
         // Implement LANE_SEL register clearing
         for (laneId <- 0 until Decode.LANES){
           val l = to.lane(laneId)
-          when(!l.up.isReady && l.cancel){
+          when(!l.up.isReady && l.up.isCancel){
             l.up(CtrlLaneApi.LANE_SEL) := False
           }
         }
@@ -86,13 +86,14 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
         val l = c.lane(laneId)
         if (ctrlId != 0) l.up(l.LANE_SEL).setAsReg().init(False)
         val doIt = rp.isFlushedAt(age, c.link(Global.HART_ID), laneId)
+        l.downIsCancel := False
         doIt match {
           case Some(cond) =>
-            l.cancel := cond
+            l.upIsCancel := cond
             when(cond) {
               l.bypass(l.LANE_SEL) := False
             }
-          case None => l.cancel := False
+          case None => l.upIsCancel := False
         }
       }
     }

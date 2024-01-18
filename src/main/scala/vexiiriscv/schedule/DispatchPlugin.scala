@@ -244,7 +244,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       val c = candidates(slotsCount + lane)
       val sending = CombInit(c.fire)
       val sent = RegInit(False) setWhen(sending) clearWhen(ctrlLink.up.isMoving)
-      c.cancel := dispatchCtrl.lane(lane).cancel
+      c.cancel := dispatchCtrl.lane(lane).isCancel
       c.ctx.valid := dispatchCtrl.link.isValid && isValid && !sent
       c.ctx.laneLayerHits := LANES_LAYER_HIT.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
