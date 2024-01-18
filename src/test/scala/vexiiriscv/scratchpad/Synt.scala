@@ -51,6 +51,7 @@ object IntegrationSynthBench extends App{
     relaxedShift = false
     relaxedSrc = true
     performanceCounters = 0
+    withAlignerBuffer = true
     withRvc = true
     Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i_rvc"))
   })
@@ -87,13 +88,11 @@ Artix 7 -> 90 Mhz 2090 LUT 1292 FF
 Artix 7 -> 149 Mhz 2222 LUT 1292 FF
 
 
-
-wip
 vexii_1i ->
-Artix 7 -> 90 Mhz 2110 LUT 1403 FF
-Artix 7 -> 139 Mhz 2261 LUT 1423 FF
+Artix 7 -> 90 Mhz 2057 LUT 1293 FF
+Artix 7 -> 139 Mhz 2195 LUT 1293 FF
 vexii_1i_rvc ->
-Artix 7 -> 83 Mhz 2350 LUT 1461 FF
-Artix 7 -> 121 Mhz 3233 LUT 1512 FF  //lol wtf vivado
+Artix 7 -> 83 Mhz 2286 LUT 1462 FF
+Artix 7 -> 119 Mhz 2462 LUT 1462 FF
 
  */
