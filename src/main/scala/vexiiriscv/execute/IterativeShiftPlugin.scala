@@ -5,9 +5,12 @@
 package vexiiriscv.execute
 
 import spinal.core._
+import spinal.lib.{MuxOH, OHMasking}
 import spinal.lib.misc.pipeline._
 import vexiiriscv.decode
 import vexiiriscv.riscv._
+
+import scala.collection.mutable
 
 object IterativeShifterPlugin extends AreaObject {
   val ARITHMETIC = Payload(Bool())
@@ -33,8 +36,10 @@ class IterativeShifterPlugin(val layer: LaneLayer,
                              val leftShifts: Seq[Int] = Seq(),
                              val rightShifts: Seq[Int] = Seq(1, 8),
                              val lateResult: Boolean = false) extends ExecutionUnitElementSimple(layer) {
+  def isPowerTwo(i: Int) = i > 0 && (i & (i - 1)) == 0
   assert(leftShifts.isEmpty || leftShifts.contains(1), "If left shifts are used, left shift by 1 must be enabled")
   assert(rightShifts.contains(1), "At least right shift by 1 to the right must be enabled")
+  assert(leftShifts.forall(isPowerTwo) && rightShifts.forall(isPowerTwo), "shift distances must be power of 2")
 
   import IterativeShifterPlugin._
   val SHIFT_RESULT = Payload(Bits(Riscv.XLEN bits))
@@ -110,58 +115,68 @@ class IterativeShifterPlugin(val layer: LaneLayer,
         else
           CombInit(rs1)
 
-      val muxed = cloneOf(srcp.SRC1.asBits)
-
-      // right-shift 1 is the fallback, no check needed - drop the 1 on the loop
-      amplitude := amplitude - 1
-      muxed := (((ARITHMETIC && srcp.SRC1.msb) ## shiftReg) >> 1)
-      rightShifts.sorted.drop(1).foreach(n => when(amplitude >= n) {
-        println(s"having right shift by $n")
-        amplitude := amplitude - n
-        muxed := ((((ARITHMETIC && srcp.SRC1.msb) #* n) ## shiftReg) >> n)
+      val muxInputs = mutable.ArrayBuffer[(Bool, Bits, UInt)]()
+      rightShifts.sorted.foreach(n => {
+        val doIt = if(n > 1) amplitude >= n else True
+        val input = (((ARITHMETIC && srcp.SRC1.msb) #* n) ## shiftReg) >> n
+        val ampl = amplitude - n
+        muxInputs.append((doIt, input, ampl))
       })
 
-      leftShifts.sorted.foreach(n => when(LEFT & amplitude >= n) { // TODO check synthesis for these
-        println(s"having left shift by $n")
+      leftShifts.sorted.foreach(n => {
         // mask away bits shifted into upper 32 bit in case of SLLW instruction
-        val mask_w = (True #* (32 - n)) ## (!IS_W #* n) ## (True #* 32)
-        amplitude := amplitude - n
-        muxed := (shiftReg |<< n) & mask_w
+        val mask_w = if (Riscv.XLEN.get == 32) {
+          True #* 32
+        } else {
+          (True #* (32 - n)) ## (!IS_W #* n) ## (True #* 32)
+        }
+        val doIt = LEFT & (if(n > 1) amplitude >= n else True)
+        val input = (shiftReg |<< n) & mask_w
+        val ampl = amplitude - n
+        muxInputs.append((doIt, input, ampl))
       })
 
       // we only need flip if there is no left shift
-      if (leftShifts.isEmpty && Riscv.XLEN.get == 32) {
+      // keep track of flip indices so that we can skip them when needed
+      val flipIdxs = mutable.ArrayBuffer[Int]()
+      if (leftShifts.isEmpty) {
         val doFlip = LEFT & ((busy & !flipped) | (if (lateResult) (busy & amplitude === 0) else done))
-        println("having flip")
-        when(doFlip) {
-          amplitude := amplitude // prevent amplitude changes from matches with conditions above, TODO check synthesis
-          flipped := !flipped
-          muxed := shiftReg.reversed
-        }
-      } else if(leftShifts.isEmpty) {
-        val doFlip = LEFT & ((busy & !flipped) | (if (lateResult) (busy & amplitude === 0) else done))
-        println("having flip 64")
-        when(doFlip & IS_W) {
-          amplitude := amplitude
-          flipped := !flipped
-          muxed(31 downto 0) := shiftReg(31 downto 0).reversed
-          muxed(63 downto 32) := 0
-        }
-        when(doFlip && !IS_W) {
-          amplitude := amplitude
-          flipped := !flipped
-          muxed := shiftReg.reversed
+
+        flipIdxs.append(muxInputs.size)
+        muxInputs.append((doFlip, shiftReg.reversed, amplitude))
+        if (Riscv.XLEN.get == 64) {
+          flipIdxs.append(muxInputs.size)
+          muxInputs.append((IS_W & doFlip, False #* 32 ## shiftReg(31 downto 0).reversed, amplitude))
         }
       }
+      muxInputs.append((selected & !busy, signExtended, shamt))
 
-      when(selected & !busy) {
+      val selector = OHMasking.last(Cat(muxInputs.map(_._1)))
+      val muxed = MuxOH(selector, muxInputs.map(_._2))
+      shiftReg := muxed
+
+      // if we use flip(s), then we don't need them in the amplitude MUX, we just just not
+      // EN the amplitude register in that case, saving a few gates
+      val updatedAmplitude = MuxOH(
+        Cat(selector.asBools.zipWithIndex.flatMap{case (b, n) => if(flipIdxs.contains(n)) None else Some(b)}),
+        muxInputs.zipWithIndex.flatMap{case(i, n) => if(flipIdxs.contains(n)) None else Some(i._3)}
+      )
+
+      val anyFlip = flipIdxs.foldLeft(False){case (r, n) => r | muxInputs(n)._1}
+      if(flipIdxs.nonEmpty) {
+        when(anyFlip) {
+          flipped := !flipped
+        }
+      }
+      when(!anyFlip) {
+        amplitude := updatedAmplitude
+      }
+
+      // if we do the load, initialize some other parts of the state as well
+      when(selector.msb) {
         flipped := False  
-        muxed := signExtended
-        amplitude := shamt
         busy := (if(!lateResult) shamt =/= 0 else True)
       }
-
-      shiftReg := muxed
 
       when((busy && done) || unscheduleRequest) {
         busy := False
