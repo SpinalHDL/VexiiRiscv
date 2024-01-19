@@ -55,9 +55,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     lineSize = lineSize,
     withBackPresure = false
   )
-  val mem = during build master(FetchL1Bus(
-    getBusParameter()
-  ))
+
 
   val logic = during setup new Area{
     val pp = host[FetchPipelinePlugin]
@@ -72,6 +70,10 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     Fetch.WORD_WIDTH.set(fetchDataWidth)
 
+    val bus = master(FetchL1Bus(
+      getBusParameter()
+    ))
+
     val translationStorage = ats.newStorage(translationStorageParameter)
     atsStorageLock.release()
 
@@ -79,6 +81,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val pcPort = pcp.newJumpInterface(age, 0, 0)
     val flushPort = rp.newFlushPort(age, 0, false)
     val trapPort = ts.newTrap(pp.getAge(ctrlAt), 0)
+    val holdPorts = (0 until HART_COUNT).map(pcp.newHoldPort)
     setupLock.release()
 
     val cpuWordWidth = fetchDataWidth
@@ -92,7 +95,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val tagWidth = PHYSICAL_WIDTH - log2Up(waySize)
     val tagRange = PHYSICAL_WIDTH - 1 downto log2Up(linePerWay * lineSize)
     val lineRange = tagRange.low - 1 downto log2Up(lineSize)
-    val wordRange = log2Up(lineSize) - 1 downto log2Up(memWordPerLine)
+    val wordRange = log2Up(lineSize) - 1 downto log2Up(bytePerMemWord)
     val bankCount = wayCount
     val bankWidth = if (!reducedBankWidth) memDataWidth else Math.max(cpuWordWidth, memDataWidth / wayCount)
     val bankByteSize = cacheSize / bankCount
@@ -112,7 +115,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val WAYS_TAGS = Payload(Vec.fill(wayCount)(Tag()))
     val WAYS_HITS = Payload(Vec.fill(wayCount)(Bool()))
     val WAYS_HIT = Payload(Bool())
-    val REFILL_HAZARD = Payload(Bool())
+    val HAZARD = Payload(Bool())
 
     val BANKS_MUXES = Payload(Vec.fill(bankCount)(Bits(cpuWordWidth bits)))
 
@@ -147,16 +150,17 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
     }
 
-    val PLRU = Payload(Plru.State(wayCount))
+    val PLRU_READ, PLRU_BYPASSED = Payload(Plru.State(wayCount))
     val x = pp.fetch(0)
     val plru = new Area {
       val mem = Mem.fill(linePerWay)(Plru.State(wayCount))
       val write = mem.writePort
-      val cmd = Flow(mem.addressType)
-      val rsp = if (tagsReadAsync) mem.readAsync(cmd.payload) else mem.readSync(cmd.payload, cmd.valid)
-      pp.fetch(readAt + (!tagsReadAsync).toInt)(PLRU) := rsp
-      //TODO rsp bypass !!
-      KeepAttribute(rsp)
+      val read = new Area {
+        val cmd = Flow(mem.addressType)
+        val rsp = if (tagsReadAsync) mem.readAsync(cmd.payload) else mem.readSync(cmd.payload, cmd.valid)
+        pp.fetch(readAt + (!tagsReadAsync).toInt)(PLRU_READ) := rsp
+        KeepAttribute(rsp)
+      }
     }
 
     val invalidate = new Area {
@@ -165,10 +169,12 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       val canStart = True
       val counter = Reg(UInt(log2Up(linePerWay) + 1 bits)) init (0)
+      val counterIncr = counter + 1
       val done = counter.msb
+      val last = counterIncr.msb
       val firstEver = RegInit(True) clearWhen (done)
       when(!done) {
-        counter := counter + 1
+        counter := counterIncr
         waysWrite.mask := (default -> true)
         waysWrite.address := counter.resized
         waysWrite.tag.loaded := False
@@ -176,14 +182,15 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       when(cmd.valid && canStart) {
         counter := 0
-        invalidationPorts.foreach(_.cmd.ready := True)
       }
 
       when(!done){
         pp.fetch(readAt).haltIt()
+        when(last){
+          invalidationPorts.foreach(_.cmd.ready := True)
+        }
       }
     }
-
 
     val refill = new Area {
       val start = new Area {
@@ -191,12 +198,15 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         val address = UInt(PHYSICAL_WIDTH bits)
         val wayToAllocate = UInt(log2Up(wayCount) bits)
         val isIo = Bool()
+        val hartId = HART_ID()
       }
 
       val fire = False
       val valid = RegInit(False) clearWhen (fire)
+      val firstCycle = RegNext(False)
       val address = KeepAttribute(Reg(UInt(PHYSICAL_WIDTH bits)))
       val isIo = Reg(Bool())
+      val hartId = Reg(HART_ID())
       val hadError = RegInit(False)
       val wayToAllocate = Reg(UInt(log2Up(wayCount) bits))
 
@@ -208,49 +218,56 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         when(start.valid && invalidate.done) {
           valid := True
           pushCounter := pushCounter + 1
+          firstCycle := True
         }
         address := start.address
+        hartId := start.hartId
         isIo := start.isIo
         wayToAllocate := start.wayToAllocate
       }
 
+
       invalidate.canStart clearWhen (valid || start.valid)
 
-      val cmdSent = RegInit(False) setWhen (mem.cmd.fire) clearWhen (fire)
-      mem.cmd.valid := valid && !cmdSent
-      mem.cmd.address := address(tagRange.high downto lineRange.low) @@ U(0, lineRange.low bit)
-      mem.cmd.io := isIo
+      val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (fire)
+      bus.cmd.valid := valid && !cmdSent
+      bus.cmd.address := address(tagRange.high downto lineRange.low) @@ U(0, lineRange.low bit)
+      bus.cmd.io := isIo
 
       val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
 
+      for ((port, i) <- holdPorts.zipWithIndex) {
+        port := valid && hartId === i && wordIndex <= address(wordRange)
+      }
+
       when(invalidate.done) {
-        waysWrite.mask(wayToAllocate) setWhen (fire)
+        waysWrite.mask(wayToAllocate) setWhen (firstCycle || bus.rsp.valid && bus.rsp.error)
         waysWrite.address := address(lineRange)
         waysWrite.tag.loaded := True
-        waysWrite.tag.error := hadError || mem.rsp.error
+        waysWrite.tag.error := bus.rsp.valid && bus.rsp.error
         waysWrite.tag.address := address(tagRange)
       }
 
 
       for ((bank, bankId) <- banks.zipWithIndex) {
         if (!reducedBankWidth) {
-          bank.write.valid := mem.rsp.valid && wayToAllocate === bankId
+          bank.write.valid := bus.rsp.valid && wayToAllocate === bankId
           bank.write.address := address(lineRange) @@ wordIndex
-          bank.write.data := mem.rsp.data
+          bank.write.data := bus.rsp.data
         } else {
           val sel = U(bankId) - wayToAllocate
           val groupSel = wayToAllocate(log2Up(bankCount) - 1 downto log2Up(bankCount / memToBankRatio))
           val subSel = sel(log2Up(bankCount / memToBankRatio) - 1 downto 0)
-          bank.write.valid := mem.rsp.valid && groupSel === (bankId >> log2Up(bankCount / memToBankRatio))
+          bank.write.valid := bus.rsp.valid && groupSel === (bankId >> log2Up(bankCount / memToBankRatio))
           bank.write.address := address(lineRange) @@ wordIndex @@ (subSel)
-          bank.write.data := mem.rsp.data.subdivideIn(bankCount / memToBankRatio slices)(subSel)
+          bank.write.data := bus.rsp.data.subdivideIn(bankCount / memToBankRatio slices)(subSel)
         }
       }
 
-      mem.rsp.ready := True
-      when(mem.rsp.valid) {
+      bus.rsp.ready := True
+      when(bus.rsp.valid) {
         wordIndex := (wordIndex + 1).resized
-        hadError.setWhen(mem.rsp.error)
+        hadError.setWhen(bus.rsp.error)
         when(wordIndex === wordIndex.maxValue) {
           fire := True
         }
@@ -272,17 +289,32 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val cmd = new pp.Fetch(readAt) {
       for ((bank, bankId) <- banks.zipWithIndex) {
-        bank.read.cmd.valid := isValid && !isReady
+        bank.read.cmd.valid := up.isValid && up.isReady
         bank.read.cmd.payload := WORD_PC(lineRange.high downto log2Up(bankWidth / 8))
       }
 
       for((way, wayId) <- ways.zipWithIndex) {
-        way.read.cmd.valid := isValid && !isReady
+        way.read.cmd.valid := up.isValid && up.isReady
         way.read.cmd.payload := WORD_PC(lineRange)
       }
+
+      plru.read.cmd.valid := up.isValid && up.isReady
+      plru.read.cmd.payload := WORD_PC(lineRange)
+
+      val PLRU_BYPASS_VALID = insert(plru.write.valid && plru.write.address === plru.read.cmd.payload)
+      val PLRU_BYPASS_DATA = insert(plru.write.data)
+
       val REFILL_VALID = insert(refill.valid)
       val REFILL_ADDRESS = insert(refill.address)
       val REFILL_WORD = insert(refill.wordIndex)
+      val TAGS_UPDATE = insert(waysWrite.mask.orR)
+    }
+
+    val plruBypass = new pp.Fetch(readAt + 1){
+      this (PLRU_BYPASSED) := PLRU_READ
+      if(!tagsReadAsync) when(cmd.PLRU_BYPASS_VALID) {
+        this (PLRU_BYPASSED) := cmd.PLRU_BYPASS_DATA
+      }
     }
 
     val muxes = new pp.Fetch(bankMuxesAt) {
@@ -300,10 +332,10 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
     }
 
-    val refillHazard = new pp.Fetch(readAt+1) {
+    val hazard = new pp.Fetch(readAt+1) {
       import cmd._
       val pageRange = 11 downto wordRange.high + 1
-      REFILL_HAZARD := REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
+      HAZARD := TAGS_UPDATE || REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
     }
 
     val hits = new pp.Fetch(hitsAt){
@@ -326,7 +358,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val ctrl = new pp.Fetch(ctrlAt){
       val plruLogic = new Area {
         val core = new Plru(wayCount, false)
-        core.io.context.state := PLRU
+        core.io.context.state := PLRU_BYPASSED
 //        core.io.context.state.clearAll()
         core.io.update.id := OHToUInt(WAYS_HITS)
 
@@ -338,7 +370,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 //          refill.start.wayToAllocate := refill.randomWay
       }
 
-      val dataAccessFault = this(WAYS_TAGS).reader(WAYS_HITS)(_.error) && !REFILL_HAZARD
+      val dataAccessFault = this(WAYS_TAGS).reader(WAYS_HITS)(_.error) && !HAZARD
 
       //trapSent is required, as the CPU will continue to fetch stuff as long as the trap request do not reach decode stages
       assert(Global.HART_COUNT.get == 1) //Would require proper clearWhen(up.isCancel) and trapSent per hart
@@ -380,7 +412,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       TRAP.clearWhen(!isValid)
 
-      val redoIt = isValid && !TRAP && (!WAYS_HIT || REFILL_HAZARD)
+      val redoIt = isValid && !TRAP && (!WAYS_HIT || HAZARD)
 
       flushPort.valid := redoIt
       flushPort.self := True
@@ -389,8 +421,9 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       pcPort.valid := redoIt
       pcPort.pc := WORD_PC
 
-      refill.start.valid := redoIt && !REFILL_HAZARD
+      refill.start.valid := redoIt && !HAZARD
       refill.start.address := tpk.TRANSLATED
+      refill.start.hartId := HART_ID
       refill.start.isIo := tpk.IO
 
       when(redoIt){
@@ -402,6 +435,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
     }
 
+    assert(!(refill.valid && !invalidate.done))
 
     when(!invalidate.done) {
       plru.write.valid := True

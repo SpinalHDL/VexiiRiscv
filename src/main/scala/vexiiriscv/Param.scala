@@ -45,12 +45,12 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 1
-    lanes = 1
+    decoders = 2
+    lanes = 2
     regFileSync = false
-    withGShare = false
-    withBtb = false
-    withRas = false
+    withGShare = true
+    withBtb = true
+    withRas = true
 //    withMul = false
 //    withDiv = false
     withLateAlu = true
@@ -63,7 +63,8 @@ class ParamSimple(){
     privParam.withUser = true
     withMmu = true
     withRva = true
-    withRvc = false
+    withRvc = true;
+    withAlignerBuffer = withRvc
     withFetchL1 = true
     xlen = 32
   }
@@ -204,8 +205,8 @@ class ParamSimple(){
       }
     )
     if(withFetchL1) plugins += new fetch.FetchL1Plugin(
-      cacheSize = 1024,
-      wayCount = 1,
+      cacheSize = 16*1024,
+      wayCount = 4,
       fetchDataWidth = 32*decoders,
       memDataWidth = 32*decoders,
       reducedBankWidth = false,
