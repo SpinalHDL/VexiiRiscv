@@ -12,7 +12,7 @@ import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
-import vexiiriscv.fetch.{Fetch, InitService, PcService}
+import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, PcService}
 import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.schedule.Ages
 
@@ -96,13 +96,20 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     val priv = host[PrivilegedPlugin]
     val cap = host[CsrAccessPlugin]
     val pp = host[PipelineBuilderPlugin]
+    val fl1p = host.get[FetchL1Service]
     val pcs = host[PcService]
     val ats = host[AddressTranslationService]
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
+    val fl1pLock = fl1p.map(_.invalidationRetainer())
     val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock))
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
+
+    val fetchL1Invalidate = fl1p.nonEmpty generate new Area{
+      val ports = (0 until HART_COUNT).map(hartId => fl1p.get.newInvalidationPort())
+      fl1pLock.get.release()
+    }
 
     val trapArgWidths = ArrayBuffer[Int](2)
     if(ats.mayNeedRedo) trapArgWidths += 2+ats.getStorageIdWidth()
@@ -333,6 +340,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             ).map(pending.state.code === _).orR
           )
 
+          fetchL1Invalidate.ports(hartId).cmd.valid := False
           PROCESS.whenIsActive{
             when(pending.state.exception || buffer.trap.interrupt) {
               goto(TRAP_TVAL)
@@ -348,7 +356,10 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   goto(XRET_EPC)
                 }
                 is(TrapReason.FENCE_I) {
-                  goto(JUMP) //TODO
+                  fetchL1Invalidate.ports(hartId).cmd.valid := True
+                  when(fetchL1Invalidate.ports(hartId).cmd.ready) {
+                    goto(JUMP) //TODO
+                  }
                 }
                 is(TrapReason.REDO) {
                   goto(JUMP)

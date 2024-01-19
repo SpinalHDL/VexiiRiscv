@@ -15,6 +15,7 @@ import vexiiriscv.misc._
 import vexiiriscv._
 import vexiiriscv.Global._
 import Fetch._
+import spinal.core.fiber.Retainer
 import vexiiriscv.riscv.CSR
 import vexiiriscv.schedule.ReschedulePlugin
 
@@ -22,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 trait FetchL1Service{
+  val invalidationRetainer = Retainer()
   val invalidationPorts = ArrayBuffer[FetchL1InvalidationBus]()
   def newInvalidationPort() = invalidationPorts.addRet(FetchL1InvalidationBus())
 }
@@ -164,6 +166,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     }
 
     val invalidate = new Area {
+      invalidationRetainer.await()
       val cmd = Event
       cmd.valid := invalidationPorts.map(_.cmd.valid).orR
 
@@ -180,10 +183,11 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         waysWrite.tag.loaded := False
       }
 
-      when(cmd.valid && canStart) {
+      when(done && cmd.valid && canStart) {
         counter := 0
       }
 
+      invalidationPorts.foreach(_.cmd.ready := False)
       when(!done){
         pp.fetch(readAt).haltIt()
         when(last){
