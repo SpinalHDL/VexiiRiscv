@@ -340,7 +340,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             ).map(pending.state.code === _).orR
           )
 
-          fetchL1Invalidate.ports(hartId).cmd.valid := False
+          if(fl1p.nonEmpty) fetchL1Invalidate.ports(hartId).cmd.valid := False
           PROCESS.whenIsActive{
             when(pending.state.exception || buffer.trap.interrupt) {
               goto(TRAP_TVAL)
@@ -356,10 +356,16 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   goto(XRET_EPC)
                 }
                 is(TrapReason.FENCE_I) {
-                  fetchL1Invalidate.ports(hartId).cmd.valid := True
-                  when(fetchL1Invalidate.ports(hartId).cmd.ready) {
-                    goto(JUMP) //TODO
+                  fl1p.isEmpty match {
+                    case true => goto(JUMP)
+                    case false => {
+                      fetchL1Invalidate.ports(hartId).cmd.valid := True
+                      when(fetchL1Invalidate.ports(hartId).cmd.ready) {
+                        goto(JUMP)
+                      }
+                    }
                   }
+
                 }
                 is(TrapReason.REDO) {
                   goto(JUMP)

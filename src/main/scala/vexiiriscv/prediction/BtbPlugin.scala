@@ -41,6 +41,8 @@ class BtbPlugin(var sets : Int,
     val retainer = retains(List(rp.elaborationLock, dp.elaborationLock) ++ hp.map(_.elaborationLock))
     Fiber.awaitBuild()
 
+    val withCondPrediction = host.get[FetchConditionalPrediction].nonEmpty
+
     val age = fpp.getAge(jumpAt, true)
     val pcPort = pcp.newJumpInterface(age,0, (jumpAt < 2).toInt)
     val historyPort = hp.map(_.newPort(age, 0))
@@ -106,7 +108,8 @@ class BtbPlugin(var sets : Int,
       val taken = Bool() //TODO remove
     }
 
-    val mem = Mem.fill(sets)(Vec.fill(chunks)(BtbEntry())) //TODO bypass read durring write ?
+    // This memory could be implemented as a single port ram, as that ram is only updated on miss predicted stuff
+    val mem = Mem.fill(sets)(Vec.fill(chunks)(BtbEntry()))
     if(GenerationFlags.simulation){
       val rand = new Random(42)
       mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
@@ -118,7 +121,7 @@ class BtbPlugin(var sets : Int,
       val hash = getHash(cmd.pcOnLastSlice)
 
       val port = mem.writePortWithMask(chunks)
-      port.valid := cmd.valid
+      port.valid := cmd.valid && withCondPrediction.mux(cmd.badPredictedTarget && cmd.wasWrong, cmd.wasWrong)
       port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
       port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
       for(data <- port.data) {
@@ -156,6 +159,8 @@ class BtbPlugin(var sets : Int,
     val readCmd = new fpp.Fetch(readAt){
       readPort.cmd.valid := isReady
       readPort.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
+      val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
+      haltWhen(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload)
     }
 
 
@@ -170,12 +175,14 @@ class BtbPlugin(var sets : Int,
       }
       val hitCalc = new fpp.Fetch(hitAt) {
         val HIT = insert(readRsp.ENTRY.hash === getHash(WORD_PC) && getSlice(chunkId, readRsp.ENTRY.sliceLow) >= WORD_PC(SLICE_RANGE.get))
+//        HIT clearWhen(readCmd.HAZARDS(chunkId))
+        assert(!(isValid && readCmd.HAZARDS(chunkId)))
       }
       val predict = new fpp.Fetch(jumpAt) {
-        def pred = host.get[FetchConditionalPrediction] match {
-          case Some(x) => predictions.get(getSlice(chunkId, readRsp.ENTRY.sliceLow))
-          case None => readRsp.ENTRY.taken
-        }
+        def pred = withCondPrediction.mux(
+          predictions.get(getSlice(chunkId, readRsp.ENTRY.sliceLow)),
+          readRsp.ENTRY.taken
+        )
         val TAKEN = insert(!readRsp.ENTRY.isBranch || pred)
       }
     }

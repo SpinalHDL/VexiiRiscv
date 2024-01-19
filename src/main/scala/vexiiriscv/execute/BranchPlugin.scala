@@ -225,6 +225,7 @@ class BranchPlugin(val layer : LaneLayer,
         learn.isPush := (IS_JAL || IS_JALR) && rdLink
         learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
         learn.wasWrong := needFix
+        learn.badPredictedTarget := alu.btb.BAD_TARGET
         learn.history := history.fetched
         learn.uopId := Decode.UOP_ID
         learn.hartId := Global.HART_ID

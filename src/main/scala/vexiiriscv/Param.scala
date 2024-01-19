@@ -63,9 +63,9 @@ class ParamSimple(){
     privParam.withUser = true
     withMmu = true
     withRva = true
-    withRvc = true;
+    withRvc = false
     withAlignerBuffer = withRvc
-    withFetchL1 = true
+    withFetchL1 = false
     xlen = 32
   }
 
