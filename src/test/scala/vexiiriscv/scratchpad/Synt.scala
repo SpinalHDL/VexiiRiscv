@@ -1,6 +1,7 @@
 package vexiiriscv.scratchpad
 
-import spinal.core.{LutInputs, SpinalConfig, SpinalVerilog}
+import spinal.core._
+import spinal.lib.StreamFifo
 import spinal.lib.eda.bench.{Bench, Rtl, XilinxStdTargets}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.{ParamSimple, VexiiRiscv}
@@ -13,54 +14,118 @@ object IntegrationSynthBench extends App{
   val sc = SpinalConfig()
   sc.addTransformationPhase(new MultiPortWritesSymplifier)
   val rtls = ArrayBuffer[Rtl]()
-  rtls += Rtl(sc.generateVerilog {
-    val param = new ParamSimple
-    import param._
-    decoders = 1
-    lanes = 1
-    regFileSync = false
-    withGShare = true
-    withBtb = true
-    withRas = true
-    //    withMul = false
-    //    withDiv = false
-    withLateAlu = false
-    allowBypassFrom = 0
-    relaxedBranch = false
-    relaxedShift = false
-    relaxedSrc = true
-    performanceCounters = 0
-    withRvc = false
-    Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i"))
-  })
 
-  rtls += Rtl(sc.generateVerilog {
-    val param = new ParamSimple
-    import param._
-    decoders = 1
-    lanes = 1
-    regFileSync = false
-    withGShare = true
-    withBtb = true
-    withRas = true
-    //    withMul = false
-    //    withDiv = false
-    withLateAlu = false
-    allowBypassFrom = 0
-    relaxedBranch = false
-    relaxedShift = false
-    relaxedSrc = true
-    performanceCounters = 0
-    withAlignerBuffer = true
-    withRvc = true
-    Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i_rvc"))
-  })
+  def add(param : ParamSimple, name : String) = {
+    rtls += Rtl(sc.generateVerilog {
+      Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName(if(name.isEmpty) param.getName() else name))
+    })
+  }
+
+  def add(postfix: String)(body : ParamSimple => Unit) : Unit = {
+    val p = new ParamSimple()
+    body(p)
+    add(p, postfix)
+  }
+
+  add(""){ p =>
+    p.regFileSync = false
+    p.withMul = false
+    p.withDiv = false
+  }
+  add("") { p =>
+    p.regFileSync = false
+    p.withMul = false
+    p.withDiv = false
+    p.allowBypassFrom = 0
+  }
+  add("") { p =>
+    p.regFileSync = false
+    p.withMul = false
+    p.withDiv = false
+    p.withGShare = true
+    p.withBtb = true
+    p.withRas = true
+    p.allowBypassFrom = 0
+  }
+  add("") { p =>
+    p.regFileSync = false
+    p.withMul = true
+    p.withDiv = true
+    p.withGShare = true
+    p.withBtb = true
+    p.withRas = true
+    p.allowBypassFrom = 0
+  }
+//  add("") { p =>
+//    p.decoders = 1
+//    p.lanes = 1
+//    p.regFileSync = false
+//    p.withGShare = true
+//    p.withBtb = true
+//    p.withRas = true
+//    p.withLateAlu = false
+//    p.allowBypassFrom = 0
+//    p.relaxedBranch = false
+//    p.relaxedShift = false
+//    p.relaxedSrc = true
+//    p.performanceCounters = 0
+//    p.withRvc = false
+//  }
+
+
+
+  //  rtls += Rtl(sc.generateVerilog {
+//    val param = new ParamSimple
+//    import param._
+//    decoders = 1
+//    lanes = 1
+//    regFileSync = false
+//    withGShare = true
+//    withBtb = true
+//    withRas = true
+//    //    withMul = false
+//    //    withDiv = false
+//    withLateAlu = false
+//    allowBypassFrom = 0
+//    relaxedBranch = false
+//    relaxedShift = false
+//    relaxedSrc = true
+//    performanceCounters = 0
+//    withRvc = false
+//    Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i"))
+//  })
+//
+//  rtls += Rtl(sc.generateVerilog {
+//    val param = new ParamSimple
+//    import param._
+//    decoders = 1
+//    lanes = 1
+//    regFileSync = false
+//    withGShare = true
+//    withBtb = true
+//    withRas = true
+//    //    withMul = false
+//    //    withDiv = false
+//    withLateAlu = false
+//    allowBypassFrom = 0
+//    relaxedBranch = false
+//    relaxedShift = false
+//    relaxedSrc = true
+//    performanceCounters = 0
+//    withAlignerBuffer = true
+//    withRvc = true
+//    Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i_rvc"))
+//  })
 //  rtls += Rtl(sc.generateVerilog {
 //    val param = new ParamSimple
 //    param.decoders = 2
 //    param.lanes = 2
 //    Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_2i"))
 //  })
+
+//    rtls += Rtl(sc.generateVerilog {
+//      new StreamFifo(UInt(8 bits), 16)
+//    })
   val targets = XilinxStdTargets().take(2)
 
   Bench(rtls, targets)

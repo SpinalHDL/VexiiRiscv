@@ -61,6 +61,7 @@ case class LearnCmd(hmElements : Seq[NamedType[_ <: Data]]) extends Bundle{
   val taken = Bool()
   val isBranch, isPush, isPop = Bool()
   val wasWrong = Bool()
+  val badPredictedTarget = Bool()
   val history = Prediction.BRANCH_HISTORY()
   val uopId = Decode.UOP_ID()
   val hartId = Global.HART_ID()

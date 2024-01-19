@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib.misc.Elf
 import spinal.lib.misc.test.DualSimTracer
-import spinal.lib.sim.{FlowDriver, SparseMemory, StreamMonitor, StreamReadyRandomizer}
+import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import vexiiriscv._
 import vexiiriscv.fetch.PcService
 import vexiiriscv.misc.PrivilegedPlugin
@@ -280,7 +280,33 @@ class TestOptions{
         doIt
       }
 
-      //TODO backpresure
+      cmdReady.setFactor(ibusReadyFactor)
+      rspDriver.setFactor(ibusReadyFactor)
+    }
+
+    val fl1p = dut.host.get[fetch.FetchL1Plugin].map { p =>
+      val bus = p.logic.bus
+      val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
+
+      case class Rsp(data: Array[Byte], error : Boolean)
+      val pending = mutable.Queue[Rsp]()
+
+      val cmdMonitor = StreamMonitor(bus.cmd, cd) { pay =>
+        val address = pay.address.toLong
+        for(i <- 0 until p.logic.memWordPerLine){
+          pending += Rsp(mem.readBytes(address + i*p.logic.bytePerMemWord, p.memDataWidth/8), address < 0x10000000)
+        }
+      }
+      val rspDriver = StreamDriver(bus.rsp, cd) { p =>
+        val doIt = pending.nonEmpty
+        if (doIt) {
+          val rsp = pending.dequeue()
+          p.data #= rsp.data
+          p.error #= rsp.error
+        }
+        doIt
+      }
+
       cmdReady.setFactor(ibusReadyFactor)
       rspDriver.setFactor(ibusReadyFactor)
     }
@@ -393,37 +419,11 @@ class TestOptions{
           p.data #= bytes
           p.error #= error
           if(p.scMiss != null) p.scMiss #= scMiss
-
-//          if (cmd.io) {
-//            assert(!cmd.amoEnable, "io amo not supported in testbench yet")
-//            p.error #= peripheral.access(cmd.write, cmd.address, cmd.data)
-//            if(!cmd.write) {
-//              val bytes = new Array[Byte](p.p.dataWidth / 8)
-//              simRandom.nextBytes(bytes)
-//              Array.copy(cmd.data, 0, bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1), cmd.data.size)
-//              p.data #= bytes
-//            }
-//          } else {
-//            p.error #= false
-//            cmd.write match {
-//              case true => {
-//                mem.write(cmd.address, cmd.data)
-//                p.data.randomize()
-//              }
-//              case false => {
-//                val bytes = new Array[Byte](p.p.dataWidth / 8)
-//                simRandom.nextBytes(bytes)
-//                mem.readBytes(cmd.address, cmd.bytes, bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
-//                p.data #= bytes
-//              }
-//            }
-//          }
           if(cmd.address < 0x10000000) p.error #= true
         }
         doIt
       }
 
-      //TODO backpresure
       cmdReady.setFactor(dbusReadyFactor)
       rspDriver.setFactor(dbusReadyFactor)
 

@@ -342,6 +342,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("rva", List("", "--with-mul --with-div --with-rva"))
   addDim("rvc", List("", "--with-mul --with-div --with-rvc"))
   addDim("late-alu", List("", "--with-late-alu"))
+  addDim("fetch", List("", "--with-fetch-l1"))
 
   val default = "--with-mul --with-div --performance-counters 4"
 
