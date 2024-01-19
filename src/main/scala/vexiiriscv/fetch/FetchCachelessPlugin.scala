@@ -167,7 +167,6 @@ class FetchCachelessPlugin(var wordWidth : Int,
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
       }
 
-
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
       trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REDO){

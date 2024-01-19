@@ -37,19 +37,20 @@ class ParamSimple(){
   var privParam = PrivilegedParam.base
   var relaxedBranch = false
   var relaxedShift = false
-  var relaxedSrc = false
+  var relaxedSrc = true
   var allowBypassFrom = 100 //100 => disabled
   var performanceCounters = 0
+  var withFetchL1 = false
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 2
-    lanes = 2
+    decoders = 1
+    lanes = 1
     regFileSync = false
-    withGShare = true
-    withBtb = true
-    withRas = true
+    withGShare = false
+    withBtb = false
+    withRas = false
 //    withMul = false
 //    withDiv = false
     withLateAlu = true
@@ -63,6 +64,7 @@ class ParamSimple(){
     withMmu = true
     withRva = true
     withRvc = false
+    withFetchL1 = true
     xlen = 32
   }
 
@@ -80,6 +82,7 @@ class ParamSimple(){
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
+    if (withFetchL1) r += "fl1"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
     if (withRas) r += "ras"
@@ -119,6 +122,7 @@ class ParamSimple(){
     opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
+    opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
   }
 
   def plugins() = pluginsArea.plugins
@@ -170,7 +174,7 @@ class ParamSimple(){
 
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
-    plugins += new fetch.FetchCachelessPlugin(
+    if(!withFetchL1) plugins += new fetch.FetchCachelessPlugin(
       forkAt = 0,
       joinAt = 1, //You can for instance allow the external memory to have more latency by changing this
       wordWidth = 32*decoders,
@@ -199,10 +203,43 @@ class ParamSimple(){
         )
       }
     )
+    if(withFetchL1) plugins += new fetch.FetchL1Plugin(
+      cacheSize = 1024,
+      wayCount = 1,
+      fetchDataWidth = 32*decoders,
+      memDataWidth = 32*decoders,
+      reducedBankWidth = false,
+      hitsWithTranslationWays = true,
+      tagsReadAsync = false,
+      translationStorageParameter = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 4,
+            depth = 32
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 2,
+            depth = 32
+          )
+        ),
+        priority = 0
+      ),
+      translationPortParameter = withMmu match {
+        case false => null
+        case true => MmuPortParameter(
+          readAt = 1,
+          hitsAt = 1,
+          ctrlAt = 1,
+          rspAt = 1
+        )
+      }
+    )
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin2(
-      fetchAt = 1,
+      fetchAt = withFetchL1.mux(2, 1),
       lanes = decoders,
       withBuffer = withAlignerBuffer
     )
