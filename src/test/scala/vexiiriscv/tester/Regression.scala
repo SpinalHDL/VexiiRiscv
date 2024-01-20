@@ -1,7 +1,6 @@
 package vexiiriscv.tester
 
 import org.apache.commons.io.FileUtils
-import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib.misc.plugin.Hostable
@@ -235,6 +234,8 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     val testPath = new File(compiled.simConfig.getTestPath(t.testName.get))
     val passFile = new File(testPath, "PASS")
     val failFile = new File(testPath, "FAIL")
+    FileUtils.deleteQuietly(passFile)
+    FileUtils.deleteQuietly(failFile)
 
     val testName = t.testName.get
     if(!passFile.exists()){
@@ -246,7 +247,6 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
         argsFile.close()
 
         t.test(compiled)
-        FileUtils.deleteQuietly(failFile)
         val bf = new BufferedWriter(new FileWriter(passFile))
         bf.flush()
         bf.close()
@@ -274,8 +274,9 @@ object RegressionSingle extends App{
     val regression = new RegressionSingle(compiled, dutArgs)
     println("*" * 80)
     val fails = regression.jobs.filter(_.failed)
-    if (fails.size == 0) {
-      println("PASS"); return
+    if (fails.isEmpty) {
+      println("PASS")
+      return
     }
     println(s"FAILED ${fails.size}/${regression.jobs.size}")
     for (fail <- fails) {
@@ -366,6 +367,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     p
   })
   addDim("lsu bypass", List("", "--with-lsu-bypass"))
+  addDim("ishift", List("", "--with-iterative-shift"))
 
   val default = "--with-mul --with-div --performance-counters 4"
 
