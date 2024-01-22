@@ -27,16 +27,24 @@ object IntegrationSynthBench extends App{
     add(p, postfix)
   }
 
-  add(""){ p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = false
-  }
+//  add(""){ p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = false
+//  }
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = false
+//    p.allowBypassFrom = 0
+//  }
   add("") { p =>
     p.regFileSync = false
     p.withMul = false
     p.withDiv = false
-    p.allowBypassFrom = 0
+    p.withGShare = true
+    p.withBtb = true
+    p.withRas = true
   }
   add("") { p =>
     p.regFileSync = false
@@ -45,17 +53,26 @@ object IntegrationSynthBench extends App{
     p.withGShare = true
     p.withBtb = true
     p.withRas = true
-    p.allowBypassFrom = 0
+    p.relaxedBranch = true
   }
-  add("") { p =>
-    p.regFileSync = false
-    p.withMul = true
-    p.withDiv = true
-    p.withGShare = true
-    p.withBtb = true
-    p.withRas = true
-    p.allowBypassFrom = 0
-  }
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = false
+//    p.withGShare = true
+//    p.withBtb = true
+//    p.withRas = true
+//    p.allowBypassFrom = 0
+//  }
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = true
+//    p.withDiv = true
+//    p.withGShare = true
+//    p.withBtb = true
+//    p.withRas = true
+//    p.allowBypassFrom = 0
+//  }
 //  add("") { p =>
 //    p.decoders = 1
 //    p.lanes = 1
@@ -159,5 +176,23 @@ Artix 7 -> 139 Mhz 2195 LUT 1293 FF
 vexii_1i_rvc ->
 Artix 7 -> 83 Mhz 2286 LUT 1462 FF
 Artix 7 -> 119 Mhz 2462 LUT 1462 FF
+
+
+rv32i_d1_l1_rfa_rsrc ->
+Artix 7 -> 90 Mhz 1172 LUT 870 FF
+Artix 7 -> 212 Mhz 1255 LUT 870 FF
+rv32i_d1_l1_rfa_btb_ras_gshare_rsrc ->
+Artix 7 -> 83 Mhz 1437 LUT 1049 FF
+Artix 7 -> 128 Mhz 2190 LUT 1102 FF
+rv32i_d1_l1_rfa_btb_ras_gshare_rbra_rsrc ->
+Artix 7 -> 90 Mhz 1456 LUT 1123 FF
+Artix 7 -> 163 Mhz 2226 LUT 1172 FF
+
+rv32i_d1_l1_rfa_btb_ras_gshare_rsrc ->
+Artix 7 -> 90 Mhz 1436 LUT 1049 FF
+Artix 7 -> 139 Mhz 1560 LUT 1058 FF
+rv32i_d1_l1_rfa_btb_ras_gshare_rbra_rsrc ->
+Artix 7 -> 90 Mhz 1456 LUT 1123 FF
+Artix 7 -> 164 Mhz 1573 LUT 1123 FF
 
  */

@@ -239,7 +239,7 @@ class ParamSimple(){
     )
 
     plugins += new decode.DecodePipelinePlugin()
-    plugins += new decode.AlignerPlugin2(
+    plugins += new decode.AlignerPlugin(
       fetchAt = withFetchL1.mux(2, 1),
       lanes = decoders,
       withBuffer = withAlignerBuffer

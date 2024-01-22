@@ -109,7 +109,7 @@ class BtbPlugin(var sets : Int,
     }
 
     // This memory could be implemented as a single port ram, as that ram is only updated on miss predicted stuff
-    val mem = Mem.fill(sets)(Vec.fill(chunks)(BtbEntry()))
+    val mem = Mem.fill(sets)(Vec.fill(chunks)(BtbEntry())).addAttribute("ram_style", "block")
     if(GenerationFlags.simulation){
       val rand = new Random(42)
       mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
