@@ -12,7 +12,7 @@ VexiiRiscv is a from scratch second iteration of VexRiscv. Here are the targets 
 
 There is a online documentation : 
 
-- https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Introduction/VexiiRiscv.html
+- https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Introduction/#
 
 # Dependencies
 
