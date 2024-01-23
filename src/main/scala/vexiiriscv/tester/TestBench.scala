@@ -375,7 +375,7 @@ class TestOptions{
               error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
             }
           } else {
-            import vexiiriscv.execute.CachelessBusAmo._
+            import vexiiriscv.execute.LsuCachelessBusAmo._
             cmd.amoOp match {
               case LR => {
                 error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))

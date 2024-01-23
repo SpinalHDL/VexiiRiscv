@@ -19,54 +19,6 @@ import vexiiriscv.schedule.{ReschedulePlugin, ScheduleService}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-object CachelessBusAmo{
-  val LR = 0x02
-  val SC = 0x03
-  val AMOSWAP = 0x01
-  val AMOADD = 0x00
-  val AMOXOR = 0x04
-  val AMOAND = 0x0C
-  val AMOOR = 0x08
-  val AMOMIN = 0x10
-  val AMOMAX = 0x14
-  val AMOMINU = 0x18
-  val AMOMAXU = 0x1c
-}
-
-case class CachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth : Int, uopIdWidth : Int, withAmo : Boolean){
-
-}
-
-case class CachelessCmd(p : CachelessBusParam) extends Bundle{
-  val write = Bool()
-  val address = UInt(p.addressWidth bits)
-  val data = Bits(p.dataWidth bit)
-  val size = UInt(log2Up(log2Up(p.dataWidth / 8) + 1) bits)
-  val mask = Bits(p.dataWidth / 8 bits)
-  val io = Bool() //This is for verification purposes, allowing RVLS to track stuff
-  val fromHart = Bool() //This is for verification purposes, allowing RVLS to track stuff
-  val hartId = UInt(p.hartIdWidth bits)
-  val uopId = UInt(p.uopIdWidth bits)
-  val amoEnable = p.withAmo generate Bool()
-  val amoOp = p.withAmo generate Bits(5 bits)
-}
-
-case class CachelessRsp(p : CachelessBusParam) extends Bundle{
-  val error = Bool()
-  val data  = Bits(p.dataWidth bits)
-  val scMiss = p.withAmo generate Bool()
-}
-
-case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave {
-  var cmd = Stream(CachelessCmd(p))
-  var rsp = Flow(CachelessRsp(p))
-
-  override def asMaster(): Unit = {
-    master(cmd)
-    slave(rsp)
-  }
-}
-
 class LsuCachelessPlugin(var layer : LaneLayer,
                          var withAmo : Boolean,
                          var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing
@@ -144,14 +96,14 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val joinCtrl = elp.execute(joinAt)
     val wbCtrl = elp.execute(wbAt)
 
-    val busParam = CachelessBusParam(
+    val busParam = LsuCachelessBusParam(
       addressWidth = Global.PHYSICAL_WIDTH,
       dataWidth = Riscv.LSLEN,
       hartIdWidth = Global.HART_ID_WIDTH,
       uopIdWidth = Decode.UOP_ID_WIDTH,
       withAmo = withAmo
     )
-    val bus = master(CachelessBus(busParam))
+    val bus = master(LsuCachelessBus(busParam))
 
     accessRetainer.await()
 
