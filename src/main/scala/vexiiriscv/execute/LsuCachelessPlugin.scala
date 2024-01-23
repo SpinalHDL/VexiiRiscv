@@ -29,7 +29,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var joinAt: Int = 1,
                          var wbAt: Int = 2) extends FiberPlugin with DBusAccessService{
 
-  val WITH_RSP = Payload(Bool())
+  val WITH_RSP, WITH_ACCESS = Payload(Bool())
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
 
@@ -212,6 +212,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         val allowIt = !(isValid && SEL) && !cmdSent
         val cmd = dbusAccesses.head.cmd
         cmd.ready := allowIt && !elp.isFreezed()
+
+        val accessSent = RegInit(False) setWhen(cmd.fire) clearWhen(!elp.isFreezed())
+        WITH_ACCESS := accessSent || cmd.fire
         when(allowIt){
           bus.cmd.valid := cmd.valid
           bus.cmd.write := False
@@ -234,7 +237,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp
-        rsp.valid := !(isValid && SEL) && WITH_RSP && buffer.valid
+        rsp.valid := WITH_ACCESS && buffer.fire
         rsp.data := buffer.data
         rsp.error := buffer.error
         rsp.redo := False
@@ -242,7 +245,10 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
     }
 
-    for(eid <- forkAt + 1 to joinAt) elp.execute(eid).up(WITH_RSP).setAsReg().init(False)
+    for(eid <- forkAt + 1 to joinAt) {
+      elp.execute(eid).up(WITH_RSP).setAsReg().init(False)
+      elp.execute(eid).up(WITH_ACCESS).setAsReg().init(False)
+    }
 
     val onWb = new wbCtrl.Area{
       val rspSplits = onJoin.READ_DATA.subdivideIn(8 bits)
