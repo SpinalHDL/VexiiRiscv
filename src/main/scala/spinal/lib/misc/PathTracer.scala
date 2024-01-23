@@ -62,10 +62,10 @@ object PathTracer {
 
     def foreach(that: BaseNode)(onUp : (BaseNode, Int) => Unit): Unit = {
       if(that.algoIncrementale == walkedId)
-        return false
+        return
       that.algoIncrementale = walkedId
       if(that == from)
-        return true
+        return
 
       that match{
         case that : Mem[_] => {

@@ -41,6 +41,8 @@ class BtbPlugin(var sets : Int,
     val retainer = retains(List(rp.elaborationLock, dp.elaborationLock) ++ hp.map(_.elaborationLock))
     Fiber.awaitBuild()
 
+    val withCondPrediction = host.get[FetchConditionalPrediction].nonEmpty
+
     val age = fpp.getAge(jumpAt, true)
     val pcPort = pcp.newJumpInterface(age,0, (jumpAt < 2).toInt)
     val historyPort = hp.map(_.newPort(age, 0))
@@ -106,10 +108,12 @@ class BtbPlugin(var sets : Int,
       val taken = Bool() //TODO remove
     }
 
-    val mem = Mem.fill(sets)(Vec.fill(chunks)(BtbEntry())) //TODO bypass read durring write ?
+    // This memory could be implemented as a single port ram, as that ram is only updated on miss predicted stuff
+    val mem = Mem.fill(sets)(Vec.fill(chunks)(BtbEntry())).addAttribute("ram_style", "block")
     if(GenerationFlags.simulation){
       val rand = new Random(42)
       mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
+//      mem.initBigInt(List.fill(mem.wordCount)(BigInt(0))) //TODO integrate this in some regression, as it exercise bad prediction cutting RVC a lot <3
     }
 
     val onLearn = new Area{
@@ -117,7 +121,7 @@ class BtbPlugin(var sets : Int,
       val hash = getHash(cmd.pcOnLastSlice)
 
       val port = mem.writePortWithMask(chunks)
-      port.valid := cmd.valid
+      port.valid := cmd.valid && withCondPrediction.mux(cmd.badPredictedTarget && cmd.wasWrong, cmd.wasWrong)
       port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
       port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
       for(data <- port.data) {
@@ -131,10 +135,32 @@ class BtbPlugin(var sets : Int,
       }
     }
 
+    val onForget = new Area{
+      val cmd = host[ForgetSource].getForgetPort()
+      val hash = getHash(cmd.pcOnLastSlice)
+
+      import onLearn.port
+      when(cmd.valid){
+        port.valid := cmd.valid
+        port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
+        port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
+        for(data <- port.data) {
+          data.hash := ~hash
+          data.sliceLow := cmd.pcOnLastSlice(SLICE_LOW_RANGE)
+          data.isBranch := False
+          data.isPush := False
+          data.isPop := False
+          data.taken := False
+        }
+      }
+    }
+
     val readPort = mem.readSyncPort()  //TODO , readUnderWrite = readFirst
     val readCmd = new fpp.Fetch(readAt){
       readPort.cmd.valid := isReady
       readPort.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
+      val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
+      haltWhen(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload)
     }
 
 
@@ -149,12 +175,14 @@ class BtbPlugin(var sets : Int,
       }
       val hitCalc = new fpp.Fetch(hitAt) {
         val HIT = insert(readRsp.ENTRY.hash === getHash(WORD_PC) && getSlice(chunkId, readRsp.ENTRY.sliceLow) >= WORD_PC(SLICE_RANGE.get))
+//        HIT clearWhen(readCmd.HAZARDS(chunkId))
+        assert(!(isValid && readCmd.HAZARDS(chunkId)))
       }
       val predict = new fpp.Fetch(jumpAt) {
-        def pred = host.get[FetchConditionalPrediction] match {
-          case Some(x) => predictions.get(getSlice(chunkId, readRsp.ENTRY.sliceLow))
-          case None => readRsp.ENTRY.taken
-        }
+        def pred = withCondPrediction.mux(
+          predictions.get(getSlice(chunkId, readRsp.ENTRY.sliceLow)),
+          readRsp.ENTRY.taken
+        )
         val TAKEN = insert(!readRsp.ENTRY.isBranch || pred)
       }
     }
@@ -180,7 +208,7 @@ class BtbPlugin(var sets : Int,
 
       val gotSkip = harts.map(_.skip).read(HART_ID)
       val needIt = isValid && !gotSkip && chunksTakenOh.orR
-      val correctionSent = RegInit(False) setWhen (isValid) clearWhen (up.ready || up.cancel)
+      val correctionSent = RegInit(False) setWhen (isValid) clearWhen (up.isReady || up.isCancel)
       val doIt = needIt && !correctionSent
       val entry = OHMux.or(chunksTakenOh, chunksLogic.map(_.readRsp.ENTRY).map(this (_)), bypassIfSingle = true)
       val pcTarget = CombInit(entry.pcTarget)
@@ -230,7 +258,6 @@ class BtbPlugin(var sets : Int,
 
           val layersLogic = for (i <- 0 until chunks) yield new Area {
             def e = chunksLogic(i)
-
             val doIt = chunksMask(i) && e.readRsp.ENTRY.isBranch
             val shifted = layers(i).history.dropHigh(1) ## e.predict.TAKEN
             layers(i + 1).history := doIt.mux(shifted, layers(i).history)
@@ -241,13 +268,13 @@ class BtbPlugin(var sets : Int,
 
           val slicePerChunk = SLICE_COUNT/chunks
           for(chunk <- 0 until chunks){
+            val cl = chunksLogic(chunk)
             for(slice <- 0 until slicePerChunk){
               val i = slice + chunk*slicePerChunk
-              WORD_SLICES_BRANCH(i) := chunksLogic(i).hitCalc.HIT && chunksLogic(i).readRsp.ENTRY.isBranch && chunksLogic(i).readRsp.ENTRY.sliceLow === slice
-              WORD_SLICES_TAKEN(i) := chunksLogic(i).predict.TAKEN
+              WORD_SLICES_BRANCH(i) := cl.hitCalc.HIT && cl.readRsp.ENTRY.isBranch && cl.readRsp.ENTRY.sliceLow === slice
+              WORD_SLICES_TAKEN(i) := cl.predict.TAKEN
             }
           }
-
         }
       }
     }

@@ -66,10 +66,10 @@ class ExecuteLanePlugin(override val laneName : String,
   val idToCtrl = mutable.LinkedHashMap[Int, CtrlLaneApiImpl]()
 
   class CtrlLaneApiImpl(ctrlId : Int) extends Area with CtrlLaneApi{
-    val cancel = Bool()
     override def ctrlLink: CtrlLink = eupp.ctrl(ctrlId)
     override def laneName: String = ExecuteLanePlugin.this.laneName
-    override def hasCancelRequest = cancel
+    override val upIsCancel = Bool()
+    override val downIsCancel = Bool()
   }
   def ctrl(id : Int) : CtrlLaneApi = {
     idToCtrl.getOrElseUpdate(id, new CtrlLaneApiImpl(id).setCompositeName(this, "ctrls_" + id.toString))
@@ -254,13 +254,14 @@ class ExecuteLanePlugin(override val laneName : String,
 
       val age = getAge(ctrlId)
       val doIt = rp.isFlushedAt(age, c(Global.HART_ID), c(Execute.LANE_AGE))
+      c.downIsCancel := False
       doIt match {
         case Some(cond) =>
-          c.cancel := cond
+          c.upIsCancel := cond
           when(cond) {
             c.bypass(c.LANE_SEL) := False
           }
-        case None => c.cancel := False
+        case None => c.upIsCancel := False
       }
     }
 

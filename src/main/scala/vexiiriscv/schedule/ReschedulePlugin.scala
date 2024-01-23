@@ -27,7 +27,7 @@ class ReschedulePlugin extends FiberPlugin with ScheduleService {
 //      newFlushPort(age, laneAgeWidth, withUopId).setCompositeName(key, "flushPort")
 //    })
 //  }
-  override def newTrapPort(age : Int, causeWidth : Int = 4) = trapPorts.addRet(Flow(TrapCmd(age, Global.PC_WIDTH, Global.TVAL_WIDTH, causeWidth)))
+  override def newTrapPort(age : Int, causeWidth : Int = 4) = trapPorts.addRet(Flow(TrapCmd(age, Global.PC_WIDTH, Global.TVAL_WIDTH, causeWidth, Global.TRAP_ARG_WIDTH)))
   override def isFlushedAt(age: Int, hartId: UInt, laneAge : UInt): Option[Bool] = {
     elaborationLock.await()
     val filtred = flushPorts.filter(p => p.age >= age)

@@ -78,6 +78,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
     hmKeys.add(MAY_FLUSH)
     hmKeys.add(DONT_FLUSH)
     hmKeys.add(DONT_FLUSH_FROM_LANES)
+    hmKeys.add(Decode.INSTRUCTION_SLICE_COUNT)
     dp.addMicroOpDecodingDefault(MAY_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH_FROM_LANES, False)
@@ -243,7 +244,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       val c = candidates(slotsCount + lane)
       val sending = CombInit(c.fire)
       val sent = RegInit(False) setWhen(sending) clearWhen(ctrlLink.up.isMoving)
-      c.cancel := dispatchCtrl.lane(lane).cancel
+      c.cancel := dispatchCtrl.lane(lane).isCancel
       c.ctx.valid := dispatchCtrl.link.isValid && isValid && !sent
       c.ctx.laneLayerHits := LANES_LAYER_HIT.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
@@ -302,8 +303,6 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       val layer = layersOfInterest.map(e => B(eu.getLayerId(e._1), log2Up(eu.getLayers().size) bits) -> layerOhUnfiltred(e._2))
       eu.LAYER_SEL := OHMux.or(layer.map(_._2).asBits(), layer.map(_._1), true)
     }
-
-    eupp.ctrl(0).up.setAlwaysValid()
 
     buildBefore.release()
   }

@@ -26,6 +26,7 @@ object Prediction extends AreaObject{
   val ALIGNED_JUMPED_PC = Payload(Global.PC)
   val ALIGNED_SLICES_BRANCH = Payload(Bits(Fetch.SLICE_COUNT bits))
   val ALIGNED_SLICES_TAKEN = Payload(Bits(Fetch.SLICE_COUNT bits))
+  val ALIGN_REDO = Payload(Bool()) //Used when for instance when a prediction cut an instruction in two => need to redo it and forget that prediction
 
   //Used by decode predictor to correct the history
   val BRANCH_HISTORY_WIDTH = blocking[Int]
@@ -60,11 +61,17 @@ case class LearnCmd(hmElements : Seq[NamedType[_ <: Data]]) extends Bundle{
   val taken = Bool()
   val isBranch, isPush, isPop = Bool()
   val wasWrong = Bool()
+  val badPredictedTarget = Bool()
   val history = Prediction.BRANCH_HISTORY()
   val uopId = Decode.UOP_ID()
   val hartId = Global.HART_ID()
   val ctx = new HardMap()
   hmElements.foreach(e => ctx.add(e))
+}
+
+case class ForgetCmd() extends Bundle{
+  val pcOnLastSlice = Global.PC()
+  val hartId = Global.HART_ID()
 }
 
 trait LearnService{

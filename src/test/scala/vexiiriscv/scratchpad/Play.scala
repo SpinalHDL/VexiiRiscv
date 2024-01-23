@@ -22,9 +22,9 @@ object Play1 extends App {
 //    host[LsuCachelessPlugin].logic.redoPort,
 //    src.logic.src(src.SRC1)
 //  ))
-  println(PathTracer.impl(
-    host[LsuCachelessPlugin].logic.redoPort,
-    src.logic.src(src.SRC1)
-  ).report())
+//  println(PathTracer.impl(
+//    host[LsuCachelessPlugin].logic.redoPort,
+//    src.logic.src(src.SRC1)
+//  ).report())
 }
 

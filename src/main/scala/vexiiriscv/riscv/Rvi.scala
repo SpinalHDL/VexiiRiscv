@@ -73,18 +73,32 @@ object Rvi extends AreaObject {
   val SW                 = TypeSSQ(M"-----------------010-----0100011")
   val SD                 = TypeSSQ(M"-----------------011-----0100011")
 
-  val LR                 = if(Riscv.XLEN.get == 64) TypeILQ(M"00010--00000-----01------0101111") else TypeILQ(M"00010--00000-----010-----0101111")
-  val SC                 = if(Riscv.XLEN.get == 64) TypeASQ(M"00011------------01------0101111") else TypeASQ(M"00011------------010-----0101111")
+  val LRW                = TypeILQ(M"00010--00000-----010-----0101111")
+  val SCW                = TypeASQ(M"00011------------010-----0101111")
 
-  val AMOSWAP            = if(Riscv.XLEN.get == 64) TypeASQ(M"00001------------01------0101111") else TypeASQ(M"00001------------010-----0101111")
-  val AMOADD             = if(Riscv.XLEN.get == 64) TypeASQ(M"00000------------01------0101111") else TypeASQ(M"00000------------010-----0101111")
-  val AMOXOR             = if(Riscv.XLEN.get == 64) TypeASQ(M"00100------------01------0101111") else TypeASQ(M"00100------------010-----0101111")
-  val AMOAND             = if(Riscv.XLEN.get == 64) TypeASQ(M"01100------------01------0101111") else TypeASQ(M"01100------------010-----0101111")
-  val AMOOR              = if(Riscv.XLEN.get == 64) TypeASQ(M"01000------------01------0101111") else TypeASQ(M"01000------------010-----0101111")
-  val AMOMIN             = if(Riscv.XLEN.get == 64) TypeASQ(M"10000------------01------0101111") else TypeASQ(M"10000------------010-----0101111")
-  val AMOMAX             = if(Riscv.XLEN.get == 64) TypeASQ(M"10100------------01------0101111") else TypeASQ(M"10100------------010-----0101111")
-  val AMOMINU            = if(Riscv.XLEN.get == 64) TypeASQ(M"11000------------01------0101111") else TypeASQ(M"11000------------010-----0101111")
-  val AMOMAXU            = if(Riscv.XLEN.get == 64) TypeASQ(M"11100------------01------0101111") else TypeASQ(M"11100------------010-----0101111")
+  val LRD                = TypeILQ(M"00010--00000-----011-----0101111")
+  val SCD                = TypeASQ(M"00011------------011-----0101111")
+
+  val AMOSWAPW           = TypeASQ(M"00001------------010-----0101111")
+  val AMOADDW            = TypeASQ(M"00000------------010-----0101111")
+  val AMOXORW            = TypeASQ(M"00100------------010-----0101111")
+  val AMOANDW            = TypeASQ(M"01100------------010-----0101111")
+  val AMOORW             = TypeASQ(M"01000------------010-----0101111")
+  val AMOMINW            = TypeASQ(M"10000------------010-----0101111")
+  val AMOMAXW            = TypeASQ(M"10100------------010-----0101111")
+  val AMOMINUW           = TypeASQ(M"11000------------010-----0101111")
+  val AMOMAXUW           = TypeASQ(M"11100------------010-----0101111")
+
+
+  val AMOSWAPD           = TypeASQ(M"00001------------011-----0101111")
+  val AMOADDD            = TypeASQ(M"00000------------011-----0101111")
+  val AMOXORD            = TypeASQ(M"00100------------011-----0101111")
+  val AMOANDD            = TypeASQ(M"01100------------011-----0101111")
+  val AMOORD             = TypeASQ(M"01000------------011-----0101111")
+  val AMOMIND            = TypeASQ(M"10000------------011-----0101111")
+  val AMOMAXD            = TypeASQ(M"10100------------011-----0101111")
+  val AMOMINUD           = TypeASQ(M"11000------------011-----0101111")
+  val AMOMAXUD           = TypeASQ(M"11100------------011-----0101111")
 
   val MUL                = TypeR(M"0000001----------000-----0110011")
   val MULH               = TypeR(M"0000001----------001-----0110011")
@@ -135,6 +149,32 @@ object Rvi extends AreaObject {
   loadSpec(LBU) = LoadSpec( 8, false)
   loadSpec(LHU) = LoadSpec(16, false)
   loadSpec(LWU) = LoadSpec(32, false)
+
+  loadSpec(LRW) = LoadSpec(32, true)
+  loadSpec(SCW) = LoadSpec(8, true) //8 bits to allow sc to only write the 8 lsb (less logic)
+
+  loadSpec(LRD) = LoadSpec(64, true)
+  loadSpec(SCD) = LoadSpec(8, true)
+
+  loadSpec(AMOSWAPW) = LoadSpec(32, true)
+  loadSpec(AMOADDW) = LoadSpec(32, true)
+  loadSpec(AMOXORW) = LoadSpec(32, true)
+  loadSpec(AMOANDW) = LoadSpec(32, true)
+  loadSpec(AMOORW) = LoadSpec(32, true)
+  loadSpec(AMOMINW) = LoadSpec(32, true)
+  loadSpec(AMOMAXW) = LoadSpec(32, true)
+  loadSpec(AMOMINUW) = LoadSpec(32, true)
+  loadSpec(AMOMAXUW) = LoadSpec(32, true)
+
+  loadSpec(AMOSWAPD) = LoadSpec(64, true)
+  loadSpec(AMOADDD) = LoadSpec(64, true)
+  loadSpec(AMOXORD) = LoadSpec(64, true)
+  loadSpec(AMOANDD) = LoadSpec(64, true)
+  loadSpec(AMOORD) = LoadSpec(64, true)
+  loadSpec(AMOMIND) = LoadSpec(64, true)
+  loadSpec(AMOMAXD) = LoadSpec(64, true)
+  loadSpec(AMOMINUD) = LoadSpec(64, true)
+  loadSpec(AMOMAXUD) = LoadSpec(64, true)
 }
 
 

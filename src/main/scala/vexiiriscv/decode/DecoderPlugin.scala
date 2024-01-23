@@ -117,7 +117,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     }
 
     val interrupt = new Area {
-      val async = B(host[PrivilegedPlugin].io.harts.map(_.int.pending))
+      val async = B(host[PrivilegedPlugin].logic.harts.map(_.int.pending))
       //We need to buffer interrupts request to ensure we don't generate sporadic flushes while the ctrl is stuck
       val buffered = RegNextWhen(async, !decodeCtrl.link.up.valid || decodeCtrl.link.up.ready || decodeCtrl.link.up.isCanceling) init(0)
     }
@@ -136,23 +136,24 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
         }).asUInt
       }
 
-      LEGAL := Symplify(Decode.INSTRUCTION, encodings.all)
+      LEGAL := Symplify(Decode.INSTRUCTION, encodings.all) && !Decode.DECOMPRESSION_FAULT
 
       val interruptPending = interrupt.buffered(Global.HART_ID)
       val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)
       trapPort.valid := False
       trapPort.exception := !interruptPending
-      trapPort.tval := Decode.INSTRUCTION_RAW
+      trapPort.tval := Decode.INSTRUCTION_RAW.resized
       trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
       trapPort.laneAge := laneId
       trapPort.hartId := Global.HART_ID
+      trapPort.arg := 0
 
       when(interruptPending){
         trapPort.code := TrapReason.INTERRUPT
       }
 
       val completionPort = Flow(CompletionPayload())
-      completionPort.valid := False
+      completionPort.valid := isValid && Global.TRAP && up.transactionSpawn
       completionPort.hartId := Global.HART_ID
       completionPort.uopId := Decode.UOP_ID
       completionPort.trap := True
@@ -160,10 +161,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       when(isValid && (!LEGAL || interruptPending)) {
         bypass(Global.TRAP) := True
-        trapPort.valid := True
-        when(up.transactionSpawn){
-          completionPort.valid := True
-        }
+        trapPort.valid := !up(Global.TRAP)
       }
 
       //Will also flush instructions after a fetch trap

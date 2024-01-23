@@ -16,7 +16,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
 import vexiiriscv.misc.{PerformanceCounterService, TrapService}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
-import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, Prediction}
+import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, LearnSource, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
 import scala.collection.mutable
@@ -31,10 +31,11 @@ object BranchPlugin extends AreaObject {
 class BranchPlugin(val layer : LaneLayer,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
-                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
+                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) with LearnSource {
   import BranchPlugin._
 
   def catchMissaligned = !Riscv.RVC
+  override def getLearnPort(): Option[Stream[LearnCmd]] = logic.jumpLogic.learn
 
   val logic = during setup new Logic{
     val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
@@ -79,11 +80,11 @@ class BranchPlugin(val layer : LaneLayer,
       spec.mayFlushUpTo(jumpAt)
     }
 
-    val age = eu.getExecuteAge(jumpAt)
+    val age = el.getExecuteAge(jumpAt)
     val pcPort = pcp.newJumpInterface(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
     val historyPort = hp.map(_.newPort(age, Execute.LANE_AGE_WIDTH))
-    val flushPort = sp.newFlushPort(eu.getExecuteAge(jumpAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
-    val trapPort = catchMissaligned generate ts.newTrap(layer.el.getAge(jumpAt), Execute.LANE_AGE_WIDTH)
+    val flushPort = sp.newFlushPort(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
+    val trapPort = catchMissaligned generate ts.newTrap(age, Execute.LANE_AGE_WIDTH)
 
     uopRetainer.release()
     ioRetainer.release()
@@ -92,7 +93,7 @@ class BranchPlugin(val layer : LaneLayer,
     // leading to a simpler design.
     val withBtb = host.get[FetchWordPrediction].nonEmpty
 
-    val alu = new eu.Execute(aluAt) {
+    val alu = new el.Execute(aluAt) {
       val ss = SrcStageables
       val EQ = insert(srcp.SRC1 === srcp.SRC2)
 
@@ -121,8 +122,10 @@ class BranchPlugin(val layer : LaneLayer,
 
       val slices = Decode.INSTRUCTION_SLICE_COUNT +^ 1
       val sliceShift = Fetch.SLICE_RANGE_LOW.get
-      val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH)) //PC RESIZED
+      val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH)); PC_TRUE(0) := False //PC RESIZED
       val PC_FALSE = insert(PC + (slices << sliceShift))
+      val PC_LAST_SLICE = PC + (Decode.INSTRUCTION_SLICE_COUNT << sliceShift)
+
 
       // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
       // with the 32 bits of the TRUE/FALSE adders, ending up in a quite long combinatorial path (21 lut XD)
@@ -135,12 +138,11 @@ class BranchPlugin(val layer : LaneLayer,
       }
     }
 
-    val jumpLogic = new eu.Execute(jumpAt) {
+    val jumpLogic = new el.Execute(jumpAt) {
       val wrongCond = withBtb.mux[Bool](Prediction.ALIGNED_JUMPED =/= alu.COND     , alu.COND )
       val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond)
       val doIt = isValid && SEL && needFix
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
-      val pcOnLastSlice = PC; assert(!Riscv.RVC) //TODO PC + (Fetch.INSTRUCTION_SLICE_COUNT << sliceShift)
 
 
       val history = new Area{
@@ -196,6 +198,7 @@ class BranchPlugin(val layer : LaneLayer,
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.FETCH_MISSALIGNED
         trapPort.tval := B(alu.PC_TRUE)
+        trapPort.arg := 0
 
         when(doIt && MISSALIGNED){
           trapPort.valid := True
@@ -214,14 +217,15 @@ class BranchPlugin(val layer : LaneLayer,
 
       val learn = isLastOfLane.option(Stream(LearnCmd(ls.learnCtxElements.toSeq)))
       learn.foreach { learn =>
-        learn.valid := isValid && isReady && !hasCancelRequest && pluginsOnLane.map(p => apply(p.SEL)).orR
+        learn.valid := isValid && isReady && !isCancel && pluginsOnLane.map(p => apply(p.SEL)).orR
         learn.taken := alu.COND
         learn.pcTarget := alu.PC_TRUE
-        learn.pcOnLastSlice := pcOnLastSlice
+        learn.pcOnLastSlice := alu.PC_LAST_SLICE
         learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
         learn.isPush := (IS_JAL || IS_JALR) && rdLink
         learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
         learn.wasWrong := needFix
+        learn.badPredictedTarget := withBtb.mux(alu.btb.BAD_TARGET, False)
         learn.history := history.fetched
         learn.uopId := Decode.UOP_ID
         learn.hartId := Global.HART_ID
@@ -233,9 +237,9 @@ class BranchPlugin(val layer : LaneLayer,
 
     }
 
-    val wbLogic = new eu.Execute(wbAt){
+    val wbLogic = new el.Execute(wbAt){
       wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
-      wb.payload := alu.PC_FALSE.asBits.resized //PC RESIZED
+      wb.payload := Global.expendPc(alu.PC_FALSE, Riscv.XLEN).asBits
     }
   }
 }

@@ -78,8 +78,9 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   }
 
   def mayFlushUpTo(executeCtrlId: Int): Unit = {
-    assert(mayFlushUpTo.isEmpty)
-    mayFlushUpTo = Some(executeCtrlId + el.executeAt)
+    var at = executeCtrlId + el.executeAt
+    mayFlushUpTo.foreach(v => v max at)
+    mayFlushUpTo = Some(at)
   }
 
   def dontFlushFrom(executeCtrlId: Int): Unit = {

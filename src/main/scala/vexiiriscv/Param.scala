@@ -6,6 +6,7 @@ import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
+import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.riscv.IntRegFile
@@ -16,7 +17,8 @@ import scala.collection.mutable.ArrayBuffer
 
 class ParamSimple(){
   var xlen = 32
-  var rvc = false
+  var withRvc = false
+  var withAlignerBuffer = false
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
@@ -31,10 +33,14 @@ class ParamSimple(){
   var withLateAlu = false
   var withMul = true
   var withDiv = true
+  var withRva = false
+  var privParam = PrivilegedParam.base
   var relaxedBranch = false
   var relaxedShift = false
-  var relaxedSrc = false
+  var relaxedSrc = true
   var allowBypassFrom = 100 //100 => disabled
+  var performanceCounters = 0
+  var withFetchL1 = false
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
@@ -52,26 +58,42 @@ class ParamSimple(){
     relaxedBranch = false
     relaxedShift = false
     relaxedSrc = true
+    performanceCounters = 4
+    privParam.withSupervisor = true
+    privParam.withUser = true
+    withMmu = true
+    withRva = true
+    withRvc = false
+    withAlignerBuffer = withRvc
+    withFetchL1 = false
+    xlen = 32
   }
 
 
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
+    var isa = s"rv${xlen}i"
+    if (withMul) isa += "m"
+    if (withRva) isa += "a"
+    if (withRvc) isa += "c"
+    if (privParam.withSupervisor) isa += "s"
+    if (privParam.withUser) isa += "u"
     val r = new ArrayBuffer[String]()
-    r += s"rv${xlen}im"
+    r += isa
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
+    if (withFetchL1) r += "fl1"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
     if (withRas) r += "ras"
     if (withGShare) r += "gshare"
     if (withLateAlu) r += "la"
-    if (withMul) r += "m"
-    if (withDiv) r += "d"
+    if (withAlignerBuffer) r += "ab"
     if (relaxedBranch) r += "rbra"
     if (relaxedShift) r += "rsft"
     if (relaxedSrc) r += "rsrc"
+    if(performanceCounters != 0) r += s"pc$performanceCounters"
     r.mkString("_")
   }
 
@@ -83,26 +105,41 @@ class ParamSimple(){
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
-    opt[Unit]("with-mul") action { (v, c) => withMul = true }
-    opt[Unit]("with-div") action { (v, c) => withDiv = true }
+    opt[Unit]("with-mul") unbounded() action { (v, c) => withMul = true }
+    opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
+    opt[Unit]("with-rva") action { (v, c) => withRva = true }
+    opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
+    opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
+    opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
     opt[Unit]("without-div") action { (v, c) => withDiv = false }
+    opt[Unit]("with-mul") action { (v, c) => withMul = true }
+    opt[Unit]("with-div") action { (v, c) => withDiv = true }
     opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
-    opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true }
+    opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0 }
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
+    opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
+    opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
+    opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
   }
 
-  def plugins() = {
+  def plugins() = pluginsArea.plugins
+  def pluginsArea() = new Area {
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
-    plugins += new riscv.RiscvPlugin(xlen, rvc, hartCount)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvc = withRvc)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
-      case true =>
+      case true => plugins += new memory.MmuPlugin(
+        spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
+        ioRange = ioRange,
+        fetchRange = fetchRange,
+        physicalWidth = 32
+      )
     }
 
     plugins += new misc.PipelineBuilderPlugin()
@@ -138,16 +175,74 @@ class ParamSimple(){
 
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
-    plugins += new fetch.FetchCachelessPlugin(
+    if(!withFetchL1) plugins += new fetch.FetchCachelessPlugin(
       forkAt = 0,
       joinAt = 1, //You can for instance allow the external memory to have more latency by changing this
-      wordWidth = 32*decoders
+      wordWidth = 32*decoders,
+      translationStorageParameter = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 4,
+            depth = 32
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 2,
+            depth = 32
+          )
+        ),
+        priority = 0
+      ),
+      translationPortParameter = withMmu match {
+        case false => null
+        case true => MmuPortParameter(
+          readAt = 0,
+          hitsAt = 0,
+          ctrlAt = 0,
+          rspAt = 0
+        )
+      }
+    )
+    if(withFetchL1) plugins += new fetch.FetchL1Plugin(
+      cacheSize = 16*1024,
+      wayCount = 4,
+      fetchDataWidth = 32*decoders,
+      memDataWidth = 32*decoders,
+      reducedBankWidth = false,
+      hitsWithTranslationWays = true,
+      tagsReadAsync = false,
+      translationStorageParameter = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 4,
+            depth = 32
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 2,
+            depth = 32
+          )
+        ),
+        priority = 0
+      ),
+      translationPortParameter = withMmu match {
+        case false => null
+        case true => MmuPortParameter(
+          readAt = 1,
+          hitsAt = 1,
+          ctrlAt = 1,
+          rspAt = 1
+        )
+      }
     )
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = 1,
-      lanes = decoders
+      fetchAt = withFetchL1.mux(2, 1),
+      lanes = decoders,
+      withBuffer = withAlignerBuffer
     )
     plugins += new decode.DecoderPlugin(
       decodeAt = 1
@@ -178,7 +273,7 @@ class ParamSimple(){
     val early0 = new LaneLayer("early0", lane0, priority = 0)
     plugins += lane0
 
-    plugins += new RedoPlugin("lane0")
+//    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += new BarrelShifterPlugin(early0, formatAt = relaxedShift.toInt)
@@ -186,13 +281,36 @@ class ParamSimple(){
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
     plugins += new LsuCachelessPlugin(
       layer     = early0,
+      withAmo   = withRva,
       withSpeculativeLoadFlush = true,
       addressAt = 0,
       forkAt    = 0,
       joinAt    = 1,
       wbAt      = 2,
-      translationStorageParameter = null,
-      translationPortParameter = null
+      translationStorageParameter = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 4,
+            depth = 32
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 2,
+            depth = 32
+          )
+        ),
+        priority = 1
+      ),
+      translationPortParameter = withMmu match {
+        case false => null
+        case true => MmuPortParameter(
+          readAt = 0,
+          hitsAt = 0,
+          ctrlAt = 0,
+          rspAt = 0
+        )
+      }
     )
 
     if(withMul) {
@@ -204,9 +322,10 @@ class ParamSimple(){
     }
 
     plugins += new CsrRamPlugin()
-    plugins += new PerformanceCounterPlugin(additionalCounterCount = 0)
+    plugins += new PerformanceCounterPlugin(additionalCounterCount = performanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(PrivilegedParam.full, 0 until hartCount, trapAt = 2)
+    plugins += new PrivilegedPlugin(privParam, 0 until hartCount)
+    plugins += new TrapPlugin(trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
 
     if(withLateAlu) {
@@ -248,8 +367,6 @@ class ParamSimple(){
     }
 
     plugins += new WhiteboxerPlugin()
-
-    plugins
   }
 }
 

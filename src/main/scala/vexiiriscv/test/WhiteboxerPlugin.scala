@@ -9,7 +9,7 @@ import vexiiriscv.Global.{HART_COUNT, TRAP}
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
-import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin}
+import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin, TrapPlugin}
 import vexiiriscv.prediction.{BtbPlugin, LearnCmd, LearnPlugin}
 import vexiiriscv.regfile.{RegFileWrite, RegFileWriter, RegFileWriterService}
 import vexiiriscv.riscv.{Const, Riscv}
@@ -42,7 +42,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val fire = wrap(c.up.isFiring)
       val spawn = wrap(c.up.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
-      val pc = wrap(c(Global.PC))
+      val pc = wrap(Global.expendPc(c(Global.PC), 64).asSInt)
       val fetchId = wrap(c(Fetch.ID))
       val decodeId = wrap(c(Decode.DOP_ID))
     }
@@ -133,11 +133,11 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.wbCtrl
-        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(TRAP) && !c(p.logic.onAddress.translationPort.keys.IO)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.LOAD) || c(AguPlugin.AMO)) && !c(TRAP) && !c(p.logic.onAddress.translationPort.keys.IO)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
-        address := c(p.logic.srcp.ADD_SUB).asUInt.resized //PC RESIZED
+        address := c(p.logic.onFork.tpk.TRANSLATED)
         data := host.find[IntFormatPlugin](_.laneName == p.layer.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
       })
     }
@@ -163,6 +163,23 @@ class WhiteboxerPlugin extends FiberPlugin{
       })
     }
 
+    val storeConditional = new Area {
+      val fire = Bool()
+      val hartId = Global.HART_ID()
+      val uopId = Decode.UOP_ID()
+      val miss = Bool()
+
+      SimPublic(fire, hartId, uopId, miss)
+
+      val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
+        val c = p.logic.wbCtrl
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.SC)) && !c(TRAP)
+        hartId := c(Global.HART_ID)
+        uopId := c(Decode.UOP_ID)
+        miss := c(p.logic.onJoin.SC_MISS)
+      })
+    }
+
     val storeBroadcast = new Area {
       val fire = Bool()
       val hartId = Global.HART_ID()
@@ -177,6 +194,8 @@ class WhiteboxerPlugin extends FiberPlugin{
       })
     }
 
+    val wfi = wrap(host[TrapPlugin].logic.harts.map(_.trap.fsm.wfi).asBits)
+
     val perf = new Area{
       val dispatch = host[DispatchPlugin]
       val executeFreezed = wrap(host[ExecutePipelinePlugin].isFreezed())
@@ -184,15 +203,15 @@ class WhiteboxerPlugin extends FiberPlugin{
       val candidatesCount = wrap(CountOne(dispatch.logic.candidates.map(_.ctx.valid)))
       val dispatchFeedCount = CountOne(dispatch.logic.feeds.map(_.isValid))
 
-      val executeFreezedCounter = wrap(Counter(1 << 60l, executeFreezed).value)
-      val dispatchHazardsCounter = wrap(Counter(1 << 60l, dispatchHazards).value)
-      val candidatesCountCounters = (0 to dispatch.logic.candidates.size).map(id => wrap(Counter(1 << 60l, candidatesCount === id).value))
-      val dispatchFeedCounters = (0 to dispatch.logic.feeds.size).map(id => wrap(Counter(1 << 60l, dispatchFeedCount === id).value))
+      val executeFreezedCounter = wrap(Counter(1l << 60l, executeFreezed).value)
+      val dispatchHazardsCounter = wrap(Counter(1l << 60l, dispatchHazards).value)
+      val candidatesCountCounters = (0 to dispatch.logic.candidates.size).map(id => wrap(Counter(1l << 60l, candidatesCount === id).value))
+      val dispatchFeedCounters = (0 to dispatch.logic.feeds.size).map(id => wrap(Counter(1l << 60l, dispatchFeedCount === id).value))
     }
 
     val trap = new Area {
       val ports = for(hartId <- 0 until HART_COUNT) yield new Area{
-        val priv = host[PrivilegedPlugin].logic.harts(hartId).trap
+        val priv = host[TrapPlugin].logic.harts(hartId).trap
         val valid = wrap(priv.whitebox.trap)
         val interrupt = wrap(priv.whitebox.interrupt)
         val cause = wrap(priv.whitebox.code)
@@ -212,11 +231,13 @@ class WhiteboxerPlugin extends FiberPlugin{
       val flushes = self.reschedules.flushes.map(new FlushProxy(_)).toArray
       val loadExecute = new LoadExecuteProxy()
       val storeCommit = new StoreCommitProxy()
+      val storeConditional = new StoreConditionalProxy()
       val storeBroadcast = new StoreBroadcastProxy()
       val learns = self.prediction.learns.map(learn => new LearnProxy(learn)).toArray
       val perf = new PerfProxy()
       val trap = self.trap.ports.indices.map(new TrapProxy(_)).toArray
       val interrupts = new InterruptsProxy()
+      val wfi = self.wfi.simProxy()
 
       def interrupt(hartId : Int, intId : Int, value : Boolean)
 
@@ -240,7 +261,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       class InterruptsProxy {
         val priv = host[PrivilegedPlugin]
         val checkers = ArrayBuffer[InterruptChecker]()
-        for ((hart, hartId) <- priv.io.harts.zipWithIndex) {
+        for ((hart, hartId) <- priv.logic.harts.zipWithIndex) {
           checkers += new InterruptChecker(hartId, hart.int.m.timer,  7)
           checkers += new InterruptChecker(hartId, hart.int.m.software,  3)
           checkers += new InterruptChecker(hartId, hart.int.m.external, 11)
@@ -353,8 +374,15 @@ class WhiteboxerPlugin extends FiberPlugin{
       val data = storeCommit.data.simProxy()
     }
 
+    class StoreConditionalProxy {
+      val fire = storeConditional.fire.simProxy()
+      val hartId = storeConditional.hartId.simProxy()
+      val uopId = storeConditional.uopId.simProxy()
+      val miss = storeConditional.miss.simProxy()
+    }
+
     class StoreBroadcastProxy {
-      val fire = storeCommit.fire.simProxy()
+      val fire = storeBroadcast.fire.simProxy()
       val hartId = storeBroadcast.hartId.simProxy()
       val uopId = storeBroadcast.uopId.simProxy()
     }

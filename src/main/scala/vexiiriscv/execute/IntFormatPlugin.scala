@@ -25,19 +25,19 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
   }
   val portToSpec = mutable.LinkedHashMap[Flow[Bits],Spec]()
 
-  def access(ctrlId : Int) : Flow[Bits] = {
+  def access(executeId : Int) : Flow[Bits] = {
     val port = Flow(Bits(Riscv.XLEN bits))
-    portToSpec(port) = Spec(port, ctrlId)
+    portToSpec(port) = Spec(port, executeId)
     port
   }
 
-  def signExtend(port: Flow[Bits], impl: UopLayerSpec, bitId: Int) = {
+  def signExtend(port: Flow[Bits], impl: UopLayerSpec, bitId: Int) : Unit = {
     val spec = portToSpec(port)
     spec.signExtends += ExtendsSpec(impl, bitId)
     spec.impls += impl
   }
 
-  def zeroExtend(port: Flow[Bits], impl: UopLayerSpec, bitId: Int) = {
+  def zeroExtend(port: Flow[Bits], impl: UopLayerSpec, bitId: Int) : Unit = {
     val spec = portToSpec(port)
     spec.zeroExtends += ExtendsSpec(impl, bitId)
     spec.impls += impl

@@ -10,7 +10,10 @@ import vexiiriscv.riscv.{CSR, Riscv}
 
 import scala.collection.mutable.ArrayBuffer
 
-
+/**
+ * This plugin implement the performance counters in a very tricky way to save area
+ * Only 7 bits registers are used for each counters, which are flushed into a CSR ram when their MSB is set
+ */
 class PerformanceCounterPlugin(var additionalCounterCount : Int,
                                var bufferWidth : Int = 7) extends FiberPlugin with PerformanceCounterService{
   def counterCount = 2 + additionalCounterCount
@@ -164,9 +167,8 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
             c.value := csr.onWriteBits.asUInt.resized
             c.value.msb := False
           }
-          ignoreNextCommit setWhen (cmd.oh(1)) // && (if(withHigh) !csrWriteCmd.high else True)
-
         }
+        ignoreNextCommit setWhen (cmd.oh(1)) // && (if(withHigh) !csrWriteCmd.high else True)
         csrWriteCmd.ready := True
         goto(IDLE)
       }
@@ -233,7 +235,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       csr.onDecode(csrFilter){ //TODO test
         when(csr.onDecodeAddress(9 downto 8) === 0){
           when(csr.onDecodeWrite || !privOk){
-            csr.onDecodeTrap()
+            csr.onDecodeException()
           }
         }
       }
