@@ -273,6 +273,7 @@ class ExecuteLanePlugin(override val laneName : String,
     buildBefore.release()
   }
 
+  def freezeIt()(implicit loc: Location) = eupp.freezeIt()
   def freezeWhen(cond: Bool)(implicit loc: Location) = eupp.freezeWhen(cond)
   def isFreezed(): Bool = eupp.isFreezed()
   override def atRiskOfFlush(executeId: Int): Bool = {

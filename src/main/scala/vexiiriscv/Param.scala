@@ -41,6 +41,7 @@ class ParamSimple(){
   var allowBypassFrom = 100 //100 => disabled
   var performanceCounters = 0
   var withFetchL1 = false
+  var withLsuL1 = false
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
@@ -66,6 +67,7 @@ class ParamSimple(){
     withRvc = false
     withAlignerBuffer = withRvc
     withFetchL1 = false
+    withLsuL1 = true
     xlen = 32
   }
 
@@ -84,6 +86,7 @@ class ParamSimple(){
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
     if (withFetchL1) r += "fl1"
+    if (withLsuL1) r += "lsul1"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
     if (withRas) r += "ras"
@@ -124,6 +127,7 @@ class ParamSimple(){
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
     opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
+    opt[Unit]("with-lsu-l1") action { (v, c) => withLsuL1 = true }
   }
 
   def plugins() = pluginsArea.plugins
@@ -280,7 +284,7 @@ class ParamSimple(){
     plugins += new BarrelShifterPlugin(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    plugins += new LsuCachelessPlugin(
+    if(!withLsuL1) plugins += new LsuCachelessPlugin(
       layer     = early0,
       withAmo   = withRva,
       withSpeculativeLoadFlush = true,
@@ -313,6 +317,21 @@ class ParamSimple(){
         )
       }
     )
+    if(withLsuL1){
+      plugins += new LsuPlugin(
+        layer = early0,
+        withRva = withRva
+      )
+      plugins += new LsuL1Plugin(
+        lane           = lane0,
+        memDataWidth   = xlen,
+        cpuDataWidth   = xlen,
+        refillCount    = 1,
+        writebackCount = 1,
+        setCount       = 64,
+        wayCount       = 1
+      )
+    }
 
     if(withMul) {
       plugins += new MulPlugin(early0)
