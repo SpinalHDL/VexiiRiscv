@@ -12,6 +12,27 @@ object AddressToMask{
   }
 }
 
+class Reservation{
+  class Entry(val priority : Int) extends Area{
+    val win = Bool()
+    val take = False
+
+    def takeIt() = take := True
+  }
+  val model = ArrayBuffer[Entry]()
+  def create(priority : Int) : Entry = {
+    val e = new  Entry( priority)
+    model += e
+    e
+  }
+
+  def build(){
+    for(e <- model){
+      e.win := !model.filter(_.priority < e.priority).map(_.take).orR
+    }
+  }
+}
+
 /**
  * MulSpliter is a tool which will cut a multiplication into multiple smaller multiplications
  * Those smaller multiplication results would need to be summed together.

@@ -36,10 +36,10 @@ case class FetchL1InvalidationBus() extends Bundle {
 
 class FetchL1Plugin(var translationStorageParameter: Any,
                     var translationPortParameter: Any,
-                    var cacheSize : Int,
-                    var wayCount : Int,
                     var memDataWidth : Int,
                     var fetchDataWidth : Int,
+                    var setCount: Int,
+                    var wayCount: Int,
                     var lineSize: Int = 64,
                     var readAt: Int = 0,
                     var hitsAt: Int = 1,
@@ -86,6 +86,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val holdPorts = (0 until HART_COUNT).map(pcp.newHoldPort)
     setupLock.release()
 
+    val cacheSize = wayCount*setCount*lineSize
     val cpuWordWidth = fetchDataWidth
     val bytePerMemWord = memDataWidth / 8
     val bytePerFetchWord = cpuWordWidth / 8

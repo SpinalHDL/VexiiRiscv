@@ -205,7 +205,8 @@ class ParamSimple(){
       }
     )
     if(withFetchL1) plugins += new fetch.FetchL1Plugin(
-      cacheSize = 16*1024,
+      lineSize = 64,
+      setCount = 64,
       wayCount = 4,
       fetchDataWidth = 32*decoders,
       memDataWidth = 32*decoders,
