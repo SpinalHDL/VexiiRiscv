@@ -14,14 +14,13 @@ object LsuL1 extends AreaObject{
   val SEL = Payload(Bool())
   val LOAD, AMO, SC, LR = Payload(Bool())
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS)
-  val VIRTUAL_ENABLE = Payload(Bool())
+  val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
   val WRITE_MASK = Payload(Bits(Riscv.LSLEN/8 bits))
 
   // L1 ->
-  val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
-  val REDO, MISS, ACCESS_FAULT, PAGE_FAULT = Payload(Bool())
+  val REDO, MISS, FAULT = Payload(Bool())
 }
 
 class LsuL1Plugin(val lane : ExecuteLaneService,
@@ -96,8 +95,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val bus = master(LsuL1Bus(memParameter))
 
     val ABORD = Payload(Bool())
-    val CPU_WORD = Payload(Bits(cpuWordWidth bits))
-    val CPU_MASK = Payload(Bits(cpuWordWidth / 8 bits))
     val WAYS_HAZARD = Payload(Bits(wayCount bits))
     val REDO_ON_DATA_HAZARD = Payload(Bool())
     val BANK_BUSY = Payload(Bits(bankCount bits))
@@ -122,9 +119,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val WAYS_TAGS = Payload(Vec.fill(wayCount)(Tag()))
     val WAYS_HITS = Payload(Bits(wayCount bits))
     val WAYS_HIT = Payload(Bool())
-    val MISS = Payload(Bool())
-    val FAULT = Payload(Bool())
-    val REDO = Payload(Bool())
     val IO = Payload(Bool())
     val REFILL_SLOT = Payload(Bits(refillCount bits))
     val REFILL_SLOT_FULL = Payload(Bool())
@@ -141,7 +135,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val BANKS_MUXES = Payload(Vec.fill(bankCount)(Bits(cpuWordWidth bits)))
 
     val tagsWriteArbiter = new Reservation()
-    val bankWriteArbiter = new Reservation()
+    val bankWriteArbiter = new Reservation() //TODO
     val bankReadArbiter  = new Reservation()
 
     val refillCompletions = Bits(refillCount bits)
@@ -172,7 +166,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val mem = Mem.fill(linePerWay)(Tag())
       mem.write(waysWrite.address, waysWrite.tag, waysWrite.mask(id))
       val lsuRead = new Area {
-        val cmd = Flow(mem.addressType).setIdle()
+        val cmd = Flow(mem.addressType)
         val rsp = if (tagsReadAsync) mem.readAsync(cmd.payload) else mem.readSync(cmd.payload, cmd.valid)
         KeepAttribute(rsp) //Ensure that it will not use 2 cycle latency ram block
       }
@@ -189,6 +183,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
+    //TODO ensure that no invalidate happen when there is anything happening anywere else
     val invalidate = new Area {
       val counter = Reg(UInt(log2Up(linePerWay) + 1 bits)) init (0)
       val done = counter.msb
@@ -203,11 +198,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       val firstEver = RegInit(True) clearWhen (done)
-      when(!done && firstEver) {
-        plru.write.valid := True
-        plru.write.address := counter.resized
-        plru.write.data.clearAll()
-      }
+      plru.write.valid := !done && firstEver
+      plru.write.address := counter.resized
+      plru.write.data.clearAll()
     }
 
     class PriorityArea(slots: Seq[(Bool, Bits)]) extends Area {
@@ -321,7 +314,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val rspWithData = withCoherency.mux(bus.read.rsp.withData, True)
         if (withCoherency) assert(!(bus.read.rsp.valid && !rspWithData && slots.map(_.data).read(bus.read.rsp.id)), "Data cache asked for data but didn't recieved any :(")
 
-        val bankWriteNotif = B(0, bankCount bits)
+        val bankWriteNotif = Bits(bankCount bits)
+        val writeReservation = bankWriteArbiter.create(0)
+        when(bus.read.rsp.valid) {
+          writeReservation.takeIt()
+          assert(writeReservation.win)
+        }
         for ((bank, bankId) <- banks.zipWithIndex) {
           if (!reducedBankWidth) {
             bankWriteNotif(bankId) := bus.read.rsp.valid && rspWithData && way === bankId
@@ -658,13 +656,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       val bankMuxStd = !reducedBankWidth generate new lane.Execute(bankMuxAt){
-        CPU_WORD := OhMux.or(WAYS_HITS, BANKS_MUXES)
+        READ_DATA := OhMux.or(WAYS_HITS, BANKS_MUXES)
       }
 
       val bankMuxReduced = reducedBankWidth generate new lane.Execute(bankMuxAt){
         val wayId = OHToUInt(WAYS_HITS)
         val bankId = (wayId >> log2Up(bankCount / memToBankRatio)) @@ ((wayId + (MIXED_ADDRESS(log2Up(bankWidth / 8), log2Up(bankCount) bits))).resize(log2Up(bankCount / memToBankRatio)))
-        CPU_WORD := BANKS_MUXES.read(bankId) //MuxOH(WAYS_HITS, BANKS_MUXES)
+        READ_DATA := BANKS_MUXES.read(bankId) //MuxOH(WAYS_HITS, BANKS_MUXES)
       }
 
 
@@ -706,6 +704,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         WAYS_HIT := B(WAYS_HITS).orR
       }
 
+      val preCtrl = new lane.Execute(ctrlAt){
+        NEED_UNIQUE := !LOAD || LR
+        ABORD := False //TODO
+        WAYS_HAZARD := 0 //TODO
+        LOCKED := False //TODO
+      }
+
 //      val rcl = new lane.Execute(ctrlAt){
 //        REFILL_HITS := B(refill.slots.map(r => r.valid && r.address(hazardCheckRange) === PHYSICAL_ADDRESS(hazardCheckRange)))
 //      }
@@ -715,10 +720,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           val core = new Plru(wayCount, false)
           core.io.context.state := PLRU
           core.io.update.id.assignDontCare()
-
-          plru.write.valid := False
-          plru.write.address := MIXED_ADDRESS(lineRange)
-          plru.write.data := core.io.update.state
+          when(SEL) {
+            plru.write.address := MIXED_ADDRESS(lineRange)
+            plru.write.data := core.io.update.state
+          }
         }
 
         val reservation = tagsWriteArbiter.create(2)
@@ -801,5 +806,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 //        REFILL_SLOT := REFILL_HITS.andMask(!refillLoaded) | refill.free.andMask(askRefill)
       }
     }
+
+    tagsWriteArbiter.build()
+    bankWriteArbiter.build()
+    bankReadArbiter.build()
   }
 }

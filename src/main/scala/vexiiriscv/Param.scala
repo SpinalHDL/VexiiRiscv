@@ -62,8 +62,8 @@ class ParamSimple(){
     performanceCounters = 4
     privParam.withSupervisor = true
     privParam.withUser = true
-    withMmu = true
-    withRva = true
+    withMmu = false
+    withRva = false
     withRvc = false
     withAlignerBuffer = withRvc
     withFetchL1 = false
@@ -320,7 +320,31 @@ class ParamSimple(){
     if(withLsuL1){
       plugins += new LsuPlugin(
         layer = early0,
-        withRva = withRva
+        withRva = withRva,
+        translationStorageParameter = MmuStorageParameter(
+          levels = List(
+            MmuStorageLevel(
+              id = 0,
+              ways = 4,
+              depth = 32
+            ),
+            MmuStorageLevel(
+              id = 1,
+              ways = 2,
+              depth = 32
+            )
+          ),
+          priority = 1
+        ),
+        translationPortParameter = withMmu match {
+          case false => null
+          case true => MmuPortParameter(
+            readAt = 0,
+            hitsAt = 1,
+            ctrlAt = 1,
+            rspAt = 1
+          )
+        }
       )
       plugins += new LsuL1Plugin(
         lane           = lane0,
