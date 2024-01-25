@@ -210,4 +210,10 @@ rv32i_d1_l1_rfa_btb_ras_gshare_rbra_rsrc ->
 Artix 7 -> 90 Mhz 1456 LUT 1123 FF
 Artix 7 -> 164 Mhz 1573 LUT 1123 FF
 
+rv32i_d1_l1_rfa_rsrc ->
+Artix 7 -> 90 Mhz 1172 LUT 870 FF
+Artix 7 -> 212 Mhz 1255 LUT 870 FF
+rv32i_d1_l1_rfa_lsul1_rsrc ->
+Artix 7 -> 90 Mhz 1327 LUT 1198 FF
+Artix 7 -> 200 Mhz 1439 LUT 1200 FF
  */
