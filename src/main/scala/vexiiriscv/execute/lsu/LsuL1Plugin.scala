@@ -126,7 +126,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val IO = Payload(Bool())
     val REFILL_SLOT = Payload(Bits(refillCount bits))
     val REFILL_SLOT_FULL = Payload(Bool())
-    val GENERATION, GENERATION_OK = Payload(Bool())
     val PREFETCH = Payload(Bool())
     val PROBE = Payload(Bool())
     val ALLOW_UNIQUE = Payload(Bool())
@@ -224,6 +223,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val slots = for (refillId <- 0 until refillCount) yield new Area {
         val id = refillId
         val valid = RegInit(False)
+        val dirty = Reg(Bool())
         val address = Reg(UInt(postTranslationWidth bits))
         val way = Reg(UInt(log2Up(wayCount) bits))
         val cmdSent = Reg(Bool())
@@ -258,6 +258,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val address = UInt(postTranslationWidth bits)
         val way = UInt(log2Up(wayCount) bits)
         val victim = Bits(writebackCount bits)
+        val dirty = Bool()
         val unique = Bool()
         val data = Bool()
       })
@@ -279,6 +280,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           slot.loaded := False
           slot.loadedCounter := 0
           slot.victim := push.victim
+          slot.dirty := push.dirty
           slot.writebackHazards := 0
           if (withCoherency) {
             slot.unique := push.unique
@@ -313,6 +315,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
 
         val rspAddress = slots.map(_.address).read(bus.read.rsp.id)
+        val dirty = slots.map(_.dirty).read(bus.read.rsp.id)
         val way = slots.map(_.way).read(bus.read.rsp.id)
         val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
         val rspWithData = withCoherency.mux(bus.read.rsp.withData, True)
@@ -364,6 +367,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             waysWrite.tag.fault := faulty
             waysWrite.tag.address := rspAddress(tagRange)
             waysWrite.tag.loaded := True
+            waysWrite.tag.dirty := dirty
             if (withCoherency) {
               waysWrite.tag.unique := bus.read.rsp.unique
             }
@@ -718,6 +722,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         NEED_UNIQUE := !LOAD || LR
         WAYS_HAZARD := 0 //TODO
         LOCKED := False //TODO
+        FLUSH := False //TODO carefull about NEED_UNIQUE
       }
 
 //      val rcl = new lane.Execute(ctrlAt){
@@ -769,34 +774,44 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val needFlushSel = OHToUInt(needFlushOh)
         val needFlush = needFlushs.orR
         val canFlush = reservation.win && !writeback.full && !refill.slots.map(_.valid).orR && !(WAYS_HAZARD).orR
-        val startFlush = isValid && FLUSH && GENERATION_OK && needFlush && canFlush
+        val startFlush = isValid && FLUSH && needFlush && canFlush
 
         val refillWay = (!MISS && uniqueMiss).mux(wayId, refillWayWithoutUpdate)
         val allowSideEffects = !ABORD
 
-        when(startRefill || startUpgrade || setDirty || startFlush){
-          reservation.takeIt()
-        }
+        assert(!startFlush)
 
+
+        //TODO preset dirty if it come from a store
         refill.push.valid := allowSideEffects && (startRefill || startUpgrade)
         refill.push.address := PHYSICAL_ADDRESS
         refill.push.unique := NEED_UNIQUE
         refill.push.data := askRefill
-
-
+        refill.push.way := refillWay
+        refill.push.victim := writeback.free.andMask(refillWayNeedWriteback && refillWayWasDirty)
+        refill.push.dirty := !LOAD
         when(askUpgrade) {
           refill.push.way := wayId
           refill.push.victim := 0
-        } otherwise {
-          refill.push.way := refillWay
-          refill.push.victim := writeback.free.andMask(refillWayNeedWriteback && refillWayWasDirty)
+        }
+
+
+        when(startRefill || startUpgrade || setDirty || startFlush) {
+          reservation.takeIt()
+          waysWrite.mask(refillWay) := allowSideEffects
+          waysWrite.address := MIXED_ADDRESS(lineRange)
+        }
+        when(setDirty){
+          waysWrite.tag.loaded  := True
+          waysWrite.tag.address := PHYSICAL_ADDRESS(tagRange)
+          waysWrite.tag.fault   := FAULT
+          if(withCoherency) waysWrite.tag.unique  := True
+        }
+        when(startRefill || startUpgrade){
+          waysWrite.tag.loaded := False
         }
 
         when(startRefill) {
-          waysWrite.mask(refillWay) := allowSideEffects
-          waysWrite.address := MIXED_ADDRESS(lineRange)
-          waysWrite.tag.loaded := False
-
           writeback.push.valid := refillWayNeedWriteback && allowSideEffects
           writeback.push.address := (WAYS_TAGS(refillWay).address @@ MIXED_ADDRESS(lineRange)) << lineRange.low
           writeback.push.way := refillWay

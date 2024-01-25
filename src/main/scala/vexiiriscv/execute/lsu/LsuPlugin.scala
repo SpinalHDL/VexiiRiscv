@@ -135,8 +135,8 @@ class LsuPlugin(var layer : LaneLayer,
 
     val onCtrl = new elp.Execute(ctrlAt) {
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
+      val mmuPageFault = tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)
 
-      l1.ABORD := trapPort.valid || (FROM_LS && (!isValid || isCancel || tpk.IO))
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
@@ -168,7 +168,7 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code := TrapReason.REDO
       }
 
-      when(tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)) {
+      when(mmuPageFault) {
         skip := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
@@ -202,6 +202,9 @@ class LsuPlugin(var layer : LaneLayer,
         bypass(Global.TRAP) := True
         bypass(Global.COMMIT) := False
       }
+
+
+      l1.ABORD := FROM_LS && (!isValid || isCancel || tpk.IO || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED)
     }
 
     val onWb = new elp.Execute(wbAt){
