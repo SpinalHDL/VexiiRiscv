@@ -91,6 +91,7 @@ class LsuPlugin(var layer : LaneLayer,
 
     accessRetainer.await()
     val l1 = LsuL1
+    val FROM_LS = Payload(Bool())
 
     val onAddress0 = new elp.Execute(addressAt){
       val translationPort = ats.newTranslationPort(
@@ -107,6 +108,7 @@ class LsuPlugin(var layer : LaneLayer,
         size -> up(RS2)(0, w bits).#*(Riscv.LSLEN / w)
       }
 
+      FROM_LS := isValid && SEL
       l1.SEL := isValid && SEL //TODO inibate SEL on cancel / throw
       l1.MIXED_ADDRESS := srcp.ADD_SUB.asUInt
       l1.WRITE_MASK := AddressToMask(l1.MIXED_ADDRESS, SIZE, Riscv.LSLEN / 8)
@@ -126,10 +128,15 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
 
-    for(eid <- addressAt + 1 to ctrlAt) elp.execute(eid).up(l1.SEL).setAsReg().init(False)
+    for(eid <- addressAt + 1 to ctrlAt) {
+      val e = elp.execute(eid)
+      e.up(l1.SEL).setAsReg().init(False)
+    }
 
     val onCtrl = new elp.Execute(ctrlAt) {
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
+
+      l1.ABORD := trapPort.valid || (FROM_LS && (!isValid || isCancel || tpk.IO))
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
