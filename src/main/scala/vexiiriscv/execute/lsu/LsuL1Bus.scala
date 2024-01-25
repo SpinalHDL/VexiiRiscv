@@ -36,7 +36,7 @@ case class LsuL1BusParameter( addressWidth: Int,
         M2sAgent(
           name = name,
           M2sSource(
-            id    = SizeMapping(log2Up(readIdCount max writeIdCount), readIdCount),
+            id    = SizeMapping(1 << log2Up(readIdCount max writeIdCount), readIdCount),
             emits = tilelink.M2sTransfers(
               get = SizeRange(lineSize)
             )
@@ -378,6 +378,9 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
 
   def toTilelink(): tilelink.Bus = new Composite(this, "toTilelink"){
     val m2s = p.toTileLinkM2sParameters(null)
+    val s2m = new S2mParameters(List(
+//      new S2mAgent() //Dummy
+    ))
     val bus = tilelink.Bus(
       BusParameter(
         addressWidth = m2s.addressWidth,
@@ -390,7 +393,9 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
         withDataB    = false,
         withDataD    = true,
         withDataC    = true,
-        node         = null
+        node         = new NodeParameters(
+          m2s
+        )
       )
     )
 
@@ -421,6 +426,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
 
         val beat = bus.a.beatCounter()
         bus.a.address(log2Up(p.dataWidth/8), widthOf(beat) bits) := beat
+        bus.a.source.allowOverride()
         bus.a.source.msb := sel
 
         write.cmd.ready := !sel && bus.a.ready

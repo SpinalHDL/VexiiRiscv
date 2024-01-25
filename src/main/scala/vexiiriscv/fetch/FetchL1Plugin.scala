@@ -49,7 +49,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
                     var ctrlAt: Int = 2,
                     var hitsWithTranslationWays: Boolean = false,
                     var reducedBankWidth: Boolean = false,
-                    var tagsReadAsync: Boolean = false) extends FiberPlugin with FetchL1Service {
+                    var tagsReadAsync: Boolean = false) extends FiberPlugin with FetchL1Service with InitService {
 
   def getBusParameter() = FetchL1BusParam(
     physicalWidth = PHYSICAL_WIDTH,
@@ -58,6 +58,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     withBackPresure = false
   )
 
+
+  override def initHold(): Bool = logic.invalidate.firstEver
 
   val logic = during setup new Area{
     val pp = host[FetchPipelinePlugin]

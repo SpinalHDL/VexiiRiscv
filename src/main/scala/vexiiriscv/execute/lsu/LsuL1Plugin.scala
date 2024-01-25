@@ -1,4 +1,4 @@
-package vexiiriscv.execute
+package vexiiriscv.execute.lsu
 
 import spinal.core._
 import spinal.lib._
@@ -8,6 +8,8 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.misc.Reservation
 import vexiiriscv.riscv.Riscv
+import vexiiriscv.execute._
+import vexiiriscv.fetch.InitService
 
 object LsuL1 extends AreaObject{
   // -> L1
@@ -44,7 +46,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var tagsReadAsync: Boolean = false,
                   var withCoherency: Boolean = false,
                   var probeIdWidth: Int = -1,
-                  var ackIdWidth: Int = -1) extends FiberPlugin{
+                  var ackIdWidth: Int = -1) extends FiberPlugin with InitService{
+
+  override def initHold(): Bool = logic.invalidate.firstEver
 
   def memParameter = LsuL1BusParameter(
     addressWidth = Global.PHYSICAL_WIDTH,
@@ -622,6 +626,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val rb0 = new lane.Execute(bankReadAt){
         val readAddress = MIXED_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
         val reservation = bankReadArbiter.create(1)
+        val freezeIt = False
+        lane.freezeWhen(freezeIt)
+
         for ((bank, bankId) <- banks.zipWithIndex) {
           BANK_BUSY(bankId) := bank.write.valid && bank.write.address === readAddress //Write to read hazard
           when(SEL){
@@ -630,7 +637,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
               bank.read.cmd.valid := !lane.isFreezed()
               bank.read.cmd.payload := readAddress
             } otherwise {
-              lane.freezeIt()
+              freezeIt := True
             }
           }
         }
@@ -747,8 +754,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val canRefill = !refill.full && !lineBusy && reservation.win && !(refillWayNeedWriteback && writeback.full) && !WAYS_HAZARD(refillWay)
         val askRefill = MISS && canRefill
         val askUpgrade = !MISS && canRefill && uniqueMiss
-        val startRefill = isValid && askRefill
-        val startUpgrade = isValid && askUpgrade
+        val startRefill = SEL && askRefill
+        val startUpgrade = SEL && askUpgrade
         val wayId = OHToUInt(WAYS_HITS)
 
         when(ABORD) {
@@ -777,11 +784,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         when(startRefill) {
           waysWrite.mask(refillWay) := True
           waysWrite.address := MIXED_ADDRESS(lineRange)
-          waysWrite.tag.loaded := True
-          waysWrite.tag.address := PHYSICAL_ADDRESS(tagRange)
-          waysWrite.tag.fault := False
-          waysWrite.tag.dirty := False
-          if (withCoherency) waysWrite.tag.unique := True
+          waysWrite.tag.loaded := False
+//          waysWrite.tag.address := PHYSICAL_ADDRESS(tagRange)
+//          waysWrite.tag.fault := False
+//          waysWrite.tag.dirty := False
+//          if (withCoherency) waysWrite.tag.unique := True
 
           writeback.push.valid := refillWayNeedWriteback
           writeback.push.address := (WAYS_TAGS(refillWay).address @@ MIXED_ADDRESS(lineRange)) << lineRange.low
@@ -797,7 +804,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           plruLogic.core.io.update.id := refillWay
         }
 
-        when(isValid && !REDO && !MISS) {
+        when(SEL && !REDO && !MISS) {
           plru.write.valid := True
           plruLogic.core.io.update.id := wayId
         }

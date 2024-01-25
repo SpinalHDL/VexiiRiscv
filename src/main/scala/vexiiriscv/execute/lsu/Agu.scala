@@ -1,4 +1,4 @@
-package vexiiriscv.execute
+package vexiiriscv.execute.lsu
 
 import spinal.core._
 import spinal.lib.misc.pipeline._
@@ -7,6 +7,7 @@ import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.riscv.{Const, MicroOp, Rvfd, Rvi}
 import vexiiriscv.riscv.Riscv._
+import vexiiriscv.execute._
 
 import scala.collection.mutable.ArrayBuffer
 

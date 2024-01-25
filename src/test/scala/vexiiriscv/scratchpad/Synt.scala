@@ -32,29 +32,38 @@ object IntegrationSynthBench extends App{
 //    p.withMul = false
 //    p.withDiv = false
 //  }
+  add("") { p =>
+    p.regFileSync = false
+    p.withMul = false
+    p.withDiv = false
+    p.allowBypassFrom = 0
+  }
+  add("") { p =>
+    p.regFileSync = false
+    p.withMul = false
+    p.withDiv = false
+    p.allowBypassFrom = 0
+    p.withLateAlu = true
+  }
+
 //  add("") { p =>
 //    p.regFileSync = false
 //    p.withMul = false
 //    p.withDiv = false
-//    p.allowBypassFrom = 0
+//    p.withGShare = true
+//    p.withBtb = true
+//    p.withRas = true
 //  }
-  add("") { p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = false
-    p.withGShare = true
-    p.withBtb = true
-    p.withRas = true
-  }
-  add("") { p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = false
-    p.withGShare = true
-    p.withBtb = true
-    p.withRas = true
-    p.relaxedBranch = true
-  }
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = false
+//    p.withGShare = true
+//    p.withBtb = true
+//    p.withRas = true
+//    p.relaxedBranch = true
+//  }
+
 //  add("") { p =>
 //    p.regFileSync = false
 //    p.withMul = false

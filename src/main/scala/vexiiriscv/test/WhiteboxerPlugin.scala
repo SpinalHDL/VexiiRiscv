@@ -8,6 +8,7 @@ import vexiiriscv.Global
 import vexiiriscv.Global.{HART_COUNT, TRAP}
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
+import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin, TrapPlugin}
 import vexiiriscv.prediction.{BtbPlugin, LearnCmd, LearnPlugin}
@@ -140,6 +141,17 @@ class WhiteboxerPlugin extends FiberPlugin{
         address := c(p.logic.onFork.tpk.TRANSLATED)
         data := host.find[IntFormatPlugin](_.laneName == p.layer.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
       })
+
+
+      val lp = host.get[LsuPlugin] map (p => new Area {
+        val c = p.logic.onWb
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.LOAD) || c(AguPlugin.AMO)) && !c(TRAP) && !c(p.logic.onAddress0.translationPort.keys.IO)
+        hartId := c(Global.HART_ID)
+        uopId := c(Decode.UOP_ID)
+        size := c(AguPlugin.SIZE).resized
+        address := c(LsuL1.PHYSICAL_ADDRESS)
+        data := host.find[IntFormatPlugin](_.laneName == p.layer.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
+      })
     }
 
     val storeCommit = new Area {
@@ -161,6 +173,16 @@ class WhiteboxerPlugin extends FiberPlugin{
         address := bus.cmd.address
         data := bus.cmd.data
       })
+
+      val lp = host.get[LsuPlugin] map (p => new Area {
+        val c = p.logic.onWb
+        fire := c.down.isFiring && !c(AguPlugin.LOAD) && !c(p.logic.tpk.IO)
+        hartId := c(Global.HART_ID)
+        uopId := c(Decode.UOP_ID)
+        size := c(AguPlugin.SIZE)
+        address := c(p.logic.tpk.TRANSLATED)
+        data := c(LsuL1.WRITE_DATA)
+      })
     }
 
     val storeConditional = new Area {
@@ -178,6 +200,9 @@ class WhiteboxerPlugin extends FiberPlugin{
         uopId := c(Decode.UOP_ID)
         miss := c(p.logic.onJoin.SC_MISS)
       })
+      val lp = host.get[LsuPlugin] map (p => new Area {
+        fire := False
+      })
     }
 
     val storeBroadcast = new Area {
@@ -188,6 +213,12 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.joinCtrl
+        fire := c.down.isFiring && c(AguPlugin.SEL) && !c(AguPlugin.LOAD)
+        hartId := c(Global.HART_ID)
+        uopId := c(Decode.UOP_ID)
+      })
+      val lp = host.get[LsuPlugin] map (p => new Area {
+        val c = p.logic.onWb
         fire := c.down.isFiring && c(AguPlugin.SEL) && !c(AguPlugin.LOAD)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)

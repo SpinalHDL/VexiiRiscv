@@ -3,10 +3,13 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent}
 import spinal.lib.misc.Elf
+import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import vexiiriscv._
+import vexiiriscv.execute.lsu.{LsuL1Plugin, LsuL1TlPlugin}
 import vexiiriscv.fetch.PcService
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
@@ -311,7 +314,7 @@ class TestOptions{
       rspDriver.setFactor(ibusReadyFactor)
     }
 
-    val lsclp = dut.host.get[execute.LsuCachelessPlugin].map { p =>
+    val lsclp = dut.host.get[execute.lsu.LsuCachelessPlugin].map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
@@ -375,7 +378,7 @@ class TestOptions{
               error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
             }
           } else {
-            import vexiiriscv.execute.LsuCachelessBusAmo._
+            import vexiiriscv.execute.lsu.LsuCachelessBusAmo._
             cmd.amoOp match {
               case LR => {
                 error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
@@ -440,6 +443,16 @@ class TestOptions{
       peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
     }
 
+
+
+    val lsul1 = dut.host.get[LsuL1TlPlugin] map (p => new Area{
+      val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
+        mem.randOffset = 0x80000000l
+        driver.driver.setFactor(dbusReadyFactor)
+        val checker = if (monitor.bus.p.withBCE) Checker(monitor)
+      }
+    })
+
     if(printStats) onSimEnd{
       println(probe.getStats())
     }
@@ -448,6 +461,16 @@ class TestOptions{
 
 object TestBench extends App{
   doIt()
+
+  def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
+    val ret = param.plugins()
+    ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
+      p.ackIdWidth = 8
+      p.probeIdWidth = 4
+      ret  += new LsuL1TlPlugin
+    }
+    ret
+  }
 
   def doIt(param : ParamSimple = new ParamSimple()) {
     val testOpt = new TestOptions()
@@ -468,7 +491,7 @@ object TestBench extends App{
 
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
-      simConfig.compile(VexiiRiscv(param.plugins()))
+      simConfig.compile(VexiiRiscv(paramToPlugins(param)))
     }
     testOpt.test(compiled)
     Thread.sleep(10)

@@ -1,4 +1,4 @@
-package vexiiriscv.execute
+package vexiiriscv.execute.lsu
 
 import spinal.core._
 import spinal.lib._
@@ -15,6 +15,7 @@ import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT_WIDTH, UOP}
 import vexiiriscv.schedule.{ReschedulePlugin, ScheduleService}
+import vexiiriscv.execute._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer

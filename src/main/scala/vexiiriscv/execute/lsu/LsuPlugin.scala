@@ -1,4 +1,4 @@
-package vexiiriscv.execute
+package vexiiriscv.execute.lsu
 
 import spinal.core._
 import spinal.lib._
@@ -6,13 +6,14 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.UOP
-import vexiiriscv.execute.AguPlugin._
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
 import vexiiriscv.misc.{AddressToMask, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.LSLEN
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.ScheduleService
 import vexiiriscv.{Global, riscv}
+import vexiiriscv.execute._
+import vexiiriscv.execute.lsu.AguPlugin._
 
 class LsuPlugin(var layer : LaneLayer,
                 var withRva : Boolean,

@@ -7,7 +7,7 @@ import spinal.lib.misc.database.Element
 import vexiiriscv.Global.PC_WIDTH
 import vexiiriscv._
 import vexiiriscv.decode.Decode
-import vexiiriscv.execute.LsuCachelessPlugin
+import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.misc.PrivilegedPlugin
 //import vexiiriscv.execute.LsuCachelessPlugin
