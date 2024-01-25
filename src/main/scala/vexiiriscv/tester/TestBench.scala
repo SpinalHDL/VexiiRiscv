@@ -3,7 +3,7 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
-import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent}
+import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
 import spinal.lib.misc.Elf
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
@@ -450,6 +450,7 @@ class TestOptions{
         mem.randOffset = 0x80000000l
         driver.driver.setFactor(dbusReadyFactor)
         val checker = if (monitor.bus.p.withBCE) Checker(monitor)
+        override def delayOnA(a: TransactionA) = if(dbusReadyFactor < 1.0) super.delayOnA(a)
       }
     })
 

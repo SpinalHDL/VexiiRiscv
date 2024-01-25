@@ -176,7 +176,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lp = host.get[LsuPlugin] map (p => new Area {
         val c = p.logic.onWb
-        fire := c.down.isFiring && !c(AguPlugin.LOAD) && !c(p.logic.tpk.IO)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && !c(AguPlugin.LOAD) && !c(p.logic.tpk.IO)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE)

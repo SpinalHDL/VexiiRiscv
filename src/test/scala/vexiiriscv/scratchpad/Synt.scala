@@ -27,24 +27,30 @@ object IntegrationSynthBench extends App{
     add(p, postfix)
   }
 
-//  add(""){ p =>
+  add(""){ p =>
+    p.regFileSync = false
+    p.withMul = false
+    p.withDiv = false
+  }
+  add("") { p =>
+    p.regFileSync = false
+    p.withMul = false
+    p.withDiv = false
+    p.withLsuL1 = true
+  }
+//  add("") { p =>
 //    p.regFileSync = false
 //    p.withMul = false
 //    p.withDiv = false
+//    p.allowBypassFrom = 0
 //  }
-  add("") { p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = false
-    p.allowBypassFrom = 0
-  }
-  add("") { p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = false
-    p.allowBypassFrom = 0
-    p.withLateAlu = true
-  }
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = false
+//    p.allowBypassFrom = 0
+//    p.withLateAlu = true
+//  }
 
 //  add("") { p =>
 //    p.regFileSync = false

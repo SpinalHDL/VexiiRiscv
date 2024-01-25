@@ -151,7 +151,8 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 
 
   val regulars = ArrayBuffer("dhrystone", "coremark_vexii", "machine_vexii")
-  priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor", s"mmu_sv${if(xlen == 32) 32 else 39}"))
+  priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
+  if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
   for(name <- regulars){
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
@@ -285,7 +286,7 @@ object RegressionSingle extends App{
   }
 
   def test(ps : ParamSimple, dutArgs : Seq[String] = Nil): Unit = {
-    test(ps.getName(), ps.plugins(), dutArgs)
+    test(ps.getName(), TestBench.paramToPlugins(ps), dutArgs)
   }
 
   def test(args : String) : Unit = test(args.split(" "))

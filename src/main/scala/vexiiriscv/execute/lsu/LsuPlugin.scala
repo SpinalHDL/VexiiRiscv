@@ -43,7 +43,7 @@ class LsuPlugin(var layer : LaneLayer,
     atsStorageLock.release()
 
     val trapPort = ts.newTrap(layer.el.getAge(ctrlAt), Execute.LANE_AGE_WIDTH)
-    val flushPort = ss.newFlushPort(layer.el.getExecuteAge(addressAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
+    val flushPort = ss.newFlushPort(layer.el.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
     // IntFormatPlugin specification
@@ -58,13 +58,13 @@ class LsuPlugin(var layer : LaneLayer,
         case true  => ifp.signExtend(iwb, op, spec.width)
       }
       op.mayFlushUpTo(ctrlAt) // page fault / trap
-      op.dontFlushFrom(ctrlAt+1)
+      op.dontFlushFrom(ctrlAt)
     }
 
     for(store <- frontend.writingMem ++ amos){
       val op = layer(store)
       op.mayFlushUpTo(ctrlAt)
-      op.dontFlushFrom(ctrlAt+1)
+      op.dontFlushFrom(ctrlAt)
       op.addRsSpec(RS2, 0) //TODO
     }
 
@@ -109,9 +109,9 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       FROM_LS := isValid && SEL
-      l1.SEL := isValid && SEL //TODO inibate SEL on cancel / throw
+      l1.SEL := isValid && SEL
       l1.MIXED_ADDRESS := srcp.ADD_SUB.asUInt
-      l1.WRITE_MASK := AddressToMask(l1.MIXED_ADDRESS, SIZE, Riscv.LSLEN / 8)
+      l1.MASK := AddressToMask(l1.MIXED_ADDRESS, SIZE, Riscv.LSLEN / 8)
       l1.WRITE_DATA := SIZE.muxListDc(mapping)
       l1.LOAD := LOAD
       l1.AMO := AMO
@@ -155,17 +155,19 @@ class LsuPlugin(var layer : LaneLayer,
 
       val skip = False
 
-      when(l1.FAULT) {
-        skip := True
-        trapPort.exception := True
-        trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-        trapPort.code(1) setWhen (!LOAD)
-      }
+      when(!tpk.IO) {
+        when(l1.FAULT) {
+          skip := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+          trapPort.code(1) setWhen (!LOAD)
+        }
 
-      when(l1.REDO) {
-        skip := True
-        trapPort.exception := False
-        trapPort.code := TrapReason.REDO
+        when(l1.HAZARD || l1.MISS || l1.MISS_UNIQUE) {
+          skip := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.REDO
+        }
       }
 
       when(mmuPageFault) {
