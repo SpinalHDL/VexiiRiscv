@@ -45,6 +45,7 @@ class ParamSimple(){
   var withLsuL1 = false
   var lsuL1Sets = 64
   var lsuL1Ways = 1
+  var withLsuBypass = false
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
@@ -70,10 +71,11 @@ class ParamSimple(){
     withRvc = false
     withAlignerBuffer = withRvc
     withFetchL1 = false
-    withLsuL1 = true
+    withLsuL1 = false
     xlen = 32
     lsuL1Sets = 64
     lsuL1Ways = 2
+    withLsuBypass = true
   }
 
 
@@ -91,7 +93,7 @@ class ParamSimple(){
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
     if (withFetchL1) r += "fl1"
-    if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}"
+    if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
     if (withRas) r += "ras"
@@ -135,6 +137,7 @@ class ParamSimple(){
     opt[Unit]("with-lsu-l1") action { (v, c) => withLsuL1 = true }
     opt[Int]("lsu-l1-sets") action { (v, c) => lsuL1Sets = v }
     opt[Int]("lsu-l1-ways") action { (v, c) => lsuL1Ways = v }
+    opt[Unit]("lsu-l1-bypass") action { (v, c) => withLsuBypass = true }
   }
 
   def plugins() = pluginsArea.plugins
@@ -360,7 +363,8 @@ class ParamSimple(){
         refillCount    = 1,
         writebackCount = 1,
         setCount       = lsuL1Sets,
-        wayCount       = lsuL1Ways
+        wayCount       = lsuL1Ways,
+        withBypass     = withLsuBypass
       )
     }
 

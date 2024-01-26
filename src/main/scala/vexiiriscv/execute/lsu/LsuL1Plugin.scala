@@ -46,6 +46,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var reducedBankWidth: Boolean = false,
                   var tagsReadAsync: Boolean = false,
                   var withCoherency: Boolean = false,
+                  var withBypass: Boolean = false,
                   var probeIdWidth: Int = -1,
                   var ackIdWidth: Int = -1) extends FiberPlugin with InitService{
 
@@ -121,6 +122,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
 //    val STATUS = Payload(Vec.fill(wayCount)(Status()))
     val BANKS_WORDS = Payload(Vec.fill(bankCount)(bankWord()))
+    val MUXED_DATA = Payload(Bits(cpuDataWidth bits))
     val WAYS_TAGS = Payload(Vec.fill(wayCount)(Tag()))
     val WAYS_HITS = Payload(Bits(wayCount bits))
     val WAYS_HIT = Payload(Bool())
@@ -676,13 +678,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       val bankMuxStd = !reducedBankWidth generate new lane.Execute(bankMuxAt){
-        READ_DATA := OhMux.or(WAYS_HITS, BANKS_MUXES)
+        MUXED_DATA := OhMux.or(WAYS_HITS, BANKS_MUXES)
       }
 
       val bankMuxReduced = reducedBankWidth generate new lane.Execute(bankMuxAt){
         val wayId = OHToUInt(WAYS_HITS)
         val bankId = (wayId >> log2Up(bankCount / memToBankRatio)) @@ ((wayId + (MIXED_ADDRESS(log2Up(bankWidth / 8), log2Up(bankCount) bits))).resize(log2Up(bankCount / memToBankRatio)))
-        READ_DATA := BANKS_MUXES.read(bankId) //MuxOH(WAYS_HITS, BANKS_MUXES)
+        MUXED_DATA := BANKS_MUXES.read(bankId) //MuxOH(WAYS_HITS, BANKS_MUXES)
       }
 
 
@@ -690,7 +692,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val dst = lane.execute(ctrlAt-1)
         for(id <- 0 until widthOf(WRITE_TO_READ_HAZARDS)) {
           val src = lane.execute(bankReadAt+id)
-          dst(WRITE_TO_READ_HAZARDS)(id) := src(EVENT_WRITE_VALID) && src(EVENT_WRITE_ADDRESS)(notWordRange) === dst(PHYSICAL_ADDRESS)(notWordRange) &&  (src(EVENT_WRITE_MASK) & dst(MASK)).orR
+          dst(WRITE_TO_READ_HAZARDS)(id) := src(EVENT_WRITE_VALID) && src(EVENT_WRITE_ADDRESS)(notWordRange) === dst(PHYSICAL_ADDRESS)(notWordRange) && withBypass.mux(True, (src(EVENT_WRITE_MASK) & dst(MASK)).orR)
         }
       }
 
@@ -762,14 +764,14 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 //        val refillHit = REFILL_HITS.orR
 //        val refillLoaded = (B(refill.slots.map(_.loaded)) & REFILL_HITS).orR
         val lineBusy = isLineBusy(PHYSICAL_ADDRESS)
-        val bankBusy = (BANK_BUSY_REMAPPED & WAYS_HITS) =/= 0
+//        val bankBusy = (BANK_BUSY_REMAPPED & WAYS_HITS) =/= 0 // Not needed anymore as the cpu freeze early
 //        val waysHitHazard = (WAYS_HITS & WAYS_HAZARD).orR
         val waysHazard = WAYS_HAZARD.orR
 //        val hitUnique = withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(_.unique).asBits).orR, True)
 //        val uniqueMiss = NEED_UNIQUE && !hitUnique
         val wasDirty = (B(WAYS_TAGS.map(_.dirty)) & WAYS_HITS).orR
         val refillWayWasDirty = WAYS_TAGS.map(w => w.loaded && w.dirty).read(refillWayWithoutUpdate)
-        val loadBankHazard = LOAD && WRITE_TO_READ_HAZARDS.orR.mux(True, bankBusy)
+        val loadBankHazard = withBypass.mux(False, (LOAD || AMO) && WRITE_TO_READ_HAZARDS.orR)
 
         //TODO !!! refill / writeback slots valid can go false faster than the main pipeline !freeze => need fix
         HAZARD := waysHazard || loadBankHazard || lineBusy || LOCKED  //TODO Line busy can likely be removed if single hart with no prefetch
@@ -879,6 +881,22 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           plru.write.valid := allowSideEffects
           plruLogic.core.io.update.id := wayId
         }
+
+        READ_DATA := MUXED_DATA
+        val bypasser = if(withBypass) new Area {
+          for (b <- widthOf(WRITE_TO_READ_HAZARDS) - 1 downto 0) {
+            when(WRITE_TO_READ_HAZARDS(b)) {
+              for (i <- 0 until cpuDataWidth / 8) {
+                val range = i * 8 + 7 downto i * 8
+                val src = lane.execute(bankReadAt+1+b)
+                when(src(EVENT_WRITE_MASK)(i)) {
+                  READ_DATA(range) := src(EVENT_WRITE_DATA)(range)
+                }
+              }
+            }
+          }
+        }
+
 
 //        REFILL_SLOT_FULL := MISS && !refillHit && refill.full
 //        REFILL_SLOT := REFILL_HITS.andMask(!refillLoaded) | refill.free.andMask(askRefill)
