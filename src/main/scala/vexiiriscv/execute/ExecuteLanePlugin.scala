@@ -196,7 +196,7 @@ class ExecuteLanePlugin(override val laneName : String,
               node.isValid && node(rfaRd.ENABLE) && node(rfaRd.PHYS) === on(rfa.PHYS) && node(rfaRd.RFID) === on(rfa.RFID)
             }.asBits
 
-            on.bypass(apply(spec)) := OHMux.or(Cat(hits, !hits.orR), on.up(apply(spec)) +: filtred.map(f => f.eu.ctrl(f.nodeId)(f.payload)), true)
+             on.bypass(apply(spec)) := OHMux.or(Cat(hits, !hits.orR), on.up(apply(spec)) +: filtred.map(f => f.eu.ctrl(f.nodeId)(f.payload)), true)
           }
         }
       }

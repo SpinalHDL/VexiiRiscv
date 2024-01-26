@@ -67,7 +67,7 @@ class LsuPlugin(var layer : LaneLayer,
       val op = layer(store)
       op.mayFlushUpTo(ctrlAt)
       op.dontFlushFrom(ctrlAt)
-      op.addRsSpec(RS2, ctrlAt) //TODO Dispatch doesn't care yet, need to fix rsHazardChecker to not be as pessimistic
+      op.addRsSpec(RS2, 0) //TODO ! for now the executeLanePlugin store bypass bypass its own value XD, need fix to only bypass from point which are solved
     }
 
     layer.add(Rvi.FENCE) //TODO
@@ -104,17 +104,11 @@ class LsuPlugin(var layer : LaneLayer,
         portSpec = translationPortParameter,
         storageSpec = translationStorage
       )
-      val RS2 = elp(IntRegFile, riscv.RS2)
-      val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map { size =>
-        val w = (1 << size) * 8
-        size -> up(RS2)(0, w bits).#*(Riscv.LSLEN / w)
-      }
 
       FROM_LS := isValid && SEL
       l1.SEL := isValid && SEL
       l1.MIXED_ADDRESS := srcp.ADD_SUB.asUInt
       l1.MASK := AddressToMask(l1.MIXED_ADDRESS, SIZE, Riscv.LSLEN / 8)
-      l1.WRITE_DATA := SIZE.muxListDc(mapping)
       l1.LOAD := LOAD
       l1.AMO := AMO
       l1.SC := SC
@@ -138,6 +132,13 @@ class LsuPlugin(var layer : LaneLayer,
     val onCtrl = new elp.Execute(ctrlAt) {
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
       val mmuPageFault = tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)
+
+      val RS2 = elp(IntRegFile, riscv.RS2)
+      val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map { size =>
+        val w = (1 << size) * 8
+        size -> up(RS2)(0, w bits).#*(Riscv.LSLEN / w)
+      }
+      l1.WRITE_DATA := SIZE.muxListDc(mapping)
 
       val io = new Area {
         val allowed = CombInit(this (tpk.IO))

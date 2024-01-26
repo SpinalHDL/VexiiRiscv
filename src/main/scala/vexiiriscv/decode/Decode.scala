@@ -34,7 +34,7 @@ object Decode extends AreaObject {
   val INSTRUCTION_SLICE_COUNT = Payload(UInt(INSTRUCTION_SLICE_COUNT_WIDTH bits)) // minus one => RVC => 0, normal => 1
 }
 
-case class AccessKeys(physWidth : Int, rfMapping : Seq[RegfileSpec]) extends Area{
+case class AccessKeys(rfa : RfAccess, physWidth : Int, rfMapping : Seq[RegfileSpec]) extends Area{
   val rfIdWidth = log2Up(rfMapping.size)
   def is(rfs: RegfileSpec, that: UInt) = that === idOf(rfs)
   def idOf(rfs: RegfileSpec) = rfMapping.indexOf(rfs)

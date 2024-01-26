@@ -50,8 +50,8 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 1
-    lanes = 1
+    decoders = 2
+    lanes = 2
     regFileSync = false
     withGShare = true
     withBtb = true
@@ -71,10 +71,10 @@ class ParamSimple(){
     withRvc = false
     withAlignerBuffer = withRvc
     withFetchL1 = false
-    withLsuL1 = false
+    withLsuL1 = true
     xlen = 32
     lsuL1Sets = 64
-    lsuL1Ways = 2
+    lsuL1Ways = 4
     withLsuBypass = true
   }
 
