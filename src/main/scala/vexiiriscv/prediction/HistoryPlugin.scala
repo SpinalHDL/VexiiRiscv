@@ -15,6 +15,7 @@ import scala.collection.mutable
 case class HistoryJump(laneAgeWidth : Int) extends Bundle{
   val history = BRANCH_HISTORY()
   val age = UInt(laneAgeWidth bits)
+  //TODO HART ID
 }
 
 //TODO a few history port may be removed to save area, as they are corner case  : DecodePredictionPlugin, and eventualy Lsu io missprediction

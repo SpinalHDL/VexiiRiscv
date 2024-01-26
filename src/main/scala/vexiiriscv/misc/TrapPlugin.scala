@@ -14,6 +14,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
 import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, PcService}
 import vexiiriscv.memory.AddressTranslationService
+import vexiiriscv.prediction.{HistoryPlugin, Prediction}
 import vexiiriscv.schedule.Ages
 
 import scala.collection.mutable
@@ -98,11 +99,12 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     val pp = host[PipelineBuilderPlugin]
     val fl1p = host.get[FetchL1Service]
     val pcs = host[PcService]
+    val hp = host.get[HistoryPlugin]
     val ats = host[AddressTranslationService]
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
     val fl1pLock = fl1p.map(_.invalidationRetainer())
-    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock))
+    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock) ++ hp.map(_.elaborationLock))
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
 
@@ -205,6 +207,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val arbiter = new AgedArbiter(requests)
           val state = arbiter.down.toReg
           val pc = Reg(PC)
+          val history = hp.nonEmpty generate Reg(Prediction.BRANCH_HISTORY)
           val slices = Reg(UInt(INSTRUCTION_SLICE_COUNT_WIDTH+1 bits))
 
           val xret = new Area {
@@ -247,11 +250,11 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           csr.hasInflight := (for (self <- lanes; ctrlId <- 1 to self.executeAt + trapAt; sn = self.ctrl(ctrlId).up) yield sn.isValid && sn(HART_ID) === hartId).orR
           val oh = B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(TRAP))
           val valid = oh.orR
-          val pc = OHMux.or(oh, lanes.map(_.execute(trapAt).down(PC)), true)
-          val slices = OHMux.or(oh, lanes.map(_.execute(trapAt).down(INSTRUCTION_SLICE_COUNT)), true)
+          val reader = lanes.map(_.execute(trapAt).down).reader(oh, true)
           when(valid) {
-            pending.pc := pc
-            pending.slices := slices.resize(INSTRUCTION_SLICE_COUNT_WIDTH+1)+1
+            pending.pc := reader(_(PC))
+            if(hp.nonEmpty) pending.history := reader(_(Prediction.BRANCH_HISTORY))
+            pending.slices := reader(_(INSTRUCTION_SLICE_COUNT)).resize(INSTRUCTION_SLICE_COUNT_WIDTH+1)+1
           }
         }
 
@@ -259,6 +262,12 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val trap = False
           val interrupt = Bool().assignDontCare()
           val code = Global.CODE().assignDontCare()
+        }
+
+        val historyPort = hp.nonEmpty generate hp.get.newPort(Integer.MAX_VALUE, 0)
+        if(hp.nonEmpty) {
+          historyPort.valid := False
+          historyPort.history := pending.history
         }
 
         val pcPort = pcs.newJumpInterface(Ages.TRAP, 0, 0)
@@ -342,6 +351,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
 
           if(fl1p.nonEmpty) fetchL1Invalidate.ports(hartId).cmd.valid := False
           PROCESS.whenIsActive{
+            if(hp.nonEmpty) historyPort.valid := True
             when(pending.state.exception || buffer.trap.interrupt) {
               goto(TRAP_TVAL)
             } otherwise {
