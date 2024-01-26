@@ -3,20 +3,21 @@ package vexiiriscv.execute.lsu
 import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.Plru
+import spinal.lib.misc.database.Database.blocking
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.misc.Reservation
 import vexiiriscv.riscv.{AtomicAlu, Riscv}
 import vexiiriscv.execute._
-import vexiiriscv.fetch.InitService
+import vexiiriscv.fetch.{InitService, LsuL1Service}
 import vexiiriscv.riscv.Riscv.{RVA, RVC}
 
 object LsuL1 extends AreaObject{
   // -> L1
   val ABORD = Payload(Bool())
   val SEL = Payload(Bool())
-  val LOAD, AMO, SC, LR = Payload(Bool())
+  val LOAD, AMO, SC, LR, FLUSH = Payload(Bool())
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS)
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
@@ -30,6 +31,12 @@ object LsuL1 extends AreaObject{
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
   val HAZARD, MISS, MISS_UNIQUE, FAULT = Payload(Bool())
   val SC_MISS = Payload(Bool())
+  val FLUSH_HIT = Payload(Bool())
+
+  val SETS = blocking[Int]
+  val WAYS = blocking[Int]
+  val LINE_BYTES = blocking[Int]
+  val WRITEBACK_BUSY = blocking[Bits]
 }
 
 class LsuL1Plugin(val lane : ExecuteLaneService,
@@ -56,7 +63,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var probeIdWidth: Int = -1,
                   var ackIdWidth: Int = -1) extends FiberPlugin with InitService{
 
-  override def initHold(): Bool = logic.invalidate.firstEver
+  override def initHold(): Bool = !logic.initializer.done
 
   def memParameter = LsuL1BusParameter(
     addressWidth = Global.PHYSICAL_WIDTH,
@@ -74,6 +81,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     import LsuL1._
 
     awaitBuild()
+
+    SETS.set(setCount)
+    WAYS.set(wayCount)
+    LINE_BYTES.set(lineSize)
 
     val postTranslationWidth = Global.PHYSICAL_WIDTH
 
@@ -141,7 +152,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val ALLOW_SHARED = Payload(Bool())
     val ALLOW_PROBE_DATA = Payload(Bool())
     val PROBE_ID = Payload(UInt(probeIdWidth bits))
-    val FLUSH = Payload(Bool())
     val FLUSH_FREE = Payload(Bool())
     val WRITE_TO_READ_HAZARDS = Payload(Bits(ctrlAt - bankReadAt bits))
     val EVENT_WRITE_VALID = Payload(Bool())
@@ -199,22 +209,16 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
-    //TODO ensure that no invalidate happen when there is anything happening anywere else
-    val invalidate = new Area {
+    val initializer = new Area {
       val counter = Reg(UInt(log2Up(linePerWay) + 1 bits)) init (0)
       val done = counter.msb
-      val reservation = tagsWriteArbiter.create(0) //Warning assume no refill at the same time
       when(!done) {
-        reservation.takeIt()
-        assert(reservation.win)
         counter := counter + 1
         waysWrite.mask.setAll()
         waysWrite.address := counter.resized
         waysWrite.tag.loaded := False
       }
-
-      val firstEver = RegInit(True) clearWhen (done)
-      plru.write.valid := !done && firstEver
+      plru.write.valid := !done
       plru.write.address := counter.resized
       plru.write.data.clearAll()
     }
@@ -444,6 +448,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
+      WRITEBACK_BUSY.set(B(slots.map(_.valid)))
       writebackBusy := slots.map(_.valid).orR
 
       def isLineBusy(address: UInt) = slots.map(s => s.valid && s.address(hazardCheckRange) === address(hazardCheckRange)).orR
@@ -739,11 +744,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         WAYS_HIT := B(WAYS_HITS).orR
       }
 
+      assert(Global.HART_COUNT.get == 1)
+      //TODO Store AMO SC need to be sure the cache line didn't just start being written back when theiy reach ctrl stage / warning prefetch
       val preCtrl = new lane.Execute(ctrlAt){
-        NEED_UNIQUE := !LOAD || LR
+        NEED_UNIQUE := (!LOAD || LR) && !FLUSH
         WAYS_HAZARD := 0 //TODO
         LOCKED := False //TODO
-        FLUSH := False //TODO carefull about NEED_UNIQUE
       }
 
 //      val rcl = new lane.Execute(ctrlAt){
@@ -780,19 +786,23 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         //TODO !!! refill / writeback slots valid can go false faster than the main pipeline !freeze => need fix
         HAZARD := waysHazard || loadBankHazard || lineBusy || LOCKED  //TODO Line busy can likely be removed if single hart with no prefetch
-        MISS := !HAZARD && !WAYS_HIT
-        FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR
+        MISS := !HAZARD && !WAYS_HIT && !FLUSH
+        FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
 
         val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full
-        val canFlush = False //reservation.win && !writeback.full && !refill.slots.map(_.valid).orR && !(WAYS_HAZARD).orR
+        val canFlush = reservation.win && !writeback.full && !refill.slots.map(_.valid).orR
+        val needFlushs = B(WAYS_TAGS.map(w => w.loaded && w.dirty))
+        val needFlushOh = OHMasking.firstV2(needFlushs)
+        val needFlushSel = OHToUInt(needFlushOh)
 
         val askRefill = MISS && canRefill
         val askUpgrade = MISS_UNIQUE && canRefill
+        val askFlush = FLUSH && !HAZARD && canFlush && needFlushs.orR
 
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
-        val doFlush = False
+        val doFlush = SEL && askFlush
         val doWrite = SEL && !HAZARD && !LOAD && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault)
         val doDirty = doWrite && !wasDirty
 
@@ -800,14 +810,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))
 
-        //Only valid for FLUSH === TRUE
-//        val needFlushs = B(WAYS_TAGS.map(w => w.loaded && w.dirty))
-//        val needFlushOh = OHMasking.firstV2(needFlushs)
-//        val needFlushSel = OHToUInt(needFlushOh)
-//        val needFlush = needFlushs.orR
-//        val startFlush = isValid && FLUSH && needFlush && canFlush
-
-        val targetWay = (askUpgrade || doDirty) .mux(wayId, refillWayWithoutUpdate)
+        val targetWay = (askUpgrade || doDirty).mux(wayId, refillWayWithoutUpdate)
         val allowSideEffects = !ABORD
 
 //        assert(!startFlush)
@@ -830,10 +833,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
 
         assert(!doUpgrade)
-        assert(!doFlush)
         assert(CountOne(Cat(askRefill, doUpgrade, doDirty, doFlush)) < 2)
 
-        when(doRefill || doUpgrade || doDirty || doFlush) {
+        when(doRefill || doUpgrade || doDirty) {
           reservation.takeIt()
           waysWrite.mask(targetWay) := allowSideEffects
           waysWrite.address := MIXED_ADDRESS(lineRange)
@@ -857,6 +859,29 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             bank.write.data.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA_FINAL)
             bank.write.mask := 0
             bank.write.mask.subdivideIn(cpuWordWidth / 8 bits)(PHYSICAL_ADDRESS(bankWordToCpuWordRange)) := MASK
+          }
+        }
+
+        FLUSH_HIT := needFlushs.orR
+        when(doFlush) {
+          reservation.takeIt()
+
+
+          val reader = this (WAYS_TAGS).reader(needFlushSel)
+          val tag = reader(_.address)
+          waysWrite.mask := needFlushOh
+          waysWrite.address := MIXED_ADDRESS(lineRange)
+          waysWrite.tag.loaded := True
+          waysWrite.tag.address := tag
+          waysWrite.tag.fault := reader(_.fault)
+          waysWrite.tag.dirty := False
+          if (withCoherency) ???
+
+          writeback.push.valid := allowSideEffects
+          writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low
+          writeback.push.way := needFlushSel
+          if (withCoherency) {
+            ???
           }
         }
 

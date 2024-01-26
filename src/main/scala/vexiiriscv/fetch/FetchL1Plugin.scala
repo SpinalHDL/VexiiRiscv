@@ -21,6 +21,10 @@ import vexiiriscv.schedule.ReschedulePlugin
 
 import scala.collection.mutable.ArrayBuffer
 
+case class FetchL1InvalidationCmd() extends Bundle //Empty for now
+case class FetchL1InvalidationBus() extends Bundle {
+  val cmd = Stream(FetchL1InvalidationCmd())
+}
 
 trait FetchL1Service{
   val invalidationRetainer = Retainer()
@@ -28,10 +32,17 @@ trait FetchL1Service{
   def newInvalidationPort() = invalidationPorts.addRet(FetchL1InvalidationBus())
 }
 
-case class FetchL1InvalidationCmd() extends Bundle //Empty for now
-case class FetchL1InvalidationBus() extends Bundle {
-  val cmd = Stream(FetchL1InvalidationCmd())
+case class LsuL1InvalidationCmd() extends Bundle //Empty for now
+case class LsuL1InvalidationBus() extends Bundle {
+  val cmd = Stream(LsuL1InvalidationCmd())
 }
+trait LsuL1Service{
+  val invalidationRetainer = Retainer()
+  val invalidationPorts = ArrayBuffer[LsuL1InvalidationBus]()
+  def newInvalidationPort() = invalidationPorts.addRet(LsuL1InvalidationBus())
+}
+
+
 
 
 class FetchL1Plugin(var translationStorageParameter: Any,

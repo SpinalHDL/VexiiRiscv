@@ -2,6 +2,7 @@ package vexiiriscv.execute.lsu
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.fsm.{State, StateMachine}
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.decode.Decode
@@ -14,6 +15,7 @@ import vexiiriscv.schedule.ScheduleService
 import vexiiriscv.{Global, riscv}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu.AguPlugin._
+import vexiiriscv.fetch.LsuL1Service
 
 class LsuPlugin(var layer : LaneLayer,
                 var withRva : Boolean,
@@ -21,7 +23,7 @@ class LsuPlugin(var layer : LaneLayer,
                 var translationPortParameter: Any,
                 var addressAt: Int = 0,
                 var ctrlAt: Int = 2,
-                var wbAt : Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider{
+                var wbAt : Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuL1Service{
 
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
@@ -95,6 +97,38 @@ class LsuPlugin(var layer : LaneLayer,
     val l1 = LsuL1
     val FROM_LS = Payload(Bool())
 
+
+    invalidationRetainer.await()
+    val flusher = new StateMachine {
+      val IDLE = makeInstantEntry()
+      val CMD, COMPLETION = new State()
+      val arbiter = StreamArbiterFactory().transactionLock.lowerFirst.buildOn(invalidationPorts.map(_.cmd))
+      val cmdCounter = Reg(UInt(log2Up(l1.SETS) + 1 bits))
+      val inflight = (addressAt+1 to ctrlAt).map(elp.execute).map(e => e(l1.SEL) && e(l1.FLUSH)).orR
+
+      val waiter = Reg(l1.WRITEBACK_BUSY.get)
+
+      IDLE.whenIsActive{
+        cmdCounter := 0
+        when(arbiter.io.output.valid) {
+          goto(CMD)
+        }
+      }
+      CMD.whenIsActive{
+        when(cmdCounter.msb && !inflight) {
+          waiter := l1.WRITEBACK_BUSY
+          goto(COMPLETION)
+        }
+      }
+      arbiter.io.output.ready := False
+      COMPLETION.whenIsActive{
+        waiter := waiter & l1.WRITEBACK_BUSY
+        when(!waiter.orR){
+          arbiter.io.output.ready := True
+        }
+      }
+    }
+
     val onAddress0 = new elp.Execute(addressAt){
       val translationPort = ats.newTranslationPort(
         nodes = Seq(elp.execute(addressAt).down, elp.execute(addressAt+1).down),
@@ -113,6 +147,21 @@ class LsuPlugin(var layer : LaneLayer,
       l1.AMO := AMO
       l1.SC := SC
       l1.LR := LR
+      l1.FLUSH := False
+
+      when(flusher.isActive(flusher.CMD) && !flusher.cmdCounter.msb && !(isValid && SEL)) {
+        l1.SEL := True
+        l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits) := flusher.cmdCounter.resized
+        l1.MASK := 0
+        l1.LOAD := False
+        l1.AMO := False
+        l1.SC := False
+        l1.LR := False
+        l1.FLUSH := True
+        when(!elp.isFreezed()) {
+          flusher.cmdCounter := flusher.cmdCounter + 1
+        }
+      }
     }
 
     val tpk = onAddress0.translationPort.keys
@@ -168,7 +217,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       val READ_DATA = insert(io.doIt.mux[Bits](io.rsp.data, l1.READ_DATA))
-      val SC_MISS = insert(io.doIt.mux[Bool](io.rsp.scMiss, l1.SC_MISS))
+      val SC_MISS = insert(withRva.mux(io.doIt.mux[Bool](io.rsp.scMiss, l1.SC_MISS), False))
 
 
       l1.AMO_OP := UOP(29, 3 bits)
@@ -240,6 +289,10 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       l1.ABORD := FROM_LS && (!isValid || isCancel || tpk.IO || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED)
+
+      when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){
+        flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
+      }
     }
 
     val onWb = new elp.Execute(wbAt){
