@@ -67,7 +67,7 @@ class LsuPlugin(var layer : LaneLayer,
       val op = layer(store)
       op.mayFlushUpTo(ctrlAt)
       op.dontFlushFrom(ctrlAt)
-      op.addRsSpec(RS2, 0) //TODO
+      op.addRsSpec(RS2, ctrlAt) //TODO Dispatch doesn't care yet, need to fix rsHazardChecker to not be as pessimistic
     }
 
     layer.add(Rvi.FENCE) //TODO

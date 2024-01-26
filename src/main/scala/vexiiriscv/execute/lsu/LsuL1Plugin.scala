@@ -800,7 +800,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 //        val needFlush = needFlushs.orR
 //        val startFlush = isValid && FLUSH && needFlush && canFlush
 
-        val refillWay = askUpgrade.mux(wayId, refillWayWithoutUpdate)
+        val targetWay = (askUpgrade || doDirty) .mux(wayId, refillWayWithoutUpdate)
         val allowSideEffects = !ABORD
 
 //        assert(!startFlush)
@@ -813,7 +813,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         refill.push.address := PHYSICAL_ADDRESS
         refill.push.unique := NEED_UNIQUE
         refill.push.data := askRefill
-        refill.push.way := refillWay
+        refill.push.way := targetWay
         refill.push.victim := writeback.free.andMask(refillWayNeedWriteback && refillWayWasDirty)
         refill.push.dirty := !LOAD
         when(askUpgrade) {
@@ -824,10 +824,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         assert(!doUpgrade)
         assert(!doFlush)
+        assert(CountOne(Cat(askRefill, doUpgrade, doDirty, doFlush)) < 2)
 
         when(doRefill || doUpgrade || doDirty || doFlush) {
           reservation.takeIt()
-          waysWrite.mask(refillWay) := allowSideEffects
+          waysWrite.mask(targetWay) := allowSideEffects
           waysWrite.address := MIXED_ADDRESS(lineRange)
         }
         when(doDirty){
@@ -861,17 +862,17 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         when(doRefill) {
           writeback.push.valid := refillWayNeedWriteback && allowSideEffects
-          writeback.push.address := (WAYS_TAGS(refillWay).address @@ MIXED_ADDRESS(lineRange)) << lineRange.low
-          writeback.push.way := refillWay
+          writeback.push.address := (WAYS_TAGS(targetWay).address @@ MIXED_ADDRESS(lineRange)) << lineRange.low
+          writeback.push.way := targetWay
           if (withCoherency) {
             writeback.push.dirty := wasDirty
-            writeback.push.fromUnique := WAYS_TAGS(refillWay).unique
+            writeback.push.fromUnique := WAYS_TAGS(targetWay).unique
             writeback.push.toShared := False
             writeback.push.release := True
           }
 
           plru.write.valid := allowSideEffects
-          plruLogic.core.io.update.id := refillWay
+          plruLogic.core.io.update.id := targetWay
         }
 
         when(SEL && !HAZARD && !MISS) {
