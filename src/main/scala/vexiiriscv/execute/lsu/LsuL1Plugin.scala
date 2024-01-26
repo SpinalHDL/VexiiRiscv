@@ -7,9 +7,10 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.misc.Reservation
-import vexiiriscv.riscv.Riscv
+import vexiiriscv.riscv.{AtomicAlu, Riscv}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.InitService
+import vexiiriscv.riscv.Riscv.{RVA, RVC}
 
 object LsuL1 extends AreaObject{
   // -> L1
@@ -20,10 +21,15 @@ object LsuL1 extends AreaObject{
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
   val MASK = Payload(Bits(Riscv.LSLEN/8 bits)) //Also needed for loads
+  val AMO_OP = Payload(Bits(3 bits))
+  val AMO_SWAP = Payload(Bool())
+  val AMO_WORD = Payload(Bool())
 
   // L1 ->
+  val WRITE_DATA_FINAL = Payload(Bits(Riscv.LSLEN bits))
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
   val HAZARD, MISS, MISS_UNIQUE, FAULT = Payload(Bool())
+  val SC_MISS = Payload(Bool())
 }
 
 class LsuL1Plugin(val lane : ExecuteLaneService,
@@ -122,7 +128,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
 //    val STATUS = Payload(Vec.fill(wayCount)(Status()))
     val BANKS_WORDS = Payload(Vec.fill(bankCount)(bankWord()))
-    val MUXED_DATA = Payload(Bits(cpuDataWidth bits))
+    val MUXED_DATA, BYPASSED_DATA = Payload(Bits(cpuDataWidth bits))
     val WAYS_TAGS = Payload(Vec.fill(wayCount)(Tag()))
     val WAYS_HITS = Payload(Bits(wayCount bits))
     val WAYS_HIT = Payload(Bool())
@@ -142,7 +148,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val EVENT_WRITE_ADDRESS = Payload(PHYSICAL_ADDRESS)
     val EVENT_WRITE_DATA = Payload(WRITE_DATA)
     val EVENT_WRITE_MASK = Payload(MASK)
-
     val BANKS_MUXES = Payload(Vec.fill(bankCount)(Bits(cpuWordWidth bits)))
 
     val tagsWriteArbiter = new Reservation()
@@ -844,11 +849,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           waysWrite.tag.loaded := False
         }
 
+        WRITE_DATA_FINAL := WRITE_DATA
         when(doWrite) {
           for ((bank, bankId) <- banks.zipWithIndex) when(WAYS_HITS(bankId)) {
-            bank.write.valid := bankId === bankHitId && allowSideEffects
+            bank.write.valid := bankId === bankHitId && allowSideEffects && !(SC && SC_MISS)
             bank.write.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
-            bank.write.data.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
+            bank.write.data.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA_FINAL)
             bank.write.mask := 0
             bank.write.mask.subdivideIn(cpuWordWidth / 8 bits)(PHYSICAL_ADDRESS(bankWordToCpuWordRange)) := MASK
           }
@@ -857,7 +863,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val brs = lane.execute(bankReadAt)
         brs(EVENT_WRITE_VALID)   := doWrite
         brs(EVENT_WRITE_ADDRESS) := PHYSICAL_ADDRESS
-        brs(EVENT_WRITE_DATA)    := WRITE_DATA
+        brs(EVENT_WRITE_DATA)    := WRITE_DATA_FINAL
         brs(EVENT_WRITE_MASK)    := MASK
 
 
@@ -882,7 +888,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           plruLogic.core.io.update.id := wayId
         }
 
-        READ_DATA := MUXED_DATA
+        BYPASSED_DATA := MUXED_DATA
         val bypasser = if(withBypass) new Area {
           for (b <- widthOf(WRITE_TO_READ_HAZARDS) - 1 downto 0) {
             when(WRITE_TO_READ_HAZARDS(b)) {
@@ -890,13 +896,47 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                 val range = i * 8 + 7 downto i * 8
                 val src = lane.execute(bankReadAt+1+b)
                 when(src(EVENT_WRITE_MASK)(i)) {
-                  READ_DATA(range) := src(EVENT_WRITE_DATA)(range)
+                  BYPASSED_DATA(range) := src(EVENT_WRITE_DATA)(range)
                 }
               }
             }
           }
         }
+        READ_DATA := BYPASSED_DATA
 
+        if (!RVA.get) {
+          SC_MISS := False
+        }
+        val rva = RVA.get generate new Area{
+          val srcBuffer = RegNext[Bits](READ_DATA)
+          val alu = new AtomicAlu(
+            op     = AMO_OP,
+            swap   = AMO_SWAP,
+            mem    = srcBuffer,
+            rf     = WRITE_DATA,
+            isWord = AMO_WORD
+          )
+          val aluBuffer = RegNext(alu.result)
+          when(AMO) {
+            WRITE_DATA_FINAL := aluBuffer
+//            READ_DATA := aluBuffer
+          }
+
+          val delay = History(!lane.isFreezed(), 1 to 2)
+          val freezeIt = SEL && AMO && delay.orR
+          lane.freezeWhen(freezeIt) //Note that if the refill is faster than 2 cycle, it may create issues
+
+          assert(Global.HART_COUNT.get == 1)
+          assert(!withCoherency)
+          val nc = !withCoherency generate new Area{
+            val reserved = RegInit(False)
+            when(!lane.isFreezed() && SEL && !ABORD){
+              reserved setWhen(LR)
+              reserved clearWhen(!LOAD)
+            }
+            SC_MISS := !reserved
+          }
+        }
 
 //        REFILL_SLOT_FULL := MISS && !refillHit && refill.full
 //        REFILL_SLOT := REFILL_HITS.andMask(!refillLoaded) | refill.free.andMask(askRefill)

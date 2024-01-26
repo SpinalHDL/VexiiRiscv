@@ -165,11 +165,15 @@ class LsuPlugin(var layer : LaneLayer,
 
         val freezeIt = doIt && !rsp.valid
         elp.freezeWhen(freezeIt)
-
-        assert(!withRva)
       }
 
       val READ_DATA = insert(io.doIt.mux[Bits](io.rsp.data, l1.READ_DATA))
+      val SC_MISS = insert(io.doIt.mux[Bool](io.rsp.scMiss, l1.SC_MISS))
+
+
+      l1.AMO_OP := UOP(29, 3 bits)
+      l1.AMO_SWAP := UOP(27)
+      l1.AMO_WORD := SIZE === 2
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
@@ -187,8 +191,6 @@ class LsuPlugin(var layer : LaneLayer,
       trapPort.arg.allowOverride() := 0
 
       val doTrap = False
-
-
       when(tpk.IO.mux[Bool](io.rsp.valid && io.rsp.error, l1.FAULT)) {
         doTrap := True
         trapPort.exception := True
@@ -237,7 +239,6 @@ class LsuPlugin(var layer : LaneLayer,
         bypass(Global.COMMIT) := False
       }
 
-
       l1.ABORD := FROM_LS && (!isValid || isCancel || tpk.IO || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED)
     }
 
@@ -259,10 +260,9 @@ class LsuPlugin(var layer : LaneLayer,
       iwb.valid := SEL
       iwb.payload := rspShifted
 
-      if (withRva) when(!LOAD && SC) {
-        ???
-//        iwb.payload(0) := onJoin.SC_MISS
-//        iwb.payload(7 downto 1) := 0
+      if (withRva) when(SC) {
+        iwb.payload(0) := onCtrl.SC_MISS
+        iwb.payload(7 downto 1) := 0
       }
     }
 

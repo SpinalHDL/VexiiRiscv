@@ -38,7 +38,7 @@ class AguFrontend(
   if (XLEN.get == 64) writingRf ++= List(Rvi.LD, Rvi.LWU)
   if (RVF) writingRf ++= List(Rvfd.FLW)
   if (RVD) writingRf ++= List(Rvfd.FLD)
-  for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LR -> False, LOAD -> True)
+  for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LOAD -> True, LR -> False, SC -> False, AMO -> False)
 
   // Store stuff
   val storeOps = List(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.S)
@@ -62,11 +62,11 @@ class AguFrontend(
     for (amo <- uops) add(amo).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> True, SC -> False, LOAD -> False, FLOAT -> False)
     writingMem += add(Rvi.SCW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> False, SC -> True, LOAD -> False, FLOAT -> False).uop
     writingRf += Rvi.SCW
-    writingRf  += add(Rvi.LRW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True).uop
+    writingRf  += add(Rvi.LRW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True, SC -> False, AMO -> False).uop
     if(XLEN.get == 64){
       writingMem += add(Rvi.SCD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> False, SC -> True, LOAD -> False, FLOAT -> False).uop
       writingRf += Rvi.SCD
-      writingRf += add(Rvi.LRD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True).uop
+      writingRf += add(Rvi.LRD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True, SC -> False, AMO -> False).uop
     }
 //    assert(false, "Rvi.LR and atomic may need reformat info, CachelessPlugin may use loads list for it, need to add to loads. Also store completion need to be handled")
   }

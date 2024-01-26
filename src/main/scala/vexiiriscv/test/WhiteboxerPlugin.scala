@@ -181,7 +181,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE)
         address := c(p.logic.tpk.TRANSLATED)
-        data := c(LsuL1.WRITE_DATA)
+        data := c(LsuL1.WRITE_DATA_FINAL)
       })
     }
 
@@ -201,7 +201,11 @@ class WhiteboxerPlugin extends FiberPlugin{
         miss := c(p.logic.onJoin.SC_MISS)
       })
       val lp = host.get[LsuPlugin] map (p => new Area {
-        fire := False
+        val c = p.logic.onWb
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.SC)) && !c(TRAP)
+        hartId := c(Global.HART_ID)
+        uopId := c(Decode.UOP_ID)
+        miss := c(p.logic.onCtrl.SC_MISS)
       })
     }
 

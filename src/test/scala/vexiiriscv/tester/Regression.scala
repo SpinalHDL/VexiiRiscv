@@ -183,7 +183,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.name(s"freertos/$name")
   }
 
-  if(withBuildroot && rvm && rva) priv.filter(_.p.withSupervisor).foreach{ _ =>
+  if(withBuildroot && rvm && rva && mmu.nonEmpty) priv.filter(_.p.withSupervisor).foreach{ _ =>
     val path = s"ext/NaxSoftware/buildroot/images/$archLinux"
     val args = newArgs()
     args.failAfter(10000000000l)
