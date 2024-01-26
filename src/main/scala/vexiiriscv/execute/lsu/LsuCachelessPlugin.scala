@@ -28,11 +28,12 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var addressAt: Int = 0,
                          var forkAt: Int = 0,
                          var joinAt: Int = 1,
-                         var wbAt: Int = 2) extends FiberPlugin with DBusAccessService{
+                         var wbAt: Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider{
 
   val WITH_RSP, WITH_ACCESS = Payload(Bool())
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
+  override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
 
   val logic = during setup new Area{
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)

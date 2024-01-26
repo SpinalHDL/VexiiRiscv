@@ -314,8 +314,8 @@ class TestOptions{
       rspDriver.setFactor(ibusReadyFactor)
     }
 
-    val lsclp = dut.host.get[execute.lsu.LsuCachelessPlugin].map { p =>
-      val bus = p.logic.bus
+    val lsclp = dut.host.get[execute.lsu.LsuCachelessBusProvider].map { p =>
+      val bus = p.getLsuCachelessBus()
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
       var reserved = false

@@ -21,10 +21,12 @@ class LsuPlugin(var layer : LaneLayer,
                 var translationPortParameter: Any,
                 var addressAt: Int = 0,
                 var ctrlAt: Int = 2,
-                var wbAt : Int = 2) extends FiberPlugin with DBusAccessService{
+                var wbAt : Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider{
 
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
+
+  override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
 
   val logic = during setup new Area{
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
@@ -80,14 +82,14 @@ class LsuPlugin(var layer : LaneLayer,
       SIZE := Decode.UOP(13 downto 12).asUInt
     }
 
-//    val busParam = LsuCachelessBusParam(
-//      addressWidth = Global.PHYSICAL_WIDTH,
-//      dataWidth = Riscv.LSLEN,
-//      hartIdWidth = Global.HART_ID_WIDTH,
-//      uopIdWidth = Decode.UOP_ID_WIDTH,
-//      withAmo = withRva
-//    )
-//    val bus = master(LsuCachelessBus(busParam))
+    val busParam = LsuCachelessBusParam(
+      addressWidth = Global.PHYSICAL_WIDTH,
+      dataWidth = Riscv.LSLEN,
+      hartIdWidth = Global.HART_ID_WIDTH,
+      uopIdWidth = Decode.UOP_ID_WIDTH,
+      withAmo = withRva
+    )
+    val bus = master(LsuCachelessBus(busParam))
 
     accessRetainer.await()
     val l1 = LsuL1
@@ -137,6 +139,36 @@ class LsuPlugin(var layer : LaneLayer,
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
       val mmuPageFault = tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)
 
+      val io = new Area {
+        val allowed = CombInit(this (tpk.IO))
+        val doIt = isValid && l1.SEL && allowed
+
+        val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
+        bus.cmd.valid := doIt && !cmdSent
+        bus.cmd.write := !LOAD
+        bus.cmd.address := l1.PHYSICAL_ADDRESS //TODO Overflow on TRANSLATED itself ?
+        bus.cmd.data := l1.WRITE_DATA
+        bus.cmd.size := SIZE.resized
+        bus.cmd.mask := l1.MASK
+        bus.cmd.io := True
+        bus.cmd.fromHart := True
+        bus.cmd.hartId := Global.HART_ID
+        bus.cmd.uopId := Decode.UOP_ID
+        if (withRva) {
+          bus.cmd.amoEnable := LOAD.mux[Bool](LR, SC || AMO)
+          bus.cmd.amoOp := UOP(31 downto 27)
+        }
+
+        val rsp = bus.rsp.toStream.halfPipe()
+        rsp.ready := !elp.isFreezed()
+
+        val freezeIt = doIt && !rsp.valid
+        elp.freezeWhen(freezeIt)
+
+        assert(!withRva)
+      }
+
+      val READ_DATA = insert(io.doIt.mux[Bits](io.rsp.data, l1.READ_DATA))
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
@@ -153,32 +185,31 @@ class LsuPlugin(var layer : LaneLayer,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      val skip = False
+      val doTrap = False
 
-      when(!tpk.IO) {
-        when(l1.FAULT) {
-          skip := True
-          trapPort.exception := True
-          trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-          trapPort.code(1) setWhen (!LOAD)
-        }
 
-        when(l1.HAZARD || l1.MISS || l1.MISS_UNIQUE) {
-          skip := True
-          trapPort.exception := False
-          trapPort.code := TrapReason.REDO
-        }
+      when(tpk.IO.mux[Bool](io.rsp.valid && io.rsp.error, l1.FAULT)) {
+        doTrap := True
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+        trapPort.code(1) setWhen (!LOAD)
+      }
+
+      when(!tpk.IO && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
+        doTrap := True
+        trapPort.exception := False
+        trapPort.code := TrapReason.REDO
       }
 
       when(mmuPageFault) {
-        skip := True
+        doTrap := True; io.allowed := False
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
         trapPort.code(1) setWhen (!LOAD)
       }
 
       when(tpk.ACCESS_FAULT) {
-        skip := True
+        doTrap := True; io.allowed := False
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
         trapPort.code(1) setWhen (!LOAD)
@@ -187,18 +218,18 @@ class LsuPlugin(var layer : LaneLayer,
       trapPort.arg(0, 2 bits) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
       trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REDO) {
-        skip := True
+        doTrap := True; io.allowed := False
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
       }
 
       when(MISS_ALIGNED) {
-        skip := True
+        doTrap := True; io.allowed := False
         trapPort.exception := True
         trapPort.code := LOAD.mux[Bits](CSR.MCAUSE_ENUM.LOAD_MISALIGNED, CSR.MCAUSE_ENUM.STORE_MISALIGNED).andMask(MISS_ALIGNED).resized
       }
 
-      when(isValid && SEL && skip) {
+      when(isValid && SEL && doTrap) {
         trapPort.valid := True
         flushPort.valid := True
         bypass(Global.TRAP) := True
@@ -210,7 +241,7 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
     val onWb = new elp.Execute(wbAt){
-      val rspSplits = l1.READ_DATA.subdivideIn(8 bits)
+      val rspSplits = onCtrl.READ_DATA.subdivideIn(8 bits)
       val rspShifted = Bits(LSLEN bits)
       val wordBytes = LSLEN/8
 

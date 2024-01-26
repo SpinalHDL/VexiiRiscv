@@ -279,7 +279,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
   val sizeMask = Array(0xFFl, 0xFFFFl, 0xFFFFFFFFl, -1l)
 
-  val lsuClpb = cpu.host.get[LsuCachelessPlugin].map(_.logic.get.bus)
+  val lsuClpb = cpu.host.get[LsuCachelessBusProvider].map(_.getLsuCachelessBus())
   val pendingIo = mutable.Queue[ProbeTraceIo]()
 
   class ProbeTraceIo extends TraceIo {
