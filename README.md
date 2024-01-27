@@ -4,14 +4,17 @@ VexiiRiscv (Vex2Risc5) is the successor of VexRiscv. Here are its currently impl
 
 - RV32/64 I[M][A][C][S][U]
 - Up to 4.66 coremark/Mhz 2.24 dhystone/Mhz (WIP)
+- In-order execution
 - early [late-alu]
-- Optional multi issue
+- single/dual issue (can be asymmetric)
 - BTB, GShare, RAS branch prediction
 - cacheless fetch/load/store, I$, D$ (WIP)
 - optional SV32/SV39 MMU
 - Can run linux / buildroot
+- Pipeline visualisation in simulation via Konata
+- Lock step simulation via RVLS and Spike
 
-Here is an online documentation : 
+Here is the online documentation : 
 
 - https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Introduction/#
 - https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/HowToUse/index.html
