@@ -99,7 +99,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       val translationPort = ats.newTranslationPort(
         nodes = Seq(down),
         rawAddress = Fetch.WORD_PC,
-        allowRefill = insert(True),
+        forcePhysical = insert(False),
         usage = AddressTranslationPortUsage.FETCH,
         portSpec = translationPortParameter,
         storageSpec = translationStorage

@@ -43,6 +43,8 @@ class ParamSimple(){
   var performanceCounters = 0
   var withFetchL1 = false
   var withLsuL1 = false
+  var fetchL1Sets = 64
+  var fetchL1Ways = 1
   var lsuL1Sets = 64
   var lsuL1Ways = 1
   var withLsuBypass = false
@@ -58,7 +60,7 @@ class ParamSimple(){
     withRas = true
 //    withMul = false
 //    withDiv = false
-//    withLateAlu = true
+    withLateAlu = false
     allowBypassFrom = 0
     relaxedBranch = false
     relaxedShift = false
@@ -66,13 +68,15 @@ class ParamSimple(){
     performanceCounters = 4
     privParam.withSupervisor = true
     privParam.withUser = true
-    withMmu = false
+    withMmu = true
     withRva = true
     withRvc = false
     withAlignerBuffer = withRvc
-    withFetchL1 = false
+    withFetchL1 = true
     withLsuL1 = true
     xlen = 32
+    fetchL1Sets = 64
+    fetchL1Ways = 4
     lsuL1Sets = 64
     lsuL1Ways = 4
     withLsuBypass = true
@@ -92,7 +96,7 @@ class ParamSimple(){
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
-    if (withFetchL1) r += "fl1"
+    if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}"
     if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
@@ -135,9 +139,11 @@ class ParamSimple(){
     opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
     opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => withLsuL1 = true }
+    opt[Int]("fetch-l1-sets") action { (v, c) => fetchL1Sets = v }
+    opt[Int]("fetch-l1-ways") action { (v, c) => fetchL1Ways = v }
     opt[Int]("lsu-l1-sets") action { (v, c) => lsuL1Sets = v }
     opt[Int]("lsu-l1-ways") action { (v, c) => lsuL1Ways = v }
-    opt[Unit]("lsu-l1-bypass") action { (v, c) => withLsuBypass = true }
+    opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
   }
 
   def plugins() = pluginsArea.plugins

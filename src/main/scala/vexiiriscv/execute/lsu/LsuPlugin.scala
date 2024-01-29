@@ -17,6 +17,9 @@ import vexiiriscv.execute._
 import vexiiriscv.execute.lsu.AguPlugin._
 import vexiiriscv.fetch.LsuL1Service
 
+import scala.collection.mutable.ArrayBuffer
+
+
 class LsuPlugin(var layer : LaneLayer,
                 var withRva : Boolean,
                 var translationStorageParameter: Any,
@@ -95,7 +98,8 @@ class LsuPlugin(var layer : LaneLayer,
 
     accessRetainer.await()
     val l1 = LsuL1
-    val FROM_LS = Payload(Bool())
+    val FROM_ACCESS = Payload(Bool())
+    val FROM_LSU = Payload(Bool())
 
 
     invalidationRetainer.await()
@@ -133,35 +137,81 @@ class LsuPlugin(var layer : LaneLayer,
       val translationPort = ats.newTranslationPort(
         nodes = Seq(elp.execute(addressAt).down, elp.execute(addressAt+1).down),
         rawAddress = l1.MIXED_ADDRESS,
-        allowRefill = insert(True),
+        forcePhysical = FROM_ACCESS,
         usage = AddressTranslationPortUsage.LOAD_STORE,
         portSpec = translationPortParameter,
         storageSpec = translationStorage
       )
 
-      FROM_LS := isValid && SEL
-      l1.SEL := isValid && SEL
-      l1.MIXED_ADDRESS := srcp.ADD_SUB.asUInt
-      l1.MASK := AddressToMask(l1.MIXED_ADDRESS, SIZE, Riscv.LSLEN / 8)
-      l1.LOAD := LOAD
-      l1.AMO := AMO
-      l1.SC := SC
-      l1.LR := LR
-      l1.FLUSH := False
+      case class Cmd() extends Bundle {
+        val address = l1.MIXED_ADDRESS()
+        val mask = l1.MASK()
+        val load = Bool()
+        val amo = Bool()
+        val sc = Bool()
+        val lr = Bool()
+        val fromFlush = Bool()
+        val fromAccess = Bool()
+      }
 
-      when(flusher.isActive(flusher.CMD) && !flusher.cmdCounter.msb && !(isValid && SEL)) {
-        l1.SEL := True
-        l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits) := flusher.cmdCounter.resized
-        l1.MASK := 0
-        l1.LOAD := False
-        l1.AMO := False
-        l1.SC := False
-        l1.LR := False
-        l1.FLUSH := True
-        when(!elp.isFreezed()) {
+      val ports = ArrayBuffer[Stream[Cmd]]()
+
+      val ls = new Area {
+        val port = ports.addRet(Stream(Cmd()))
+        port.valid := isValid && SEL
+        port.address := srcp.ADD_SUB.asUInt
+        port.mask := AddressToMask(l1.MIXED_ADDRESS, SIZE, Riscv.LSLEN / 8)
+        port.load := LOAD
+        port.amo := AMO
+        port.sc := SC
+        port.lr := LR
+        port.fromFlush := False
+        port.fromAccess := False
+      }
+
+      val access = dbusAccesses.nonEmpty generate new Area {
+        assert(dbusAccesses.size == 1)
+        val cmd = dbusAccesses.head.cmd
+        val port = ports.addRet(Stream(Cmd()))
+        port.arbitrationFrom(cmd)
+        port.address := cmd.address
+        port.mask := AddressToMask(l1.MIXED_ADDRESS, cmd.size, Riscv.LSLEN / 8)
+        port.load := True
+        port.amo := False
+        port.sc := False
+        port.lr := False
+        port.fromFlush := False
+        port.fromAccess := True
+      }
+
+      val flush = new Area {
+        val port = ports.addRet(Stream(Cmd()))
+        port.valid := flusher.isActive(flusher.CMD) && !flusher.cmdCounter.msb
+        port.address := (flusher.cmdCounter << log2Up(l1.LINE_BYTES)).resized
+        port.mask := 0
+        port.load := False
+        port.amo := False
+        port.sc := False
+        port.lr := False
+        port.fromFlush := True
+        port.fromAccess := False
+        when(port.fire) {
           flusher.cmdCounter := flusher.cmdCounter + 1
         }
       }
+
+      val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
+      arbiter.io.output.ready := !elp.isFreezed()
+      l1.SEL := arbiter.io.output.valid
+      l1.MIXED_ADDRESS := arbiter.io.output.address
+      l1.MASK := arbiter.io.output.mask
+      l1.LOAD := arbiter.io.output.load
+      l1.AMO := arbiter.io.output.amo
+      l1.SC := arbiter.io.output.sc
+      l1.LR := arbiter.io.output.lr
+      l1.FLUSH := arbiter.io.output.fromFlush
+      FROM_ACCESS := arbiter.io.output.fromAccess
+      FROM_LSU := !(arbiter.io.output.fromFlush || arbiter.io.output.fromAccess)
     }
 
     val tpk = onAddress0.translationPort.keys
@@ -176,6 +226,9 @@ class LsuPlugin(var layer : LaneLayer,
     for(eid <- addressAt + 1 to ctrlAt) {
       val e = elp.execute(eid)
       e.up(l1.SEL).setAsReg().init(False)
+      when(e(FROM_LSU) && !e.isValid) {
+        e.bypass(l1.SEL) := False
+      }
     }
 
     val onCtrl = new elp.Execute(ctrlAt) {
@@ -247,7 +300,8 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code(1) setWhen (!LOAD)
       }
 
-      when(!tpk.IO && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
+      val l1Redo = !tpk.IO && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
+      when(l1Redo){
         doTrap := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
@@ -288,10 +342,21 @@ class LsuPlugin(var layer : LaneLayer,
         bypass(Global.COMMIT) := False
       }
 
-      l1.ABORD := FROM_LS && (!isValid || isCancel || tpk.IO || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED)
+      l1.ABORD := FROM_LSU && (!isValid || isCancel || tpk.IO || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED)
 
       when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){
         flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
+      }
+
+      val access = dbusAccesses.nonEmpty generate new Area {
+        assert(dbusAccesses.size == 1)
+        val rsp = dbusAccesses.head.rsp
+        rsp.valid := l1.SEL && FROM_ACCESS && !elp.isFreezed()
+        rsp.data     := l1.READ_DATA
+        rsp.error    := l1.FAULT
+        rsp.redo     := l1Redo
+        rsp.waitSlot := 0
+        rsp.waitAny  := False //TODO
       }
     }
 

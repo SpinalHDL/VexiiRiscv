@@ -27,16 +27,74 @@ object IntegrationSynthBench extends App{
     add(p, postfix)
   }
 
-  add(""){ p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = false
+//  add(""){ p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = false
+//  }
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = false
+//    p.withLsuL1 = true
+//  }
+  add("") { p =>
+    import p._
+    decoders = 1
+    lanes = 1
+    regFileSync = false
+    withGShare = false
+    withBtb = false
+    withRas = false
+    withMul = false
+    withDiv = false
+    withLateAlu = false
+    allowBypassFrom = 0
+    relaxedBranch = true
+    relaxedShift = false
+    relaxedSrc = true
+    performanceCounters = 0
+    privParam.withSupervisor = true
+    privParam.withUser = true
+    withMmu = false
+    withRva = true
+    withRvc = false
+    withAlignerBuffer = withRvc
+    withFetchL1 = true
+    withLsuL1 = true
+    xlen = 32
+    lsuL1Sets = 64
+    lsuL1Ways = 1
+    withLsuBypass = false
   }
   add("") { p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = false
-    p.withLsuL1 = true
+    import p._
+    decoders = 1
+    lanes = 1
+    regFileSync = false
+    withGShare = true
+    withBtb = true
+    withRas = true
+    withMul = false
+    withDiv = false
+    withLateAlu = false
+    allowBypassFrom = 0
+    relaxedBranch = true
+    relaxedShift = false
+    relaxedSrc = true
+    performanceCounters = 0
+    privParam.withSupervisor = true
+    privParam.withUser = true
+    withMmu = false
+    withRva = true
+    withRvc = false
+    withAlignerBuffer = withRvc
+    withFetchL1 = true
+    withLsuL1 = true
+    xlen = 32
+    lsuL1Sets = 64
+    lsuL1Ways = 1
+    withLsuBypass = false
   }
 //  add("") { p =>
 //    p.regFileSync = false
@@ -216,4 +274,11 @@ Artix 7 -> 212 Mhz 1255 LUT 870 FF
 rv32i_d1_l1_rfa_lsul1_rsrc ->
 Artix 7 -> 90 Mhz 1327 LUT 1198 FF
 Artix 7 -> 200 Mhz 1439 LUT 1200 FF
+
+rv32iasu_d1_l1_rfa_fl1_lsul1xW1xS64_bp0_rsrc ->
+Artix 7 -> 90 Mhz 1959 LUT 1574 FF
+Artix 7 -> 177 Mhz 2091 LUT 1590 FF
+rv32iasu_d1_l1_rfa_fl1_lsul1xW1xS64_bp0_btb_ras_gshare_rsrc ->
+Artix 7 -> 87 Mhz 2169 LUT 1810 FF
+Artix 7 -> 119 Mhz 2333 LUT 1824 FF
  */

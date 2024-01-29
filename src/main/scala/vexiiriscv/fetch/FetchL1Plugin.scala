@@ -298,7 +298,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val translationPort = ats.newTranslationPort(
       nodes = Seq(pp.fetch(readAt).down, pp.fetch(readAt+1).down),
       rawAddress = Fetch.WORD_PC,
-      allowRefill = pp.fetch(readAt).insert(True),
+      forcePhysical = pp.fetch(readAt).insert(False),
       usage = AddressTranslationPortUsage.FETCH,
       portSpec = translationPortParameter,
       storageSpec = translationStorage

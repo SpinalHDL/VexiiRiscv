@@ -81,10 +81,14 @@ class Backend(f : File) {
 
   def refresh(): Unit = {
     val cycleEnd = threads.map(_.cycleLock).min
+    var skips = 0
 
     while(cycle != cycleEnd && pendings.nonEmpty){
+      skips += 1
       pendings.get(cycle) match {
         case Some(instrs) => {
+          bf.write(s"C\t$skips\n")
+          skips = 0
           for(instr <- instrs){
             if(instr.first) {
               instr.id = idAlloc
@@ -100,9 +104,9 @@ class Backend(f : File) {
         }
         case None =>
       }
-      bf.write("C\t1\n")
       cycle += 1
     }
+    if (skips != 0) bf.write(s"C\t$skips\n")
   }
 
 

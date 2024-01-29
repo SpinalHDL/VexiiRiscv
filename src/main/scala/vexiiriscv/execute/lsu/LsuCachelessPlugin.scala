@@ -115,7 +115,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val translationPort = ats.newTranslationPort(
         nodes = Seq(forkCtrl.down),
         rawAddress = RAW_ADDRESS,
-        allowRefill = insert(True),
+        forcePhysical = insert(False),
         usage = AddressTranslationPortUsage.LOAD_STORE,
         portSpec = translationPortParameter,
         storageSpec = translationStorage

@@ -6,7 +6,7 @@ import spinal.lib.misc.PathTracer
 import vexiiriscv._
 import vexiiriscv.VexiiRiscv
 import vexiiriscv.compat.MultiPortWritesSymplifier
-import vexiiriscv.execute.{LsuCachelessPlugin, SrcPlugin}
+import vexiiriscv.execute.{SrcPlugin}
 
 object Play1 extends App {
   val sc = SpinalConfig()

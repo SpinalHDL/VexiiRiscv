@@ -154,7 +154,7 @@ class TestOptions{
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
-      case true => DualSimTracer.withCb(compiled, window = 50000 * 10, seed = 2)(test)
+      case true => DualSimTracer.withCb(compiled, window = 500000 * 10, seed = 2)(test)
       case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
@@ -444,13 +444,17 @@ class TestOptions{
     }
 
 
-
     val lsul1 = dut.host.get[LsuL1TlPlugin] map (p => new Area{
       val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
-        mem.randOffset = 0x80000000l
         driver.driver.setFactor(dbusReadyFactor)
         val checker = if (monitor.bus.p.withBCE) Checker(monitor)
-        override def delayOnA(a: TransactionA) = if(dbusReadyFactor < 1.0) super.delayOnA(a)
+        override def delayOnA(a: TransactionA) = {
+//          if(a.address == 0x81820000l){
+//            println(f"miaou ${mem.readByteAsInt(0x817FFFF3l)}%x")
+//            println(s"\n!! $simTime ${a.opcode.getName} ${a.data}")
+//          }
+          if(dbusReadyFactor < 1.0) super.delayOnA(a)
+        }
       }
     })
 

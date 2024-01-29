@@ -39,6 +39,16 @@ object LsuL1 extends AreaObject{
   val WRITEBACK_BUSY = blocking[Bits]
 }
 
+/*
+List of hazard to take care of :
+- store to load
+  - withBypass = false => redo when detected
+  - withBypass = true  => data bypass
+- dirty update
+  - bypass
+- writeback/refill conflicting
+  - redo when detected
+ */
 class LsuL1Plugin(val lane : ExecuteLaneService,
                   var memDataWidth: Int,
                   var cpuDataWidth: Int,
@@ -792,6 +802,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full
         val canFlush = reservation.win && !writeback.full && !refill.slots.map(_.valid).orR
+        val canDirty = reservation.win
         val needFlushs = B(WAYS_TAGS.map(w => w.loaded && w.dirty))
         val needFlushOh = OHMasking.firstV2(needFlushs)
         val needFlushSel = OHToUInt(needFlushOh)
@@ -804,7 +815,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
         val doWrite = SEL && !HAZARD && !LOAD && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault)
-        val doDirty = doWrite && !wasDirty
+        val doDirty = doWrite && !wasDirty && canDirty
 
         val wayId = OHToUInt(WAYS_HITS)
 
@@ -812,6 +823,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val targetWay = (askUpgrade || doDirty).mux(wayId, refillWayWithoutUpdate)
         val allowSideEffects = !ABORD
+
+        when(SEL) {
+          assert(CountOne(WAYS_HITS) <= 1, "Multiple way hit ???")
+        }
 
 //        assert(!startFlush)
 
