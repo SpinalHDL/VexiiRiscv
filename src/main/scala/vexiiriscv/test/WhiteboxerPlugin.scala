@@ -181,7 +181,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE)
         address := c(p.logic.tpk.TRANSLATED)
-        data := c(LsuL1.WRITE_DATA_FINAL)
+        data := c(LsuL1.WRITE_DATA)
       })
     }
 

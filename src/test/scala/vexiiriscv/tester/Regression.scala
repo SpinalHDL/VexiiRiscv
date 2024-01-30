@@ -343,7 +343,29 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("rva", List("", "--with-mul --with-div --with-rva"))
   addDim("rvc", List("", "--with-mul --with-div --with-rvc"))
   addDim("late-alu", List("", "--with-late-alu"))
-  addDim("fetch", List("", "--with-fetch-l1"))
+  addDim("fetch", {
+    val p = ArrayBuffer[String]("")
+    for (bytes <- List(1 << 10, 1 << 12, 1 << 14);
+         sets <- List(16, 32, 64)) {
+      if (bytes / sets >= 64) {
+        val ways = bytes / sets / 64
+        p += s"--with-fetch-l1 --fetch-l1-sets=$sets --fetch-l1-ways=$ways"
+      }
+    }
+    p
+  })
+  addDim("lsu", {
+    val p = ArrayBuffer[String]("")
+    for(bytes <- List(1 << 10, 1 << 12, 1 << 14);
+      sets <- List(16 , 32, 64)){
+      if(bytes / sets >= 64) {
+        val ways = bytes / sets / 64
+        p += s"--with-lsu-l1 --lsu-l1-sets=$sets --lsu-l1-ways=$ways"
+      }
+    }
+    p
+  })
+  addDim("lsu bypass", List("", "--with-lsu-bypass"))
 
   val default = "--with-mul --with-div --performance-counters 4"
 

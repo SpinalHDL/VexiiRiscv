@@ -235,10 +235,43 @@ class LsuPlugin(var layer : LaneLayer,
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
       val mmuPageFault = tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)
 
-      val RS2 = elp(IntRegFile, riscv.RS2)
+      val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
+
+      if (!Riscv.RVA.get) {
+        l1.SC_MISS := False
+      }
+      val rva = Riscv.RVA.get generate new Area {
+        val srcBuffer = RegNext[Bits](l1.READ_DATA)
+        val alu = new AtomicAlu(
+          op = l1.AMO_OP,
+          swap = l1.AMO_SWAP,
+          mem = srcBuffer,
+          rf = elp(IntRegFile, riscv.RS2),
+          isWord = l1.AMO_WORD
+        )
+        val aluBuffer = RegNext(alu.result)
+        when(l1.AMO) {
+          writeData := aluBuffer
+        }
+
+        val delay = History(!elp.isFreezed(), 1 to 2)
+        val freezeIt = l1.SEL && l1.AMO && delay.orR
+        elp.freezeWhen(freezeIt) //Note that if the refill is faster than 2 cycle, it may create issues
+
+        assert(Global.HART_COUNT.get == 1)
+        val nc = new Area {
+          val reserved = RegInit(False)
+          when(!elp.isFreezed() && l1.SEL && !l1.ABORD) {
+            reserved setWhen (l1.LR)
+            reserved clearWhen (!l1.LOAD)
+          }
+          l1.SC_MISS := !reserved
+        }
+      }
+
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map { size =>
         val w = (1 << size) * 8
-        size -> up(RS2)(0, w bits).#*(Riscv.LSLEN / w)
+        size -> writeData(0, w bits).#*(Riscv.LSLEN / w)
       }
       l1.WRITE_DATA := SIZE.muxListDc(mapping)
 
