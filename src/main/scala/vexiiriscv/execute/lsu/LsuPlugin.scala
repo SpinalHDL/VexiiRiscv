@@ -159,7 +159,7 @@ class LsuPlugin(var layer : LaneLayer,
       val ls = new Area {
         val port = ports.addRet(Stream(Cmd()))
         port.valid := isValid && SEL
-        port.address := srcp.ADD_SUB.asUInt
+        port.address := srcp.ADD_SUB.asUInt.resized  //TODO Overflow  ?
         port.mask := AddressToMask(l1.MIXED_ADDRESS, SIZE, Riscv.LSLEN / 8)
         port.load := LOAD
         port.amo := AMO
@@ -174,7 +174,7 @@ class LsuPlugin(var layer : LaneLayer,
         val cmd = dbusAccesses.head.cmd
         val port = ports.addRet(Stream(Cmd()))
         port.arbitrationFrom(cmd)
-        port.address := cmd.address
+        port.address := cmd.address.resized
         port.mask := AddressToMask(l1.MIXED_ADDRESS, cmd.size, Riscv.LSLEN / 8)
         port.load := True
         port.amo := False

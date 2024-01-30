@@ -129,12 +129,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val bus = master(LsuL1Bus(memParameter))
 
     val WAYS_HAZARD = Payload(Bits(wayCount bits))
-    val REDO_ON_DATA_HAZARD = Payload(Bool())
     val BANK_BUSY = Payload(Bits(bankCount bits))
     val BANK_BUSY_REMAPPED = Payload(Bits(bankCount bits))
     val REFILL_HITS_EARLY = Payload(Bits(refillCount bits))
     val REFILL_HITS = Payload(Bits(refillCount bits))
-    val LOCKED, UNLOCKED = Payload(Bool())
     val NEED_UNIQUE = Payload(Bool())
 
 
@@ -154,16 +152,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val WAYS_HITS = Payload(Bits(wayCount bits))
     val WAYS_HIT = Payload(Bool())
     val DIRTY_BYPASS = Payload(Bits(wayCount bits))
-    val IO = Payload(Bool())
-    val REFILL_SLOT = Payload(Bits(refillCount bits))
-    val REFILL_SLOT_FULL = Payload(Bool())
-    val PREFETCH = Payload(Bool())
     val PROBE = Payload(Bool())
     val ALLOW_UNIQUE = Payload(Bool())
     val ALLOW_SHARED = Payload(Bool())
     val ALLOW_PROBE_DATA = Payload(Bool())
     val PROBE_ID = Payload(UInt(probeIdWidth bits))
-    val FLUSH_FREE = Payload(Bool())
     val WRITE_TO_READ_HAZARDS = Payload(Bits(ctrlAt - bankReadAt bits))
     val EVENT_WRITE_VALID = Payload(Bool())
     val EVENT_WRITE_ADDRESS = Payload(PHYSICAL_ADDRESS)
@@ -267,7 +260,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val loadedCounterMax = ctrlAt - Math.min(wayReadAt, bankReadAt)-1
         val loadedCounter = Reg(UInt(log2Up(loadedCounterMax + 1) bits))
         val loadedDone = loadedCounter === loadedCounterMax
-        loadedCounter := loadedCounter + U(loaded && !loadedDone).resized
+        loadedCounter := loadedCounter + U(loaded && !loadedDone && !lane.isFreezed()).resized
         valid clearWhen (loadedDone && withCoherency.mux(!ackValid, True))
 
         val free = !valid
@@ -435,6 +428,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val id = writebackId
         val fire = False
         val valid = RegInit(False) clearWhen (fire)
+        val busy = RegInit(False) clearWhen(fire)
         val address = Reg(UInt(postTranslationWidth bits))
         val way = Reg(UInt(log2Up(wayCount) bits))
         val priority = Reg(Bits(writebackCount - 1 bits)) //TODO Check it
@@ -449,6 +443,15 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           val fromUnique = Reg(Bool())
           val toShared = Reg(Bool())
           val probeId = Reg(UInt(probeIdWidth bits))
+        }
+
+        //Ensure that valid stay high at least as long as the pipeline latency to ensure visibility
+        val timer = new Area {
+          val counterMax = ctrlAt - Math.min(wayReadAt, bankReadAt) - 1
+          val counter = Reg(UInt(log2Up(counterMax + 1) bits))
+          val done = counter === counterMax
+          counter := counter + U(!done && !lane.isFreezed()).resized
+          valid clearWhen (this.done && (fire || !busy))
         }
 
         val free = !valid
@@ -482,8 +485,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       for (slot <- slots) when(push.valid) {
         when(free(slot.id)) {
           slot.valid := True
+          slot.busy := True
           slot.address := push.address
           slot.way := push.way
+          slot.timer.counter := 0
 
           slot.writeCmdDone := False
           slot.priority.setAll()
@@ -717,11 +722,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
-//      translatedStage(PHYSICAL_ADDRESS) := io.load.translated.physical
-//      translatedStage(ABORD) := io.load.translated.abord
-//
-//      readTagsStage(PLRU) := plru.ram.readAsync(readTagsStage(MIXED_ADDRESS)(lineRange))
-
       val rt0 = new lane.Execute(wayReadAt){
         plru.read.cmd.valid := !lane.isFreezed()
         plru.read.cmd.payload := MIXED_ADDRESS(lineRange)
@@ -760,7 +760,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val preCtrl = new lane.Execute(ctrlAt){
         NEED_UNIQUE := (!LOAD || LR) && !FLUSH
         WAYS_HAZARD := 0 //TODO
-        LOCKED := False //TODO
       }
 
 //      val rcl = new lane.Execute(ctrlAt){
@@ -795,8 +794,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val refillWayWasDirty = WAYS_TAGS.map(w => w.loaded && w.dirty).read(refillWayWithoutUpdate)
         val loadBankHazard = withBypass.mux(False, (LOAD || AMO) && WRITE_TO_READ_HAZARDS.orR)
 
-        //TODO !!! refill / writeback slots valid can go false faster than the main pipeline !freeze => need fix
-        HAZARD := waysHazard || loadBankHazard || lineBusy || LOCKED  //TODO Line busy can likely be removed if single hart with no prefetch
+        HAZARD := waysHazard || loadBankHazard || lineBusy  //TODO Line busy can likely be removed if single hart with no prefetch
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
