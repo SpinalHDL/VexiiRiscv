@@ -67,7 +67,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     for(rfa <- rfAccesses){
       val physWidth = 5
       val rfMapping = resources.collect{case r : RfResource if r.access == rfa => r.rf }.toList
-      val ak = AccessKeys(physWidth, rfMapping)
+      val ak = AccessKeys(rfa, physWidth, rfMapping)
       ak.setCompositeName(rfa)
       rfaKeys(rfa) = ak
     }

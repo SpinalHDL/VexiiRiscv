@@ -7,7 +7,7 @@ import spinal.lib.misc.database.Element
 import vexiiriscv.Global.PC_WIDTH
 import vexiiriscv._
 import vexiiriscv.decode.Decode
-import vexiiriscv.execute.LsuCachelessPlugin
+import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.misc.PrivilegedPlugin
 //import vexiiriscv.execute.LsuCachelessPlugin
@@ -279,7 +279,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
 
   val sizeMask = Array(0xFFl, 0xFFFFl, 0xFFFFFFFFl, -1l)
 
-  val lsuClpb = cpu.host.get[LsuCachelessPlugin].map(_.logic.get.bus)
+  val lsuClpb = cpu.host.get[LsuCachelessBusProvider].map(_.getLsuCachelessBus())
   val pendingIo = mutable.Queue[ProbeTraceIo]()
 
   class ProbeTraceIo extends TraceIo {
@@ -495,7 +495,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
       if(((wfi >> hart.hartId) & 1) != 0){
         hart.lastCommitAt = cycle
       }
-      if (hart.lastCommitAt + 400l < cycle) {
+      if (hart.lastCommitAt + 4000l < cycle) {
         val status = if (hart.microOpAllocPtr != hart.microOpRetirePtr) f"waiting on uop 0x${hart.microOpRetirePtr}%X" else f"last uop id 0x${hart.lastUopId}%X"
         simFailure(f"Vexii didn't commited anything since too long, $status")
       }

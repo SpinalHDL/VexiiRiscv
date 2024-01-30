@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib.LatencyAnalysis
 import spinal.lib.misc.PathTracer
 import vexiiriscv.compat.MultiPortWritesSymplifier
-import vexiiriscv.execute.{LsuCachelessPlugin, SrcPlugin}
+import vexiiriscv.execute.{SrcPlugin}
 
 object Generate extends App {
   val param = new ParamSimple()

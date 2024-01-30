@@ -196,7 +196,7 @@ class ExecuteLanePlugin(override val laneName : String,
               node.isValid && node(rfaRd.ENABLE) && node(rfaRd.PHYS) === on(rfa.PHYS) && node(rfaRd.RFID) === on(rfa.RFID)
             }.asBits
 
-            on.bypass(apply(spec)) := OHMux.or(Cat(hits, !hits.orR), on.up(apply(spec)) +: filtred.map(f => f.eu.ctrl(f.nodeId)(f.payload)), true)
+             on.bypass(apply(spec)) := OHMux.or(Cat(hits, !hits.orR), on.up(apply(spec)) +: filtred.map(f => f.eu.ctrl(f.nodeId)(f.payload)), true)
           }
         }
       }
@@ -252,7 +252,7 @@ class ExecuteLanePlugin(override val laneName : String,
       val c = idToCtrl(ctrlId)
       if(ctrlId != 0) c.up(c.LANE_SEL).setAsReg().init(False)
 
-      val age = getAge(ctrlId)
+      val age = getCtrlAge(ctrlId)
       val doIt = rp.isFlushedAt(age, c(Global.HART_ID), c(Execute.LANE_AGE))
       c.downIsCancel := False
       doIt match {
@@ -273,6 +273,7 @@ class ExecuteLanePlugin(override val laneName : String,
     buildBefore.release()
   }
 
+  def freezeIt()(implicit loc: Location) = eupp.freezeIt()
   def freezeWhen(cond: Bool)(implicit loc: Location) = eupp.freezeWhen(cond)
   def isFreezed(): Bool = eupp.isFreezed()
   override def atRiskOfFlush(executeId: Int): Bool = {

@@ -151,7 +151,8 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 
 
   val regulars = ArrayBuffer("dhrystone", "coremark_vexii", "machine_vexii")
-  priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor", s"mmu_sv${if(xlen == 32) 32 else 39}"))
+  priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
+  if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
   for(name <- regulars){
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
@@ -182,7 +183,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.name(s"freertos/$name")
   }
 
-  if(withBuildroot && rvm && rva) priv.filter(_.p.withSupervisor).foreach{ _ =>
+  if(withBuildroot && rvm && rva && mmu.nonEmpty) priv.filter(_.p.withSupervisor).foreach{ _ =>
     val path = s"ext/NaxSoftware/buildroot/images/$archLinux"
     val args = newArgs()
     args.failAfter(10000000000l)
@@ -285,7 +286,7 @@ object RegressionSingle extends App{
   }
 
   def test(ps : ParamSimple, dutArgs : Seq[String] = Nil): Unit = {
-    test(ps.getName(), ps.plugins(), dutArgs)
+    test(ps.getName(), TestBench.paramToPlugins(ps), dutArgs)
   }
 
   def test(args : String) : Unit = test(args.split(" "))
@@ -303,7 +304,7 @@ object RegressionSingle extends App{
 
 
 class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REGRESSION_THREAD_COUNT", "0").toInt){
-  FileUtils.deleteQuietly(new File("regression"))
+//  FileUtils.deleteQuietly(new File("regression"))
 
   val testsAdded = mutable.LinkedHashSet[String]()
   def addTest(args: String): Unit = addTest(args.replace("  ", " ").split("\\s+"))
@@ -342,7 +343,29 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("rva", List("", "--with-mul --with-div --with-rva"))
   addDim("rvc", List("", "--with-mul --with-div --with-rvc"))
   addDim("late-alu", List("", "--with-late-alu"))
-  addDim("fetch", List("", "--with-fetch-l1"))
+  addDim("fetch", {
+    val p = ArrayBuffer[String]("")
+    for (bytes <- List(1 << 10, 1 << 12, 1 << 14);
+         sets <- List(16, 32, 64)) {
+      if (bytes / sets >= 64) {
+        val ways = bytes / sets / 64
+        p += s"--with-fetch-l1 --fetch-l1-sets=$sets --fetch-l1-ways=$ways"
+      }
+    }
+    p
+  })
+  addDim("lsu", {
+    val p = ArrayBuffer[String]("")
+    for(bytes <- List(1 << 10, 1 << 12, 1 << 14);
+      sets <- List(16 , 32, 64)){
+      if(bytes / sets >= 64) {
+        val ways = bytes / sets / 64
+        p += s"--with-lsu-l1 --lsu-l1-sets=$sets --lsu-l1-ways=$ways"
+      }
+    }
+    p
+  })
+  addDim("lsu bypass", List("", "--with-lsu-bypass"))
 
   val default = "--with-mul --with-div --performance-counters 4"
 

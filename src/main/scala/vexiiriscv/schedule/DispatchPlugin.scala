@@ -3,7 +3,7 @@ package vexiiriscv.schedule
 import spinal.core._
 import spinal.core.fiber.Retainer
 import spinal.lib._
-import spinal.lib.logic.{DecodingSpec, Masked}
+import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
 import spinal.lib.misc.pipeline.{CtrlApi, CtrlLaneApi, CtrlLink, NodeApi, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
@@ -96,7 +96,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
     for (uop <- mayFlushUops) dp.addMicroOpDecoding(uop, MAY_FLUSH, True)
     for (uop <- dontFlushUops) dp.addMicroOpDecoding(uop, DONT_FLUSH, True)
     for (uop <- dontFlushFromLanesUops) dp.addMicroOpDecoding(uop, DONT_FLUSH_FROM_LANES, True)
-    for(uop <- fenceOlderOps) dp.addMicroOpDecoding(uop, FENCE_OLDER, True)
+    for (uop <- fenceOlderOps) dp.addMicroOpDecoding(uop, FENCE_OLDER, True)
 
     // Generate upstream up dontFlush precise decoding
     case class DontFlushSpec(at: Int, value: Payload[Bool])
@@ -170,9 +170,25 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
           case RfResource(_, e) => true
           case _ => false
         }).values
+        val hazardUntilMax = eus.map(_.getRdBroadcastedFromMax()).max
 
         val onRs = for (rs <- readAccess) yield new Area {
           val hazards = ArrayBuffer[Bool]()
+          val decodeSpec = ArrayBuffer[(Masked, Masked)]()
+          for(uop <- ll.uops.values){
+            uop.rs.get(rs.rfa.asInstanceOf[RfRead]).foreach{v =>
+              decodeSpec += Masked(uop.uop.key) -> (v.from >= hazardUntilMax).mux(Masked.one, Masked.zero)
+            }
+          }
+          val skip = Symplify(c.ctx.uop, decodeSpec, 1).as(Bool()) //TODO verify with LsuPlugin store usage at execute id 2
+
+          for (spec <- bypassedSpecs.values) yield new Area {
+            for (l <- spec.el.getLayers(); uop <- l.uops.values) {
+              uop.rd.foreach { rd =>
+                uop.addDecoding(spec.value -> Bool(rd.broadcastedFrom <= spec.at))
+              }
+            }
+          }
           for(writeEu <- eus) {
             val hazardFrom = ll.el.rfReadHazardFrom(ll.getRsUseAtMin()) // This is a pessimistic aproach
             val hazardUntil = writeEu.getRdBroadcastedFromMax()
@@ -182,7 +198,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
               hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && !node(getBypassed(writeEu, id))
             }
           }
-          val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR
+          val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR && !skip
         }
         c.rsHazards(llId) := onRs.map(_.hazard).orR
       }
