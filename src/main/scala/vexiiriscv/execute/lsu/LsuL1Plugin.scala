@@ -153,6 +153,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val WAYS_TAGS = Payload(Vec.fill(wayCount)(Tag()))
     val WAYS_HITS = Payload(Bits(wayCount bits))
     val WAYS_HIT = Payload(Bool())
+    val DIRTY_BYPASS = Payload(Bits(wayCount bits))
     val IO = Payload(Bool())
     val REFILL_SLOT = Payload(Bits(refillCount bits))
     val REFILL_SLOT_FULL = Payload(Bool())
@@ -864,6 +865,22 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
         when(doRefill || doUpgrade){
           waysWrite.tag.loaded := False
+        }
+
+        val dirtyBypasser = new Area {
+          val mask = WAYS_HITS.andMask(doDirty)
+          val on = for(eid <- wayReadAt until ctrlAt) yield new Area {
+            val dst = lane.execute(eid)
+            val first = eid == wayReadAt
+            val hit = dst(MIXED_ADDRESS)(lineRange) === MIXED_ADDRESS(lineRange)
+            val masked = mask.andMask(hit)
+            first match {
+              case true => dst(DIRTY_BYPASS) := masked
+              case false => dst.bypass(DIRTY_BYPASS) := dst.up(DIRTY_BYPASS) | masked
+            }
+          }
+          bypass(WAYS_TAGS) := up(WAYS_TAGS)
+          for(w <- 0 until wayCount) bypass(WAYS_TAGS)(w).dirty setWhen(DIRTY_BYPASS(w))
         }
 
         WRITE_DATA_FINAL := WRITE_DATA
