@@ -15,21 +15,17 @@ import vexiiriscv.riscv.Riscv.{RVA, RVC}
 
 object LsuL1 extends AreaObject{
   // -> L1
-  val ABORD = Payload(Bool())
+  val ABORD, SKIP_WRITE = Payload(Bool())
   val SEL = Payload(Bool())
-  val LOAD, AMO, SC, LR, FLUSH = Payload(Bool())
+  val LOAD, STORE, ATOMIC, FLUSH = Payload(Bool())
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS)
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
   val MASK = Payload(Bits(Riscv.LSLEN/8 bits)) //Also needed for loads
-  val AMO_OP = Payload(Bits(3 bits))
-  val AMO_SWAP = Payload(Bool())
-  val AMO_WORD = Payload(Bool())
 
   // L1 ->
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
   val HAZARD, MISS, MISS_UNIQUE, FAULT = Payload(Bool())
-  val SC_MISS = Payload(Bool())
   val FLUSH_HIT = Payload(Bool())
 
   val SETS = blocking[Int]
@@ -132,7 +128,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val BANK_BUSY_REMAPPED = Payload(Bits(bankCount bits))
     val REFILL_HITS_EARLY = Payload(Bits(refillCount bits))
     val REFILL_HITS = Payload(Bits(refillCount bits))
-    val NEED_UNIQUE = Payload(Bool())
 
 
     case class Tag() extends Bundle {
@@ -150,6 +145,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val WAYS_TAGS = Payload(Vec.fill(wayCount)(Tag()))
     val WAYS_HITS = Payload(Bits(wayCount bits))
     val WAYS_HIT = Payload(Bool())
+    val NEED_UNIQUE = Payload(Bool())
     val DIRTY_BYPASS = Payload(Bits(wayCount bits))
     val PROBE = Payload(Bool())
     val ALLOW_UNIQUE = Payload(Bool())
@@ -757,7 +753,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       assert(Global.HART_COUNT.get == 1)
       //TODO Store AMO SC need to be sure the cache line didn't just start being written back when theiy reach ctrl stage / warning prefetch
       val preCtrl = new lane.Execute(ctrlAt){
-        NEED_UNIQUE := (!LOAD || LR) && !FLUSH
+        NEED_UNIQUE := STORE || ATOMIC
         WAYS_HAZARD := 0 //TODO
       }
 
@@ -791,7 +787,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 //        val uniqueMiss = NEED_UNIQUE && !hitUnique
         val wasDirty = (B(WAYS_TAGS.map(_.dirty)) & WAYS_HITS).orR
         val refillWayWasDirty = WAYS_TAGS.map(w => w.loaded && w.dirty).read(refillWayWithoutUpdate)
-        val loadBankHazard = withBypass.mux(False, (LOAD || AMO) && WRITE_TO_READ_HAZARDS.orR)
+        val loadBankHazard = withBypass.mux(False, LOAD && WRITE_TO_READ_HAZARDS.orR)
 
         HAZARD := waysHazard || loadBankHazard || lineBusy  //TODO Line busy can likely be removed if single hart with no prefetch
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
@@ -812,7 +808,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
-        val doWrite = SEL && !HAZARD && !LOAD && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault)
+        val doWrite = SEL && !HAZARD && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
         val doDirty = doWrite && !wasDirty && canDirty
 
         val wayId = OHToUInt(WAYS_HITS)
@@ -828,7 +824,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
 //        assert(!startFlush)
 
-        val freezeIt = SEL && !LOAD && (!bankWriteReservation.win || !reservation.win)
+        val freezeIt = SEL && STORE && (!bankWriteReservation.win || !reservation.win)
         lane.freezeWhen(freezeIt)
 
         //TODO preset dirty if it come from a store
@@ -838,7 +834,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         refill.push.data := askRefill
         refill.push.way := targetWay
         refill.push.victim := writeback.free.andMask(refillWayNeedWriteback && refillWayWasDirty)
-        refill.push.dirty := !LOAD
+        refill.push.dirty := STORE
         when(askUpgrade) {
           refill.push.way := wayId
           refill.push.victim := 0
@@ -882,7 +878,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         when(doWrite) {
           for ((bank, bankId) <- banks.zipWithIndex) when(WAYS_HITS(bankId)) {
-            bank.write.valid := bankId === bankHitId && allowSideEffects && !(SC && SC_MISS)
+            bank.write.valid := bankId === bankHitId && allowSideEffects
             bank.write.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
             bank.write.data.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
             bank.write.mask := 0

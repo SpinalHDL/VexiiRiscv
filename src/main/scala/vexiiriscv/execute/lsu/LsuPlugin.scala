@@ -146,10 +146,7 @@ class LsuPlugin(var layer : LaneLayer,
       case class Cmd() extends Bundle {
         val address = l1.MIXED_ADDRESS()
         val mask = l1.MASK()
-        val load = Bool()
-        val amo = Bool()
-        val sc = Bool()
-        val lr = Bool()
+        val load, store, atomic = Bool()
         val fromFlush = Bool()
         val fromAccess = Bool()
       }
@@ -162,9 +159,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.address := srcp.ADD_SUB.asUInt.resized  //TODO Overflow  ?
         port.mask := AddressToMask(l1.MIXED_ADDRESS, SIZE, Riscv.LSLEN / 8)
         port.load := LOAD
-        port.amo := AMO
-        port.sc := SC
-        port.lr := LR
+        port.store := STORE
+        port.atomic := ATOMIC
         port.fromFlush := False
         port.fromAccess := False
       }
@@ -177,9 +173,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.address := cmd.address.resized
         port.mask := AddressToMask(l1.MIXED_ADDRESS, cmd.size, Riscv.LSLEN / 8)
         port.load := True
-        port.amo := False
-        port.sc := False
-        port.lr := False
+        port.store := False
+        port.atomic := False
         port.fromFlush := False
         port.fromAccess := True
       }
@@ -190,9 +185,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.address := (flusher.cmdCounter << log2Up(l1.LINE_BYTES)).resized
         port.mask := 0
         port.load := False
-        port.amo := False
-        port.sc := False
-        port.lr := False
+        port.store := False
+        port.atomic := False
         port.fromFlush := True
         port.fromAccess := False
         when(port.fire) {
@@ -206,9 +200,8 @@ class LsuPlugin(var layer : LaneLayer,
       l1.MIXED_ADDRESS := arbiter.io.output.address
       l1.MASK := arbiter.io.output.mask
       l1.LOAD := arbiter.io.output.load
-      l1.AMO := arbiter.io.output.amo
-      l1.SC := arbiter.io.output.sc
-      l1.LR := arbiter.io.output.lr
+      l1.ATOMIC := arbiter.io.output.atomic
+      l1.STORE := arbiter.io.output.store
       l1.FLUSH := arbiter.io.output.fromFlush
       FROM_ACCESS := arbiter.io.output.fromAccess
       FROM_LSU := !(arbiter.io.output.fromFlush || arbiter.io.output.fromAccess)
@@ -233,39 +226,40 @@ class LsuPlugin(var layer : LaneLayer,
 
     val onCtrl = new elp.Execute(ctrlAt) {
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
-      val mmuPageFault = tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)
+      val mmuPageFault = tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
 
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
-
+      val scMiss = Bool()
       if (!Riscv.RVA.get) {
-        l1.SC_MISS := False
+        scMiss := False
       }
       val rva = Riscv.RVA.get generate new Area {
         val srcBuffer = RegNext[Bits](l1.READ_DATA)
         val alu = new AtomicAlu(
-          op = l1.AMO_OP,
-          swap = l1.AMO_SWAP,
+          op = UOP(29, 3 bits),
+          swap = UOP(27),
           mem = srcBuffer,
           rf = elp(IntRegFile, riscv.RS2),
-          isWord = l1.AMO_WORD
+          isWord = SIZE === 2
         )
         val aluBuffer = RegNext(alu.result)
-        when(l1.AMO) {
+        val isAmo = l1.ATOMIC && l1.STORE && l1.LOAD
+        when(isAmo) {
           writeData := aluBuffer
         }
 
         val delay = History(!elp.isFreezed(), 1 to 2)
-        val freezeIt = l1.SEL && l1.AMO && delay.orR
+        val freezeIt = isValid && SEL && isAmo && delay.orR
         elp.freezeWhen(freezeIt) //Note that if the refill is faster than 2 cycle, it may create issues
 
         assert(Global.HART_COUNT.get == 1)
         val nc = new Area {
           val reserved = RegInit(False)
           when(!elp.isFreezed() && l1.SEL && !l1.ABORD) {
-            reserved setWhen (l1.LR)
-            reserved clearWhen (!l1.LOAD)
+            reserved setWhen (l1.ATOMIC && !l1.STORE)
+            reserved clearWhen (l1.STORE)
           }
-          l1.SC_MISS := !reserved
+          scMiss := !reserved
         }
       }
 
@@ -281,7 +275,7 @@ class LsuPlugin(var layer : LaneLayer,
 
         val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
         bus.cmd.valid := doIt && !cmdSent
-        bus.cmd.write := !LOAD
+        bus.cmd.write := l1.STORE
         bus.cmd.address := l1.PHYSICAL_ADDRESS //TODO Overflow on TRANSLATED itself ?
         bus.cmd.data := l1.WRITE_DATA
         bus.cmd.size := SIZE.resized
@@ -291,7 +285,7 @@ class LsuPlugin(var layer : LaneLayer,
         bus.cmd.hartId := Global.HART_ID
         bus.cmd.uopId := Decode.UOP_ID
         if (withRva) {
-          bus.cmd.amoEnable := LOAD.mux[Bool](LR, SC || AMO)
+          bus.cmd.amoEnable := l1.ATOMIC
           bus.cmd.amoOp := UOP(31 downto 27)
         }
 
@@ -303,12 +297,8 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       val READ_DATA = insert(io.doIt.mux[Bits](io.rsp.data, l1.READ_DATA))
-      val SC_MISS = insert(withRva.mux(io.doIt.mux[Bool](io.rsp.scMiss, l1.SC_MISS), False))
+      val SC_MISS = insert(withRva.mux(io.doIt.mux[Bool](io.rsp.scMiss, scMiss), False))
 
-
-      l1.AMO_OP := UOP(29, 3 bits)
-      l1.AMO_SWAP := UOP(27)
-      l1.AMO_WORD := SIZE === 2
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
@@ -330,7 +320,7 @@ class LsuPlugin(var layer : LaneLayer,
         doTrap := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-        trapPort.code(1) setWhen (!LOAD)
+        trapPort.code(1) setWhen (STORE)
       }
 
       val l1Redo = !tpk.IO && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
@@ -344,17 +334,17 @@ class LsuPlugin(var layer : LaneLayer,
         doTrap := True; io.allowed := False
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
-        trapPort.code(1) setWhen (!LOAD)
+        trapPort.code(1) setWhen (STORE)
       }
 
       when(tpk.ACCESS_FAULT) {
         doTrap := True; io.allowed := False
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-        trapPort.code(1) setWhen (!LOAD)
+        trapPort.code(1) setWhen (STORE)
       }
 
-      trapPort.arg(0, 2 bits) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
+      trapPort.arg(0, 2 bits) := STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
       trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REDO) {
         doTrap := True; io.allowed := False
@@ -365,7 +355,7 @@ class LsuPlugin(var layer : LaneLayer,
       when(MISS_ALIGNED) {
         doTrap := True; io.allowed := False
         trapPort.exception := True
-        trapPort.code := LOAD.mux[Bits](CSR.MCAUSE_ENUM.LOAD_MISALIGNED, CSR.MCAUSE_ENUM.STORE_MISALIGNED).andMask(MISS_ALIGNED).resized
+        trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(MISS_ALIGNED).resized
       }
 
       when(isValid && SEL && doTrap) {
@@ -376,6 +366,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       l1.ABORD := FROM_LSU && (!isValid || isCancel || tpk.IO || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED)
+      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss
 
       when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){
         flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
@@ -411,7 +402,7 @@ class LsuPlugin(var layer : LaneLayer,
       iwb.valid := SEL
       iwb.payload := rspShifted
 
-      if (withRva) when(SC) {
+      if (withRva) when(l1.ATOMIC && !l1.LOAD) {
         iwb.payload(0) := onCtrl.SC_MISS
         iwb.payload(7 downto 1) := 0
       }
