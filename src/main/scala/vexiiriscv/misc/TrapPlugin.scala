@@ -1,6 +1,6 @@
 package vexiiriscv.misc
 
-import spinal.core.{Bool, _}
+import spinal.core._
 import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.fsm._
@@ -12,8 +12,9 @@ import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
-import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, PcService}
+import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, LsuL1Service, PcService}
 import vexiiriscv.memory.AddressTranslationService
+import vexiiriscv.prediction.{HistoryPlugin, Prediction}
 import vexiiriscv.schedule.Ages
 
 import scala.collection.mutable
@@ -97,19 +98,21 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     val cap = host[CsrAccessPlugin]
     val pp = host[PipelineBuilderPlugin]
     val fl1p = host.get[FetchL1Service]
+    val lsul1p = host.get[LsuL1Service]
     val pcs = host[PcService]
+    val hp = host.get[HistoryPlugin]
     val ats = host[AddressTranslationService]
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
-    val fl1pLock = fl1p.map(_.invalidationRetainer())
-    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock))
+    val invalidationLocks = retains(fl1p.map(_.invalidationRetainer).toList ++ lsul1p.map(_.invalidationRetainer))
+    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock) ++ hp.map(_.elaborationLock))
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
 
-    val fetchL1Invalidate = fl1p.nonEmpty generate new Area{
-      val ports = (0 until HART_COUNT).map(hartId => fl1p.get.newInvalidationPort())
-      fl1pLock.get.release()
-    }
+    val fetchL1Invalidate = fl1p.nonEmpty generate (0 until HART_COUNT).map(hartId => fl1p.get.newInvalidationPort())
+    val lsuL1Invalidate = lsul1p.nonEmpty generate (0 until HART_COUNT).map(hartId => lsul1p.get.newInvalidationPort())
+
+    invalidationLocks.release()
 
     val trapArgWidths = ArrayBuffer[Int](2)
     if(ats.mayNeedRedo) trapArgWidths += 2+ats.getStorageIdWidth()
@@ -201,10 +204,11 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
 
       val trap = new Area {
         val pending = new Area {
-          val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.age))
+          val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.bus.laneAge))
           val arbiter = new AgedArbiter(requests)
           val state = arbiter.down.toReg
           val pc = Reg(PC)
+          val history = hp.nonEmpty generate Reg(Prediction.BRANCH_HISTORY)
           val slices = Reg(UInt(INSTRUCTION_SLICE_COUNT_WIDTH+1 bits))
 
           val xret = new Area {
@@ -247,11 +251,11 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           csr.hasInflight := (for (self <- lanes; ctrlId <- 1 to self.executeAt + trapAt; sn = self.ctrl(ctrlId).up) yield sn.isValid && sn(HART_ID) === hartId).orR
           val oh = B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(TRAP))
           val valid = oh.orR
-          val pc = OHMux.or(oh, lanes.map(_.execute(trapAt).down(PC)), true)
-          val slices = OHMux.or(oh, lanes.map(_.execute(trapAt).down(INSTRUCTION_SLICE_COUNT)), true)
+          val reader = lanes.map(_.execute(trapAt).down).reader(oh, true)
           when(valid) {
-            pending.pc := pc
-            pending.slices := slices.resize(INSTRUCTION_SLICE_COUNT_WIDTH+1)+1
+            pending.pc := reader(_(PC))
+            if(hp.nonEmpty) pending.history := reader(_(Prediction.BRANCH_HISTORY))
+            pending.slices := reader(_(INSTRUCTION_SLICE_COUNT)).resize(INSTRUCTION_SLICE_COUNT_WIDTH+1)+1
           }
         }
 
@@ -259,6 +263,12 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val trap = False
           val interrupt = Bool().assignDontCare()
           val code = Global.CODE().assignDontCare()
+        }
+
+        val historyPort = hp.nonEmpty generate hp.get.newPort(Integer.MAX_VALUE, 0)
+        if(hp.nonEmpty) {
+          historyPort.valid := False
+          historyPort.history := pending.history
         }
 
         val pcPort = pcs.newJumpInterface(Ages.TRAP, 0, 0)
@@ -272,6 +282,8 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val XRET_EPC, XRET_APPLY = new State()
           val ATS_RSP = ats.mayNeedRedo generate new State()
           val JUMP = new State()
+          val LSU_FLUSH = lsul1p.nonEmpty generate new State()
+          val FETCH_FLUSH = fl1p.nonEmpty generate new State()
 
           val inflightTrap = trapPendings.map(_(hartId)).orR
           val holdPort = pcs.newHoldPort(hartId)
@@ -320,7 +332,6 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             }
           }
 
-
           RUNNING.whenIsActive {
             when(trigger.valid) {
               buffer.sampleIt := True
@@ -340,8 +351,10 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             ).map(pending.state.code === _).orR
           )
 
-          if(fl1p.nonEmpty) fetchL1Invalidate.ports(hartId).cmd.valid := False
+          if (fl1p.nonEmpty) fetchL1Invalidate(hartId).cmd.valid := False
+          if (lsul1p.nonEmpty) lsuL1Invalidate(hartId).cmd.valid := False
           PROCESS.whenIsActive{
+            if(hp.nonEmpty) historyPort.valid := True
             when(pending.state.exception || buffer.trap.interrupt) {
               goto(TRAP_TVAL)
             } otherwise {
@@ -356,16 +369,13 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   goto(XRET_EPC)
                 }
                 is(TrapReason.FENCE_I) {
-                  fl1p.isEmpty match {
-                    case true => goto(JUMP)
-                    case false => {
-                      fetchL1Invalidate.ports(hartId).cmd.valid := True
-                      when(fetchL1Invalidate.ports(hartId).cmd.ready) {
-                        goto(JUMP)
-                      }
+                  lsul1p.nonEmpty match {
+                    case true => goto(LSU_FLUSH)
+                    case false => fl1p.nonEmpty match {
+                      case true => goto(FETCH_FLUSH)
+                      case false => goto(JUMP)
                     }
                   }
-
                 }
                 is(TrapReason.REDO) {
                   goto(JUMP)
@@ -399,6 +409,23 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   assert(False, "Unexpected trap reason")
                 }
               }
+            }
+          }
+
+          if(lsul1p.nonEmpty) LSU_FLUSH.whenIsActive{
+            lsuL1Invalidate(hartId).cmd.valid := True
+            when(lsuL1Invalidate(hartId).cmd.ready) {
+              fl1p.nonEmpty match {
+                case true => goto(FETCH_FLUSH)
+                case false => goto(JUMP)
+              }
+            }
+          }
+
+          if (fl1p.nonEmpty) FETCH_FLUSH.whenIsActive {
+            fetchL1Invalidate(hartId).cmd.valid := True
+            when(fetchL1Invalidate(hartId).cmd.ready) {
+              goto(JUMP)
             }
           }
 

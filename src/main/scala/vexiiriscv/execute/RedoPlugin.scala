@@ -31,7 +31,7 @@ class RedoPlugin(val laneName : String) extends FiberPlugin {
 
     val groups = specs.groupBy(_.ctrlAt)
     val groupsLogic = for((ctrlAt, specs) <- groups) yield new elp.Ctrl(ctrlAt){
-      val age = elp.getAge(ctrlAt)
+      val age = elp.getCtrlAge(ctrlAt)
       val pcPort = pcs.newJumpInterface(age, Execute.LANE_AGE_WIDTH, aggregationPriority = 0)
       val flushPort = sp.newFlushPort(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
       val historyPort = hp.map(_.newPort(age, Execute.LANE_AGE_WIDTH))

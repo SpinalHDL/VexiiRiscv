@@ -49,7 +49,7 @@ trait AddressTranslationService extends Area {
 
   def newTranslationPort(nodes: Seq[NodeBaseApi],
                          rawAddress: Payload[UInt],
-                         allowRefill: Payload[Bool],
+                         forcePhysical: Payload[Bool],
                          usage: AddressTranslationPortUsage,
                          portSpec: Any,
                          storageSpec: Any): AddressTranslationRsp

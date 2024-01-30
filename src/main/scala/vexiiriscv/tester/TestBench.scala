@@ -3,10 +3,13 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
 import spinal.lib.misc.Elf
+import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import vexiiriscv._
+import vexiiriscv.execute.lsu.{LsuL1Plugin, LsuL1TlPlugin}
 import vexiiriscv.fetch.PcService
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
@@ -151,7 +154,7 @@ class TestOptions{
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
-      case true => DualSimTracer.withCb(compiled, window = 50000 * 10, seed = 2)(test)
+      case true => DualSimTracer.withCb(compiled, window = 500000 * 10, seed = 2)(test)
       case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
@@ -219,7 +222,7 @@ class TestOptions{
     for ((offset, file) <- bins) {
       mem.loadBin(offset, file)
       if (withRvlsCheck) rvls.loadBin(offset, file)
-      tracerFile.foreach(_.loadBin(0, file))
+      tracerFile.foreach(_.loadBin(offset, file))
     }
 
     // load elfs
@@ -311,8 +314,8 @@ class TestOptions{
       rspDriver.setFactor(ibusReadyFactor)
     }
 
-    val lsclp = dut.host.get[execute.LsuCachelessPlugin].map { p =>
-      val bus = p.logic.bus
+    val lsclp = dut.host.get[execute.lsu.LsuCachelessBusProvider].map { p =>
+      val bus = p.getLsuCachelessBus()
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
       var reserved = false
@@ -375,7 +378,7 @@ class TestOptions{
               error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
             }
           } else {
-            import vexiiriscv.execute.LsuCachelessBusAmo._
+            import vexiiriscv.execute.lsu.LsuCachelessBusAmo._
             cmd.amoOp match {
               case LR => {
                 error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
@@ -440,6 +443,21 @@ class TestOptions{
       peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
     }
 
+
+    val lsul1 = dut.host.get[LsuL1TlPlugin] map (p => new Area{
+      val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
+        driver.driver.setFactor(dbusReadyFactor)
+        val checker = if (monitor.bus.p.withBCE) Checker(monitor)
+        override def delayOnA(a: TransactionA) = {
+//          if(a.address == 0x81820000l){
+//            println(f"miaou ${mem.readByteAsInt(0x817FFFF3l)}%x")
+//            println(s"\n!! $simTime ${a.opcode.getName} ${a.data}")
+//          }
+          if(dbusReadyFactor < 1.0) super.delayOnA(a)
+        }
+      }
+    })
+
     if(printStats) onSimEnd{
       println(probe.getStats())
     }
@@ -448,6 +466,16 @@ class TestOptions{
 
 object TestBench extends App{
   doIt()
+
+  def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
+    val ret = param.plugins()
+    ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
+      p.ackIdWidth = 8
+      p.probeIdWidth = 4
+      ret  += new LsuL1TlPlugin
+    }
+    ret
+  }
 
   def doIt(param : ParamSimple = new ParamSimple()) {
     val testOpt = new TestOptions()
@@ -468,7 +496,7 @@ object TestBench extends App{
 
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
-      simConfig.compile(VexiiRiscv(param.plugins()))
+      simConfig.compile(VexiiRiscv(paramToPlugins(param)))
     }
     testOpt.test(compiled)
     Thread.sleep(10)

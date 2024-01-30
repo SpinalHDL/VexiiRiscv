@@ -6,6 +6,7 @@ import spinal.lib.misc.plugin.Hostable
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
+import vexiiriscv.execute.lsu._
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
@@ -41,6 +42,12 @@ class ParamSimple(){
   var allowBypassFrom = 100 //100 => disabled
   var performanceCounters = 0
   var withFetchL1 = false
+  var withLsuL1 = false
+  var fetchL1Sets = 64
+  var fetchL1Ways = 1
+  var lsuL1Sets = 64
+  var lsuL1Ways = 1
+  var withLsuBypass = false
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
@@ -65,8 +72,14 @@ class ParamSimple(){
     withRva = true
     withRvc = false
     withAlignerBuffer = withRvc
-    withFetchL1 = false
+    withFetchL1 = true
+    withLsuL1 = false
     xlen = 32
+    fetchL1Sets = 64
+    fetchL1Ways = 4
+    lsuL1Sets = 64
+    lsuL1Ways = 4
+    withLsuBypass = true
   }
 
 
@@ -83,7 +96,8 @@ class ParamSimple(){
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
-    if (withFetchL1) r += "fl1"
+    if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}"
+    if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
     if (withRas) r += "ras"
@@ -124,6 +138,12 @@ class ParamSimple(){
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
     opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
+    opt[Unit]("with-lsu-l1") action { (v, c) => withLsuL1 = true }
+    opt[Int]("fetch-l1-sets") action { (v, c) => fetchL1Sets = v }
+    opt[Int]("fetch-l1-ways") action { (v, c) => fetchL1Ways = v }
+    opt[Int]("lsu-l1-sets") action { (v, c) => lsuL1Sets = v }
+    opt[Int]("lsu-l1-ways") action { (v, c) => lsuL1Ways = v }
+    opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
   }
 
   def plugins() = pluginsArea.plugins
@@ -205,7 +225,8 @@ class ParamSimple(){
       }
     )
     if(withFetchL1) plugins += new fetch.FetchL1Plugin(
-      cacheSize = 16*1024,
+      lineSize = 64,
+      setCount = 64,
       wayCount = 4,
       fetchDataWidth = 32*decoders,
       memDataWidth = 32*decoders,
@@ -279,7 +300,7 @@ class ParamSimple(){
     plugins += new BarrelShifterPlugin(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    plugins += new LsuCachelessPlugin(
+    if(!withLsuL1) plugins += new LsuCachelessPlugin(
       layer     = early0,
       withAmo   = withRva,
       withSpeculativeLoadFlush = true,
@@ -312,6 +333,46 @@ class ParamSimple(){
         )
       }
     )
+    if(withLsuL1){
+      plugins += new LsuPlugin(
+        layer = early0,
+        withRva = withRva,
+        translationStorageParameter = MmuStorageParameter(
+          levels = List(
+            MmuStorageLevel(
+              id = 0,
+              ways = 4,
+              depth = 32
+            ),
+            MmuStorageLevel(
+              id = 1,
+              ways = 2,
+              depth = 32
+            )
+          ),
+          priority = 1
+        ),
+        translationPortParameter = withMmu match {
+          case false => null
+          case true => MmuPortParameter(
+            readAt = 0,
+            hitsAt = 1,
+            ctrlAt = 1,
+            rspAt = 1
+          )
+        }
+      )
+      plugins += new LsuL1Plugin(
+        lane           = lane0,
+        memDataWidth   = xlen,
+        cpuDataWidth   = xlen,
+        refillCount    = 1,
+        writebackCount = 1,
+        setCount       = lsuL1Sets,
+        wayCount       = lsuL1Ways,
+        withBypass     = withLsuBypass
+      )
+    }
 
     if(withMul) {
       plugins += new MulPlugin(early0)
