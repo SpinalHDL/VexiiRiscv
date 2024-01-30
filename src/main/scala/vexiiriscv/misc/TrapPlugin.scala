@@ -204,7 +204,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
 
       val trap = new Area {
         val pending = new Area {
-          val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.age))
+          val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.bus.laneAge))
           val arbiter = new AgedArbiter(requests)
           val state = arbiter.down.toReg
           val pc = Reg(PC)

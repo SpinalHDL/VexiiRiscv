@@ -49,7 +49,7 @@ class LsuPlugin(var layer : LaneLayer,
     val translationStorage = ats.newStorage(translationStorageParameter)
     atsStorageLock.release()
 
-    val trapPort = ts.newTrap(layer.el.getAge(ctrlAt), Execute.LANE_AGE_WIDTH)
+    val trapPort = ts.newTrap(layer.el.getExecuteAge(ctrlAt), Execute.LANE_AGE_WIDTH)
     val flushPort = ss.newFlushPort(layer.el.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
@@ -230,11 +230,59 @@ class LsuPlugin(var layer : LaneLayer,
 
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
       val scMiss = Bool()
+
+      val io = new Area {
+        val allowed = CombInit(this (tpk.IO))
+        val doIt = isValid && l1.SEL && allowed
+
+        val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
+        bus.cmd.valid := doIt && !cmdSent
+        bus.cmd.write := l1.STORE
+        bus.cmd.address := l1.PHYSICAL_ADDRESS //TODO Overflow on TRANSLATED itself ?
+        bus.cmd.data := l1.WRITE_DATA
+        bus.cmd.size := SIZE.resized
+        bus.cmd.mask := l1.MASK
+        bus.cmd.io := True
+        bus.cmd.fromHart := True
+        bus.cmd.hartId := Global.HART_ID
+        bus.cmd.uopId := Decode.UOP_ID
+        if (withRva) {
+          bus.cmd.amoEnable := l1.ATOMIC
+          bus.cmd.amoOp := UOP(31 downto 27)
+        }
+
+        val rsp = bus.rsp.toStream.halfPipe()
+        rsp.ready := !elp.isFreezed()
+
+        val freezeIt = doIt && !rsp.valid
+        elp.freezeWhen(freezeIt)
+      }
+
+
+      val rspData = io.doIt.mux[Bits](io.rsp.data, l1.READ_DATA)
+      val rspSplits = rspData.subdivideIn(8 bits)
+      val rspShifted = Bits(LSLEN bits)
+      val wordBytes = LSLEN / 8
+
+      //Generate minimal mux to move from a wide aligned memory read to the register file shifter representation
+      for (i <- 0 until wordBytes) {
+        val srcSize = 1 << (log2Up(wordBytes) - log2Up(i + 1))
+        val srcZipped = rspSplits.zipWithIndex.filter { case (v, b) => b % (wordBytes / srcSize) == i }
+        val src = srcZipped.map(_._1)
+        val range = log2Up(wordBytes) - 1 downto log2Up(wordBytes) - log2Up(srcSize)
+        val sel = srcp.ADD_SUB(range).asUInt
+        rspShifted(i * 8, 8 bits) := src.read(sel)
+      }
+
+      val READ_SHIFTED = insert(rspShifted)
+      val SC_MISS = insert(withRva.mux(io.doIt.mux[Bool](io.rsp.scMiss, scMiss), False))
+
+
       if (!Riscv.RVA.get) {
         scMiss := False
       }
       val rva = Riscv.RVA.get generate new Area {
-        val srcBuffer = RegNext[Bits](l1.READ_DATA)
+        val srcBuffer = RegNext[Bits](READ_SHIFTED)
         val alu = new AtomicAlu(
           op = UOP(29, 3 bits),
           swap = UOP(27),
@@ -269,35 +317,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
       l1.WRITE_DATA := SIZE.muxListDc(mapping)
 
-      val io = new Area {
-        val allowed = CombInit(this (tpk.IO))
-        val doIt = isValid && l1.SEL && allowed
 
-        val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
-        bus.cmd.valid := doIt && !cmdSent
-        bus.cmd.write := l1.STORE
-        bus.cmd.address := l1.PHYSICAL_ADDRESS //TODO Overflow on TRANSLATED itself ?
-        bus.cmd.data := l1.WRITE_DATA
-        bus.cmd.size := SIZE.resized
-        bus.cmd.mask := l1.MASK
-        bus.cmd.io := True
-        bus.cmd.fromHart := True
-        bus.cmd.hartId := Global.HART_ID
-        bus.cmd.uopId := Decode.UOP_ID
-        if (withRva) {
-          bus.cmd.amoEnable := l1.ATOMIC
-          bus.cmd.amoOp := UOP(31 downto 27)
-        }
-
-        val rsp = bus.rsp.toStream.halfPipe()
-        rsp.ready := !elp.isFreezed()
-
-        val freezeIt = doIt && !rsp.valid
-        elp.freezeWhen(freezeIt)
-      }
-
-      val READ_DATA = insert(io.doIt.mux[Bits](io.rsp.data, l1.READ_DATA))
-      val SC_MISS = insert(withRva.mux(io.doIt.mux[Bool](io.rsp.scMiss, scMiss), False))
 
 
       flushPort.valid := False
@@ -385,22 +405,8 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
     val onWb = new elp.Execute(wbAt){
-      val rspSplits = onCtrl.READ_DATA.subdivideIn(8 bits)
-      val rspShifted = Bits(LSLEN bits)
-      val wordBytes = LSLEN/8
-
-      //Generate minimal mux to move from a wide aligned memory read to the register file shifter representation
-      for (i <- 0 until wordBytes) {
-        val srcSize = 1 << (log2Up(wordBytes) - log2Up(i + 1))
-        val srcZipped = rspSplits.zipWithIndex.filter { case (v, b) => b % (wordBytes / srcSize) == i }
-        val src = srcZipped.map(_._1)
-        val range = log2Up(wordBytes)-1 downto log2Up(wordBytes) - log2Up(srcSize)
-        val sel = srcp.ADD_SUB(range).asUInt
-        rspShifted(i * 8, 8 bits) := src.read(sel)
-      }
-
       iwb.valid := SEL
-      iwb.payload := rspShifted
+      iwb.payload := onCtrl.READ_SHIFTED
 
       if (withRva) when(l1.ATOMIC && !l1.LOAD) {
         iwb.payload(0) := onCtrl.SC_MISS

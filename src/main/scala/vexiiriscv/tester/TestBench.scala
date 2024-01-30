@@ -222,7 +222,7 @@ class TestOptions{
     for ((offset, file) <- bins) {
       mem.loadBin(offset, file)
       if (withRvlsCheck) rvls.loadBin(offset, file)
-      tracerFile.foreach(_.loadBin(0, file))
+      tracerFile.foreach(_.loadBin(offset, file))
     }
 
     // load elfs

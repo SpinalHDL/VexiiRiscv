@@ -127,8 +127,8 @@ trait ExecuteLaneService extends Area{
   class Execute(id: Int) extends CtrlLaneMirror(execute(id))
   class Ctrl(id: Int) extends CtrlLaneMirror(ctrl(id))
 
-  def getAge(at: Int): Int = Ages.EU + at * Ages.STAGE
-  def getExecuteAge(at : Int) = getAge(at + executeAt)
+  def getCtrlAge(at: Int): Int = Ages.EU + at * Ages.STAGE
+  def getExecuteAge(at : Int) = getCtrlAge(at + executeAt)
 
   def freezeIt()(implicit loc: Location)
   def freezeWhen(cond: Bool)(implicit loc: Location)

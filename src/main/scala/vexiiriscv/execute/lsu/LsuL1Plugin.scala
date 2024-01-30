@@ -648,7 +648,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     }
 
 
-    def isLineBusy(address: UInt) = refill.isLineBusy(address) || writeback.isLineBusy(address)
 //    def waysHazard(stages: Seq[Stage], address: Stageable[UInt]): Unit = {
 //      for (s <- stages) {
 //        s.overloaded(WAYS_HAZARD) := s(WAYS_HAZARD) | waysWrite.maskLast.andMask(waysWrite.addressLast === s(address)(lineRange))
@@ -779,7 +778,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val refillWayNeedWriteback = WAYS_TAGS.map(w => w.loaded && withCoherency.mux(True, w.dirty)).read(refillWayWithoutUpdate)
 //        val refillHit = REFILL_HITS.orR
 //        val refillLoaded = (B(refill.slots.map(_.loaded)) & REFILL_HITS).orR
-        val lineBusy = isLineBusy(PHYSICAL_ADDRESS)
+
+        //Warning, those two signals aren't stable when lane.isFreezed
+        val refillHazard =  refill.isLineBusy(PHYSICAL_ADDRESS)
+        val writebackHazard =  writeback.isLineBusy(PHYSICAL_ADDRESS)
+
 //        val bankBusy = (BANK_BUSY_REMAPPED & WAYS_HITS) =/= 0 // Not needed anymore as the cpu freeze early
 //        val waysHitHazard = (WAYS_HITS & WAYS_HAZARD).orR
         val waysHazard = WAYS_HAZARD.orR
@@ -789,7 +792,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val refillWayWasDirty = WAYS_TAGS.map(w => w.loaded && w.dirty).read(refillWayWithoutUpdate)
         val loadBankHazard = withBypass.mux(False, LOAD && WRITE_TO_READ_HAZARDS.orR)
 
-        HAZARD := waysHazard || loadBankHazard || lineBusy  //TODO Line busy can likely be removed if single hart with no prefetch
+        //WARNING, when lane.isFreezed, nothing should change. If a hazard was detected, is has to stay
+        val spawn = RegNext(!lane.isFreezed()) init(True)
+        val hazardReg = RegNextWhen(this(HAZARD), spawn) init(False)
+        //TODO writeBackHazard hit performance and isn't required in most case ?
+        HAZARD := spawn.mux(waysHazard || loadBankHazard || refillHazard || writebackHazard, hazardReg)  //TODO Line busy can likely be removed if single hart with no prefetch
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
@@ -812,11 +819,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val doDirty = doWrite && !wasDirty && canDirty
 
         val wayId = OHToUInt(WAYS_HITS)
-
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))
 
         val targetWay = (askUpgrade || doDirty).mux(wayId, refillWayWithoutUpdate)
-        val allowSideEffects = !ABORD
+        val allowSideEffects = !ABORD && !lane.isFreezed()
 
         when(SEL) {
           assert(CountOne(WAYS_HITS) <= 1, "Multiple way hit ???")

@@ -252,7 +252,7 @@ class ExecuteLanePlugin(override val laneName : String,
       val c = idToCtrl(ctrlId)
       if(ctrlId != 0) c.up(c.LANE_SEL).setAsReg().init(False)
 
-      val age = getAge(ctrlId)
+      val age = getCtrlAge(ctrlId)
       val doIt = rp.isFlushedAt(age, c(Global.HART_ID), c(Execute.LANE_AGE))
       c.downIsCancel := False
       doIt match {

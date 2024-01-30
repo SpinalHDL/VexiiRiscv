@@ -51,7 +51,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val translationStorage = ats.newStorage(translationStorageParameter)
     atsStorageLock.release()
 
-    val trapPort = ts.newTrap(layer.el.getAge(forkAt), Execute.LANE_AGE_WIDTH)
+    val trapPort = ts.newTrap(layer.el.getExecuteAge(forkAt), Execute.LANE_AGE_WIDTH)
     val flushPort = ss.newFlushPort(layer.el.getExecuteAge(addressAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
