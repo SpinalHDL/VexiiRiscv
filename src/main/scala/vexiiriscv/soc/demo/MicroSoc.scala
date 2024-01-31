@@ -15,18 +15,14 @@ import spinal.lib.system.tag.PMA
 import vexiiriscv.ParamSimple
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 
-// SocDemo is a little SoC made only for simulation purposes.
 class MicroSoc() extends Component {
   val mainBus = tilelink.fabric.Node()
 
-  // Create a few NaxRiscv cpu
   val param = new ParamSimple()
   val plugins = param.plugins()
-
   val cpu = new TilelinkVexiiRiscvFiber(plugins)
   mainBus << List(cpu.iBus, cpu.dBus)
 
-  // Create a tilelink memory bus which will get out of the SoC to connect the main memory
   val ram = new tilelink.fabric.RamFiber()
   ram.up at (0x80000000l, 0x10000l) of mainBus
 
