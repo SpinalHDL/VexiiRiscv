@@ -37,10 +37,10 @@ object Miaouuuu9 extends App{
   import scala.collection.mutable.ArrayBuffer
 
   class EventCounterPlugin extends FiberPlugin{
-    val lock = Retainer() // Will allow other plugins to block the elaboration of "logic" thread
+    val hostLockX = Retainer() // Will allow other plugins to block the elaboration of "logic" thread
     val events = ArrayBuffer[Bool]() // Will allow other plugins to add event sources
     val logic = during build new Area{
-      lock.await() // Active blocking
+      hostLockX.await() // Active blocking
       val counter = Reg(UInt(32 bits)) init(0)
       counter := counter + CountOne(events)
     }
@@ -56,7 +56,7 @@ object Miaouuuu9 extends App{
       val ecp = host[EventCounterPlugin] // Search for the single instance of EventCounterPlugin in the plugin pool
       // Generate a lock to prevent the EventCounterPlugin elaboration until we release it.
       // this will allow us to add our localEvent to the ecp.events list
-      val ecpLocker = ecp.lock()
+      val ecpLocker = ecp.hostLockX()
 
       // Wait for the build phase before generating any hardware
       awaitBuild()

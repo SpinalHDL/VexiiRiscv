@@ -30,7 +30,6 @@ class TilelinkVexiiRiscvFiber extends Area{
   val iBus = Node.master()
   val dBus = Node.master()
   val plugins = ArrayBuffer[Hostable]()
-//  val mieNode = InterruptNode.slave()
 
   val icfs = ArrayBuffer[InterruptCtrlFiber]()
   def bind(ctrl : InterruptCtrlFiber) = {
@@ -44,17 +43,21 @@ class TilelinkVexiiRiscvFiber extends Area{
     this.clint load clint
   }
 
-  val thread = Fiber setup new Area{
+  val param = new ParamSimple()
+  plugins ++= param.plugins()
 
-    val param = new ParamSimple()
-    plugins ++= param.plugins()
 
-    // Add the plugins to bridge the CPU toward Tilelink
-    plugins.foreach {
-      case p: FetchCachelessPlugin => plugins += new FetchCachelessTileLinkPlugin(iBus)
-      case p: LsuCachelessPlugin => plugins += new LsuCachelessTileLinkPlugin(dBus)
-      case _ =>
-    }
+  // Add the plugins to bridge the CPU toward Tilelink
+  plugins.foreach {
+    case p: FetchCachelessPlugin => plugins += new FetchCachelessTileLinkPlugin(iBus)
+    case p: LsuCachelessPlugin => plugins += new LsuCachelessTileLinkPlugin(dBus)
+    case _ =>
+  }
+
+
+
+  val logic = Fiber setup new Area{
+    val core = VexiiRiscv(plugins)
 
     // Map the external interrupt controllers
     val privPlugin = plugins.collectFirst { case p: PrivilegedPlugin => p }.get
@@ -78,7 +81,6 @@ class TilelinkVexiiRiscvFiber extends Area{
     clint.lock.release()
 
 
-    val core = VexiiRiscv(plugins)
     Fiber.awaitBuild()
 
 

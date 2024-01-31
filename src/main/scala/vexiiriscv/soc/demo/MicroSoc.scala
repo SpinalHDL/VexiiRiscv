@@ -24,7 +24,7 @@ class MicroSoc() extends Component {
 
   // Create a tilelink memory bus which will get out of the SoC to connect the main memory
   val ram = new tilelink.fabric.RamFiber()
-  ram.up at SizeMapping(0x80000000l, 0x10000l) of mainBus
+  ram.up at (0x80000000l, 0x10000l) of mainBus
 
   // Handle all the IO / Peripheral things
   val peripheral = new Area {
