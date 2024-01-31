@@ -7,6 +7,9 @@ import vexiiriscv.{Global, riscv}
 import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
 import spinal.core.fiber.Retainer
+import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.tilelink
+import spinal.lib.bus.tilelink.DebugId
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
@@ -33,8 +36,28 @@ object LsuCachelessBusAmo{
   val AMOMAXU = 0x1c
 }
 
-case class LsuCachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth : Int, uopIdWidth : Int, withAmo : Boolean){
-
+case class LsuCachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth : Int, uopIdWidth : Int, withAmo : Boolean, pendingMax : Int){
+  def toTilelinkM2s(name: Nameable) = {
+    assert(!withAmo)
+    new tilelink.M2sParameters(
+      addressWidth = addressWidth,
+      dataWidth = dataWidth,
+      masters = List(
+        new tilelink.M2sAgent(
+          name = name,
+          mapping = List(
+            new tilelink.M2sSource(
+              id = SizeMapping(0, pendingMax),
+              emits = tilelink.M2sTransfers(
+                get = tilelink.SizeRange(1, dataWidth / 8),
+                putFull = tilelink.SizeRange(1, dataWidth / 8)
+              )
+            )
+          )
+        )
+      )
+    )
+  }
 }
 
 case class LsuCachelessCmd(p : LsuCachelessBusParam) extends Bundle{

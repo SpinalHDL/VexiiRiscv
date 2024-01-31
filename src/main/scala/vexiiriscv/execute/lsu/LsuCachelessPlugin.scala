@@ -97,13 +97,15 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val forkCtrl = elp.execute(forkAt)
     val joinCtrl = elp.execute(joinAt)
     val wbCtrl = elp.execute(wbAt)
+    val bufferSize = joinAt-forkAt+1
 
     val busParam = LsuCachelessBusParam(
       addressWidth = Global.PHYSICAL_WIDTH,
       dataWidth = Riscv.LSLEN,
       hartIdWidth = Global.HART_ID_WIDTH,
       uopIdWidth = Decode.UOP_ID_WIDTH,
-      withAmo = withAmo
+      withAmo = withAmo,
+      pendingMax = bufferSize
     )
     val bus = master(LsuCachelessBus(busParam))
 
@@ -230,7 +232,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     }
 
     val onJoin = new joinCtrl.Area{
-      val buffer = bus.rsp.toStream.queueLowLatency(joinAt-forkAt+1).combStage
+      val buffer = bus.rsp.toStream.queueLowLatency(bufferSize).combStage
       val SC_MISS = insert(withAmo.mux(buffer.scMiss, False))
       val READ_DATA = insert(buffer.data)
       elp.freezeWhen(WITH_RSP && !buffer.valid)

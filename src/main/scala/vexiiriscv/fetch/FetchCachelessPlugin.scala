@@ -2,45 +2,24 @@ package vexiiriscv.fetch
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.database.Database._
 import spinal.lib.misc.pipeline._
+import spinal.lib.bus.tilelink
+import spinal.lib.bus.tilelink.DebugId
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
 import vexiiriscv.misc.{TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.CSR
 
-case class CachelessBusParam(addressWidth : Int, dataWidth : Int, idCount : Int, cmdPersistence : Boolean){
-  val idWidth = log2Up(idCount)
-}
-
-case class CachelessCmd(p : CachelessBusParam) extends Bundle{
-  val id = UInt(p.idWidth bits)
-  val address = UInt(p.addressWidth bits)
-}
-
-case class CachelessRsp(p : CachelessBusParam, withId : Boolean = true) extends Bundle{
-  val id = withId generate UInt(p.idWidth bits)
-  val error = Bool()
-  val word  = Bits(p.dataWidth bits)
-}
-
-case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave {
-  var cmd = Stream(CachelessCmd(p))
-  var rsp = Flow(CachelessRsp(p))
-
-  override def asMaster(): Unit = {
-    master(cmd)
-    slave(rsp)
-  }
-}
-
 object FetchCachelessPlugin{
   val ID_WIDTH = blocking[Int]
   val ID = blocking[Int]
 }
 
+//TODO avoid cmd fork on unmapped memory space
 class FetchCachelessPlugin(var wordWidth : Int,
                            var translationStorageParameter: Any,
                            var translationPortParameter: Any,

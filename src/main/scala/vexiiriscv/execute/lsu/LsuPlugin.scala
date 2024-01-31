@@ -92,7 +92,8 @@ class LsuPlugin(var layer : LaneLayer,
       dataWidth = Riscv.LSLEN,
       hartIdWidth = Global.HART_ID_WIDTH,
       uopIdWidth = Decode.UOP_ID_WIDTH,
-      withAmo = withRva
+      withAmo = withRva,
+      pendingMax = 1
     )
     val bus = master(LsuCachelessBus(busParam))
 

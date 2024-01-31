@@ -45,7 +45,7 @@ case class PrivilegedParam(var withSupervisor : Boolean,
   }
 }
 
-class PrivilegedPlugin(val p : PrivilegedParam, hartIds : Seq[Int]) extends FiberPlugin with CommitService{
+class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends FiberPlugin with CommitService{
   def implementSupervisor = p.withSupervisor
   def implementUser = p.withUser
   def implementUserTrap = p.withUserTrap
