@@ -26,25 +26,43 @@ import java.io.{BufferedWriter, File, FileWriter}
 import java.nio.file.Files
 import scala.collection.mutable.ArrayBuffer
 
-class TilelinkVexiiRiscvFiber extends Area{
-  val iBus = Node.master()
-  val dBus = Node.master()
-  val plugins = ArrayBuffer[Hostable]()
+class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
+  val iBus = Node.down()
+  val dBus = Node.down()
 
-  val icfs = ArrayBuffer[InterruptCtrlFiber]()
-  def bind(ctrl : InterruptCtrlFiber) = {
-    icfs += ctrl
-    ctrl.retain()
+  val priv = plugins.collectFirst {
+    case p: PrivilegedPlugin => new Area {
+      val plugin = p
+      val mti, msi, mei = InterruptNode.slave()
+      val sei = p.p.withSupervisor generate InterruptNode.slave()
+    }
   }
 
-  val clint = Handle[TilelinkClintFiber]
-  def bind(clint: TilelinkClintFiber): Unit = {
-    clint.lock.retain()
-    this.clint load clint
+  def bind(ctrl: InterruptCtrlFiber) = priv match {
+    case Some(priv) => new Area {
+      val pp = priv.plugin
+      val intIdPerHart = 1 + pp.p.withSupervisor.toInt
+      val m = new Area {
+        val up = ctrl.createInterruptMaster(pp.hartIds(0) * intIdPerHart)
+        priv.mei << up
+      }
+      val s = pp.p.withSupervisor generate new Area {
+        val up = ctrl.createInterruptMaster(pp.hartIds(0) * intIdPerHart + 1)
+        priv.sei << up
+      }
+    }
   }
 
-  val param = new ParamSimple()
-  plugins ++= param.plugins()
+  var clint = Option.empty[TilelinkClintFiber]
+  def bind(clint: TilelinkClintFiber): Unit = priv match {
+    case Some(priv) => new Area {
+      val pp = priv.plugin
+      val up = clint.createPort(pp.hartIds(0))
+      priv.mti << up.mti
+      priv.msi << up.msi
+      TilelinkVexiiRiscvFiber.this.clint = Some(clint)
+    }
+  }
 
 
   // Add the plugins to bridge the CPU toward Tilelink
@@ -55,44 +73,19 @@ class TilelinkVexiiRiscvFiber extends Area{
   }
 
 
-
   val logic = Fiber setup new Area{
     val core = VexiiRiscv(plugins)
-
-    // Map the external interrupt controllers
-    val privPlugin = plugins.collectFirst { case p: PrivilegedPlugin => p }.get
-    val intIdPerHart = 1 + privPlugin.p.withSupervisor.toInt
-    val mei = new Area {
-      val node = InterruptNode.slave()
-      val drivers = icfs.map(_.createInterruptMaster(privPlugin.hartIds(0) * intIdPerHart))
-      drivers.foreach(node << _)
-    }
-    val sei = privPlugin.p.withSupervisor generate new Area {
-      val node = InterruptNode.slave()
-      val drivers = icfs.map(_.createInterruptMaster(privPlugin.hartIds(0) * intIdPerHart + 1))
-      drivers.foreach(node << _)
-    }
-    icfs.foreach(_.release())
-
-    val clintPort = clint.createPort(privPlugin.hartIds(0))
-    val mti, msi = InterruptNode.slave()
-    mti << clintPort.mti
-    msi << clintPort.msi
-    clint.lock.release()
-
-
     Fiber.awaitBuild()
 
-
+    //Connect stuff
     plugins.foreach {
-//      case p: LsuCachelessPlugin => dBus.bus << p.logic.bus.toTilelink()
       case p: PrivilegedPlugin => {
         val hart = p.logic.harts(0)
-        hart.int.m.timer := mti.flag
-        hart.int.m.software := msi.flag
-        hart.int.m.external := mei.node.flag
-        if (p.p.withSupervisor) hart.int.s.external := sei.node.flag
-        if (p.p.withRdTime) p.logic.rdtime := clint.thread.core.io.time
+        hart.int.m.timer := priv.get.mti.flag
+        hart.int.m.software := priv.get.msi.flag
+        hart.int.m.external := priv.get.mei.flag
+        if (p.p.withSupervisor) hart.int.s.external := priv.get.sei.flag
+        if (p.p.withRdTime) p.logic.rdtime := clint.get.thread.core.io.time
       }
       case _ =>
     }

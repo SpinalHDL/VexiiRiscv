@@ -12,6 +12,7 @@ import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.misc.TilelinkClintFiber
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.PMA
+import vexiiriscv.ParamSimple
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 
 // SocDemo is a little SoC made only for simulation purposes.
@@ -19,7 +20,10 @@ class MicroSoc() extends Component {
   val mainBus = tilelink.fabric.Node()
 
   // Create a few NaxRiscv cpu
-  val cpu = new TilelinkVexiiRiscvFiber()
+  val param = new ParamSimple()
+  val plugins = param.plugins()
+
+  val cpu = new TilelinkVexiiRiscvFiber(plugins)
   mainBus << List(cpu.iBus, cpu.dBus)
 
   // Create a tilelink memory bus which will get out of the SoC to connect the main memory
@@ -43,8 +47,8 @@ class MicroSoc() extends Component {
     val plicEnd = plic.createInterruptSlave(1)
     plicEnd << uart.interrupt
 
-    cpu.bind(clint)
-    cpu.bind(plic)
+    val cpuClint = cpu.bind(clint)
+    val cpuPlic = cpu.bind(plic)
   }
 }
 
