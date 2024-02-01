@@ -265,6 +265,7 @@ class CsrAccessPlugin(layer : LaneLayer,
         trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
         trapPort.tval := UOP.resized
         trapPort.arg := 0
+        trapPort.laneAge := Execute.LANE_AGE
 
         val flushReg = RegInit(False) setWhen(flushPort.valid) clearWhen(!elp.isFreezed())
         when(flushReg) {
