@@ -41,15 +41,9 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
   def bind(ctrl: InterruptCtrlFiber) = priv match {
     case Some(priv) => new Area {
       val pp = priv.plugin
-      val intIdPerHart = 1 + pp.p.withSupervisor.toInt
-      val m = new Area {
-        val up = ctrl.createInterruptMaster(pp.hartIds(0) * intIdPerHart)
-        priv.mei << up
-      }
-      val s = pp.p.withSupervisor generate new Area {
-        val up = ctrl.createInterruptMaster(pp.hartIds(0) * intIdPerHart + 1)
-        priv.sei << up
-      }
+      val intIdBase = pp.hartIds(0) * (1 + pp.p.withSupervisor.toInt)
+      ctrl.mapDownInterrupt(intIdBase, priv.mei)
+      if(pp.p.withSupervisor) ctrl.mapDownInterrupt(intIdBase + 1, priv.sei)
     }
   }
 

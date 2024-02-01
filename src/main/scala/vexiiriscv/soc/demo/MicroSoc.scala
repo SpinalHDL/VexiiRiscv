@@ -12,7 +12,7 @@ import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
-import spinal.lib.misc.TilelinkClintFiber
+import spinal.lib.misc.{Elf, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.PMA
 import vexiiriscv.ParamSimple
@@ -22,12 +22,8 @@ import vexiiriscv.test.konata.Backend
 
 import java.io.File
 
-/*
-//TODO Moving away from stupid hex file ?
 //TODO Cleanup
-
- */
-
+//TODO prevent access to unmaped region
 class MicroSoc() extends Component {
   val mainBus = tilelink.fabric.Node()
 
@@ -38,7 +34,6 @@ class MicroSoc() extends Component {
 
   val ram = new tilelink.fabric.RamFiber()
   ram.up at (0x80000000l, 0x10000l) of mainBus
-  ram.loadHex("ext/NaxSoftware/soc/uart/build/rv32ima/uart.hex", 0x80000000l)
 
   // Handle all the IO / Peripheral things
   val peripheral = new Area {
@@ -53,7 +48,7 @@ class MicroSoc() extends Component {
 
     val uart = new TilelinkUartFiber()
     uart.node at 0x1000 of slowBus
-    plic.mapInterrupt(1, uart.interrupt)
+    plic.mapUpInterrupt(1, uart.interrupt)
 
     val cpuClint = cpu.bind(clint)
     val cpuPlic = cpu.bind(plic)
@@ -102,6 +97,9 @@ object MicroSocSim extends App{
       b.addRegion(0, 0, 0x80000000l, 0x10000) // mem
       b.addRegion(0, 1, 0x10000000l, 0x10000000l) // io
     }
-    probe.backends.foreach(_.loadElf(0, new File("ext/NaxSoftware/soc/uart/build/rv32ima/uart.elf")))
+
+    val elf = new Elf(new File("ext/NaxSoftware/soc/uart/build/rv32ima/uart.elf"), 32)
+    elf.load(dut.ram.thread.logic.mem, 0x80000000l)
+    probe.backends.foreach(_.loadElf(0, elf.f))
   }
 }
