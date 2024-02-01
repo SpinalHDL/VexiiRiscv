@@ -45,7 +45,7 @@ class LsuCachelessBusToTilelink(up : LsuCachelessBus, hashWidth : Int) extends A
   }
 
   down.a.arbitrationFrom(up.cmd.haltWhen(hazard))
-  down.a.opcode  := tilelink.Opcode.A.GET
+  down.a.opcode  := up.cmd.write.mux(tilelink.Opcode.A.PUT_FULL_DATA, tilelink.Opcode.A.GET)
   down.a.param   := 0
   down.a.source  := cmdCounter
   down.a.address := up.cmd.address

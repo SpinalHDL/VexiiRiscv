@@ -7,6 +7,7 @@ import vexiiriscv.{Global, riscv}
 import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
 import spinal.core.fiber.Retainer
+import spinal.core.sim.SimDataPimper
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
@@ -107,7 +108,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       withAmo = withAmo,
       pendingMax = bufferSize
     )
-    val bus = master(LsuCachelessBus(busParam))
+    val bus = master(LsuCachelessBus(busParam)).simPublic()
 
     accessRetainer.await()
 
