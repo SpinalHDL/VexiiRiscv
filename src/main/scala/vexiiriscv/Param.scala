@@ -72,8 +72,8 @@ class ParamSimple(){
     withRva = true
     withRvc = false
     withAlignerBuffer = withRvc
-    withFetchL1 = true
-    withLsuL1 = false
+    withFetchL1 = false
+    withLsuL1 = true
     xlen = 32
     fetchL1Sets = 64
     fetchL1Ways = 4

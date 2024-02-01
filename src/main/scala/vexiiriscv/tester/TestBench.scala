@@ -320,7 +320,7 @@ class TestOptions{
       bus.cmd.ready #= true
       var reserved = false
 
-      case class Access(write : Boolean, address: Long, data : Array[Byte], bytes : Int, io : Boolean, hartId : Int, uopId : Int, amoEnable : Boolean, amoOp : Int)
+      case class Access(id : Int, write : Boolean, address: Long, data : Array[Byte], bytes : Int, io : Boolean, hartId : Int, uopId : Int, amoEnable : Boolean, amoOp : Int)
       val pending = mutable.Queue[Access]()
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>
@@ -329,6 +329,7 @@ class TestOptions{
         val offset = address.toInt & (bytes-1)
         pending.enqueue(
           Access(
+            p.id.toInt,
             p.write.toBoolean,
             address,
             p.data.toBytes.drop(offset).take(bytes),
@@ -421,6 +422,7 @@ class TestOptions{
           }
           p.data #= bytes
           p.error #= error
+          p.id #= cmd.id
           if(p.scMiss != null) p.scMiss #= scMiss
           if(cmd.address < 0x10000000) p.error #= true
         }

@@ -16,7 +16,6 @@ class LsuCachelessBusToTilelink(up : LsuCachelessBus, hashWidth : Int) extends A
   val m2sParam = up.p.toTilelinkM2s(this)
   val down = tilelink.Bus(m2sParam)
 
-  val cmdCounter = Reg(UInt(log2Up(up.p.pendingMax) bits)) init (0)
   val cmdHash = up.cmd.address(log2Up(up.p.dataWidth / 8), hashWidth bits)
 
   val pendings = List.fill(up.p.pendingMax)(new Area{ //TODO could be one less
@@ -35,8 +34,7 @@ class LsuCachelessBusToTilelink(up : LsuCachelessBus, hashWidth : Int) extends A
   }
 
   when(down.a.fire) {
-    cmdCounter := cmdCounter + 1
-    pendings.onSel(cmdCounter) { e =>
+    pendings.onSel(up.cmd.id) { e =>
       e.valid := True
       e.hash := cmdHash
       e.mask := up.cmd.mask
@@ -47,16 +45,17 @@ class LsuCachelessBusToTilelink(up : LsuCachelessBus, hashWidth : Int) extends A
   down.a.arbitrationFrom(up.cmd.haltWhen(hazard))
   down.a.opcode  := up.cmd.write.mux(tilelink.Opcode.A.PUT_FULL_DATA, tilelink.Opcode.A.GET)
   down.a.param   := 0
-  down.a.source  := cmdCounter
+  down.a.source  := up.cmd.id
   down.a.address := up.cmd.address
   down.a.size    := log2Up(up.p.dataWidth/8)
-  down.a.debugId := DebugId.withPostfix(cmdCounter)
+  down.a.debugId := DebugId.withPostfix(up.cmd.id)
   down.a.mask    := up.cmd.mask
-  down.a.data    := up.cmd.data //TODO data reorder
+  down.a.data    := up.cmd.data
   down.a.corrupt := False
 
   down.d.ready := True
   up.rsp.valid := down.d.valid
+  up.rsp.id    := down.d.source
   up.rsp.error := down.d.denied
   up.rsp.data  := down.d.data
 }

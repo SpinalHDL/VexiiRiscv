@@ -23,7 +23,6 @@ import vexiiriscv.test.konata.Backend
 import java.io.File
 
 /*
-//TODO data reorder
 //TODO Moving away from stupid hex file ?
 //TODO Cleanup
 

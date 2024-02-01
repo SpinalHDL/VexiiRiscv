@@ -61,6 +61,7 @@ case class LsuCachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth
 }
 
 case class LsuCachelessCmd(p : LsuCachelessBusParam) extends Bundle{
+  val id = UInt(log2Up(p.pendingMax) bits)
   val write = Bool()
   val address = UInt(p.addressWidth bits)
   val data = Bits(p.dataWidth bit)
@@ -74,7 +75,8 @@ case class LsuCachelessCmd(p : LsuCachelessBusParam) extends Bundle{
   val amoOp = p.withAmo generate Bits(5 bits)
 }
 
-case class LsuCachelessRsp(p : LsuCachelessBusParam) extends Bundle{
+case class LsuCachelessRsp(p : LsuCachelessBusParam, withId : Boolean = true) extends Bundle{
+  val id = withId generate UInt(log2Up(p.pendingMax) bits)
   val error = Bool()
   val data  = Bits(p.dataWidth bits)
   val scMiss = p.withAmo generate Bool()

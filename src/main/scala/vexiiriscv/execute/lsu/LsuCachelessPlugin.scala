@@ -132,8 +132,10 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       val skip = False
 
+      val cmdCounter = Counter(bufferSize, bus.cmd.fire)
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
       bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip
+      bus.cmd.id := cmdCounter
       bus.cmd.write := STORE
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>
@@ -233,18 +235,41 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     }
 
     val onJoin = new joinCtrl.Area{
-      val buffer = bus.rsp.toStream.queueLowLatency(bufferSize).combStage
-      val SC_MISS = insert(withAmo.mux(buffer.scMiss, False))
-      val READ_DATA = insert(buffer.data)
-      elp.freezeWhen(WITH_RSP && !buffer.valid)
-      buffer.ready := WITH_RSP && isReady
+      val buffers = List.fill(bufferSize)(new Area{
+        val valid = RegInit(False)
+        val payload = Reg(LsuCachelessRsp(bus.p, false))
+      })
+
+      val busRspWithoutId = LsuCachelessRsp(bus.p, false)
+      busRspWithoutId.assignSomeByName(bus.rsp.payload)
+      when(bus.rsp.valid){
+        buffers.onSel(bus.rsp.id){b =>
+          b.valid := True
+          b.payload := busRspWithoutId
+        }
+      }
+      val pop = WITH_RSP && !elp.isFreezed()
+      val rspCounter = Counter(bufferSize, pop)
+      val reader = buffers.reader(rspCounter)
+      val readerValid = reader(_.valid)
+      when(pop){
+        buffers.onSel(rspCounter)(_.valid := False)
+      }
+
+      val busRspHit = bus.rsp.valid && bus.rsp.id === rspCounter
+      val rspValid = readerValid || busRspHit
+      val rspPayload = readerValid.mux(CombInit(reader(_.payload)), busRspWithoutId)
+
+      val SC_MISS = insert(withAmo.mux(rspPayload.scMiss, False))
+      val READ_DATA = insert(rspPayload.data)
+      elp.freezeWhen(WITH_RSP && !rspValid)
       assert(!(isValid && isCancel && SEL && STORE && !up(Global.TRAP)), "LsuCachelessPlugin saw unexpected select && STORE && cancel request") //TODO add tpk.IO and along the way)) //TODO add tpk.IO and along the way
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp
-        rsp.valid := WITH_ACCESS && buffer.fire
-        rsp.data := buffer.data
-        rsp.error := buffer.error
+        rsp.valid := WITH_ACCESS && pop
+        rsp.data := rspPayload.data
+        rsp.error := rspPayload.error
         rsp.redo := False
         rsp.waitAny := False
       }
