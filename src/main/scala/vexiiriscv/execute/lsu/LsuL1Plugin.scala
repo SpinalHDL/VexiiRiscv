@@ -21,7 +21,8 @@ object LsuL1 extends AreaObject{
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS)
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
-  val MASK = Payload(Bits(Riscv.LSLEN/8 bits)) //Also needed for loads
+  val MASK = Payload(Bits(Riscv.LSLEN / 8 bits)) //Also needed for loads
+  val SIZE = Payload(UInt(log2Up(log2Up(Riscv.LSLEN / 8+1)) bits)) //Also needed for loads
 
   // L1 ->
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))

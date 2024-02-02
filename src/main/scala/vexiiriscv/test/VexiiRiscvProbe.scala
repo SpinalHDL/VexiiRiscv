@@ -435,6 +435,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
           }
           val offset = trace.address.toInt & (trace.size - 1)
           trace.data = (trace.data >> offset*8) & sizeMask(trace.sizel2)
+          trace.error = bus.rsp.error.toBoolean
           backends.foreach(_.ioAccess(trace.hartId, trace))
         }
       }

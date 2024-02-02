@@ -78,8 +78,7 @@ object MmuSpec{
 
 class MmuPlugin(var spec : MmuSpec,
                 var physicalWidth : Int,
-                var ioRange : UInt => Bool,
-                var fetchRange : UInt => Bool) extends FiberPlugin with AddressTranslationService{
+                var ioRange : UInt => Bool) extends FiberPlugin with AddressTranslationService{
 
 
   override def mayNeedRedo: Boolean = true
@@ -305,7 +304,6 @@ class MmuPlugin(var spec : MmuSpec,
           ACCESS_FAULT  := ps.preAddress.drop(physicalWidth) =/= 0
         }
 
-        ALLOW_EXECUTE clearWhen(!fetchRange(TRANSLATED))
 
         BYPASS_TRANSLATION := !requireMmuLockup
         WAYS_OH       := oh

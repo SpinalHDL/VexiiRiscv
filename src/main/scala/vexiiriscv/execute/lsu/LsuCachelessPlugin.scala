@@ -6,14 +6,15 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.{Global, riscv}
 import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
-import spinal.core.fiber.Retainer
+import spinal.core.fiber.{Handle, Retainer}
 import spinal.core.sim.SimDataPimper
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
 import vexiiriscv.misc.{AddressToMask, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
+import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT_WIDTH, UOP}
 import vexiiriscv.schedule.{ReschedulePlugin, ScheduleService}
 import vexiiriscv.execute._
@@ -130,6 +131,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && onAddress.RAW_ADDRESS(i - 1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
       val RS2 = elp(IntRegFile, riscv.RS2)
 
+      val pmaPort = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN/8)).map(1 << _), List(PmaLoad, PmaStore))
+      pmaPort.cmd.address := tpk.TRANSLATED
+      pmaPort.cmd.size := SIZE.asBits
+      pmaPort.cmd.op(0) := STORE
+
       val skip = False
 
       val cmdCounter = Counter(bufferSize, bus.cmd.fire)
@@ -176,6 +182,13 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
+      }
+
+      when(tpk.ACCESS_FAULT || pmaPort.rsp.fault) {
+        skip := True
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+        trapPort.code(1) setWhen (STORE)
       }
 
       when(tpk.PAGE_FAULT || STORE.mux( !tpk.ALLOW_WRITE, !tpk.ALLOW_READ)) {
@@ -306,4 +319,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     buildBefore.release()
   }
+
+  val regions = Handle[ArrayBuffer[PmaRegion]]()
+  val pmaBuilder = during build new PmaLogic(logic.onFork.pmaPort, regions)
 }

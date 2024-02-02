@@ -3,14 +3,17 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
+import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
 import spinal.lib.misc.Elf
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
+import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
 import vexiiriscv._
-import vexiiriscv.execute.lsu.{LsuL1Plugin, LsuL1TlPlugin}
-import vexiiriscv.fetch.PcService
+import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
+import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.test.konata.Backend
@@ -278,7 +281,7 @@ class TestOptions{
           val cmd = pending.randomPop()
           p.word #= mem.readBytes(cmd.address, p.p.dataWidth / 8)
           p.id #= cmd.id
-          p.error #= cmd.address < 0x10000000
+          p.error #= cmd.address < 0x20000000
         }
         doIt
       }
@@ -450,6 +453,7 @@ class TestOptions{
       val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
         driver.driver.setFactor(dbusReadyFactor)
         val checker = if (monitor.bus.p.withBCE) Checker(monitor)
+        override def checkAddress(address: Long) = address >= 0x20000000
         override def delayOnA(a: TransactionA) = {
 //          if(a.address == 0x81820000l){
 //            println(f"miaou ${mem.readByteAsInt(0x817FFFF3l)}%x")
@@ -476,6 +480,44 @@ object TestBench extends App{
       p.probeIdWidth = 4
       ret  += new LsuL1TlPlugin
     }
+    val regions = ArrayBuffer(
+      new PmaRegion{
+        override def mapping: AddressMapping = SizeMapping(0x80000000l, 0x80000000l)
+        override def transfers: MemoryTransfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+        override def isMain: Boolean = true
+        override def isExecutable: Boolean = true
+      },
+      new PmaRegion{
+        override def mapping: AddressMapping = SizeMapping(0x10000000l, 0x10000000l)
+        override def transfers: MemoryTransfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+        override def isMain: Boolean = false
+        override def isExecutable: Boolean = true
+      },
+      new PmaRegion{
+        override def mapping: AddressMapping = SizeMapping(0x1000, 0x1000)
+        override def transfers: MemoryTransfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+        override def isMain: Boolean = true
+        override def isExecutable: Boolean = true
+      }
+
+    )
+    ret.foreach{
+      case p: FetchCachelessPlugin => p.regions.load(regions)
+      case p: LsuCachelessPlugin => p.regions.load(regions)
+      case p: FetchL1Plugin => p.regions.load(regions)
+      case p: LsuPlugin => p.regions.load(regions)
+      case _ =>
+    }
+
     ret
   }
 

@@ -10,12 +10,13 @@ import spinal.lib.bus.amba4.axilite.{AxiLite4Config, AxiLite4ReadOnly}
 import spinal.lib.bus.bmb.{Bmb, BmbAccessParameter, BmbParameter, BmbSourceParameter}
 import spinal.lib.bus.tilelink.{M2sSupport, SizeRange}
 import spinal.lib.misc.Plru
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort}
 import vexiiriscv.misc._
 import vexiiriscv._
 import vexiiriscv.Global._
 import Fetch._
-import spinal.core.fiber.Retainer
+import spinal.core.fiber.{Handle, Retainer}
+import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.riscv.CSR
 import vexiiriscv.schedule.ReschedulePlugin
 
@@ -374,10 +375,12 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     }
 
     val ctrl = new pp.Fetch(ctrlAt){
+      val pmaPort = new PmaPort(Global.PHYSICAL_WIDTH, List(lineSize), List(PmaLoad))
+      pmaPort.cmd.address := tpk.TRANSLATED
+
       val plruLogic = new Area {
         val core = new Plru(wayCount, false)
         core.io.context.state := PLRU_BYPASSED
-//        core.io.context.state.clearAll()
         core.io.update.id := OHToUInt(WAYS_HITS)
 
         plru.write.valid := False
@@ -402,7 +405,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      when(dataAccessFault) {
+      when(dataAccessFault || pmaPort.rsp.fault) {
         TRAP := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
@@ -463,5 +466,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     buildBefore.release()
   }
+
+  val regions = Handle[ArrayBuffer[PmaRegion]]()
+  val pmaBuilder = during build new PmaLogic(logic.ctrl.pmaPort, regions.filter(_.isExecutable))
 }
 

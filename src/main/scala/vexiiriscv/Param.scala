@@ -72,7 +72,7 @@ class ParamSimple(){
     withRva = true
     withRvc = false
     withAlignerBuffer = withRvc
-    withFetchL1 = false
+    withFetchL1 = true
     withLsuL1 = true
     xlen = 32
     fetchL1Sets = 64
@@ -157,7 +157,6 @@ class ParamSimple(){
       case true => plugins += new memory.MmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
         ioRange = ioRange,
-        fetchRange = fetchRange,
         physicalWidth = 32
       )
     }

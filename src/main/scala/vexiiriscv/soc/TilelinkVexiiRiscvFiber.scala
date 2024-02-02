@@ -16,11 +16,12 @@ import spinal.lib.misc.plic.InterruptCtrlFiber
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.{ClintPort, Elf, InterruptCtrl, InterruptNode, TilelinkClintFiber}
 import spinal.lib.sim.SparseMemory
-import spinal.lib.system.tag.{MemoryConnection, PMA}
+import spinal.lib.system.tag.{MemoryConnection, PMA, PmaRegion}
 import spinal.sim.{Signal, SimManagerContext}
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuCachelessTileLinkPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchCachelessTileLinkPlugin}
+import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.misc.PrivilegedPlugin
 
 import java.io.{BufferedWriter, File, FileWriter}
@@ -72,6 +73,11 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
     val core = VexiiRiscv(plugins)
     Fiber.awaitBuild()
 
+    plugins.foreach {
+      case p : FetchCachelessPlugin => p.regions.load(MemoryConnection.getMemoryTransfers(iBus).asInstanceOf[ArrayBuffer[PmaRegion]])
+      case _ =>
+    }
+
     //Connect stuff
     plugins.foreach {
       case p: PrivilegedPlugin => {
@@ -85,12 +91,18 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
       case _ =>
     }
 
-    val iBusEnds   = MemoryConnection.getMemoryTransfers(iBus)
-    val iBusCompat = iBusEnds.filter(region => region.node.hasTag(PMA.EXECUTABLE))
-    val dBusEnds = MemoryConnection.getMemoryTransfers(dBus)
-    val dBusCompat = dBusEnds
-    val ioRange = dBusEnds.filter(region => !region.node.hasTag(PMA.MAIN))
+
+
+
 
     println("asd")
   }
 }
+
+
+
+//    val iBusEnds   = MemoryConnection.getMemoryTransfers(iBus)
+//    val iBusCompat = iBusEnds.filter(region => region.node.hasTag(PMA.EXECUTABLE))
+//    val dBusEnds = MemoryConnection.getMemoryTransfers(dBus)
+//    val dBusCompat = dBusEnds
+//    val ioRange = dBusEnds.filter(region => !region.node.hasTag(PMA.MAIN))
