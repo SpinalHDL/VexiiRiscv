@@ -47,6 +47,8 @@ trait AddressTranslationService extends Area {
   def getStorageId(s : Any) : Int
   def getStorageIdWidth() : Int
 
+  val regionRetainer = Retainer()
+
   def newTranslationPort(nodes: Seq[NodeBaseApi],
                          rawAddress: Payload[UInt],
                          forcePhysical: Payload[Bool],

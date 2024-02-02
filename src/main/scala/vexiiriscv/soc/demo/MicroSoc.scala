@@ -34,6 +34,7 @@ class MicroSoc() extends Component {
 
   val ram = new tilelink.fabric.RamFiber()
   ram.up at (0x80000000l, 0x10000l) of mainBus
+  ram.up.addTag(PMA.EXECUTABLE)
 
   // Handle all the IO / Peripheral things
   val peripheral = new Area {
@@ -93,7 +94,7 @@ object MicroSocSim extends App{
     delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registred last
     val probe = new VexiiRiscvProbe(dut.cpu.logic.core, konataBackend, withRvls)
     if (withRvlsCheck) probe.add(rvls)
-    probe.backends.foreach { b =>
+    probe.backends.foreach { b => //TODO
       b.addRegion(0, 0, 0x80000000l, 0x10000) // mem
       b.addRegion(0, 1, 0x10000000l, 0x10000000l) // io
     }

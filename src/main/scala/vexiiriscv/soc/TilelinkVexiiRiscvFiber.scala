@@ -16,6 +16,7 @@ import spinal.lib.misc.plic.InterruptCtrlFiber
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.{ClintPort, Elf, InterruptCtrl, InterruptNode, TilelinkClintFiber}
 import spinal.lib.sim.SparseMemory
+import spinal.lib.system.tag.{MemoryConnection, PMA}
 import spinal.sim.{Signal, SimManagerContext}
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuCachelessTileLinkPlugin}
@@ -83,5 +84,13 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
       }
       case _ =>
     }
+
+    val iBusEnds   = MemoryConnection.getMemoryTransfers(iBus)
+    val iBusCompat = iBusEnds.filter(region => region.node.hasTag(PMA.EXECUTABLE))
+    val dBusEnds = MemoryConnection.getMemoryTransfers(dBus)
+    val dBusCompat = dBusEnds
+    val ioRange = dBusEnds.filter(region => !region.node.hasTag(PMA.MAIN))
+
+    println("asd")
   }
 }
