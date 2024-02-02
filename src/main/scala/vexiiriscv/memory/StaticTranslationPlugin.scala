@@ -10,9 +10,7 @@ import vexiiriscv.riscv.Riscv
 
 import scala.collection.mutable.ArrayBuffer
 
-class StaticTranslationPlugin(var physicalWidth: Int,
-                              var ioRange: UInt => Bool,
-                              var fetchRange: UInt => Bool) extends FiberPlugin with AddressTranslationService {
+class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with AddressTranslationService {
   override def mayNeedRedo: Boolean = false
   override def newStorage(pAny: Any): Any = { }
   override def getStorageId(s: Any): Int = 0
@@ -62,13 +60,11 @@ class StaticTranslationPlugin(var physicalWidth: Int,
 
       REDO := False
       TRANSLATED := spec.preAddress.resized //PC RESIZED
-      IO := ioRange(TRANSLATED)
       ALLOW_EXECUTE := True
       ALLOW_READ := True
       ALLOW_WRITE := True
       PAGE_FAULT := False
       ACCESS_FAULT := False
-      ALLOW_EXECUTE clearWhen (!fetchRange(TRANSLATED))
     }
   }
 }

@@ -135,6 +135,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       pmaPort.cmd.address := tpk.TRANSLATED
       pmaPort.cmd.size := SIZE.asBits
       pmaPort.cmd.op(0) := STORE
+      val PMA_RSP = insert(pmaPort.rsp)
 
       val skip = False
 
@@ -151,7 +152,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.cmd.data := bus.cmd.size.muxListDc(mapping)
       bus.cmd.size := SIZE.resized
       bus.cmd.mask := AddressToMask(bus.cmd.address, bus.cmd.size, Riscv.LSLEN/8)
-      bus.cmd.io := tpk.IO
+      bus.cmd.io := pmaPort.rsp.io
       bus.cmd.fromHart := True
       bus.cmd.hartId := Global.HART_ID
       bus.cmd.uopId := Decode.UOP_ID
@@ -178,7 +179,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      if(withSpeculativeLoadFlush) when(LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)){
+      if(withSpeculativeLoadFlush) when(LOAD && pmaPort.rsp.io && elp.atRiskOfFlush(forkAt)){
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO

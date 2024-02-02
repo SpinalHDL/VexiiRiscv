@@ -241,11 +241,13 @@ class LsuPlugin(var layer : LaneLayer,
       pmaIo.cmd.size := l1.SIZE.asBits
       pmaIo.cmd.op(0) := l1.STORE
 
+      val IO = insert(!pmaIo.rsp.fault && pmaIo.rsp.io)
+
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
       val scMiss = Bool()
 
       val io = new Area {
-        val allowed = CombInit(this (tpk.IO))
+        val allowed = CombInit(!pmaIo.rsp.fault)
         val doIt = isValid && l1.SEL && allowed
 
         val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
@@ -347,14 +349,14 @@ class LsuPlugin(var layer : LaneLayer,
       trapPort.arg.allowOverride() := 0
 
       val lsuTrap = False
-      when(tpk.IO.mux[Bool](io.rsp.valid && io.rsp.error, l1.FAULT)) {
+      when((!pmaIo.rsp.fault).mux[Bool](io.rsp.valid && io.rsp.error, l1.FAULT)) {
         lsuTrap := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
         trapPort.code(1) setWhen (STORE)
       }
 
-      val l1Redo = !tpk.IO && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
+      val l1Redo = !pmaL1.rsp.fault && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
       when(l1Redo){
         lsuTrap := True
         trapPort.exception := False
@@ -404,7 +406,7 @@ class LsuPlugin(var layer : LaneLayer,
         bypass(Global.COMMIT) := False
       }
 
-      l1.ABORD := FROM_LSU && (!isValid || isCancel || tpk.IO || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED || pmaFault)
+      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED || pmaFault)
       l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss
 
       when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){

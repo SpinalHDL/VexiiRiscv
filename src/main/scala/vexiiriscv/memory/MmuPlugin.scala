@@ -77,8 +77,7 @@ object MmuSpec{
 }
 
 class MmuPlugin(var spec : MmuSpec,
-                var physicalWidth : Int,
-                var ioRange : UInt => Bool) extends FiberPlugin with AddressTranslationService{
+                var physicalWidth : Int) extends FiberPlugin with AddressTranslationService{
 
 
   override def mayNeedRedo: Boolean = true
@@ -285,7 +284,6 @@ class MmuPlugin(var spec : MmuSpec,
         requireMmuLockup clearWhen(ps.forcePhysical)
 
         import ps.rsp.keys._
-        IO := ioRange(TRANSLATED)
         when(requireMmuLockup) {
           REDO          := !hit
           TRANSLATED    := lineTranslated

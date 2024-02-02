@@ -26,8 +26,6 @@ class ParamSimple(){
   var decoders = 1
   var lanes = 1
   var regFileSync = true
-  var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
-  var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
   var withGShare = false
   var withBtb = false
   var withRas = false
@@ -153,10 +151,9 @@ class ParamSimple(){
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, rvc = withRvc)
     withMmu match {
-      case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
+      case false => plugins += new memory.StaticTranslationPlugin(32)
       case true => plugins += new memory.MmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
-        ioRange = ioRange,
         physicalWidth = 32
       )
     }

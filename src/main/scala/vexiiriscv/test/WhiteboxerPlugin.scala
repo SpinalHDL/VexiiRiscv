@@ -134,7 +134,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.wbCtrl
-        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(TRAP) && !c(p.logic.onAddress.translationPort.keys.IO)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(TRAP) && !c(p.logic.onFork.PMA_RSP).io
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
@@ -145,7 +145,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lp = host.get[LsuPlugin] map (p => new Area {
         val c = p.logic.onWb
-        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(TRAP) && !c(p.logic.onAddress0.translationPort.keys.IO)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(TRAP) && !c(p.logic.onCtrl.IO)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
@@ -176,7 +176,7 @@ class WhiteboxerPlugin extends FiberPlugin{
 
       val lp = host.get[LsuPlugin] map (p => new Area {
         val c = p.logic.onWb
-        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.STORE) && !c(p.logic.tpk.IO)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.STORE) && !c(p.logic.onCtrl.IO)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE)

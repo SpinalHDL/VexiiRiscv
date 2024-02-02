@@ -19,8 +19,10 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
 
 
   override def holdCsrRead(): Unit = api.holdRead := True
+  override def holdCsrWrite(): Unit = api.holdWrite := True
   val api = during build new Area{
     val holdRead = False
+    val holdWrite = False
   }
 
   val csrMapper = during setup new Area{
@@ -44,17 +46,19 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
     val addressDecoder = new DecodingSpec(RAM_ADDRESS)
     val selDecoder = ArrayBuffer[Int]()
     switch(cas.onDecodeAddress) {
-      for (e <- csrMappings) e.csrFilter match {
-        case filter: CsrListFilter => for (csrId <- filter.mapping) {
-          val mask = Masked(csrId, 0xFFF)
-          addressDecoder.addNeeds(mask, Masked(e.alloc.at + e.offset, ramAddressMask))
-          selDecoder += csrId
-        }
-        case csrId: Int => {
-          is(csrId) {
+      for (e <- csrMappings) {
+        e.csrFilter match {
+          case filter: CsrListFilter => for (csrId <- filter.mapping) {
             val mask = Masked(csrId, 0xFFF)
             addressDecoder.addNeeds(mask, Masked(e.alloc.at + e.offset, ramAddressMask))
             selDecoder += csrId
+          }
+          case csrId: Int => {
+            is(csrId) {
+              val mask = Masked(csrId, 0xFFF)
+              addressDecoder.addNeeds(mask, Masked(e.alloc.at + e.offset, ramAddressMask))
+              selDecoder += csrId
+            }
           }
         }
       }
@@ -78,10 +82,10 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
     val doWrite = False
     cas.onWrite(selFilter, false)(doWrite := True)
     val fired = RegInit(False) setWhen (write.fire) clearWhen (cas.onWriteMovingOff)
-    write.valid := doWrite && !fired
+    write.valid := doWrite && !fired && !api.holdWrite
     write.address := ramAddress
     write.data := cas.onWriteBits
-    when (write.valid && !write.ready){
+    when ((doWrite && !fired) && !write.ready){
       cas.onWriteHalt()
     }
 

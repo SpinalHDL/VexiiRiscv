@@ -67,7 +67,6 @@ class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) e
   val keys = new Area {
     setName("MMU")
     val TRANSLATED = Payload(PHYSICAL_ADDRESS)
-    val IO = Payload(Bool())
     val REDO = Payload(Bool())
     val ALLOW_READ, ALLOW_WRITE, ALLOW_EXECUTE = Payload(Bool())
     val PAGE_FAULT = Payload(Bool())

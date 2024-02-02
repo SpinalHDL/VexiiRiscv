@@ -267,8 +267,7 @@ trait CsrRamService extends Area{
   }
 
   def portAddressWidth : Int
-
   def awaitMapping() : Unit
-
-  def holdCsrRead() : Unit
+  def holdCsrRead(): Unit
+  def holdCsrWrite(): Unit
 }

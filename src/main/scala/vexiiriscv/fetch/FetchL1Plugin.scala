@@ -445,7 +445,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       refill.start.valid := redoIt && !HAZARD
       refill.start.address := tpk.TRANSLATED
       refill.start.hartId := HART_ID
-      refill.start.isIo := tpk.IO
+      refill.start.isIo := pmaPort.rsp.io
 
       when(redoIt){
         pp.fetch(0).haltIt() //"optional"
