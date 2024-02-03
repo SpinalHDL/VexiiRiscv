@@ -124,14 +124,8 @@ class IterativeShifterPlugin(val layer: LaneLayer,
       })
 
       leftShifts.sorted.foreach(n => {
-        // mask away bits shifted into upper 32 bit in case of SLLW instruction
-        val mask_w = if (Riscv.XLEN.get == 32) {
-          True #* 32
-        } else {
-          (True #* (32 - n)) ## (!IS_W #* n) ## (True #* 32)
-        }
         val doIt = LEFT & (if(n > 1) amplitude >= n else True)
-        val input = (shiftReg |<< n) & mask_w
+        val input = shiftReg |<< n
         val ampl = amplitude - n
         muxInputs.append((doIt, input, ampl))
       })
@@ -189,13 +183,9 @@ class IterativeShifterPlugin(val layer: LaneLayer,
     }
 
     val format = new el.Execute(formatAt) {
+      // sign extends for 32bit ops on 64bit core are done by the ifp plugin
       wb.valid := SEL
       wb.payload := SHIFT_RESULT
-      if(Riscv.XLEN.get == 64) {
-        when(ARITHMETIC & IS_W) {
-          wb.payload(32, 32 bit).setAllTo(SHIFT_RESULT(31))
-        }
-      }
     }
   }
 }
