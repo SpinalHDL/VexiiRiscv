@@ -12,7 +12,7 @@ import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
 import vexiiriscv._
-import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
+import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
@@ -514,7 +514,8 @@ object TestBench extends App{
       case p: FetchCachelessPlugin => p.regions.load(regions)
       case p: LsuCachelessPlugin => p.regions.load(regions)
       case p: FetchL1Plugin => p.regions.load(regions)
-      case p: LsuPlugin => p.regions.load(regions)
+      case p: LsuPlugin => p.ioRegions.load(regions)
+      case p: LsuL1Plugin => p.regions.load(regions)
       case _ =>
     }
 

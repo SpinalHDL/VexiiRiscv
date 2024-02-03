@@ -241,13 +241,13 @@ class LsuPlugin(var layer : LaneLayer,
       pmaIo.cmd.size := l1.SIZE.asBits
       pmaIo.cmd.op(0) := l1.STORE
 
-      val IO = insert(!pmaIo.rsp.fault && pmaIo.rsp.io)
+      val IO = insert(pmaL1.rsp.fault && !pmaIo.rsp.fault)
 
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
       val scMiss = Bool()
 
       val io = new Area {
-        val allowed = CombInit(!pmaIo.rsp.fault)
+        val allowed = CombInit[Bool](IO)
         val doIt = isValid && l1.SEL && allowed
 
         val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
@@ -443,15 +443,14 @@ class LsuPlugin(var layer : LaneLayer,
   }
 
 
-  val regions = Handle[ArrayBuffer[PmaRegion]]()
+  val ioRegions = Handle[ArrayBuffer[PmaRegion]]()
   val pmaBuilder = during build new Area{
-    val l1Regions, ioRegions = ArrayBuffer[PmaRegion]()
-    for(r <- regions){
-      val canLine = r.transfers match {
-        case t: M2sTransfers => t.get.contains(LsuL1.LINE_BYTES) && (t.putFull.contains(LsuL1.LINE_BYTES) || t.putFull.none)
+    val l1Regions = ArrayBuffer[PmaRegion]()
+    for(r <- host[LsuL1Plugin].regions if r.isMain){
+      r.transfers match {
+        case t: M2sTransfers if t.get.contains(LsuL1.LINE_BYTES) && (t.putFull.contains(LsuL1.LINE_BYTES) || t.putFull.none) =>
+          l1Regions += r
       }
-      val target = if(r.isMain && canLine) l1Regions else ioRegions
-      target += r
     }
     val l1 = new PmaLogic(logic.onCtrl.pmaL1, l1Regions)
     val io = new PmaLogic(logic.onCtrl.pmaIo, ioRegions)

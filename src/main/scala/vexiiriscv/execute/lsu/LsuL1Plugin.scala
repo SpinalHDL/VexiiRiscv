@@ -1,17 +1,21 @@
 package vexiiriscv.execute.lsu
 
 import spinal.core._
+import spinal.core.fiber.Handle
 import spinal.lib._
 import spinal.lib.misc.Plru
 import spinal.lib.misc.database.Database.blocking
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
+import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.Global
 import vexiiriscv.misc.Reservation
 import vexiiriscv.riscv.{AtomicAlu, Riscv}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{InitService, LsuL1Service}
 import vexiiriscv.riscv.Riscv.{RVA, RVC}
+
+import scala.collection.mutable.ArrayBuffer
 
 object LsuL1 extends AreaObject{
   // -> L1
@@ -70,6 +74,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var ackIdWidth: Int = -1) extends FiberPlugin with InitService{
 
   override def initHold(): Bool = !logic.initializer.done
+  val regions = Handle[ArrayBuffer[PmaRegion]]()
 
   def memParameter = LsuL1BusParameter(
     addressWidth = Global.PHYSICAL_WIDTH,
