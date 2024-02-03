@@ -7,11 +7,20 @@ package vexiiriscv.execute
 import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
-import vexiiriscv.decode
-import vexiiriscv.execute.BarrelShifterPlugin.{LEFT, SIGNED}
 import vexiiriscv.riscv._
 
-import scala.collection.mutable
+class ZbPlugin(val layer: LaneLayer,
+               val executeAt: Int = 0,
+               val formatAt: Int = 0) {
+  new ZbbLogicPlugin(layer, executeAt, formatAt)
+  new ZbbCountPlugin(layer, executeAt, formatAt)
+  new ZbbMinMaxPlugin(layer, executeAt, formatAt)
+  new ZbbRotatePlugin(layer, executeAt, formatAt)
+  new ZbbOrPlugin(layer, executeAt, formatAt)
+  new ZbbByteReversePlugin(layer, formatAt)
+  new ZbcPlugin(layer,executeAt, formatAt)
+  new ZbsPlugin(layer, executeAt, executeAt, formatAt)
+}
 
 object ZbbLogicPlugin {
   val OP = Payload(Bits(2 bit))
@@ -218,27 +227,63 @@ class ZbbByteReversePlugin(val layer: LaneLayer,
     }
   }
 }
+/*
+
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+CLMUL
+
+foreach (i from 0 to xlen by 1) {
+  if ((rs2_val >> i) & 1)
+    output = output ^ (rs1_val << i);
+}
+
+CLMULH
+
+foreach (i from 1 to xlen by 1) {
+  if ((rs2_val >> i) & 1)
+    output = output ^ (rs1_val >> (xlen - i));
+}
+
+CLMULR
+
+foreach (i from 0 to (xlen - 1) by 1) {
+  if ((rs2_val >> i) & 1)
+    output = output ^ (rs1_val >> (xlen - i - 1));
+}
+
+
+X[rd] = output
+
+ */
+
+object ZbcPlugin {
+  val FLIP_RS1 = Payload(Bool())
+  val SHIFT_RS2 = Payload(Bool())
+}
 
 class ZbcPlugin(val layer: LaneLayer,
                 val executeAt: Int = 0,
                 val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
+  import ZbcPlugin._
   val RESULT = Payload(Bits(Riscv.XLEN.get bit))
+
   val logic = during setup new Logic {
     awaitBuild()
     import SrcKeys._
 
     val wb = newWriteback(ifp, formatAt)
-    add(RvZbx.CLMUL).srcs(SRC1.RF, SRC2.RF)
-    add(RvZbx.CLMULH).srcs(SRC1.RF, SRC2.RF)
-    add(RvZbx.CLMULR).srcs(SRC1.RF, SRC2.RF)
+    add(RvZbx.CLMUL).srcs(SRC1.RF, SRC2.RF).decode(FLIP_RS1 -> False, SHIFT_RS2 -> False)
+    add(RvZbx.CLMULH).srcs(SRC1.RF, SRC2.RF).decode(FLIP_RS1 -> True, SHIFT_RS2 -> True)
+    add(RvZbx.CLMULR).srcs(SRC1.RF, SRC2.RF).decode(FLIP_RS1 -> True, SHIFT_RS2 -> False)
 
     uopRetainer.release()
 
     val execute = new el.Execute(executeAt) {
-      val rs1 = el(IntRegFile, RS1)
-      val rs2 = el(IntRegFile, RS2)
-
-      // TODO
+      val rs1 = FLIP_RS1 ? el(IntRegFile, RS1).reversed | el(IntRegFile, RS1)
+      val rs2 = SHIFT_RS2 ? (el(IntRegFile, RS2) >> 1) | el(IntRegFile, RS2)
 
       RESULT := (0 until Riscv.XLEN.get).map(i => (rs1 << i) & (rs2(i) #* Riscv.XLEN.get)).reduceBalancedTree(_ ^ _)
     }

@@ -33,6 +33,7 @@ object Element{
 
   class ThingIntPimper(p: Element[Int]) {
     def bits = BitCount(p.get)
+    def bit = BitCount(p.get)
   }
 
   implicit def thingIntPimperFunc(p: Element[Int]): ThingIntPimper = new ThingIntPimper(p)
