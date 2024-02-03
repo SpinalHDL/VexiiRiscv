@@ -4,7 +4,7 @@ import rvls.spinal.RvlsBackend
 import spinal.core._
 import spinal.core.sim._
 import spinal.core.fiber._
-import spinal.lib.StreamPipe
+import spinal.lib.{ResetCtrlFiber, StreamPipe}
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink._
@@ -23,23 +23,32 @@ import vexiiriscv.test.konata.Backend
 import java.io.File
 
 //TODO Cleanup
-//TODO prevent access to unmaped region
 class MicroSoc() extends Component {
-  val mainBus = tilelink.fabric.Node()
+  val asyncReset = in Bool()
+  val cd100 = ClockDomain.external("cd100", withReset = false, frequency = FixedFrequency(100 MHz))
+  val cd48 = ClockDomain.external("cd48", withReset = false, frequency = FixedFrequency(48 MHz))
 
-  val param = new ParamSimple()
-  val plugins = param.plugins()
-  val cpu = new TilelinkVexiiRiscvFiber(plugins)
-  mainBus << List(cpu.iBus, cpu.dBus)
+  val debugResetCtrl = cd100 on new ResetCtrlFiber().addAsyncReset(asyncReset, HIGH)
+  val peripheralResetCtrl = cd48 on new ResetCtrlFiber().addReset(debugResetCtrl)
+  val mainResetCtrl = cd100 on new ResetCtrlFiber().addReset(peripheralResetCtrl)
 
-  val ram = new tilelink.fabric.RamFiber()
-  ram.up at (0x80000000l, 0x10000l) of mainBus
-  ram.up.addTag(PMA.EXECUTABLE)
+  val main = mainResetCtrl.cd on new Area {
+    val bus = tilelink.fabric.Node()
+
+    val param = new ParamSimple()
+    val plugins = param.plugins()
+    val cpu = new TilelinkVexiiRiscvFiber(plugins)
+    bus << List(cpu.iBus, cpu.dBus)
+
+    val ram = new tilelink.fabric.RamFiber()
+    ram.up at(0x80000000l, 0x10000l) of bus
+    ram.up.addTag(PMA.EXECUTABLE)
+  }
 
   // Handle all the IO / Peripheral things
-  val peripheral = new Area {
+  val peripheral = peripheralResetCtrl.cd on new Area {
     val slowBus = Node()
-    slowBus at (0x10000000l, 0x10000000l)  of (mainBus)
+    slowBus at (0x10000000l, 0x10000000l)  of (main.bus)
 
     val clint = new TilelinkClintFiber()
     clint.node at 0x10000 of slowBus
@@ -51,8 +60,8 @@ class MicroSoc() extends Component {
     uart.node at 0x1000 of slowBus
     plic.mapUpInterrupt(1, uart.interrupt)
 
-    val cpuClint = cpu.bind(clint)
-    val cpuPlic = cpu.bind(plic)
+    val cpuClint = main.cpu.bind(clint)
+    val cpuPlic = main.cpu.bind(plic)
   }
 }
 
@@ -63,11 +72,15 @@ object MicroSoc extends App{
 
 object MicroSocSim extends App{
   val sim = SimConfig.withConfig(
-    SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz))
+    SpinalConfig()
   )
   sim.withFstWave
   sim.compile(new MicroSoc()).doSimUntilVoid("test", seed = 42){dut =>
-    dut.clockDomain.forkStimulus(10000)
+    dut.cd100.forkStimulus(10000)
+    dut.cd48.forkStimulus(20833)
+    dut.asyncReset #= true
+    delayed(100000)(dut.asyncReset #= false)
+
     val uartBaudRate = 115200
     val uartBaudPeriod = (1e12 / uartBaudRate).toLong
 
@@ -92,7 +105,7 @@ object MicroSocSim extends App{
     }
     val konataBackend = traceKonata.option(new Backend(new File(currentTestPath, "konata.log")))
     delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registred last
-    val probe = new VexiiRiscvProbe(dut.cpu.logic.core, konataBackend, withRvls)
+    val probe = new VexiiRiscvProbe(dut.main.cpu.logic.core, konataBackend, withRvls)
     if (withRvlsCheck) probe.add(rvls)
     probe.backends.foreach { b => //TODO
       b.addRegion(0, 0, 0x80000000l, 0x10000) // mem
@@ -100,7 +113,12 @@ object MicroSocSim extends App{
     }
 
     val elf = new Elf(new File("ext/NaxSoftware/soc/uart/build/rv32ima/uart.elf"), 32)
-    elf.load(dut.ram.thread.logic.mem, 0x80000000l)
+    elf.load(dut.main.ram.thread.logic.mem, 0x80000000l)
     probe.backends.foreach(_.loadElf(0, elf.f))
   }
 }
+
+
+//  val clk100, clk48 = in Bool()
+//  val cd100 = ClockDomain(clk100, frequency = FixedFrequency(100 MHz))
+//  val cd48 = ClockDomain(clk48, frequency = FixedFrequency(48 MHz))
