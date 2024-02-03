@@ -74,7 +74,8 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
     Fiber.awaitBuild()
 
     plugins.foreach {
-      case p : FetchCachelessPlugin => p.regions.load(MemoryConnection.getMemoryTransfers(iBus).asInstanceOf[ArrayBuffer[PmaRegion]])
+      case p: FetchCachelessPlugin => p.regions.load(MemoryConnection.getMemoryTransfers(iBus).asInstanceOf[ArrayBuffer[PmaRegion]])
+      case p: LsuCachelessPlugin => p.regions.load(MemoryConnection.getMemoryTransfers(dBus).asInstanceOf[ArrayBuffer[PmaRegion]])
       case _ =>
     }
 
@@ -90,19 +91,5 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
       }
       case _ =>
     }
-
-
-
-
-
-    println("asd")
   }
 }
-
-
-
-//    val iBusEnds   = MemoryConnection.getMemoryTransfers(iBus)
-//    val iBusCompat = iBusEnds.filter(region => region.node.hasTag(PMA.EXECUTABLE))
-//    val dBusEnds = MemoryConnection.getMemoryTransfers(dBus)
-//    val dBusCompat = dBusEnds
-//    val ioRange = dBusEnds.filter(region => !region.node.hasTag(PMA.MAIN))
