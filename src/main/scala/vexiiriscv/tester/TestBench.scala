@@ -115,6 +115,7 @@ class TestOptions{
   val fsmTasks = mutable.Queue[FsmTask]()
   var ibusReadyFactor = 1.01f
   var dbusReadyFactor = 1.01f
+  var seed = 2
 
   def getTestName() = testName.getOrElse("test")
 
@@ -153,12 +154,14 @@ class TestOptions{
     opt[String]("fsm-getc") unbounded() action { (v, c) => fsmTasks += new FsmGetc(v) }
     opt[Long]("fsm-sleep") unbounded() action { (v, c) => fsmTasks += new FsmSleep(v) }
     opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasks += new FsmSuccess() }
+    opt[Int]("seed") action { (v, c) => seed = v }
+    opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
-      case true => DualSimTracer.withCb(compiled, window = 500000 * 10, seed = 2)(test)
-      case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => f) }
+      case true => DualSimTracer.withCb(compiled, window = 500000 * 10, seed=seed)(test)
+      case false => compiled.doSimUntilVoid(name = getTestName(), seed=seed) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
 
