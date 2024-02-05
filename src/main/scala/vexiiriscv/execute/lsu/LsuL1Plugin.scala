@@ -2,6 +2,7 @@ package vexiiriscv.execute.lsu
 
 import spinal.core._
 import spinal.core.fiber.Handle
+import spinal.core.sim.SimDataPimper
 import spinal.lib._
 import spinal.lib.misc.Plru
 import spinal.lib.misc.database.Database.blocking
@@ -127,7 +128,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     assert(bankWidth <= memDataWidth)
 
-    val bus = master(LsuL1Bus(memParameter))
+    val bus = master(LsuL1Bus(memParameter)).simPublic()
 
     val WAYS_HAZARD = Payload(Bits(wayCount bits))
     val BANK_BUSY = Payload(Bits(bankCount bits))

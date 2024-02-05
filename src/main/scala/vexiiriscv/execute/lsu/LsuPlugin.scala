@@ -2,6 +2,7 @@ package vexiiriscv.execute.lsu
 
 import spinal.core._
 import spinal.core.fiber.Handle
+import spinal.core.sim.SimDataPimper
 import spinal.lib._
 import spinal.lib.bus.tilelink.M2sTransfers
 import spinal.lib.fsm.{State, StateMachine}
@@ -98,7 +99,7 @@ class LsuPlugin(var layer : LaneLayer,
       withAmo = withRva,
       pendingMax = 1
     )
-    val bus = master(LsuCachelessBus(busParam))
+    val bus = master(LsuCachelessBus(busParam)).simPublic()
 
     accessRetainer.await()
     val l1 = LsuL1
