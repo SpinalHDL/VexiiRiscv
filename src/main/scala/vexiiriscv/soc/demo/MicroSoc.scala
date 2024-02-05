@@ -72,40 +72,44 @@ object MicroSoc extends App{
 }
 
 object MicroSocSim extends App{
-  val traceKonata = true
-  val withRvlsCheck = true
+  var traceKonata = false
+  var withRvlsCheck = false
+  val sim = SimConfig
+  sim.withTimeScale(1 ns)
+  sim.withTimePrecision(1 ps)
 
-  val sim = SimConfig.withConfig(
-    SpinalConfig()
-  )
-  sim.withFstWave
+  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+    help("help").text("prints this usage text")
+    opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
+    opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true }
+    sim.addOptions(this)
+  }.parse(args, Unit).nonEmpty)
+
+
   sim.compile(new MicroSoc()).doSimUntilVoid("test", seed = 42){dut =>
-    dut.cd100.forkStimulus(10000)
-    dut.cd48.forkStimulus(20833)
+    dut.cd100.forkStimulus()
+    dut.cd48.forkStimulus()
     dut.asyncReset #= true
-    delayed(100000)(dut.asyncReset #= false)
+    delayed(100 ns)(dut.asyncReset #= false)
 
-    val uartBaudRate = 115200
-    val uartBaudPeriod = (1e12 / uartBaudRate).toLong
-
+    val uartBaudPeriod = hzToLong(115200 Hz)
     val uartTx = UartDecoder(
       uartPin = dut.peripheral.uart.logic.uart.txd,
       baudPeriod = uartBaudPeriod
     )
-
     val uartRx = UartEncoder(
       uartPin = dut.peripheral.uart.logic.uart.rxd,
       baudPeriod = uartBaudPeriod
     )
-    
+
     val probe = new VexiiRiscvProbe(
       cpu = dut.main.cpu.logic.core,
       kb = traceKonata.option(new vexiiriscv.test.konata.Backend(
         new File(currentTestPath, "konata.log")
-      ).spinalSimFlusher(10000*1000))
+      ).spinalSimFlusher(hzToLong(1000 Hz)))
     )
 
-    if (withRvlsCheck) probe.add(new RvlsBackend(new File(currentTestPath)).spinalSimFlusher(10 * 10000))
+    if (withRvlsCheck) probe.add(new RvlsBackend(new File(currentTestPath)).spinalSimFlusher(hzToLong(1000 Hz)))
 
     probe.autoRegions()
 
