@@ -131,7 +131,7 @@ class BtbPlugin(var sets : Int,
         data.isBranch := cmd.isBranch
         data.isPush := cmd.isPush
         data.isPop := cmd.isPop
-        data.taken := cmd.taken
+        if(!withCondPrediction) data.taken := cmd.taken
       }
     }
 
@@ -150,12 +150,12 @@ class BtbPlugin(var sets : Int,
           data.isBranch := False
           data.isPush := False
           data.isPop := False
-          data.taken := False
+          if(!withCondPrediction) data.taken := False
         }
       }
     }
 
-    val readPort = mem.readSyncPort()  //TODO , readUnderWrite = readFirst
+    val readPort = mem.readSyncPort()  //TODO , readUnderWrite = readFirst would save area/ipc/fmax on FPGA which support it, same for gshare
     val readCmd = new fpp.Fetch(readAt){
       readPort.cmd.valid := isReady
       readPort.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)

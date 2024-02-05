@@ -81,7 +81,7 @@ class LsuPlugin(var layer : LaneLayer,
     layer.add(Rvi.FENCE) //TODO
     layer(Rvi.FENCE).setCompletion(ctrlAt)
 
-    for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(ctrlAt) //TODO ctrlAt
+    for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(ctrlAt)
 
     retainer.release()
 

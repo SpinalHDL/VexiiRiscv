@@ -54,7 +54,7 @@ class GSharePlugin(var historyWidth : Int,
     def hashWidth = log2Up(words)
     def gshareHash(address : UInt, history : Bits) = address(SLICE_RANGE.get.high + 1, hashWidth bits).reversed ^ U(history).resized
 
-    val mem = new Area{ //TODO bypass read durring write ?
+    val mem = new Area{
       val counter = Mem.fill(words)(GSHARE_COUNTER)
       val write = counter.writePort
       if (GenerationFlags.simulation) {

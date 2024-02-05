@@ -61,7 +61,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   def autoRegions(): Unit = {
     cpu.host.services.foreach {
       case p: LsuCachelessPlugin => p.regions.foreach { region =>
-        backends.foreach { b => //TODO
+        backends.foreach { b =>
           region.mapping match {
             case SizeMapping(base, size) => b.addRegion(0, region.isIo.toInt, base.toLong, size.toLong)
           }
@@ -162,7 +162,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         if (get(Riscv.RVF)) isa += "F"
         if (get(Riscv.RVD)) isa += "D"
         if (get(Riscv.RVC)) isa += "C"
-        tracer.newCpuMemoryView(hartId, 16, 16) //TODO readIds writeIds
+        tracer.newCpuMemoryView(hartId, 16, 16)
         tracer.newCpu(hartId, isa, csrp, 63, hartId)
         val pc = if(xlen == 32) 0x80000000l else 0x80000000l
         tracer.setPc(hartId, pc)
