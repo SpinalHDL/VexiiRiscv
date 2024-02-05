@@ -120,10 +120,11 @@ class Backend(f : File) {
     bf.close()
   }
 
-  def spinalSimFlusher(period: Long): Unit = {
+  def spinalSimFlusher(period: Long): this.type = {
     periodicaly(period){
       flush()
     }
-    onSimEnd(close())
+    delayed(1)(onSimEnd(close()))
+    this
   }
 }

@@ -16,6 +16,7 @@ import spinal.lib.misc.{Elf, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.PMA
 import vexiiriscv.ParamSimple
+import vexiiriscv.execute.lsu.LsuCachelessPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 import vexiiriscv.test.VexiiRiscvProbe
 import vexiiriscv.test.konata.Backend
@@ -71,6 +72,9 @@ object MicroSoc extends App{
 }
 
 object MicroSocSim extends App{
+  val traceKonata = true
+  val withRvlsCheck = true
+
   val sim = SimConfig.withConfig(
     SpinalConfig()
   )
@@ -93,32 +97,20 @@ object MicroSocSim extends App{
       uartPin = dut.peripheral.uart.logic.uart.rxd,
       baudPeriod = uartBaudPeriod
     )
+    
+    val probe = new VexiiRiscvProbe(
+      cpu = dut.main.cpu.logic.core,
+      kb = traceKonata.option(new vexiiriscv.test.konata.Backend(
+        new File(currentTestPath, "konata.log")
+      ).spinalSimFlusher(10000*1000))
+    )
 
-    val withRvls = true
-    val traceKonata = true
-    val withRvlsCheck = true
+    if (withRvlsCheck) probe.add(new RvlsBackend(new File(currentTestPath)).spinalSimFlusher(10 * 10000))
 
-    val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath))
-    if (withRvlsCheck) {
-      rvls.spinalSimFlusher(10 * 10000)
-      rvls.spinalSimTime(10000)
-    }
-    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath, "konata.log")))
-    delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registred last
-    val probe = new VexiiRiscvProbe(dut.main.cpu.logic.core, konataBackend, withRvls)
-    if (withRvlsCheck) probe.add(rvls)
-    probe.backends.foreach { b => //TODO
-      b.addRegion(0, 0, 0x80000000l, 0x10000) // mem
-      b.addRegion(0, 1, 0x10000000l, 0x10000000l) // io
-    }
+    probe.autoRegions()
 
     val elf = new Elf(new File("ext/NaxSoftware/soc/uart/build/rv32ima/uart.elf"), 32)
     elf.load(dut.main.ram.thread.logic.mem, 0x80000000l)
     probe.backends.foreach(_.loadElf(0, elf.f))
   }
 }
-
-
-//  val clk100, clk48 = in Bool()
-//  val cd100 = ClockDomain(clk100, frequency = FixedFrequency(100 MHz))
-//  val cd48 = ClockDomain(clk48, frequency = FixedFrequency(48 MHz))
