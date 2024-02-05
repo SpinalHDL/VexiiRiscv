@@ -32,7 +32,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var joinAt: Int = 1,
                          var wbAt: Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider{
 
-  val WITH_RSP, WITH_ACCESS = Payload(Bool())
+  val WITH_RSP, WITH_ACCESS, FENCE = Payload(Bool())
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
@@ -82,8 +82,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       op.dontFlushFrom(forkAt+1)
     }
 
-    layer.add(Rvi.FENCE) //TODO
-    layer(Rvi.FENCE).setCompletion(joinAt)
+    elp.setDecodingDefault(FENCE, False)
+    layer.add(Rvi.FENCE).addDecoding(FENCE -> True)
+    layer(Rvi.FENCE).setCompletion(forkAt)
 
     for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(joinAt)
 
@@ -126,6 +127,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       )
     }
 
+    val cmdInflights = Bool()
+
     val onFork = new forkCtrl.Area{
       val tpk =  onAddress.translationPort.keys
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && onAddress.RAW_ADDRESS(i - 1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
@@ -139,9 +142,13 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       val skip = False
 
+      val askFenceReg = RegNextWhen(isValid && SEL && ATOMIC, !elp.isFreezed()) init(False) //Implement atomic fencing (pessimistic)
+      val askFence = isValid && (FENCE || SEL && ATOMIC || askFenceReg)
+      val doFence = askFence && cmdInflights //Not ideal, because if the first cycle is freezed, then it will also consider the send cmd as something to fence
+
       val cmdCounter = Counter(bufferSize, bus.cmd.fire)
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
-      bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip
+      bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip && !doFence
       bus.cmd.id := cmdCounter
       bus.cmd.write := STORE
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
@@ -162,7 +169,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
       //TODO amo AQ/RL
 
-      elp.freezeWhen(bus.cmd.isStall)
+      val freezeIt = bus.cmd.isStall || doFence
+      elp.freezeWhen(freezeIt)
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
@@ -251,14 +259,22 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val onJoin = new joinCtrl.Area{
       val buffers = List.fill(bufferSize)(new Area{
         val valid = RegInit(False)
+        val inflight = RegInit(False)
         val payload = Reg(LsuCachelessRsp(bus.p, false))
       })
+      cmdInflights := buffers.map(_.inflight).orR
 
       val busRspWithoutId = LsuCachelessRsp(bus.p, false)
       busRspWithoutId.assignSomeByName(bus.rsp.payload)
+      when(bus.cmd.fire) {
+        buffers.onSel(bus.cmd.id) { b =>
+          b.inflight := True
+        }
+      }
       when(bus.rsp.valid){
         buffers.onSel(bus.rsp.id){b =>
           b.valid := True
+          b.inflight := False
           b.payload := busRspWithoutId
         }
       }
