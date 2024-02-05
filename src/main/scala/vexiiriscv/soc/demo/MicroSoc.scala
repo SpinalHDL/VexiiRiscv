@@ -43,17 +43,20 @@ class MicroSoc() extends Component {
 
   // Handle all the IO / Peripheral things
   val peripheral = peripheralResetCtrl.cd on new Area {
-    val slowBus = Node()
-    slowBus at (0x10000000l, 0x10000000l)  of (main.bus)
+    val busXlen = Node().forceDataWidth(main.param.xlen)
+    busXlen at(0x10000000l, 0x10000000l) of main.bus
+
+    val bus32 = Node().forceDataWidth(32)
+    bus32 << busXlen
 
     val clint = new TilelinkClintFiber()
-    clint.node at 0x10000 of slowBus
+    clint.node at 0x10000 of busXlen
 
     val plic = new TilelinkPlicFiber()
-    plic.node at 0xC00000l of slowBus
+    plic.node at 0xC00000l of bus32
 
     val uart = new TilelinkUartFiber()
-    uart.node at 0x1000 of slowBus
+    uart.node at 0x1000 of bus32
     plic.mapUpInterrupt(1, uart.interrupt)
 
     val cpuClint = main.cpu.bind(clint)
