@@ -8,7 +8,6 @@ import spinal.lib.{ResetCtrlFiber, StreamPipe}
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink._
-import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
@@ -16,14 +15,11 @@ import spinal.lib.misc.{Elf, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.PMA
 import vexiiriscv.ParamSimple
-import vexiiriscv.execute.lsu.LsuCachelessPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 import vexiiriscv.test.VexiiRiscvProbe
-import vexiiriscv.test.konata.Backend
 
 import java.io.File
 
-//TODO Cleanup
 class MicroSoc() extends Component {
   val asyncReset = in Bool()
   val cd100 = ClockDomain.external("cd100", withReset = false, frequency = FixedFrequency(100 MHz))
@@ -43,7 +39,6 @@ class MicroSoc() extends Component {
 
     val ram = new tilelink.fabric.RamFiber()
     ram.up at(0x80000000l, 0x10000l) of bus
-    ram.up.addTag(PMA.EXECUTABLE)
   }
 
   // Handle all the IO / Peripheral things
@@ -74,12 +69,13 @@ object MicroSoc extends App{
 object MicroSocSim extends App{
   var traceKonata = false
   var withRvlsCheck = false
+  var elf: Elf = null
   val sim = SimConfig
-  sim.withTimeScale(1 ns)
-  sim.withTimePrecision(1 ps)
+  sim.withTimeSpec(1 ns, 1 ps)
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
+    opt[String]("load-elf") action { (v, c) => elf = new Elf(new File(v), 32) }
     opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true }
     sim.addOptions(this)
@@ -113,8 +109,9 @@ object MicroSocSim extends App{
 
     probe.autoRegions()
 
-    val elf = new Elf(new File("ext/NaxSoftware/soc/uart/build/rv32ima/uart.elf"), 32)
-    elf.load(dut.main.ram.thread.logic.mem, 0x80000000l)
-    probe.backends.foreach(_.loadElf(0, elf.f))
+    if(elf != null) {
+      elf.load(dut.main.ram.thread.logic.mem, 0x80000000l)
+      probe.backends.foreach(_.loadElf(0, elf.f))
+    }
   }
 }
