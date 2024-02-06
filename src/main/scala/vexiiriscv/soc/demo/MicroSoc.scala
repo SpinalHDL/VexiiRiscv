@@ -11,6 +11,7 @@ import spinal.lib.bus.tilelink._
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
+import spinal.lib.eda.bench.Rtl
 import spinal.lib.misc.{Elf, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.PMA
@@ -19,6 +20,7 @@ import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 import vexiiriscv.test.VexiiRiscvProbe
 
 import java.io.File
+import scala.collection.mutable.ArrayBuffer
 
 class MicroSoc() extends Component {
   val asyncReset = in Bool()
@@ -33,12 +35,15 @@ class MicroSoc() extends Component {
     val bus = tilelink.fabric.Node()
 
     val param = new ParamSimple()
+    param.withMul = false
+    param.withDiv = false
+    param.relaxedBranch = true
     val plugins = param.plugins()
     val cpu = new TilelinkVexiiRiscvFiber(plugins)
-    bus << List(cpu.iBus, cpu.dBus)
+    bus << cpu.buses
 
     val ram = new tilelink.fabric.RamFiber()
-    ram.up at(0x80000000l, 0x10000l) of bus
+    ram.up at(0x80000000l, 0x4000l) of bus
   }
 
   // Handle all the IO / Peripheral things
@@ -64,10 +69,19 @@ class MicroSoc() extends Component {
   }
 }
 
-object MicroSoc extends App{
-  val sc = SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz))
-  sc.generateVerilog(new MicroSoc())
+object MicroSocGen extends App{
+  SpinalVerilog(new MicroSoc())
 }
+
+object MicroSocSynt extends App{
+  import spinal.lib.eda.bench._
+  val rtls = ArrayBuffer[Rtl]()
+  rtls += Rtl(SpinalVerilog(new MicroSoc()))
+
+  val targets = XilinxStdTargets().take(2)
+  Bench(rtls, targets)
+}
+
 
 object MicroSocSim extends App{
   var traceKonata = false

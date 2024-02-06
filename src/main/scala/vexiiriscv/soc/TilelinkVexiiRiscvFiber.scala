@@ -33,6 +33,8 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
   val dBus = Node.down()
   val lsuL1Bus = plugins.exists(_.isInstanceOf[LsuL1Plugin]) generate Node.down()
 
+  def buses = List(iBus, dBus) ++ lsuL1Bus.nullOption
+
   val priv = plugins.collectFirst {
     case p: PrivilegedPlugin => new Area {
       val plugin = p
