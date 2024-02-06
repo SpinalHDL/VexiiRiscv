@@ -171,16 +171,16 @@ class AlignerPlugin(fetchAt : Int,
         lane.up(Decode.INSTRUCTION) := extractor.ctx.instruction
         lane.up(Decode.DECOMPRESSION_FAULT) := False
         lane.up(Decode.INSTRUCTION_RAW) := extractor.ctx.instruction
+        val isRvc = extractor.ctx.instruction(1 downto 0) =/= 3
         val withRvc = Riscv.RVC.get generate new Area {
-          val isRvc = extractor.ctx.instruction(1 downto 0) =/= 3
           val dec = RvcDecompressor(extractor.ctx.instruction, rvf = Riscv.RVF, rvd = Riscv.RVD, Riscv.XLEN)
           when(isRvc) {
             lane.up(Decode.INSTRUCTION) := dec.inst
             lane.up(Decode.DECOMPRESSION_FAULT) := dec.illegal
-            when(dec.illegal){
-              lane.up(Decode.INSTRUCTION_RAW)(Decode.INSTRUCTION_WIDTH-1 downto 16) := 0 //To match spike
-            }
           }
+        }
+        when(isRvc) {
+          lane.up(Decode.INSTRUCTION_RAW)(Decode.INSTRUCTION_WIDTH - 1 downto 16) := 0 //To match spike
         }
 
         lane.up(Decode.INSTRUCTION_SLICE_COUNT) := OHToUInt(OHMasking.lastV2(extractor.localMask))
