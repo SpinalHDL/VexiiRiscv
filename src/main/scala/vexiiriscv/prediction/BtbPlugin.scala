@@ -105,7 +105,7 @@ class BtbPlugin(var sets : Int,
       val sliceLow  = SLICE_LOW()
       val pcTarget = PC_TARGET()
       val isBranch, isPush, isPop = Bool()
-      val taken = Bool() //TODO remove
+      val taken = !withCondPrediction generate Bool() //TODO remove
     }
 
     // This memory could be implemented as a single port ram, as that ram is only updated on miss predicted stuff
