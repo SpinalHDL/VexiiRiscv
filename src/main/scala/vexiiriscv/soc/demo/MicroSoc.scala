@@ -42,26 +42,26 @@ class MicroSoc() extends Component {
     val cpu = new TilelinkVexiiRiscvFiber(plugins)
     bus << cpu.buses
 
-    val ram = new tilelink.fabric.RamFiber()
-    ram.up at(0x80000000l, 0x4000l) of bus
+    val ram = new tilelink.fabric.RamFiber(16 KiB)
+    ram.up at 0x80000000l of bus
   }
 
   // Handle all the IO / Peripheral things
   val peripheral = peripheralResetCtrl.cd on new Area {
     val busXlen = Node().forceDataWidth(main.param.xlen)
-    busXlen at(0x10000000l, 0x10000000l) of main.bus
+    busXlen << main.bus
 
     val bus32 = Node().forceDataWidth(32)
-    bus32 << busXlen
+    bus32 << main.bus
 
     val clint = new TilelinkClintFiber()
-    clint.node at 0x10000 of busXlen
+    clint.node at 0x10010000 of busXlen
 
     val plic = new TilelinkPlicFiber()
-    plic.node at 0xC00000l of bus32
+    plic.node at 0x10C00000 of bus32
 
     val uart = new TilelinkUartFiber()
-    uart.node at 0x1000 of bus32
+    uart.node at 0x10001000 of bus32
     plic.mapUpInterrupt(1, uart.interrupt)
 
     val cpuClint = main.cpu.bind(clint)
