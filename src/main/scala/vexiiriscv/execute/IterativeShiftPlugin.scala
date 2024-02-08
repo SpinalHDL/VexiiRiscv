@@ -51,7 +51,6 @@ class IterativeShifterPlugin(val layer: LaneLayer,
     val wb = newWriteback(ifp, formatAt)
 
     // we use RS1 directly, keep SRC1.RF source here for hazard detection
-    // TODO not sure about SRC2 is really worth it (for only 5/ 6 bits)
     add(Rvi.SLL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True, ARITHMETIC -> False)
     add(Rvi.SRL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, ARITHMETIC -> False)
     add(Rvi.SRA).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, ARITHMETIC -> True)
