@@ -82,15 +82,22 @@ class IterativeShifterPlugin(val layer: LaneLayer,
 
       val amplitudeWidth = if(Riscv.XLEN.get == 64) 6 else 5
       val shamt = srcp.SRC2.resize(amplitudeWidth).asUInt
-      if(Riscv.XLEN.get==64) when(IS_W) {
-        amplitude(5) := False
-      }
       val rs1 = el(IntRegFile, RS1).asBits
 
       val busy = RegInit(False)
       val flipped = Reg(Bool())
-      val amplitude = Reg(cloneOf(shamt))
-      val shiftReg = Reg(cloneOf(srcp.SRC1.asBits))
+      val amplitude = Reg(UInt(amplitudeWidth bits))
+      val shiftReg = Reg(Bits(Riscv.XLEN bits))
+
+      val dataIn = CombInit(rs1)
+      if (Riscv.XLEN.get == 64) {
+        when(IS_W) {
+          shamt(5) := False
+        }
+        when(IS_W_RIGHT) {
+          dataIn(63 downto 32) := (default -> (ARITHMETIC & rs1(31)))
+        }
+      }
 
       val done = if(lateResult) {
         amplitude === 0 & !flipped & busy
@@ -106,12 +113,6 @@ class IterativeShifterPlugin(val layer: LaneLayer,
         // done comes one cycle "early", in the cycle we do the last action (shift / flip)
         shamt === 0 | leftShiftDone | rightShiftDone
       }
-
-      val signExtended =
-        if(Riscv.XLEN.get == 64)
-          IS_W_RIGHT ? (B(32 bit, default -> (ARITHMETIC & rs1(31))) ## rs1(31 downto 0)) | rs1
-        else
-          CombInit(rs1)
 
       val muxInputs = mutable.ArrayBuffer[(Bool, Bits, UInt)]()
       rightShifts.sorted.foreach(n => {
@@ -141,7 +142,7 @@ class IterativeShifterPlugin(val layer: LaneLayer,
           muxInputs.append((IS_W & doFlip, False #* 32 ## shiftReg(31 downto 0).reversed, amplitude))
         }
       }
-      muxInputs.append((selected & !busy, signExtended, shamt))
+      muxInputs.append((selected & !busy, dataIn, shamt))
 
       val selector = OHMasking.last(Cat(muxInputs.map(_._1)))
       val muxed = MuxOH(selector, muxInputs.map(_._2))
