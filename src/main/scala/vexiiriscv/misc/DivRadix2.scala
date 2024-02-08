@@ -16,7 +16,7 @@ case class DivRsp2(width: Int) extends Bundle {
   val remain = UInt(width bits)
 }
 
-case class DivRadix2(val width: Int, val lowArea: Boolean = false) extends Component {
+case class DivRadix2(val width: Int, val lowArea: Boolean = true) extends Component {
   require(width >= 0)
 
   val predictShiftInCycle0 = false // Does not work yet.
