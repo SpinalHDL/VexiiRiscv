@@ -63,12 +63,12 @@ class IterativeShifterPlugin(val layer: LaneLayer,
       for (op <- List(Rvi.SLL, Rvi.SRL, Rvi.SRA, Rvi.SLLI, Rvi.SRLI, Rvi.SRAI)) {
         layer(op).addDecoding(IS_W -> False, IS_W_RIGHT -> False)
       }
-      add(Rvi.SLLW).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True, ARITHMETIC -> False, IS_W -> True, IS_W_RIGHT -> False)
-      add(Rvi.SRLW).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, ARITHMETIC -> False, IS_W -> True, IS_W_RIGHT -> True)
-      add(Rvi.SRAW).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, ARITHMETIC -> True, IS_W -> True, IS_W_RIGHT -> True)
-      add(Rvi.SLLIW).srcs(SRC1.RF, SRC2.I).decode(LEFT -> True, ARITHMETIC -> False, IS_W -> True, IS_W_RIGHT -> False)
-      add(Rvi.SRLIW).srcs(SRC1.RF, SRC2.I).decode(LEFT -> False, ARITHMETIC -> False, IS_W -> True, IS_W_RIGHT -> True)
-      add(Rvi.SRAIW).srcs(SRC1.RF, SRC2.I).decode(LEFT -> False, ARITHMETIC -> True, IS_W -> True, IS_W_RIGHT -> True)
+      add(Rvi.SLLW ).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True , ARITHMETIC -> False, IS_W -> True, IS_W_RIGHT -> False)
+      add(Rvi.SRLW ).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, ARITHMETIC -> False, IS_W -> True, IS_W_RIGHT -> True )
+      add(Rvi.SRAW ).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, ARITHMETIC -> True , IS_W -> True, IS_W_RIGHT -> True )
+      add(Rvi.SLLIW).srcs(SRC1.RF, SRC2.I ).decode(LEFT -> True , ARITHMETIC -> False, IS_W -> True, IS_W_RIGHT -> False)
+      add(Rvi.SRLIW).srcs(SRC1.RF, SRC2.I ).decode(LEFT -> False, ARITHMETIC -> False, IS_W -> True, IS_W_RIGHT -> True )
+      add(Rvi.SRAIW).srcs(SRC1.RF, SRC2.I ).decode(LEFT -> False, ARITHMETIC -> True , IS_W -> True, IS_W_RIGHT -> True )
       for (op <- List(Rvi.SLLW, Rvi.SRLW, Rvi.SRAW, Rvi.SLLIW, Rvi.SRLIW, Rvi.SRAIW)) {
         ifp.signExtend(wb, layer(op), 32)
       }
