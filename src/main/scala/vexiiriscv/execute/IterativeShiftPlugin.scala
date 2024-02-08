@@ -81,11 +81,9 @@ class IterativeShifterPlugin(val layer: LaneLayer,
       val selected = isValid && SEL
 
       val amplitudeWidth = if(Riscv.XLEN.get == 64) 6 else 5
-      val shamt = if(Riscv.XLEN.get==32) {
-        srcp.SRC2.resize(amplitudeWidth bit).asUInt
-      } else {
-        // SxxW instructions only use lower 5 bit of SRC2, not 6
-        (srcp.SRC2.resize(amplitudeWidth bit).asBits & B(6 bit, 5 -> !IS_W, default -> True)).asUInt
+      val shamt = srcp.SRC2.resize(amplitudeWidth).asUInt
+      if(Riscv.XLEN.get==64) when(IS_W) {
+        amplitude(5) := False
       }
       val rs1 = el(IntRegFile, RS1).asBits
 
