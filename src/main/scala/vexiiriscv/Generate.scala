@@ -25,34 +25,7 @@ object Generate extends App {
   sc.addTransformationPhase(new MultiPortWritesSymplifier)
   val report = sc.generateVerilog {
     val plugins = param.plugins()
-    val regions = ArrayBuffer[PmaRegion](
-      new PmaRegionImpl(
-        mapping = SizeMapping(0x80000000l, 0x80000000l),
-        isMain = true,
-        isExecutable = true,
-        transfers = M2sTransfers(
-          get = SizeRange.all,
-          putFull = SizeRange.all,
-        )
-      ),
-      new PmaRegionImpl(
-        mapping = SizeMapping(0x10000000l, 0x10000000l),
-        isMain = false,
-        isExecutable = true,
-        transfers = M2sTransfers(
-          get = SizeRange.all,
-          putFull = SizeRange.all,
-        )
-      )
-    )
-    plugins.foreach {
-      case p: FetchCachelessPlugin => p.regions.load(regions)
-      case p: LsuCachelessPlugin => p.regions.load(regions)
-      case p: FetchL1Plugin => p.regions.load(regions)
-      case p: LsuPlugin => p.ioRegions.load(regions)
-      case p: LsuL1Plugin => p.regions.load(regions)
-      case _ =>
-    }
+    ParamSimple.setPma(plugins)
     VexiiRiscv(plugins)
   }
 }
