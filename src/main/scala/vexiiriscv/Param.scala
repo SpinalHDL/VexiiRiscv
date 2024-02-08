@@ -2,11 +2,15 @@ package vexiiriscv
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.misc.plugin.Hostable
+import spinal.lib.system.tag.{PmaRegion, PmaRegionImpl}
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu._
+import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin}
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
@@ -15,6 +19,40 @@ import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
 import scala.collection.mutable.ArrayBuffer
+
+object ParamSimple{
+  def setPma(plugins : Seq[Hostable]) = {
+    val regions = ArrayBuffer[PmaRegion](
+      new PmaRegionImpl(
+        mapping = SizeMapping(0x80000000l, 0x80000000l),
+        isMain = true,
+        isExecutable = true,
+        transfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+      ),
+      new PmaRegionImpl(
+        mapping = SizeMapping(0x10000000l, 0x10000000l),
+        isMain = false,
+        isExecutable = true,
+        transfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+      )
+    )
+    plugins.foreach {
+      case p: FetchCachelessPlugin => p.regions.load(regions)
+      case p: LsuCachelessPlugin => p.regions.load(regions)
+      case p: FetchL1Plugin => p.regions.load(regions)
+      case p: LsuPlugin => p.ioRegions.load(regions)
+      case p: LsuL1Plugin => p.regions.load(regions)
+      case _ =>
+    }
+    plugins
+  }
+}
 
 class ParamSimple(){
   var xlen = 32
