@@ -10,7 +10,7 @@ VexiiRiscv is a from scratch second iteration of VexRiscv. Here are the targets 
 - Cleaning implementation, especially the frontend
 - ...
 
-There is a online documentation : 
+There is an online documentation : 
 
 - https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Introduction/#
 
