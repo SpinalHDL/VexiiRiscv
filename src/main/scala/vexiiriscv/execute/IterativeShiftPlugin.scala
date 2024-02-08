@@ -175,8 +175,8 @@ class IterativeShifterPlugin(val layer: LaneLayer,
         busy := False
       }
 
-      val freeze = selected && !done && !unscheduleRequest
-      el.freezeWhen(freeze)
+      val freezeIt = selected && !done && !unscheduleRequest
+      el.freezeWhen(freezeIt)
 
       SHIFT_RESULT := (if (lateResult) shiftReg else muxed)
     }
