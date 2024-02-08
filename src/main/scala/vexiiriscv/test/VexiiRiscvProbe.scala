@@ -518,7 +518,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       }
       if (hart.lastCommitAt + 4000l < cycle) {
         val status = if (hart.microOpAllocPtr != hart.microOpRetirePtr) f"waiting on uop 0x${hart.microOpRetirePtr}%X" else f"last uop id 0x${hart.lastUopId}%X"
-        simFailure(f"Vexii didn't commited anything since too long, $status")
+        simFailure(f"Vexii hasn't commited anything for too long, $status")
       }
 
       while (hart.microOpRetirePtr != hart.microOpAllocPtr && hart.microOp(hart.microOpRetirePtr).done) {

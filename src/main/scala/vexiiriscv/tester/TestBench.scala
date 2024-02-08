@@ -115,6 +115,7 @@ class TestOptions{
   val fsmTasks = mutable.Queue[FsmTask]()
   var ibusReadyFactor = 1.01f
   var dbusReadyFactor = 1.01f
+  var seed = 2
 
   def getTestName() = testName.getOrElse("test")
 
@@ -153,12 +154,14 @@ class TestOptions{
     opt[String]("fsm-getc") unbounded() action { (v, c) => fsmTasks += new FsmGetc(v) }
     opt[Long]("fsm-sleep") unbounded() action { (v, c) => fsmTasks += new FsmSleep(v) }
     opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasks += new FsmSuccess() }
+    opt[Int]("seed") action { (v, c) => seed = v }
+    opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
-      case true => DualSimTracer.withCb(compiled, window = 500000 * 10, seed = 2)(test)
-      case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => f) }
+      case true => DualSimTracer.withCb(compiled, window = 500000 * 10, seed=seed)(test)
+      case false => compiled.doSimUntilVoid(name = getTestName(), seed=seed) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
 
@@ -167,8 +170,8 @@ class TestOptions{
     cd.forkStimulus(10)
     simSpeedPrinter.foreach(cd.forkSimSpeedPrinter)
 
-    failAfter.map(delayed(_)(simFailure("Reached Timeout")))
-    passAfter.map(delayed(_)(simSuccess()))
+    failAfter.foreach(delayed(_)(simFailure("Reached Timeout")))
+    passAfter.foreach(delayed(_)(simSuccess()))
 
 //    fork{
 //      while(true){
@@ -182,13 +185,13 @@ class TestOptions{
     val xlen = dut.database(Riscv.XLEN)
 
     // Rvls will check that the CPUs are doing things right
-    val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath))
+    val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath()))
     if (withRvlsCheck) {
       rvls.spinalSimFlusher(10 * 10000)
       rvls.spinalSimTime(10000)
     }
 
-    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath, "konata.log")))
+    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), "konata.log")))
     delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registred last
 
     // Collect traces from the CPUs behaviour
@@ -198,11 +201,11 @@ class TestOptions{
     probe.trace = false
 
     // Things to enable when we want to collect traces
-    val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath, "tracer.log")))
+    val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath(), "tracer.log")))
     onTrace {
-      if(traceWave) enableSimWave()
+      if (traceWave) enableSimWave()
       if (withRvlsCheck && traceSpikeLog) rvls.debug()
-      if(traceKonata) probe.trace = true
+      if (traceKonata) probe.trace = true
 
       tracerFile.foreach{f =>
         f.spinalSimFlusher(10 * 10000)
@@ -252,7 +255,7 @@ class TestOptions{
         val failSymbol = if(withFail) trunkPc(elf.getSymbolAddress("fail")) else -1
         probe.commitsCallbacks += { (hartId, pc) =>
           if (pc == passSymbol) delayed(1)(simSuccess())
-          if (pc == failSymbol) delayed(1)(simFailure("Software reach the fail symbole :("))
+          if (pc == failSymbol) delayed(1)(simFailure("Software reached the fail symbol :("))
         }
       }
     }

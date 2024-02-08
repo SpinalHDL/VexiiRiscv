@@ -310,7 +310,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       elp.execute(eid).up(WITH_ACCESS).setAsReg().init(False)
     }
 
-    val onWb = new wbCtrl.Area{
+    val onWb = new wbCtrl.Area {
       val rspSplits = onJoin.READ_DATA.subdivideIn(8 bits)
       val rspShifted = Bits(LSLEN bits)
       val wordBytes = LSLEN/8
