@@ -19,8 +19,8 @@ import spinal.lib.sim.SparseMemory
 import spinal.lib.system.tag.{MemoryConnection, PMA, PmaRegion}
 import spinal.sim.{Signal, SimManagerContext}
 import vexiiriscv.{ParamSimple, VexiiRiscv}
-import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuCachelessTileLinkPlugin}
-import vexiiriscv.fetch.{FetchCachelessPlugin, FetchCachelessTileLinkPlugin}
+import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuCachelessTileLinkPlugin, LsuL1Plugin, LsuL1TileLinkPlugin, LsuPlugin, LsuTileLinkPlugin}
+import vexiiriscv.fetch.{FetchCachelessPlugin, FetchCachelessTileLinkPlugin, FetchFetchL1TileLinkPlugin, FetchL1Plugin}
 import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.misc.PrivilegedPlugin
 
@@ -31,6 +31,9 @@ import scala.collection.mutable.ArrayBuffer
 class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
   val iBus = Node.down()
   val dBus = Node.down()
+  val lsuL1Bus = plugins.exists(_.isInstanceOf[LsuL1Plugin]) generate Node.down()
+
+  def buses = List(iBus, dBus) ++ lsuL1Bus.nullOption
 
   val priv = plugins.collectFirst {
     case p: PrivilegedPlugin => new Area {
@@ -64,7 +67,10 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
   // Add the plugins to bridge the CPU toward Tilelink
   plugins.foreach {
     case p: FetchCachelessPlugin => plugins += new FetchCachelessTileLinkPlugin(iBus)
+    case p: FetchL1Plugin => plugins += new FetchFetchL1TileLinkPlugin(iBus)
     case p: LsuCachelessPlugin => plugins += new LsuCachelessTileLinkPlugin(dBus)
+    case p: LsuPlugin => plugins += new LsuTileLinkPlugin(dBus)
+    case p: LsuL1Plugin => plugins += new LsuL1TileLinkPlugin(lsuL1Bus)
     case _ =>
   }
 
@@ -73,9 +79,13 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
     val core = VexiiRiscv(plugins)
     Fiber.awaitBuild()
 
+    def getRegion(node : Node) = MemoryConnection.getMemoryTransfers(node).asInstanceOf[ArrayBuffer[PmaRegion]]
     plugins.foreach {
-      case p: FetchCachelessPlugin => p.regions.load(MemoryConnection.getMemoryTransfers(iBus).asInstanceOf[ArrayBuffer[PmaRegion]])
-      case p: LsuCachelessPlugin => p.regions.load(MemoryConnection.getMemoryTransfers(dBus).asInstanceOf[ArrayBuffer[PmaRegion]])
+      case p: FetchCachelessPlugin => p.regions.load(getRegion(iBus))
+      case p: FetchL1Plugin => p.regions.load(getRegion(iBus))
+      case p: LsuCachelessPlugin => p.regions.load(getRegion(dBus))
+      case p: LsuPlugin => p.ioRegions.load(getRegion(dBus))
+      case p: LsuL1Plugin => p.regions.load(getRegion(lsuL1Bus))
       case _ =>
     }
 

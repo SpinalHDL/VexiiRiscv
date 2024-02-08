@@ -3,6 +3,7 @@ package vexiiriscv.test
 import rvls.spinal.{TraceBackend, TraceIo}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.misc.database.Element
 import vexiiriscv.Global.PC_WIDTH
 import vexiiriscv._
@@ -18,7 +19,7 @@ import vexiiriscv.test.konata.{Comment, Flush, Retire, Spawn, Stage}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : Boolean){
+class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvls : Boolean = true){
   var enabled = true
   var trace = true
   var backends = ArrayBuffer[TraceBackend]()
@@ -35,7 +36,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
   val microOpIdMask = (1 << microOpIdWidth)-1
   val withFetch = true //cpu.host[FetchPipelinePlugin].idToFetch.keys.max > 1
 
-  val disass = withRvls generate rvls.jni.Frontend.newDisassemble(xlen)
+  val disass = try {
+    if(!withRvls) 0 else rvls.jni.Frontend.newDisassemble(xlen)
+  } catch {
+    case e : Throwable => withRvls = false; 0
+  }
+
   val harts = hartsIds.map(new HartCtx(_)).toArray
   val wbp = cpu.host[WhiteboxerPlugin].logic.get
   val proxies = new wbp.Proxies(){
@@ -49,6 +55,20 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
     harts.foreach(_.add(tracer))
     proxies.interrupts.sync()
     this
+  }
+
+
+  def autoRegions(): Unit = {
+    cpu.host.services.foreach {
+      case p: LsuCachelessPlugin => p.regions.foreach { region =>
+        backends.foreach { b =>
+          region.mapping match {
+            case SizeMapping(base, size) => b.addRegion(0, region.isIo.toInt, base.toLong, size.toLong)
+          }
+        }
+      }
+      case _ =>
+    }
   }
 
   def flush(): Unit = {
@@ -142,7 +162,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], withRvls : 
         if (get(Riscv.RVF)) isa += "F"
         if (get(Riscv.RVD)) isa += "D"
         if (get(Riscv.RVC)) isa += "C"
-        tracer.newCpuMemoryView(hartId, 16, 16) //TODO readIds writeIds
+        tracer.newCpuMemoryView(hartId, 16, 16)
         tracer.newCpu(hartId, isa, csrp, 63, hartId)
         val pc = if(xlen == 32) 0x80000000l else 0x80000000l
         tracer.setPc(hartId, pc)

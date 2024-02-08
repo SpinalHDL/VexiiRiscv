@@ -74,3 +74,19 @@ class LsuCachelessTileLinkPlugin(node : bus.tilelink.fabric.Node, hashWidth : In
     node.bus.component.rework(node.bus << bridge.down)
   }
 }
+
+
+
+class LsuTileLinkPlugin(node : bus.tilelink.fabric.Node, hashWidth : Int = 8) extends FiberPlugin {
+  val logic = during build new Area{
+    val lsucp = host[LsuPlugin]
+    lsucp.logic.bus.setAsDirectionLess()
+
+    val bridge = new LsuCachelessBusToTilelink(lsucp.logic.bus, hashWidth)
+    master(bridge.down)
+
+    node.m2s.forceParameters(bridge.m2sParam)
+    node.s2m.supported.load(S2mSupport.none())
+    node.bus.component.rework(node.bus << bridge.down)
+  }
+}
