@@ -25,47 +25,46 @@ import scala.collection.mutable.ArrayBuffer
 class MicroSoc() extends Component {
   val asyncReset = in Bool()
   val cd100 = ClockDomain.external("cd100", withReset = false, frequency = FixedFrequency(100 MHz))
-  val cd48 = ClockDomain.external("cd48", withReset = false, frequency = FixedFrequency(48 MHz))
 
   val debugResetCtrl = cd100 on new ResetCtrlFiber().addAsyncReset(asyncReset, HIGH)
-  val peripheralResetCtrl = cd48 on new ResetCtrlFiber().addReset(debugResetCtrl)
-  val mainResetCtrl = cd100 on new ResetCtrlFiber().addReset(peripheralResetCtrl)
+  val mainResetCtrl = cd100 on new ResetCtrlFiber().addReset(debugResetCtrl)
 
   val main = mainResetCtrl.cd on new Area {
-    val bus = tilelink.fabric.Node()
+    val sharedBus = tilelink.fabric.Node()
 
     val param = new ParamSimple()
     param.withMul = false
     param.withDiv = false
     param.relaxedBranch = true
+    
     val plugins = param.plugins()
     val cpu = new TilelinkVexiiRiscvFiber(plugins)
-    bus << cpu.buses
+    sharedBus << cpu.buses
 
     val ram = new tilelink.fabric.RamFiber(16 KiB)
-    ram.up at 0x80000000l of bus
-  }
+    ram.up at 0x80000000l of sharedBus
 
-  // Handle all the IO / Peripheral things
-  val peripheral = peripheralResetCtrl.cd on new Area {
-    val busXlen = Node().forceDataWidth(main.param.xlen)
-    busXlen << main.bus
+    // Handle all the IO / Peripheral things
+    val peripheral = new Area {
+      val busXlen = Node().forceDataWidth(param.xlen)
+      busXlen << sharedBus
 
-    val bus32 = Node().forceDataWidth(32)
-    bus32 << main.bus
+      val bus32 = Node().forceDataWidth(32)
+      bus32 << sharedBus
 
-    val clint = new TilelinkClintFiber()
-    clint.node at 0x10010000 of busXlen
+      val clint = new TilelinkClintFiber()
+      clint.node at 0x10010000 of busXlen
 
-    val plic = new TilelinkPlicFiber()
-    plic.node at 0x10C00000 of bus32
+      val plic = new TilelinkPlicFiber()
+      plic.node at 0x10C00000 of bus32
 
-    val uart = new TilelinkUartFiber()
-    uart.node at 0x10001000 of bus32
-    plic.mapUpInterrupt(1, uart.interrupt)
+      val uart = new TilelinkUartFiber()
+      uart.node at 0x10001000 of bus32
+      plic.mapUpInterrupt(1, uart.interrupt)
 
-    val cpuClint = main.cpu.bind(clint)
-    val cpuPlic = main.cpu.bind(plic)
+      val cpuClint = cpu.bind(clint)
+      val cpuPlic = cpu.bind(plic)
+    }
   }
 }
 
@@ -101,25 +100,25 @@ object MicroSocSim extends App{
 
   sim.compile(new MicroSoc()).doSimUntilVoid("test", seed = 42){dut =>
     dut.cd100.forkStimulus()
-    dut.cd48.forkStimulus()
     dut.asyncReset #= true
     delayed(100 ns)(dut.asyncReset #= false)
 
     val uartBaudPeriod = hzToLong(115200 Hz)
     val uartTx = UartDecoder(
-      uartPin = dut.peripheral.uart.logic.uart.txd,
+      uartPin = dut.main.peripheral.uart.logic.uart.txd,
       baudPeriod = uartBaudPeriod
     )
     val uartRx = UartEncoder(
-      uartPin = dut.peripheral.uart.logic.uart.rxd,
+      uartPin = dut.main.peripheral.uart.logic.uart.rxd,
       baudPeriod = uartBaudPeriod
     )
 
+    val konata = traceKonata.option(
+      new vexiiriscv.test.konata.Backend(new File(currentTestPath, "konata.log")).spinalSimFlusher(hzToLong(1000 Hz))
+    )
     val probe = new VexiiRiscvProbe(
       cpu = dut.main.cpu.logic.core,
-      kb = traceKonata.option(new vexiiriscv.test.konata.Backend(
-        new File(currentTestPath, "konata.log")
-      ).spinalSimFlusher(hzToLong(1000 Hz)))
+      kb = konata
     )
 
     if (withRvlsCheck) probe.add(new RvlsBackend(new File(currentTestPath)).spinalSimFlusher(hzToLong(1000 Hz)))
