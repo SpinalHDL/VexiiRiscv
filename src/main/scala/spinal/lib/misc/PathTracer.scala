@@ -51,7 +51,7 @@ object PathTracer {
         return true
       }
       foreach(that){ (input, latency) =>
-        if(latency == 0){
+        if(latency == 0 || that == to){
           if(rec(input, node)){
             node.hits += 1
           }
