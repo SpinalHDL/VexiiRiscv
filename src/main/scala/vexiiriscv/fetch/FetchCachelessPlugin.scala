@@ -27,7 +27,8 @@ object FetchCachelessPlugin{
 class FetchCachelessPlugin(var wordWidth : Int,
                            var translationStorageParameter: Any,
                            var translationPortParameter: Any,
-                           var addressAt : Int = 0,
+                           var addressAt: Int = 0,
+                           var pmaAt: Int = 0,
                            var forkAt : Int = 0,
                            var joinAt : Int = 1,
                            var cmdForkPersistence : Boolean = true) extends FiberPlugin{
@@ -91,9 +92,13 @@ class FetchCachelessPlugin(var wordWidth : Int,
     }
     val tpk = onAddress.translationPort.keys
 
+    val onPma = new pp.Fetch(pmaAt) {
+      val port = new PmaPort(Global.PHYSICAL_WIDTH, List(Fetch.WORD_WIDTH / 8), List(PmaLoad))
+      port.cmd.address := tpk.TRANSLATED
+      val RSP = insert(port.rsp)
+    }
+
     val fork = new pp.Fetch(forkAt){
-      val pmaPort = new PmaPort(Global.PHYSICAL_WIDTH, List(Fetch.WORD_WIDTH/8), List(PmaLoad))
-      pmaPort.cmd.address := tpk.TRANSLATED
 
       val fresh = (forkAt == 0).option(host[PcPlugin].forcedSpawn())
       val cmdFork = forkStream(fresh)
@@ -104,7 +109,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
       BUFFER_ID := buffer.reserveId
 
-      val PMA_FAULT = insert(pmaPort.rsp.fault)
+      val PMA_FAULT = insert(onPma.RSP.fault)
       when(tpk.REDO || PMA_FAULT) {
         bus.cmd.valid := False
       }otherwise {
@@ -170,5 +175,5 @@ class FetchCachelessPlugin(var wordWidth : Int,
     buildBefore.release()
   }
 
-  val pmaBuilder = during build new PmaLogic(logic.fork.pmaPort, regions.filter(_.isExecutable))
+  val pmaBuilder = during build new PmaLogic(logic.onPma.port, regions.filter(_.isExecutable))
 }

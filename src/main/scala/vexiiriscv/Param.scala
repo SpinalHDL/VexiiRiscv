@@ -72,6 +72,7 @@ class ParamSimple(){
   var withDiv = true
   var withRva = false
   var privParam = PrivilegedParam.base
+  var lsuForkAt = 0
   var relaxedBranch = false
   var relaxedShift = false
   var relaxedSrc = true
@@ -88,6 +89,7 @@ class ParamSimple(){
   var divRadix = 2
   var divImpl = ""
   var divArea = true
+  var fetchCachelessForkAt = 0
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
@@ -123,6 +125,7 @@ class ParamSimple(){
     divImpl = ""
     divRadix = 2
     divArea = true
+    lsuForkAt = 1
   }
 
 
@@ -139,8 +142,8 @@ class ParamSimple(){
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
-    if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}"
-    if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}"
+    if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}" else r += s"fclF${fetchCachelessForkAt}"
+    if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuF$lsuForkAt"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
     if (withRas) r += "ras"
@@ -193,6 +196,8 @@ class ParamSimple(){
     opt[Int]("div-radix") action { (v, c) => divRadix = v }
     opt[String]("div-impl") action { (v, c) => divImpl = v }
     opt[Unit]("div-ipc") action { (v, c) => divArea = false }
+    opt[Int]("fetch-fork-at") action { (v, c) => fetchCachelessForkAt = v }
+    opt[Int]("lsu-fork-at") action { (v, c) => lsuForkAt = v }
   }
 
   def plugins() = pluginsArea.plugins
@@ -247,8 +252,8 @@ class ParamSimple(){
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
     if(!withFetchL1) plugins += new fetch.FetchCachelessPlugin(
-      forkAt = 0,
-      joinAt = 1, //You can for instance allow the external memory to have more latency by changing this
+      forkAt = fetchCachelessForkAt,
+      joinAt = fetchCachelessForkAt+1, //You can for instance allow the external memory to have more latency by changing this
       wordWidth = 32*decoders,
       translationStorageParameter = MmuStorageParameter(
         levels = List(
@@ -312,7 +317,7 @@ class ParamSimple(){
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = withFetchL1.mux(2, 1),
+      fetchAt = withFetchL1.mux(2, 1+fetchCachelessForkAt),
       lanes = decoders,
       withBuffer = withAlignerBuffer
     )
@@ -356,9 +361,10 @@ class ParamSimple(){
       withAmo   = withRva,
       withSpeculativeLoadFlush = true,
       addressAt = 0,
-      forkAt    = 0,
-      joinAt    = 1,
-      wbAt      = 2,
+      pmaAt     = 0,
+      forkAt    = lsuForkAt+0,
+      joinAt    = lsuForkAt+1,
+      wbAt      = 2, //TODO
       translationStorageParameter = MmuStorageParameter(
         levels = List(
           MmuStorageLevel(

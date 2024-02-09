@@ -346,7 +346,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("rvc", List("", "--with-mul --with-div --with-rvc"))
   addDim("late-alu", List("", "--with-late-alu"))
   addDim("fetch", {
-    val p = ArrayBuffer[String]("")
+    val p = ArrayBuffer[String]("--fetch-fork-at 0", "--fetch-fork-at 1")
     for (bytes <- List(1 << 10, 1 << 12, 1 << 14);
          sets <- List(16, 32, 64)) {
       if (bytes / sets >= 64) {
@@ -357,7 +357,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     p
   })
   addDim("lsu", {
-    val p = ArrayBuffer[String]("")
+    val p = ArrayBuffer[String]("--lsu-fork-offset 0", "--lsu-fork-offset 1")
     for(bytes <- List(1 << 10, 1 << 12, 1 << 14);
       sets <- List(16 , 32, 64)){
       if(bytes / sets >= 64) {

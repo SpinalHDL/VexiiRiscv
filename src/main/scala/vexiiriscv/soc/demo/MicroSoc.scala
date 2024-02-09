@@ -12,10 +12,12 @@ import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
 import spinal.lib.eda.bench.Rtl
-import spinal.lib.misc.{Elf, TilelinkClintFiber}
+import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.PMA
 import vexiiriscv.ParamSimple
+import vexiiriscv.execute.SrcPlugin
+import vexiiriscv.misc.TrapPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 import vexiiriscv.test.VexiiRiscvProbe
 
@@ -35,6 +37,8 @@ class MicroSoc() extends Component {
     val param = new ParamSimple()
     param.withMul = false
     param.withDiv = false
+    param.fetchCachelessForkAt = 1
+    param.lsuForkAt = 1
     param.relaxedBranch = true
     
     val plugins = param.plugins()
@@ -69,7 +73,11 @@ class MicroSoc() extends Component {
 }
 
 object MicroSocGen extends App{
-  SpinalVerilog(new MicroSoc())
+  val report = SpinalVerilog(new MicroSoc())
+
+  val h = report.toplevel.main.cpu.logic.core.host
+  val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
+  println(path.report)
 }
 
 object MicroSocSynt extends App{
