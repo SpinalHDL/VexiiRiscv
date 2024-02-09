@@ -81,9 +81,12 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
         }
       }
 
+      val holdComb = holdPorts.filter(_.hartId == hartId).map(_.valid).orR
+      val holdReg = RegNext(holdComb) init(True)
+
       // Stream of PC for the given hart
       val output = Stream(PC).simPublic()
-      output.valid := holdPorts.filter(_.hartId == hartId).map(_.valid).norR
+      output.valid := !holdReg
       output.payload := aggregator.target
       output.payload(SLICE_RANGE_LOW - 1 downto 0) := 0
 
@@ -112,6 +115,13 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
         Fetch.ID := hart.self.id
       }
     }
+
+    //harts.output (the pc stream) use holdPorts with one delay cycle (to improve timings), so here we need to prevent fetch(0) to fire down if the combinatorial check of holdPorts hits
+    val holdHalter = new pp.Fetch(0) {
+      val doIt = harts.reader(HART_ID)(_.holdComb)
+      haltWhen(doIt)
+    }
+
     buildBefore.release()
   }
 }

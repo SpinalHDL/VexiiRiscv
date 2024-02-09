@@ -21,7 +21,7 @@ trait PcService {
   val elaborationLock = Retainer()
   def newJumpInterface(age: Int, laneAgeWidth : Int, aggregationPriority : Int) : Flow[JumpCmd] //High priority win
   def simSetPc(value : Long) : Unit
-  def forcedSpawn() : Bool
+  def forcedSpawn() : Bool //As fetch stage 0 isn't persistant, this provide the information when a persistance break happend (ex to fork again a transaction to the memory system)
   def newHoldPort(hartId : Int) : Bool = holdPorts.addRet(PcServiceHoldPortSpec(hartId, Bool())).valid
   val holdPorts = ArrayBuffer[PcServiceHoldPortSpec]()
 }
