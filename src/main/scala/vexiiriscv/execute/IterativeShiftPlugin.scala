@@ -81,7 +81,7 @@ class IterativeShifterPlugin(val layer: LaneLayer,
 
       val amplitudeWidth = if(Riscv.XLEN.get == 64) 6 else 5
       val shamt = srcp.SRC2.resize(amplitudeWidth).asUInt
-      val rs1 = el(IntRegFile, RS1).asBits
+      val rs1 = up(el(IntRegFile, RS1)).asBits
 
       val busy = RegInit(False)
       val flipped = Reg(Bool())
