@@ -357,7 +357,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     p
   })
   addDim("lsu", {
-    val p = ArrayBuffer[String]("--lsu-fork-offset 0", "--lsu-fork-offset 1")
+    val p = ArrayBuffer[String]("--lsu-fork-at 0", "--lsu-fork-at 1")
     for(bytes <- List(1 << 10, 1 << 12, 1 << 14);
       sets <- List(16 , 32, 64)){
       if(bytes / sets >= 64) {
