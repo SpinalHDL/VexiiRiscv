@@ -1,4 +1,4 @@
-package vexiiriscv.execute
+package vexiiriscv.execute.lsu
 
 import spinal.core._
 import spinal.lib.misc.pipeline._
@@ -7,15 +7,18 @@ import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.riscv.{Const, MicroOp, Rvfd, Rvi}
 import vexiiriscv.riscv.Riscv._
+import vexiiriscv.execute._
 
 import scala.collection.mutable.ArrayBuffer
 
 object AguPlugin extends AreaObject{
   val SEL = Payload(Bool())
-  val AMO = Payload(Bool())
-  val SC = Payload(Bool())
-  val LR = Payload(Bool())
-  val LOAD = Payload(Bool())
+//  val AMO = Payload(Bool())
+//  val SC = Payload(Bool())
+//  val LR = Payload(Bool())
+  val LOAD  = Payload(Bool())
+  val STORE = Payload(Bool())
+  val ATOMIC   = Payload(Bool())
   val SIZE = Payload(UInt(2 bits))
   val FLOAT = Payload(Bool())
 }
@@ -37,15 +40,15 @@ class AguFrontend(
   if (XLEN.get == 64) writingRf ++= List(Rvi.LD, Rvi.LWU)
   if (RVF) writingRf ++= List(Rvfd.FLW)
   if (RVD) writingRf ++= List(Rvfd.FLD)
-  for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LR -> False, LOAD -> True)
+  for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LOAD -> True, STORE -> False, ATOMIC -> False, FLOAT -> False)
 
   // Store stuff
   val storeOps = List(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.S)
   val writingMem = ArrayBuffer[MicroOp](Rvi.SB, Rvi.SH, Rvi.SW)
   if (XLEN.get == 64) writingMem ++= List(Rvi.SD)
-  for (store <- writingMem) add(store).srcs(storeOps).decode(AMO -> False, SC -> False, LOAD -> False, FLOAT -> False)
-  if (RVF) add(Rvfd.FSW).srcs(storeOps).decode(AMO -> False, SC -> False, LOAD -> False, FLOAT -> True)
-  if (RVD) add(Rvfd.FSD).srcs(storeOps).decode(AMO -> False, SC -> False, LOAD -> False, FLOAT -> True)
+  for (store <- writingMem) add(store).srcs(storeOps).decode(LOAD -> False, STORE -> True, ATOMIC -> False, FLOAT -> False)
+  if (RVF) add(Rvfd.FSW).srcs(storeOps).decode(LOAD -> False, STORE -> True, ATOMIC -> False, FLOAT -> True)
+  if (RVD) add(Rvfd.FSD).srcs(storeOps).decode(LOAD -> False, STORE -> True, ATOMIC -> False, FLOAT -> True)
 
   // Atomic stuff
   val amos = RVA.get generate new Area {
@@ -58,15 +61,14 @@ class AguFrontend(
       Rvi.AMOSWAPD, Rvi.AMOADDD, Rvi.AMOXORD, Rvi.AMOANDD, Rvi.AMOORD,
       Rvi.AMOMIND, Rvi.AMOMAXD, Rvi.AMOMINUD, Rvi.AMOMAXUD
     )
-    for (amo <- uops) add(amo).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> True, SC -> False, LOAD -> False, FLOAT -> False)
-    writingMem += add(Rvi.SCW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> False, SC -> True, LOAD -> False, FLOAT -> False).uop
+    for (amo <- uops) add(amo).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LOAD -> True, STORE -> True, ATOMIC -> True, FLOAT -> False)
+    writingMem += add(Rvi.SCW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LOAD -> False, STORE -> True, ATOMIC -> True, FLOAT -> False).uop
     writingRf += Rvi.SCW
-    writingRf  += add(Rvi.LRW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True).uop
+    writingRf  += add(Rvi.LRW).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LOAD -> True, STORE -> False, ATOMIC -> True, FLOAT -> False).uop
     if(XLEN.get == 64){
-      writingMem += add(Rvi.SCD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(AMO -> False, SC -> True, LOAD -> False, FLOAT -> False).uop
+      writingMem += add(Rvi.SCD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LOAD -> False, STORE -> True, ATOMIC -> True, FLOAT -> False).uop
       writingRf += Rvi.SCD
-      writingRf += add(Rvi.LRD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LR -> True, LOAD -> True).uop
+      writingRf += add(Rvi.LRD).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(LOAD -> True, STORE -> False, ATOMIC -> True, FLOAT -> False).uop
     }
-//    assert(false, "Rvi.LR and atomic may need reformat info, CachelessPlugin may use loads list for it, need to add to loads. Also store completion need to be handled")
   }
 }

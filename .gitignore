@@ -28,6 +28,9 @@ metals.sbt
 .idea
 out
 
+.vscode
+.metals
+
 # Eclipse
 bin/
 .classpath

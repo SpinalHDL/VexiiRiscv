@@ -1,6 +1,7 @@
 package spinal.lib.misc
 
 import net.fornwall.jelf.{ElfFile, ElfSection, ElfSectionHeader, ElfSymbol, ElfSymbolTableSection}
+import spinal.core._
 import spinal.lib.sim.SparseMemory
 
 import java.io.File
@@ -40,6 +41,42 @@ class Elf(val f : File, addressWidth : Int){
       }
     }
   }
+
+
+  def getMemInit[T <: Data](ram: Mem[T],offset: BigInt, allowOverflow: Boolean = false) = {
+    val wordSize = ram.wordType.getBitsWidth / 8
+    val initContent = Array.fill[BigInt](ram.wordCount)(0)
+    foreachSection { section =>
+      if ((section.header.sh_flags & ElfSectionHeader.FLAG_ALLOC) != 0) {
+        val data = getData(section)
+        val memoryAddress = (section.header.sh_addr - offset) & ((BigInt(1) << addressWidth) - 1).toLong
+        for((byte, i) <- data.zipWithIndex){
+          val addressWithoutOffset = memoryAddress+i
+          val addressWord = addressWithoutOffset / wordSize
+          if (addressWord < 0 || addressWord >= initContent.size) {
+            assert(allowOverflow)
+          } else {
+            initContent(addressWord.toInt) |= BigInt(byte.toInt & 0xFF) << ((addressWithoutOffset.toInt % wordSize) * 8)
+          }
+        }
+      }
+    }
+    initContent
+  }
+
+  def init[T <: Data](ram: Mem[T], offset: BigInt, allowOverflow: Boolean = false): Unit = {
+    val initContent = getMemInit(ram, offset, allowOverflow)
+    ram.initBigInt(initContent)
+  }
+
+  def load[T <: Data](ram: Mem[T], offset: BigInt, allowOverflow: Boolean = false): Unit = {
+    val initContent = getMemInit(ram, offset, allowOverflow)
+    import spinal.core.sim._
+    for((e, i) <- initContent.zipWithIndex){
+      ram.setBigInt(i, e)
+    }
+  }
+
 
   def getSymbolAddress(name : String): Long ={
     val s = getELFSymbol(name)

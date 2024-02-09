@@ -2,10 +2,15 @@ package vexiiriscv
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.misc.plugin.Hostable
+import spinal.lib.system.tag.{PmaRegion, PmaRegionImpl}
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
+import vexiiriscv.execute.lsu._
+import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin}
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
@@ -14,6 +19,40 @@ import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
 import scala.collection.mutable.ArrayBuffer
+
+object ParamSimple{
+  def setPma(plugins : Seq[Hostable]) = {
+    val regions = ArrayBuffer[PmaRegion](
+      new PmaRegionImpl(
+        mapping = SizeMapping(0x80000000l, 0x80000000l),
+        isMain = true,
+        isExecutable = true,
+        transfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+      ),
+      new PmaRegionImpl(
+        mapping = SizeMapping(0x10000000l, 0x10000000l),
+        isMain = false,
+        isExecutable = true,
+        transfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+      )
+    )
+    plugins.foreach {
+      case p: FetchCachelessPlugin => p.regions.load(regions)
+      case p: LsuCachelessPlugin => p.regions.load(regions)
+      case p: FetchL1Plugin => p.regions.load(regions)
+      case p: LsuPlugin => p.ioRegions.load(regions)
+      case p: LsuL1Plugin => p.regions.load(regions)
+      case _ =>
+    }
+    plugins
+  }
+}
 
 class ParamSimple(){
   var xlen = 32
@@ -25,8 +64,6 @@ class ParamSimple(){
   var decoders = 1
   var lanes = 1
   var regFileSync = true
-  var ioRange    : UInt => Bool = a => a(31 downto 28) === 0x1
-  var fetchRange : UInt => Bool = a => a(31 downto 28) =/= 0x1
   var withGShare = false
   var withBtb = false
   var withRas = false
@@ -41,6 +78,13 @@ class ParamSimple(){
   var allowBypassFrom = 100 //100 => disabled
   var performanceCounters = 0
   var withFetchL1 = false
+  var withLsuL1 = false
+  var fetchL1Sets = 64
+  var fetchL1Ways = 1
+  var lsuL1Sets = 64
+  var lsuL1Ways = 1
+  var withLsuBypass = false
+  var withIterativeShift = false
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
@@ -66,7 +110,13 @@ class ParamSimple(){
     withRvc = false
     withAlignerBuffer = withRvc
     withFetchL1 = false
+    withLsuL1 = false
     xlen = 32
+    fetchL1Sets = 64
+    fetchL1Ways = 4
+    lsuL1Sets = 64
+    lsuL1Ways = 4
+    withLsuBypass = true
   }
 
 
@@ -83,7 +133,8 @@ class ParamSimple(){
     r += s"d${decoders}"
     r += s"l${lanes}"
     r += regFileSync.mux("rfs","rfa")
-    if (withFetchL1) r += "fl1"
+    if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}"
+    if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += "btb"
     if (withRas) r += "ras"
@@ -94,6 +145,7 @@ class ParamSimple(){
     if (relaxedShift) r += "rsft"
     if (relaxedSrc) r += "rsrc"
     if(performanceCounters != 0) r += s"pc$performanceCounters"
+    if (withIterativeShift) r += "isft"
     r.mkString("_")
   }
 
@@ -124,6 +176,13 @@ class ParamSimple(){
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
     opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
+    opt[Unit]("with-lsu-l1") action { (v, c) => withLsuL1 = true }
+    opt[Int]("fetch-l1-sets") action { (v, c) => fetchL1Sets = v }
+    opt[Int]("fetch-l1-ways") action { (v, c) => fetchL1Ways = v }
+    opt[Int]("lsu-l1-sets") action { (v, c) => lsuL1Sets = v }
+    opt[Int]("lsu-l1-ways") action { (v, c) => lsuL1Ways = v }
+    opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
+    opt[Unit]("with-iterative-shift") action { (v, c) => withIterativeShift = true }
   }
 
   def plugins() = pluginsArea.plugins
@@ -133,11 +192,9 @@ class ParamSimple(){
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, rvc = withRvc)
     withMmu match {
-      case false => plugins += new memory.StaticTranslationPlugin(32, ioRange, fetchRange)
+      case false => plugins += new memory.StaticTranslationPlugin(32)
       case true => plugins += new memory.MmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
-        ioRange = ioRange,
-        fetchRange = fetchRange,
         physicalWidth = 32
       )
     }
@@ -170,6 +227,10 @@ class ParamSimple(){
         readAt = 0
       )
       plugins += new prediction.HistoryPlugin()
+    }
+    def shifter(layer: LaneLayer, shiftAt: Int = 0, formatAt: Int = 0) = withIterativeShift match {
+      case false => new BarrelShifterPlugin(layer, shiftAt, formatAt)
+      case true => new IterativeShifterPlugin(layer, shiftAt, formatAt)
     }
 
 
@@ -205,7 +266,8 @@ class ParamSimple(){
       }
     )
     if(withFetchL1) plugins += new fetch.FetchL1Plugin(
-      cacheSize = 16*1024,
+      lineSize = 64,
+      setCount = 64,
       wayCount = 4,
       fetchDataWidth = 32*decoders,
       memDataWidth = 32*decoders,
@@ -276,10 +338,10 @@ class ParamSimple(){
 //    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
-    plugins += new BarrelShifterPlugin(early0, formatAt = relaxedShift.toInt)
+    plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    plugins += new LsuCachelessPlugin(
+    if(!withLsuL1) plugins += new LsuCachelessPlugin(
       layer     = early0,
       withAmo   = withRva,
       withSpeculativeLoadFlush = true,
@@ -312,6 +374,46 @@ class ParamSimple(){
         )
       }
     )
+    if(withLsuL1){
+      plugins += new LsuPlugin(
+        layer = early0,
+        withRva = withRva,
+        translationStorageParameter = MmuStorageParameter(
+          levels = List(
+            MmuStorageLevel(
+              id = 0,
+              ways = 4,
+              depth = 32
+            ),
+            MmuStorageLevel(
+              id = 1,
+              ways = 2,
+              depth = 32
+            )
+          ),
+          priority = 1
+        ),
+        translationPortParameter = withMmu match {
+          case false => null
+          case true => MmuPortParameter(
+            readAt = 0,
+            hitsAt = 1,
+            ctrlAt = 1,
+            rspAt = 1
+          )
+        }
+      )
+      plugins += new LsuL1Plugin(
+        lane           = lane0,
+        memDataWidth   = xlen,
+        cpuDataWidth   = xlen,
+        refillCount    = 1,
+        writebackCount = 1,
+        setCount       = lsuL1Sets,
+        wayCount       = lsuL1Ways,
+        withBypass     = withLsuBypass
+      )
+    }
 
     if(withMul) {
       plugins += new MulPlugin(early0)
@@ -332,12 +434,11 @@ class ParamSimple(){
       val late0 = new LaneLayer("late0", lane0, priority = -5)
       plugins += new SrcPlugin(late0, executeAt = 2, relaxedRs = relaxedSrc)
       plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
-      plugins += new BarrelShifterPlugin(late0, shiftAt = 2, formatAt = 2)
+      plugins += shifter(late0, shiftAt = 2, formatAt = 2)
       plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2)
     }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
-
 
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
@@ -346,7 +447,7 @@ class ParamSimple(){
 
       plugins += new SrcPlugin(early1, executeAt = 0, relaxedRs = relaxedSrc)
       plugins += new IntAluPlugin(early1, formatAt = 0)
-      plugins += new BarrelShifterPlugin(early1, formatAt = relaxedShift.toInt)
+      plugins += shifter(early1, formatAt = relaxedShift.toInt)
       plugins += new IntFormatPlugin("lane1")
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
 
@@ -354,7 +455,7 @@ class ParamSimple(){
         val late1 = new LaneLayer("late1", lane1, priority = -3)
         plugins += new SrcPlugin(late1, executeAt = 2, relaxedRs = relaxedSrc)
         plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
-        plugins += new BarrelShifterPlugin(late1, shiftAt = 2, formatAt = 2)
+        plugins += shifter(late1, shiftAt = 2, formatAt = 2)
         plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2)
       }
 

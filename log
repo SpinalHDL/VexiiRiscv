@@ -1,0 +1,1216 @@
+[Progress] Start VexiiRiscv_rv64imsu_d1_l1_rfa_bp0_btb_ras_gshare_la_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000116] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.003317] Console: colour dummy device 80x25
+[    0.004434] printk: console [hvc0] enabled
+[    0.004434] printk: console [hvc0] enabled
+[    0.006377] printk: bootconsole [sbi0] disabled
+[    0.006377] printk: bootconsole [sbi0] disabled
+[    0.008569] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.011119] pid_max: default: 32768 minimum: 301
+[    0.013887] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.015746] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=470655550
+INTEGER WRITE MISSMATCH DUT=c REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)
+[Progress] Start VexiiRiscv_rv64imsu_d1_l1_rfa_bp0_btb_ras_gshare_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000115] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.003314] Console: colour dummy device 80x25
+[    0.004432] printk: console [hvc0] enabled
+[    0.004432] printk: console [hvc0] enabled
+[    0.006370] printk: bootconsole [sbi0] disabled
+[    0.006370] printk: bootconsole [sbi0] disabled
+[    0.008565] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.011115] pid_max: default: 32768 minimum: 301
+[    0.013902] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.015760] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=471451830
+INTEGER WRITE MISSMATCH DUT=39 REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)
+[Progress] Start VexiiRiscv_rv64imsu_d1_l1_rfa_btb_ras_gshare_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000123] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.003501] Console: colour dummy device 80x25
+[    0.004675] printk: console [hvc0] enabled
+[    0.004675] printk: console [hvc0] enabled
+[    0.006706] printk: bootconsole [sbi0] disabled
+[    0.006706] printk: bootconsole [sbi0] disabled
+[    0.008998] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.011684] pid_max: default: 32768 minimum: 301
+[    0.014658] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.016612] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=485859680
+INTEGER WRITE MISSMATCH DUT=33 REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)
+[Progress] Start VexiiRiscv_rv64imsu_d1_l1_rfs_bp0_btb_ras_gshare_la_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000116] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.003340] Console: colour dummy device 80x25
+[    0.004465] printk: console [hvc0] enabled
+[    0.004465] printk: console [hvc0] enabled
+[    0.006420] printk: bootconsole [sbi0] disabled
+[    0.006420] printk: bootconsole [sbi0] disabled
+[    0.008632] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.011212] pid_max: default: 32768 minimum: 301
+[    0.014045] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.015923] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=469183040
+INTEGER WRITE MISSMATCH DUT=4e REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)
+[Progress] Start VexiiRiscv_rv64imsu_d1_l1_rfs_bp0_btb_ras_gshare_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000118] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.003343] Console: colour dummy device 80x25
+[    0.004471] printk: console [hvc0] enabled
+[    0.004471] printk: console [hvc0] enabled
+[    0.006433] printk: bootconsole [sbi0] disabled
+[    0.006433] printk: bootconsole [sbi0] disabled
+[    0.008641] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.011226] pid_max: default: 32768 minimum: 301
+[    0.014062] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.015944] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=470147600
+INTEGER WRITE MISSMATCH DUT=ffffffffffffff8b REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)
+[Progress] Start VexiiRiscv_rv64imsu_d1_l1_rfs_btb_ras_gshare_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000132] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.003708] Console: colour dummy device 80x25
+[    0.004939] printk: console [hvc0] enabled
+[    0.004939] printk: console [hvc0] enabled
+[    0.007075] printk: bootconsole [sbi0] disabled
+[    0.007075] printk: bootconsole [sbi0] disabled
+[    0.009489] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.012309] pid_max: default: 32768 minimum: 301
+[    0.015509] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.017555] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=499244700
+INTEGER WRITE MISSMATCH DUT=ffffffffffffffd6 REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)
+[Progress] Start VexiiRiscv_rv64imsu_d2_l2_rfa_bp0_btb_ras_gshare_la_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[Progress] Start VexiiRiscv_rv64imsu_d2_l2_rfa_bp0_btb_ras_gshare_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000078] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.002272] Console: colour dummy device 80x25
+[    0.003053] printk: console [hvc0] enabled
+[    0.003053] printk: console [hvc0] enabled
+[    0.004338] printk: bootconsole [sbi0] disabled
+[    0.004338] printk: bootconsole [sbi0] disabled
+[    0.005950] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.007653] pid_max: default: 32768 minimum: 301
+[    0.009589] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.010888] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=360996460
+INTEGER WRITE MISSMATCH DUT=6a REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)
+[Progress] Start VexiiRiscv_rv64imsu_d2_l2_rfs_bp0_btb_ras_gshare_la_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000080] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.002272] Console: colour dummy device 80x25
+[    0.003054] printk: console [hvc0] enabled
+[    0.003054] printk: console [hvc0] enabled
+[    0.004343] printk: bootconsole [sbi0] disabled
+[    0.004343] printk: bootconsole [sbi0] disabled
+[    0.005968] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.007674] pid_max: default: 32768 minimum: 301
+[    0.009631] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.010939] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=358286940
+INTEGER WRITE MISSMATCH DUT=ffffffffffffff97 REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)
+[Progress] Start VexiiRiscv_rv64imsu_d2_l2_rfs_bp0_btb_ras_gshare_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000082] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.002304] Console: colour dummy device 80x25
+[    0.003096] printk: console [hvc0] enabled
+[    0.003096] printk: console [hvc0] enabled
+[    0.004400] printk: bootconsole [sbi0] disabled
+[    0.004400] printk: bootconsole [sbi0] disabled
+[    0.006043] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.007783] pid_max: default: 32768 minimum: 301
+[    0.009779] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.011103] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=361517370
+INTEGER WRITE MISSMATCH DUT=ffffffffffffff97 REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)
+[Progress] Start VexiiRiscv_rv64imsu_d2_l2_rfs_btb_ras_gshare_m_d_a buildroot simulation with seed 2
+
+OpenSBI v0.8
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name       : NaxRiscv
+Platform Features   : timer,mfdeleg
+Platform HART Count : 1
+Boot HART ID        : 0
+Boot HART ISA       : rv64imasu
+BOOT HART Features  : scounteren,mcounteren
+BOOT HART PMP Count : 0
+Firmware Base       : 0x80000000
+Firmware Size       : 72 KB
+Runtime SBI Version : 0.2
+
+MIDELEG : 0x0000000000000222
+MEDELEG : 0x000000000000b109
+[    0.000000] Linux version 5.10.1 (rawrr@rawrr) (riscv64-buildroot-linux-uclibc-gcc.br_real (Buildroot 2020.11-rc3-8-g9ef54b7d0b) 10.2.0, GNU ld (GNU Binutils) 2.34) #8 SMP Mon Mar 14 10:26:33 CET 2022
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Initial ramdisk at: 0x(____ptrval____) (8388608 bytes)
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] software IO TLB: mapped [mem 0x000000008bc8c000-0x000000008fc8c000] (64MB)
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x8
+[    0.000000] SBI v0.2 TIME extension detected
+[    0.000000] SBI v0.2 IPI extension detected
+[    0.000000] SBI v0.2 RFENCE extension detected
+[    0.000000] SBI v0.2 HSM extension detected
+[    0.000000] riscv: ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] percpu: Embedded 14 pages/cpu s25560 r0 d31784 u57344
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 63630
+[    0.000000] Kernel command line: rootwait console=hvc0 earlycon=sbi root=/dev/ram0 init=/sbin/init
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Sorting __ex_table...
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 173364K/258048K available (4703K kernel code, 679K rwdata, 718K rodata, 176K init, 262K bss, 84684K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] random: get_random_bytes called from start_kernel+0x364/0x4f8 with crng_init=0
+[    0.000000] riscv_timer_init_dt: Registering clocksource cpuid [0] hartid [0]
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x171024e7e0, max_idle_ns: 440795205315 ns
+[    0.000111] sched_clock: 64 bits at 100MHz, resolution 10ns, wraps every 4398046511100ns
+[    0.003075] Console: colour dummy device 80x25
+[    0.004085] printk: console [hvc0] enabled
+[    0.004085] printk: console [hvc0] enabled
+[    0.005718] printk: bootconsole [sbi0] disabled
+[    0.005718] printk: bootconsole [sbi0] disabled
+[    0.007790] Calibrating delay loop (skipped), value calculated using timer frequency.. 200.00 BogoMIPS (lpj=400000)
+[    0.009967] pid_max: default: 32768 minimum: 301
+[    0.012796] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.014346] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Error] Simulation failed at time=423770540
+INTEGER WRITE MISSMATCH DUT=ffffffffffffffb8 REF=0
+rvls.spinal.RvlsBackend.commit(Tracer.scala:196)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1$$anonfun$apply$11.apply(VexiiRiscvProbe.scala:530)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:530)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$checkCommits$1.apply(VexiiRiscvProbe.scala:486)
+scala.collection.IndexedSeqOptimized$class.foreach(IndexedSeqOptimized.scala:33)
+scala.collection.mutable.ArrayOps$ofRef.foreach(ArrayOps.scala:186)
+vexiiriscv.test.VexiiRiscvProbe.checkCommits(VexiiRiscvProbe.scala:486)
+vexiiriscv.test.VexiiRiscvProbe$$anonfun$3.apply$mcV$sp(VexiiRiscvProbe.scala:553)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1$$anonfun$apply$mcV$sp$1.apply(package.scala:971)
+scala.collection.mutable.ResizableArray$class.foreach(ResizableArray.scala:59)
+scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:48)
+spinal.core.sim.package$SimClockDomainPimper$$anonfun$onSamplings$1.apply$mcV$sp(package.scala:971)
+spinal.core.sim.package$$anon$1.update(package.scala:196)
+spinal.sim.SimManager.runWhile(SimManager.scala:324)
+spinal.sim.SimManager.runAll(SimManager.scala:246)
+spinal.core.sim.SimCompiled.doSimApi(SimBootstraps.scala:608)
+spinal.core.sim.SimCompiled.doSimUntilVoid(SimBootstraps.scala:581)
+vexiiriscv.tester.TestOptions.test(TestBench.scala:155)
+vexiiriscv.tester.RegressionSingle$$anonfun$18$$anon$4$$anonfun$$lessinit$greater$1.apply$mcV$sp(Regression.scala:225)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply$mcV$sp(MultithreadedTester.scala:25)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1$$anonfun$apply$mcV$sp$2.apply(MultithreadedTester.scala:24)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withErr(Console.scala:92)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply$mcV$sp(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+spinal.lib.misc.test.AsyncJob$$anonfun$1$$anonfun$apply$mcV$sp$1.apply(MultithreadedTester.scala:23)
+scala.util.DynamicVariable.withValue(DynamicVariable.scala:58)
+scala.Console$.withOut(Console.scala:65)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply$mcV$sp(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+spinal.lib.misc.test.AsyncJob$$anonfun$1.apply(MultithreadedTester.scala:22)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.liftedTree1$1(Future.scala:24)
+scala.concurrent.impl.Future$PromiseCompletingRunnable.run(Future.scala:24)
+scala.concurrent.impl.ExecutionContextImpl$AdaptedForkJoinTask.exec(ExecutionContextImpl.scala:121)
+scala.concurrent.forkjoin.ForkJoinTask.doExec(ForkJoinTask.java:260)
+scala.concurrent.forkjoin.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1339)
+scala.concurrent.forkjoin.ForkJoinPool.runWorker(ForkJoinPool.java:1979)
+scala.concurrent.forkjoin.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:107)

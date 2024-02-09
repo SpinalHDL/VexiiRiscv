@@ -3,11 +3,17 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
+import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
+import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
 import spinal.lib.misc.Elf
+import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
+import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
 import vexiiriscv._
-import vexiiriscv.fetch.PcService
+import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
+import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.test.konata.Backend
@@ -109,6 +115,7 @@ class TestOptions{
   val fsmTasks = mutable.Queue[FsmTask]()
   var ibusReadyFactor = 1.01f
   var dbusReadyFactor = 1.01f
+  var seed = 2
 
   def getTestName() = testName.getOrElse("test")
 
@@ -147,12 +154,14 @@ class TestOptions{
     opt[String]("fsm-getc") unbounded() action { (v, c) => fsmTasks += new FsmGetc(v) }
     opt[Long]("fsm-sleep") unbounded() action { (v, c) => fsmTasks += new FsmSleep(v) }
     opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasks += new FsmSuccess() }
+    opt[Int]("seed") action { (v, c) => seed = v }
+    opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
-      case true => DualSimTracer.withCb(compiled, window = 50000 * 10, seed = 2)(test)
-      case false => compiled.doSimUntilVoid(name = getTestName(), seed = 2) { dut => disableSimWave(); test(dut, f => f) }
+      case true => DualSimTracer.withCb(compiled, window = 500000 * 10, seed=seed)(test)
+      case false => compiled.doSimUntilVoid(name = getTestName(), seed=seed) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
 
@@ -161,8 +170,8 @@ class TestOptions{
     cd.forkStimulus(10)
     simSpeedPrinter.foreach(cd.forkSimSpeedPrinter)
 
-    failAfter.map(delayed(_)(simFailure("Reached Timeout")))
-    passAfter.map(delayed(_)(simSuccess()))
+    failAfter.foreach(delayed(_)(simFailure("Reached Timeout")))
+    passAfter.foreach(delayed(_)(simSuccess()))
 
 //    fork{
 //      while(true){
@@ -176,13 +185,13 @@ class TestOptions{
     val xlen = dut.database(Riscv.XLEN)
 
     // Rvls will check that the CPUs are doing things right
-    val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath))
+    val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath()))
     if (withRvlsCheck) {
       rvls.spinalSimFlusher(10 * 10000)
       rvls.spinalSimTime(10000)
     }
 
-    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath, "konata.log")))
+    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), "konata.log")))
     delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registred last
 
     // Collect traces from the CPUs behaviour
@@ -192,11 +201,11 @@ class TestOptions{
     probe.trace = false
 
     // Things to enable when we want to collect traces
-    val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath, "tracer.log")))
+    val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath(), "tracer.log")))
     onTrace {
-      if(traceWave) enableSimWave()
+      if (traceWave) enableSimWave()
       if (withRvlsCheck && traceSpikeLog) rvls.debug()
-      if(traceKonata) probe.trace = true
+      if (traceKonata) probe.trace = true
 
       tracerFile.foreach{f =>
         f.spinalSimFlusher(10 * 10000)
@@ -219,7 +228,7 @@ class TestOptions{
     for ((offset, file) <- bins) {
       mem.loadBin(offset, file)
       if (withRvlsCheck) rvls.loadBin(offset, file)
-      tracerFile.foreach(_.loadBin(0, file))
+      tracerFile.foreach(_.loadBin(offset, file))
     }
 
     // load elfs
@@ -246,7 +255,7 @@ class TestOptions{
         val failSymbol = if(withFail) trunkPc(elf.getSymbolAddress("fail")) else -1
         probe.commitsCallbacks += { (hartId, pc) =>
           if (pc == passSymbol) delayed(1)(simSuccess())
-          if (pc == failSymbol) delayed(1)(simFailure("Software reach the fail symbole :("))
+          if (pc == failSymbol) delayed(1)(simFailure("Software reached the fail symbol :("))
         }
       }
     }
@@ -275,7 +284,7 @@ class TestOptions{
           val cmd = pending.randomPop()
           p.word #= mem.readBytes(cmd.address, p.p.dataWidth / 8)
           p.id #= cmd.id
-          p.error #= cmd.address < 0x10000000
+          p.error #= cmd.address < 0x20000000
         }
         doIt
       }
@@ -311,13 +320,13 @@ class TestOptions{
       rspDriver.setFactor(ibusReadyFactor)
     }
 
-    val lsclp = dut.host.get[execute.LsuCachelessPlugin].map { p =>
-      val bus = p.logic.bus
+    val lsclp = dut.host.get[execute.lsu.LsuCachelessBusProvider].map { p =>
+      val bus = p.getLsuCachelessBus()
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
       var reserved = false
 
-      case class Access(write : Boolean, address: Long, data : Array[Byte], bytes : Int, io : Boolean, hartId : Int, uopId : Int, amoEnable : Boolean, amoOp : Int)
+      case class Access(id : Int, write : Boolean, address: Long, data : Array[Byte], bytes : Int, io : Boolean, hartId : Int, uopId : Int, amoEnable : Boolean, amoOp : Int)
       val pending = mutable.Queue[Access]()
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>
@@ -326,6 +335,7 @@ class TestOptions{
         val offset = address.toInt & (bytes-1)
         pending.enqueue(
           Access(
+            p.id.toInt,
             p.write.toBoolean,
             address,
             p.data.toBytes.drop(offset).take(bytes),
@@ -375,7 +385,7 @@ class TestOptions{
               error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
             }
           } else {
-            import vexiiriscv.execute.CachelessBusAmo._
+            import vexiiriscv.execute.lsu.LsuCachelessBusAmo._
             cmd.amoOp match {
               case LR => {
                 error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
@@ -418,6 +428,7 @@ class TestOptions{
           }
           p.data #= bytes
           p.error #= error
+          p.id #= cmd.id
           if(p.scMiss != null) p.scMiss #= scMiss
           if(cmd.address < 0x10000000) p.error #= true
         }
@@ -440,6 +451,22 @@ class TestOptions{
       peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
     }
 
+
+    val lsul1 = dut.host.get[LsuL1TlPlugin] map (p => new Area{
+      val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
+        driver.driver.setFactor(dbusReadyFactor)
+        val checker = if (monitor.bus.p.withBCE) Checker(monitor)
+        override def checkAddress(address: Long) = address >= 0x20000000
+        override def delayOnA(a: TransactionA) = {
+//          if(a.address == 0x81820000l){
+//            println(f"miaou ${mem.readByteAsInt(0x817FFFF3l)}%x")
+//            println(s"\n!! $simTime ${a.opcode.getName} ${a.data}")
+//          }
+          if(dbusReadyFactor < 1.0) super.delayOnA(a)
+        }
+      }
+    })
+
     if(printStats) onSimEnd{
       println(probe.getStats())
     }
@@ -448,6 +475,55 @@ class TestOptions{
 
 object TestBench extends App{
   doIt()
+
+  def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
+    val ret = param.plugins()
+    ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
+      p.ackIdWidth = 8
+      p.probeIdWidth = 4
+      ret  += new LsuL1TlPlugin
+    }
+    val regions = ArrayBuffer(
+      new PmaRegion{
+        override def mapping: AddressMapping = SizeMapping(0x80000000l, 0x80000000l)
+        override def transfers: MemoryTransfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+        override def isMain: Boolean = true
+        override def isExecutable: Boolean = true
+      },
+      new PmaRegion{
+        override def mapping: AddressMapping = SizeMapping(0x10000000l, 0x10000000l)
+        override def transfers: MemoryTransfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+        override def isMain: Boolean = false
+        override def isExecutable: Boolean = true
+      },
+      new PmaRegion{
+        override def mapping: AddressMapping = SizeMapping(0x1000, 0x1000)
+        override def transfers: MemoryTransfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all,
+        )
+        override def isMain: Boolean = true
+        override def isExecutable: Boolean = true
+      }
+
+    )
+    ret.foreach{
+      case p: FetchCachelessPlugin => p.regions.load(regions)
+      case p: LsuCachelessPlugin => p.regions.load(regions)
+      case p: FetchL1Plugin => p.regions.load(regions)
+      case p: LsuPlugin => p.ioRegions.load(regions)
+      case p: LsuL1Plugin => p.regions.load(regions)
+      case _ =>
+    }
+
+    ret
+  }
 
   def doIt(param : ParamSimple = new ParamSimple()) {
     val testOpt = new TestOptions()
@@ -468,7 +544,7 @@ object TestBench extends App{
 
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
-      simConfig.compile(VexiiRiscv(param.plugins()))
+      simConfig.compile(VexiiRiscv(paramToPlugins(param)))
     }
     testOpt.test(compiled)
     Thread.sleep(10)

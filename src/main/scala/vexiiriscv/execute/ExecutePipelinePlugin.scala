@@ -24,6 +24,7 @@ class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
   val pipelineLock = Retainer()
 
   def freezeWhen(cond: Bool)(implicit loc: Location) = freeze.requests += cond
+  def freezeIt()(implicit loc: Location) = freezeWhen(ConditionalContext.isTrue())
   def isFreezed(): Bool = freeze.valid
 
   override def getLinks(): Seq[Link] = logic.connectors

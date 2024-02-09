@@ -105,7 +105,7 @@ class BtbPlugin(var sets : Int,
       val sliceLow  = SLICE_LOW()
       val pcTarget = PC_TARGET()
       val isBranch, isPush, isPop = Bool()
-      val taken = Bool() //TODO remove
+      val taken = !withCondPrediction generate Bool() //TODO remove
     }
 
     // This memory could be implemented as a single port ram, as that ram is only updated on miss predicted stuff
@@ -121,7 +121,7 @@ class BtbPlugin(var sets : Int,
       val hash = getHash(cmd.pcOnLastSlice)
 
       val port = mem.writePortWithMask(chunks)
-      port.valid := cmd.valid && withCondPrediction.mux(cmd.badPredictedTarget && cmd.wasWrong, cmd.wasWrong)
+      port.valid := cmd.valid && withCondPrediction.mux(cmd.badPredictedTarget, cmd.wasWrong || cmd.badPredictedTarget)
       port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
       port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
       for(data <- port.data) {
@@ -131,7 +131,7 @@ class BtbPlugin(var sets : Int,
         data.isBranch := cmd.isBranch
         data.isPush := cmd.isPush
         data.isPop := cmd.isPop
-        data.taken := cmd.taken
+        if(!withCondPrediction) data.taken := cmd.taken
       }
     }
 
@@ -150,12 +150,12 @@ class BtbPlugin(var sets : Int,
           data.isBranch := False
           data.isPush := False
           data.isPop := False
-          data.taken := False
+          if(!withCondPrediction) data.taken := False
         }
       }
     }
 
-    val readPort = mem.readSyncPort()  //TODO , readUnderWrite = readFirst
+    val readPort = mem.readSyncPort()  //TODO , readUnderWrite = readFirst would save area/ipc/fmax on FPGA which support it, same for gshare
     val readCmd = new fpp.Fetch(readAt){
       readPort.cmd.valid := isReady
       readPort.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)

@@ -1,4 +1,4 @@
-package vexiiriscv.execute
+package vexiiriscv.execute.lsu
 
 import spinal.core._
 import spinal.lib._
@@ -6,66 +6,21 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.{Global, riscv}
 import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
-import spinal.core.fiber.Retainer
+import spinal.core.fiber.{Handle, Retainer}
+import spinal.core.sim.SimDataPimper
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
 import vexiiriscv.misc.{AddressToMask, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
+import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT_WIDTH, UOP}
 import vexiiriscv.schedule.{ReschedulePlugin, ScheduleService}
+import vexiiriscv.execute._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-
-object CachelessBusAmo{
-  val LR = 0x02
-  val SC = 0x03
-  val AMOSWAP = 0x01
-  val AMOADD = 0x00
-  val AMOXOR = 0x04
-  val AMOAND = 0x0C
-  val AMOOR = 0x08
-  val AMOMIN = 0x10
-  val AMOMAX = 0x14
-  val AMOMINU = 0x18
-  val AMOMAXU = 0x1c
-}
-
-case class CachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth : Int, uopIdWidth : Int, withAmo : Boolean){
-
-}
-
-case class CachelessCmd(p : CachelessBusParam) extends Bundle{
-  val write = Bool()
-  val address = UInt(p.addressWidth bits)
-  val data = Bits(p.dataWidth bit)
-  val size = UInt(log2Up(log2Up(p.dataWidth / 8) + 1) bits)
-  val mask = Bits(p.dataWidth / 8 bits)
-  val io = Bool() //This is for verification purposes, allowing RVLS to track stuff
-  val fromHart = Bool() //This is for verification purposes, allowing RVLS to track stuff
-  val hartId = UInt(p.hartIdWidth bits)
-  val uopId = UInt(p.uopIdWidth bits)
-  val amoEnable = p.withAmo generate Bool()
-  val amoOp = p.withAmo generate Bits(5 bits)
-}
-
-case class CachelessRsp(p : CachelessBusParam) extends Bundle{
-  val error = Bool()
-  val data  = Bits(p.dataWidth bits)
-  val scMiss = p.withAmo generate Bool()
-}
-
-case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave {
-  var cmd = Stream(CachelessCmd(p))
-  var rsp = Flow(CachelessRsp(p))
-
-  override def asMaster(): Unit = {
-    master(cmd)
-    slave(rsp)
-  }
-}
 
 class LsuCachelessPlugin(var layer : LaneLayer,
                          var withAmo : Boolean,
@@ -75,11 +30,12 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var addressAt: Int = 0,
                          var forkAt: Int = 0,
                          var joinAt: Int = 1,
-                         var wbAt: Int = 2) extends FiberPlugin with DBusAccessService{
+                         var wbAt: Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider{
 
-  val WITH_RSP = Payload(Bool())
+  val WITH_RSP, WITH_ACCESS, FENCE = Payload(Bool())
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
+  override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
 
   val logic = during setup new Area{
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
@@ -97,7 +53,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val translationStorage = ats.newStorage(translationStorageParameter)
     atsStorageLock.release()
 
-    val trapPort = ts.newTrap(layer.el.getAge(forkAt), Execute.LANE_AGE_WIDTH)
+    val trapPort = ts.newTrap(layer.el.getExecuteAge(forkAt), Execute.LANE_AGE_WIDTH)
     val flushPort = ss.newFlushPort(layer.el.getExecuteAge(addressAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
@@ -126,8 +82,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       op.dontFlushFrom(forkAt+1)
     }
 
-    layer.add(Rvi.FENCE) //TODO
-    layer(Rvi.FENCE).setCompletion(joinAt)
+    elp.setDecodingDefault(FENCE, False)
+    layer.add(Rvi.FENCE).addDecoding(FENCE -> True)
+    layer(Rvi.FENCE).setCompletion(forkAt)
 
     for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(joinAt)
 
@@ -143,15 +100,17 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val forkCtrl = elp.execute(forkAt)
     val joinCtrl = elp.execute(joinAt)
     val wbCtrl = elp.execute(wbAt)
+    val bufferSize = joinAt-forkAt+1
 
-    val busParam = CachelessBusParam(
+    val busParam = LsuCachelessBusParam(
       addressWidth = Global.PHYSICAL_WIDTH,
       dataWidth = Riscv.LSLEN,
       hartIdWidth = Global.HART_ID_WIDTH,
       uopIdWidth = Decode.UOP_ID_WIDTH,
-      withAmo = withAmo
+      withAmo = withAmo,
+      pendingMax = bufferSize
     )
-    val bus = master(CachelessBus(busParam))
+    val bus = master(LsuCachelessBus(busParam)).simPublic()
 
     accessRetainer.await()
 
@@ -161,23 +120,37 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val translationPort = ats.newTranslationPort(
         nodes = Seq(forkCtrl.down),
         rawAddress = RAW_ADDRESS,
-        allowRefill = insert(True),
+        forcePhysical = insert(False),
         usage = AddressTranslationPortUsage.LOAD_STORE,
         portSpec = translationPortParameter,
         storageSpec = translationStorage
       )
     }
 
+    val cmdInflights = Bool()
+
     val onFork = new forkCtrl.Area{
       val tpk =  onAddress.translationPort.keys
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && onAddress.RAW_ADDRESS(i - 1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
       val RS2 = elp(IntRegFile, riscv.RS2)
 
+      val pmaPort = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN/8)).map(1 << _), List(PmaLoad, PmaStore))
+      pmaPort.cmd.address := tpk.TRANSLATED
+      pmaPort.cmd.size := SIZE.asBits
+      pmaPort.cmd.op(0) := STORE
+      val PMA_RSP = insert(pmaPort.rsp)
+
       val skip = False
 
+      val askFenceReg = RegNextWhen(isValid && SEL && ATOMIC, !elp.isFreezed()) init(False) //Implement atomic fencing (pessimistic)
+      val askFence = isValid && (FENCE || SEL && ATOMIC || askFenceReg)
+      val doFence = askFence && cmdInflights //Not ideal, because if the first cycle is freezed, then it will also consider the send cmd as something to fence
+
+      val cmdCounter = Counter(bufferSize, bus.cmd.fire)
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
-      bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip
-      bus.cmd.write := !LOAD
+      bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip && !doFence
+      bus.cmd.id := cmdCounter
+      bus.cmd.write := STORE
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>
         val w = (1 << size) * 8
@@ -186,17 +159,18 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.cmd.data := bus.cmd.size.muxListDc(mapping)
       bus.cmd.size := SIZE.resized
       bus.cmd.mask := AddressToMask(bus.cmd.address, bus.cmd.size, Riscv.LSLEN/8)
-      bus.cmd.io := tpk.IO
+      bus.cmd.io := pmaPort.rsp.io
       bus.cmd.fromHart := True
       bus.cmd.hartId := Global.HART_ID
       bus.cmd.uopId := Decode.UOP_ID
       if(withAmo) {
-        bus.cmd.amoEnable := LOAD.mux[Bool](LR, SC || AMO)
+        bus.cmd.amoEnable := ATOMIC
         bus.cmd.amoOp     := UOP(31 downto 27)
       }
       //TODO amo AQ/RL
 
-      elp.freezeWhen(bus.cmd.isStall)
+      val freezeIt = bus.cmd.isStall || doFence
+      elp.freezeWhen(freezeIt)
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
@@ -213,27 +187,34 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      if(withSpeculativeLoadFlush) when(LOAD && tpk.IO && elp.atRiskOfFlush(forkAt)){
+      if(withSpeculativeLoadFlush) when(LOAD && pmaPort.rsp.io && elp.atRiskOfFlush(forkAt)){
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
       }
 
-      when(tpk.PAGE_FAULT || LOAD.mux(!tpk.ALLOW_READ, !tpk.ALLOW_WRITE)) {
+      when(tpk.ACCESS_FAULT || pmaPort.rsp.fault) {
+        skip := True
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+        trapPort.code(1) setWhen (STORE)
+      }
+
+      when(tpk.PAGE_FAULT || STORE.mux( !tpk.ALLOW_WRITE, !tpk.ALLOW_READ)) {
         skip := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
-        trapPort.code(1) setWhen(!LOAD)
+        trapPort.code(1) setWhen(STORE)
       }
 
       when(tpk.ACCESS_FAULT) {
         skip := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-        trapPort.code(1) setWhen (!LOAD)
+        trapPort.code(1) setWhen (STORE)
       }
 
-      trapPort.arg(0, 2 bits) := LOAD.mux(B(TrapArg.LOAD, 2 bits), B(TrapArg.STORE, 2 bits))
+      trapPort.arg(0, 2 bits) := STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
       trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REDO) {
         skip := True
@@ -244,7 +225,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       when(MISS_ALIGNED){
         skip := True
         trapPort.exception := True
-        trapPort.code := LOAD.mux[Bits](CSR.MCAUSE_ENUM.LOAD_MISALIGNED, CSR.MCAUSE_ENUM.STORE_MISALIGNED).andMask(MISS_ALIGNED).resized
+        trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(MISS_ALIGNED).resized
       }
 
       when(isValid && SEL && skip){
@@ -260,6 +241,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         val allowIt = !(isValid && SEL) && !cmdSent
         val cmd = dbusAccesses.head.cmd
         cmd.ready := allowIt && !elp.isFreezed()
+
+        val accessSent = RegInit(False) setWhen(cmd.fire) clearWhen(!elp.isFreezed())
+        WITH_ACCESS := accessSent || cmd.fire
         when(allowIt){
           bus.cmd.valid := cmd.valid
           bus.cmd.write := False
@@ -273,26 +257,60 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     }
 
     val onJoin = new joinCtrl.Area{
-      val buffer = bus.rsp.toStream.queueLowLatency(joinAt-forkAt+1).combStage
-      val SC_MISS = insert(withAmo.mux(buffer.scMiss, False))
-      val READ_DATA = insert(buffer.data)
-      elp.freezeWhen(WITH_RSP && !buffer.valid)
-      buffer.ready := WITH_RSP && isReady
-      assert(!(isValid && isCancel && SEL && !LOAD && !up(Global.TRAP)), "LsuCachelessPlugin saw unexpected select && !LOAD && cancel request") //TODO add tpk.IO and along the way)) //TODO add tpk.IO and along the way
+      val buffers = List.fill(bufferSize)(new Area{
+        val valid = RegInit(False)
+        val inflight = RegInit(False)
+        val payload = Reg(LsuCachelessRsp(bus.p, false))
+      })
+      cmdInflights := buffers.map(_.inflight).orR
+
+      val busRspWithoutId = LsuCachelessRsp(bus.p, false)
+      busRspWithoutId.assignSomeByName(bus.rsp.payload)
+      when(bus.cmd.fire) {
+        buffers.onSel(bus.cmd.id) { b =>
+          b.inflight := True
+        }
+      }
+      when(bus.rsp.valid){
+        buffers.onSel(bus.rsp.id){b =>
+          b.valid := True
+          b.inflight := False
+          b.payload := busRspWithoutId
+        }
+      }
+      val pop = WITH_RSP && !elp.isFreezed()
+      val rspCounter = Counter(bufferSize, pop)
+      val reader = buffers.reader(rspCounter)
+      val readerValid = reader(_.valid)
+      when(pop){
+        buffers.onSel(rspCounter)(_.valid := False)
+      }
+
+      val busRspHit = bus.rsp.valid && bus.rsp.id === rspCounter
+      val rspValid = readerValid || busRspHit
+      val rspPayload = readerValid.mux(CombInit(reader(_.payload)), busRspWithoutId)
+
+      val SC_MISS = insert(withAmo.mux(rspPayload.scMiss, False))
+      val READ_DATA = insert(rspPayload.data)
+      elp.freezeWhen(WITH_RSP && !rspValid)
+      assert(!(isValid && isCancel && SEL && STORE && !up(Global.TRAP)), "LsuCachelessPlugin saw unexpected select && STORE && cancel request") //TODO add tpk.IO and along the way)) //TODO add tpk.IO and along the way
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp
-        rsp.valid := !(isValid && SEL) && WITH_RSP && buffer.valid
-        rsp.data := buffer.data
-        rsp.error := buffer.error
+        rsp.valid := WITH_ACCESS && pop
+        rsp.data := rspPayload.data
+        rsp.error := rspPayload.error
         rsp.redo := False
         rsp.waitAny := False
       }
     }
 
-    for(eid <- forkAt + 1 to joinAt) elp.execute(eid).up(WITH_RSP).setAsReg().init(False)
+    for(eid <- forkAt + 1 to joinAt) {
+      elp.execute(eid).up(WITH_RSP).setAsReg().init(False)
+      elp.execute(eid).up(WITH_ACCESS).setAsReg().init(False)
+    }
 
-    val onWb = new wbCtrl.Area{
+    val onWb = new wbCtrl.Area {
       val rspSplits = onJoin.READ_DATA.subdivideIn(8 bits)
       val rspShifted = Bits(LSLEN bits)
       val wordBytes = LSLEN/8
@@ -310,7 +328,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       iwb.valid := SEL
       iwb.payload := rspShifted
 
-      if (withAmo) when(!LOAD && SC) {
+      if (withAmo) when(ATOMIC && !LOAD) {
         iwb.payload(0) := onJoin.SC_MISS
         iwb.payload(7 downto 1) := 0
       }
@@ -318,4 +336,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     buildBefore.release()
   }
+
+  val regions = Handle[ArrayBuffer[PmaRegion]]()
+  val pmaBuilder = during build new PmaLogic(logic.onFork.pmaPort, regions)
 }

@@ -1,46 +1,29 @@
 package vexiiriscv.fetch
 
 import spinal.core._
+import spinal.core.fiber.Handle
 import spinal.lib._
+import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.database.Database._
 import spinal.lib.misc.pipeline._
+import spinal.lib.bus.tilelink
+import spinal.lib.bus.tilelink.DebugId
+import spinal.lib.system.tag.{MappedTransfers, PmaRegion}
 import vexiiriscv._
 import vexiiriscv.Global._
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort}
 import vexiiriscv.misc.{TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.CSR
 
-case class CachelessBusParam(addressWidth : Int, dataWidth : Int, idCount : Int, cmdPersistence : Boolean){
-  val idWidth = log2Up(idCount)
-}
-
-case class CachelessCmd(p : CachelessBusParam) extends Bundle{
-  val id = UInt(p.idWidth bits)
-  val address = UInt(p.addressWidth bits)
-}
-
-case class CachelessRsp(p : CachelessBusParam, withId : Boolean = true) extends Bundle{
-  val id = withId generate UInt(p.idWidth bits)
-  val error = Bool()
-  val word  = Bits(p.dataWidth bits)
-}
-
-case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave {
-  var cmd = Stream(CachelessCmd(p))
-  var rsp = Flow(CachelessRsp(p))
-
-  override def asMaster(): Unit = {
-    master(cmd)
-    slave(rsp)
-  }
-}
+import scala.collection.mutable.ArrayBuffer
 
 object FetchCachelessPlugin{
   val ID_WIDTH = blocking[Int]
   val ID = blocking[Int]
 }
 
+//TODO avoid cmd fork on unmapped memory space
 class FetchCachelessPlugin(var wordWidth : Int,
                            var translationStorageParameter: Any,
                            var translationPortParameter: Any,
@@ -48,6 +31,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
                            var forkAt : Int = 0,
                            var joinAt : Int = 1,
                            var cmdForkPersistence : Boolean = true) extends FiberPlugin{
+  val regions = Handle[ArrayBuffer[PmaRegion]]()
 
   val logic = during setup new Area{
     val pp = host[FetchPipelinePlugin]
@@ -99,7 +83,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       val translationPort = ats.newTranslationPort(
         nodes = Seq(down),
         rawAddress = Fetch.WORD_PC,
-        allowRefill = insert(True),
+        forcePhysical = insert(False),
         usage = AddressTranslationPortUsage.FETCH,
         portSpec = translationPortParameter,
         storageSpec = translationStorage
@@ -108,6 +92,9 @@ class FetchCachelessPlugin(var wordWidth : Int,
     val tpk = onAddress.translationPort.keys
 
     val fork = new pp.Fetch(forkAt){
+      val pmaPort = new PmaPort(Global.PHYSICAL_WIDTH, List(Fetch.WORD_WIDTH/8), List(PmaLoad))
+      pmaPort.cmd.address := tpk.TRANSLATED
+
       val fresh = (forkAt == 0).option(host[PcPlugin].forcedSpawn())
       val cmdFork = forkStream(fresh)
       bus.cmd.arbitrationFrom(cmdFork.haltWhen(buffer.full))
@@ -117,7 +104,8 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
       BUFFER_ID := buffer.reserveId
 
-      when(tpk.REDO) {
+      val PMA_FAULT = insert(pmaPort.rsp.fault)
+      when(tpk.REDO || PMA_FAULT) {
         bus.cmd.valid := False
       }otherwise {
         when(up.isMoving) {
@@ -149,7 +137,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      when(rsp.error){
+      when(rsp.error || fork.PMA_FAULT){
         TRAP := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
@@ -181,4 +169,6 @@ class FetchCachelessPlugin(var wordWidth : Int,
     }
     buildBefore.release()
   }
+
+  val pmaBuilder = during build new PmaLogic(logic.fork.pmaPort, regions.filter(_.isExecutable))
 }

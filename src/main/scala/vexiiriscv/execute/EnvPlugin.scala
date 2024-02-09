@@ -63,6 +63,7 @@ class EnvPlugin(layer : LaneLayer,
       trapPort.tval := B(PC).andMask(OP === EnvPluginOp.EBREAK) //That's what spike do
       trapPort.code.assignDontCare()
       trapPort.arg.assignDontCare()
+      trapPort.laneAge := Execute.LANE_AGE
 
       val privilege = ps.getPrivilege(HART_ID)
       val xretPriv = Decode.UOP(29 downto 28).asUInt

@@ -144,9 +144,16 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       }
 
       val idleCsrAddress = csrReadCmd.valid.mux(csrReadCmd.address, csrWriteCmd.address)
+      val holdCsrWrite = True
+      when(holdCsrWrite){
+        ram.holdCsrWrite()
+      }
       IDLE whenIsActive{
+        holdCsrWrite := False
         cmd.oh := B(for (c <- counters.list) yield idleCsrAddress === c.counterId)
-        when(flusherCmd.valid){
+        when(csrWriteCmd.valid) {
+          goto(CSR_WRITE)
+        }elsewhen(flusherCmd.valid){
           cmd.flusher := True
           cmd.oh := flusherCmd.oh
           flusherCmd.ready := True
@@ -155,13 +162,12 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
           cmd.flusher := False
           csrReadCmd.ready := True
           goto(READ_LOW)
-        } elsewhen(csrWriteCmd.valid){
-          goto(CSR_WRITE)
         }
         carry := False
       }
 
       CSR_WRITE whenIsActive {
+        holdCsrWrite := False
         when(csr.onWriteAddress(7) === False) {
           counters.list.onMask(cmd.oh) { c =>
             c.value := csr.onWriteBits.asUInt.resized

@@ -77,16 +77,14 @@ object MmuSpec{
 }
 
 class MmuPlugin(var spec : MmuSpec,
-                var physicalWidth : Int,
-                var ioRange : UInt => Bool,
-                var fetchRange : UInt => Bool) extends FiberPlugin with AddressTranslationService{
+                var physicalWidth : Int) extends FiberPlugin with AddressTranslationService{
 
 
   override def mayNeedRedo: Boolean = true
 
   case class PortSpec(stages: Seq[NodeBaseApi],
                       preAddress: Payload[UInt],
-                      allowRefill : Payload[Bool],
+                      forcePhysical : Payload[Bool],
                       usage : AddressTranslationPortUsage,
                       pp: MmuPortParameter,
                       ss : StorageSpec,
@@ -114,7 +112,7 @@ class MmuPlugin(var spec : MmuSpec,
 
   override def newTranslationPort(stages: Seq[NodeBaseApi],
                                   preAddress: Payload[UInt],
-                                  allowRefill : Payload[Bool],
+                                  forcePhysical : Payload[Bool],
                                   usage : AddressTranslationPortUsage,
                                   portSpec: Any,
                                   storageSpec: Any) = {
@@ -124,7 +122,7 @@ class MmuPlugin(var spec : MmuSpec,
       new PortSpec(
         stages      = stages,
         preAddress  = preAddress,
-        allowRefill = allowRefill,
+        forcePhysical = forcePhysical,
         usage       = usage,
         pp          = pp,
         ss          = ss,
@@ -283,9 +281,9 @@ class MmuPlugin(var spec : MmuSpec,
             requireMmuLockup := False
           }
         }
+        requireMmuLockup clearWhen(ps.forcePhysical)
 
         import ps.rsp.keys._
-        IO := ioRange(TRANSLATED)
         when(requireMmuLockup) {
           REDO          := !hit
           TRANSLATED    := lineTranslated
@@ -304,7 +302,6 @@ class MmuPlugin(var spec : MmuSpec,
           ACCESS_FAULT  := ps.preAddress.drop(physicalWidth) =/= 0
         }
 
-        ALLOW_EXECUTE clearWhen(!fetchRange(TRANSLATED))
 
         BYPASS_TRANSLATION := !requireMmuLockup
         WAYS_OH       := oh

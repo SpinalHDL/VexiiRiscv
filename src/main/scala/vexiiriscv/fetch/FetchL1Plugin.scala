@@ -10,17 +10,22 @@ import spinal.lib.bus.amba4.axilite.{AxiLite4Config, AxiLite4ReadOnly}
 import spinal.lib.bus.bmb.{Bmb, BmbAccessParameter, BmbParameter, BmbSourceParameter}
 import spinal.lib.bus.tilelink.{M2sSupport, SizeRange}
 import spinal.lib.misc.Plru
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort}
 import vexiiriscv.misc._
 import vexiiriscv._
 import vexiiriscv.Global._
 import Fetch._
-import spinal.core.fiber.Retainer
+import spinal.core.fiber.{Handle, Retainer}
+import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.riscv.CSR
 import vexiiriscv.schedule.ReschedulePlugin
 
 import scala.collection.mutable.ArrayBuffer
 
+case class FetchL1InvalidationCmd() extends Bundle //Empty for now
+case class FetchL1InvalidationBus() extends Bundle {
+  val cmd = Stream(FetchL1InvalidationCmd())
+}
 
 trait FetchL1Service{
   val invalidationRetainer = Retainer()
@@ -28,18 +33,25 @@ trait FetchL1Service{
   def newInvalidationPort() = invalidationPorts.addRet(FetchL1InvalidationBus())
 }
 
-case class FetchL1InvalidationCmd() extends Bundle //Empty for now
-case class FetchL1InvalidationBus() extends Bundle {
-  val cmd = Stream(FetchL1InvalidationCmd())
+case class LsuL1InvalidationCmd() extends Bundle //Empty for now
+case class LsuL1InvalidationBus() extends Bundle {
+  val cmd = Stream(LsuL1InvalidationCmd())
 }
+trait LsuL1Service{
+  val invalidationRetainer = Retainer()
+  val invalidationPorts = ArrayBuffer[LsuL1InvalidationBus]()
+  def newInvalidationPort() = invalidationPorts.addRet(LsuL1InvalidationBus())
+}
+
+
 
 
 class FetchL1Plugin(var translationStorageParameter: Any,
                     var translationPortParameter: Any,
-                    var cacheSize : Int,
-                    var wayCount : Int,
                     var memDataWidth : Int,
                     var fetchDataWidth : Int,
+                    var setCount: Int,
+                    var wayCount: Int,
                     var lineSize: Int = 64,
                     var readAt: Int = 0,
                     var hitsAt: Int = 1,
@@ -49,7 +61,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
                     var ctrlAt: Int = 2,
                     var hitsWithTranslationWays: Boolean = false,
                     var reducedBankWidth: Boolean = false,
-                    var tagsReadAsync: Boolean = false) extends FiberPlugin with FetchL1Service {
+                    var tagsReadAsync: Boolean = false) extends FiberPlugin with FetchL1Service with InitService {
 
   def getBusParameter() = FetchL1BusParam(
     physicalWidth = PHYSICAL_WIDTH,
@@ -58,6 +70,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     withBackPresure = false
   )
 
+
+  override def initHold(): Bool = logic.invalidate.firstEver
 
   val logic = during setup new Area{
     val pp = host[FetchPipelinePlugin]
@@ -86,6 +100,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val holdPorts = (0 until HART_COUNT).map(pcp.newHoldPort)
     setupLock.release()
 
+    val cacheSize = wayCount*setCount*lineSize
     val cpuWordWidth = fetchDataWidth
     val bytePerMemWord = memDataWidth / 8
     val bytePerFetchWord = cpuWordWidth / 8
@@ -284,7 +299,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val translationPort = ats.newTranslationPort(
       nodes = Seq(pp.fetch(readAt).down, pp.fetch(readAt+1).down),
       rawAddress = Fetch.WORD_PC,
-      allowRefill = pp.fetch(readAt).insert(True),
+      forcePhysical = pp.fetch(readAt).insert(False),
       usage = AddressTranslationPortUsage.FETCH,
       portSpec = translationPortParameter,
       storageSpec = translationStorage
@@ -360,10 +375,12 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     }
 
     val ctrl = new pp.Fetch(ctrlAt){
+      val pmaPort = new PmaPort(Global.PHYSICAL_WIDTH, List(lineSize), List(PmaLoad))
+      pmaPort.cmd.address := tpk.TRANSLATED
+
       val plruLogic = new Area {
         val core = new Plru(wayCount, false)
         core.io.context.state := PLRU_BYPASSED
-//        core.io.context.state.clearAll()
         core.io.update.id := OHToUInt(WAYS_HITS)
 
         plru.write.valid := False
@@ -388,7 +405,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      when(dataAccessFault) {
+      when(dataAccessFault || pmaPort.rsp.fault) {
         TRAP := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
@@ -428,7 +445,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       refill.start.valid := redoIt && !HAZARD
       refill.start.address := tpk.TRANSLATED
       refill.start.hartId := HART_ID
-      refill.start.isIo := tpk.IO
+      refill.start.isIo := pmaPort.rsp.io
 
       when(redoIt){
         pp.fetch(0).haltIt() //"optional"
@@ -449,5 +466,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     buildBefore.release()
   }
+
+  val regions = Handle[ArrayBuffer[PmaRegion]]()
+  val pmaBuilder = during build new PmaLogic(logic.ctrl.pmaPort, regions.filter(_.isExecutable))
 }
 
