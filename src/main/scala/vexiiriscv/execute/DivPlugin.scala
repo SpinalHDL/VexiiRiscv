@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 import vexiiriscv.execute.RsUnsignedPlugin._
-import vexiiriscv.misc.{AdderAggregator, DivRadix4, MulSpliter}
+import vexiiriscv.misc.{AdderAggregator, DivComp, DivRadix2, DivRadix, MulSpliter}
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv.riscv._
 
@@ -18,8 +18,11 @@ object DivPlugin extends AreaObject {
 }
 
 class DivPlugin(val layer : LaneLayer,
+                var impl : (Int, Int, Boolean) => DivComp,
                 var divAt: Int = 0,
-                val writebackAt : Int = 0) extends ExecutionUnitElementSimple(layer){
+                var writebackAt : Int = 0,
+                var radix: Int = 2,
+                var area: Boolean = true) extends ExecutionUnitElementSimple(layer){
   import DivPlugin._
 
   val logic = during setup new Logic {
@@ -51,7 +54,7 @@ class DivPlugin(val layer : LaneLayer,
     uopRetainer.release()
 
     val processing = new el.Execute(divAt) {
-      val div = DivRadix4(width = XLEN.get)
+      val div = impl(Riscv.XLEN, radix, area)
 
       DIV_REVERT_RESULT := (RS1_REVERT ^ (RS2_REVERT && !REM)) && !(RS2_FORMATED === 0 && RS2_SIGNED && !REM) //RS2_SIGNED == RS1_SIGNED anyway
 

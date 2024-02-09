@@ -85,6 +85,9 @@ class ParamSimple(){
   var lsuL1Ways = 1
   var withLsuBypass = false
   var withIterativeShift = false
+  var divRadix = 2
+  var divImpl = ""
+  var divArea = true
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
@@ -117,13 +120,16 @@ class ParamSimple(){
     lsuL1Sets = 64
     lsuL1Ways = 4
     withLsuBypass = true
+    divImpl = ""
+    divRadix = 2
+    divArea = true
   }
 
 
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
     var isa = s"rv${xlen}i"
-    if (withMul) isa += "m"
+    if (withMul) isa += s"m"
     if (withRva) isa += "a"
     if (withRvc) isa += "c"
     if (privParam.withSupervisor) isa += "s"
@@ -146,6 +152,7 @@ class ParamSimple(){
     if (relaxedSrc) r += "rsrc"
     if(performanceCounters != 0) r += s"pc$performanceCounters"
     if (withIterativeShift) r += "isft"
+    if (withDiv) r += s"d${divRadix}${divImpl}${if(divArea)"Area" else ""}"
     r.mkString("_")
   }
 
@@ -183,6 +190,9 @@ class ParamSimple(){
     opt[Int]("lsu-l1-ways") action { (v, c) => lsuL1Ways = v }
     opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
     opt[Unit]("with-iterative-shift") action { (v, c) => withIterativeShift = true }
+    opt[Int]("div-radix") action { (v, c) => divRadix = v }
+    opt[String]("div-impl") action { (v, c) => divImpl = v }
+    opt[Unit]("div-ipc") action { (v, c) => divArea = false }
   }
 
   def plugins() = pluginsArea.plugins
@@ -420,7 +430,23 @@ class ParamSimple(){
     }
     if(withDiv) {
       plugins += new RsUnsignedPlugin("lane0")
-      plugins += new DivPlugin(early0)
+      plugins += new DivPlugin(
+        layer = early0,
+        radix = divRadix,
+        impl = {
+          def pasta(width: Int, radix: Int, area : Boolean) = new DivRadix2(width, lowArea = area)
+          def vexii(width: Int, radix: Int, area: Boolean) = new DivRadix(width, radix)
+          def default(width: Int, radix: Int, area: Boolean) = radix match {
+            case 2 if area => pasta(width, radix, area)
+            case 4 => vexii(width, radix, area)
+          }
+          divImpl match {
+            case "" => default
+            case "bitpasta" => pasta
+            case "vexii" => vexii
+          }
+        }
+      )
     }
 
     plugins += new CsrRamPlugin()
