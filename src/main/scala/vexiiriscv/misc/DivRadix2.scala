@@ -7,17 +7,8 @@ package vexiiriscv.misc
 import spinal.core.{B, U, _}
 import spinal.lib._
 
-case class DivCmd2(width: Int) extends Bundle {
-  val a, b = UInt(width bits)
-}
 
-case class DivRsp2(width: Int) extends Bundle {
-  val result = UInt(width bits)
-  val remain = UInt(width bits)
-}
-
-case class DivRadix2(val width: Int, val lowArea: Boolean = true) extends Component {
-  require(width >= 0)
+class DivRadix2(width: Int, val lowArea: Boolean = true) extends DivComp(width){
 
   val predictShiftInCycle0 = false // Does not work yet.
 
@@ -33,11 +24,6 @@ case class DivRadix2(val width: Int, val lowArea: Boolean = true) extends Compon
   require(possibleShiftAmounts.head == 1, "first shift amount must be 1")
   require(possibleShiftAmounts == possibleShiftAmounts.sorted, "list of possible shift amounts must be sorted")
 
-  val io = new Bundle {
-    val flush = in Bool()
-    val cmd = slave Stream (DivCmd2(width))
-    val rsp = master Stream (DivRsp2(width))
-  }
 
   val counter = Reg(UInt(log2Up(width - 1) bits))
   val busy = RegInit(False) clearWhen (io.rsp.fire)

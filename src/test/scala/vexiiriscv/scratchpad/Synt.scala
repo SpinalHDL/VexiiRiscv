@@ -35,9 +35,23 @@ object IntegrationSynthBench extends App{
   add("") { p =>
     p.regFileSync = false
     p.withMul = false
-    p.withDiv = false
-    p.withIterativeShift = true
+    p.withDiv = true
+    p.divRadix = 2
   }
+  add("") { p =>
+    p.regFileSync = false
+    p.withMul = false
+    p.withDiv = true
+    p.divArea = false
+    p.divRadix = 2
+  }
+  add("") { p =>
+    p.regFileSync = false
+    p.withMul = false
+    p.withDiv = true
+    p.divRadix = 4
+  }
+
 //  add("") { p =>
 //    p.regFileSync = false
 //    p.withMul = false
