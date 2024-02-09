@@ -40,10 +40,12 @@ class MicroSoc() extends Component {
     param.fetchCachelessForkAt = 1
     param.lsuForkAt = 1
     param.relaxedBranch = true
+    param.withPerformanceCounters = false
     
     val plugins = param.plugins()
     val cpu = new TilelinkVexiiRiscvFiber(plugins)
     sharedBus << cpu.buses
+    cpu.dBus.setDownConnection(a = StreamPipe.S2M)
 
     val ram = new tilelink.fabric.RamFiber(16 KiB)
     ram.up at 0x80000000l of sharedBus
@@ -52,9 +54,10 @@ class MicroSoc() extends Component {
     val peripheral = new Area {
       val busXlen = Node().forceDataWidth(param.xlen)
       busXlen << sharedBus
+      busXlen.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
 
       val bus32 = Node().forceDataWidth(32)
-      bus32 << sharedBus
+      bus32 << busXlen
 
       val clint = new TilelinkClintFiber()
       clint.node at 0x10010000 of busXlen

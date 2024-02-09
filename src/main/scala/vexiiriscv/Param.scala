@@ -77,7 +77,8 @@ class ParamSimple(){
   var relaxedShift = false
   var relaxedSrc = true
   var allowBypassFrom = 100 //100 => disabled
-  var performanceCounters = 0
+  var additionalPerformanceCounters = 0
+  var withPerformanceCounters = true
   var withFetchL1 = false
   var withLsuL1 = false
   var fetchL1Sets = 64
@@ -107,7 +108,7 @@ class ParamSimple(){
     relaxedBranch = false
     relaxedShift = false
     relaxedSrc = true
-    performanceCounters = 4
+    additionalPerformanceCounters = 4
     privParam.withSupervisor = true
     privParam.withUser = true
     withMmu = true
@@ -153,7 +154,7 @@ class ParamSimple(){
     if (relaxedBranch) r += "rbra"
     if (relaxedShift) r += "rsft"
     if (relaxedSrc) r += "rsrc"
-    if(performanceCounters != 0) r += s"pc$performanceCounters"
+    if (withPerformanceCounters) r += s"pc$additionalPerformanceCounters"
     if (withIterativeShift) r += "isft"
     if (withDiv) r += s"d${divRadix}${divImpl}${if(divArea)"Area" else ""}"
     r.mkString("_")
@@ -184,7 +185,7 @@ class ParamSimple(){
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
     opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
-    opt[Int]("performance-counters") action { (v, c) => performanceCounters = v }
+    opt[Int]("performance-counters") action { (v, c) => additionalPerformanceCounters = v }
     opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => withLsuL1 = true }
     opt[Int]("fetch-l1-sets") action { (v, c) => fetchL1Sets = v }
@@ -456,7 +457,7 @@ class ParamSimple(){
     }
 
     plugins += new CsrRamPlugin()
-    plugins += new PerformanceCounterPlugin(additionalCounterCount = performanceCounters)
+    if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(privParam, 0 until hartCount)
     plugins += new TrapPlugin(trapAt = 2)
