@@ -101,7 +101,7 @@ class ZbbCountPlugin(val layer: LaneLayer,
 
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
-      wb.payload := CountOne(MASKED).resized
+      wb.payload := CountOne(MASKED).asBits.resized
     }
   }
 }
@@ -114,7 +114,7 @@ class ZbbMinMaxPlugin(val layer: LaneLayer,
                       val executeAt: Int = 0,
                       val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
   import ZbbMinMaxPlugin._
-  val RESULT = Payload(Bits(Riscv.XLEN bits))
+  val RESULT = Payload(SInt(Riscv.XLEN bits))
 
   val logic = during setup new Logic {
     awaitBuild()
@@ -133,7 +133,7 @@ class ZbbMinMaxPlugin(val layer: LaneLayer,
 
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
-      wb.payload := RESULT
+      wb.payload := RESULT.asBits
     }
   }
 }
@@ -188,7 +188,7 @@ class ZbbRotatePlugin(val layer: LaneLayer,
 class ZbbOrPlugin(val layer: LaneLayer,
                   val executeAt: Int = 0,
                   val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
-  val RESULT = Payload(Bits(Riscv.XLEN bits))
+  val RESULT = Payload(Bits(Riscv.XLEN/8 bits))
 
   val logic = during setup new Logic {
     awaitBuild()
@@ -200,7 +200,7 @@ class ZbbOrPlugin(val layer: LaneLayer,
     uopRetainer.release()
 
     val combine = new el.Execute(executeAt) {
-      val bits = el(IntRegFile, RS1).subdivideIn(8 bit).map(_.orR)
+      val bits = Cat(el(IntRegFile, RS1).subdivideIn(8 bit).map(_.orR))
       RESULT := bits
     }
 
