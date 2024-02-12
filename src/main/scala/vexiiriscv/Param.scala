@@ -357,9 +357,9 @@ class ParamSimple(){
 
     def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(
       name,
-      rfReadAt = 1,
-      decodeAt = 1+regFileSync.toInt,
-      executeAt = 1+regFileSync.toInt + 1,
+      rfReadAt = 0,
+      decodeAt = 0+regFileSync.toInt,
+      executeAt = 0+regFileSync.toInt + 1,
       withBypasses = allowBypassFrom == 0
     )
 
