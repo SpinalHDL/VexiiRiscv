@@ -464,7 +464,7 @@ class ParamSimple(){
           def vexii(width: Int, radix: Int, area: Boolean) = new DivRadix(width, radix)
           def default(width: Int, radix: Int, area: Boolean) = radix match {
             case 2 if area => pasta(width, radix, area)
-            case 4 => vexii(width, radix, area)
+            case _ => vexii(width, radix, area)
           }
           divImpl match {
             case "" => default
