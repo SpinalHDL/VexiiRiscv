@@ -163,6 +163,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         if (get(Riscv.RVF)) isa += "F"
         if (get(Riscv.RVD)) isa += "D"
         if (get(Riscv.RVC)) isa += "C"
+        if (get(Riscv.RVZb)) isa += "_zba_zbb_zbc_zbs"
         tracer.newCpuMemoryView(hartId, 16, 16)
         tracer.newCpu(hartId, isa, csrp, 63, hartId)
         val pc = if(xlen == 32) 0x80000000l else 0x80000000l
