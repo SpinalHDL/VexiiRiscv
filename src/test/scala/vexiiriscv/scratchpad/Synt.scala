@@ -33,22 +33,49 @@ object IntegrationSynthBench extends App{
 //    p.withDiv = false
 //  }
 
-  //Dual issue perf config
-  add("") { p =>
+  def cachedPerf(p : ParamSimple): ParamSimple = {
     p.regFileSync = false
     p.allowBypassFrom = 0
     p.withGShare = true
     p.withBtb = true
     p.withRas = true
-    p.decoders = 2
-    p.lanes = 2
     p.relaxedBranch = true
     p.relaxedBtb = true
     p.withFetchL1 = true
     p.withLsuL1 = true
+    p.fetchL1Sets = 64
+    p.fetchL1Ways = 4
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 4
+    p.withLsuBypass = true
+    p
   }
 
-//  add("") { p =>
+  add("") { p =>
+    cachedPerf(p)
+  }
+  add("") { p =>
+    cachedPerf(p)
+    p.withLateAlu = true
+  }
+
+  add("") { p =>
+    cachedPerf(p)
+    p.decoders = 2
+    p.lanes = 2
+  }
+
+  add("") { p =>
+    cachedPerf(p)
+    p.decoders = 2
+    p.lanes = 2
+    p.withLateAlu = true
+  }
+
+
+
+
+  //  add("") { p =>
 //    p.regFileSync = false
 //    p.withMul = false
 //    p.withDiv = true

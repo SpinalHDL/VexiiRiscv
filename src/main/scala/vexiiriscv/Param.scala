@@ -101,16 +101,16 @@ class ParamSimple(){
     withGShare = true
     withBtb = true
     withRas = true
-    decoders = 2
-    lanes = 2
-    relaxedBranch = true
-    relaxedBtb = true
+    relaxedBranch = false
+    relaxedBtb = false
     withFetchL1 = true
     withLsuL1 = true
     fetchL1Sets = 64
     fetchL1Ways = 4
     lsuL1Sets = 64
     lsuL1Ways = 4
+    withLsuBypass = true
+    divArea = false
 
 //    decoders = 2
 //    lanes = 2
@@ -458,6 +458,7 @@ class ParamSimple(){
       plugins += new DivPlugin(
         layer = early0,
         radix = divRadix,
+        area  = divArea,
         impl = {
           def pasta(width: Int, radix: Int, area : Boolean) = new DivRadix2(width, lowArea = area)
           def vexii(width: Int, radix: Int, area: Boolean) = new DivRadix(width, radix)
