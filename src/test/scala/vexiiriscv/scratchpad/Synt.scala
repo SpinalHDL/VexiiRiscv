@@ -27,30 +27,46 @@ object IntegrationSynthBench extends App{
     add(p, postfix)
   }
 
-  add(""){ p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = false
-  }
+//  add(""){ p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = false
+//  }
+
+  //Dual issue perf config
   add("") { p =>
     p.regFileSync = false
-    p.withMul = false
-    p.withDiv = true
-    p.divRadix = 2
+    p.allowBypassFrom = 0
+    p.withGShare = true
+    p.withBtb = true
+    p.withRas = true
+    p.decoders = 2
+    p.lanes = 2
+    p.relaxedBranch = true
+    p.relaxedBtb = true
+    p.withFetchL1 = true
+    p.withLsuL1 = true
   }
-  add("") { p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = true
-    p.divArea = false
-    p.divRadix = 2
-  }
-  add("") { p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = true
-    p.divRadix = 4
-  }
+
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = true
+//    p.divRadix = 2
+//  }
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = true
+//    p.divArea = false
+//    p.divRadix = 2
+//  }
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = true
+//    p.divRadix = 4
+//  }
 
 //  add("") { p =>
 //    p.regFileSync = false
