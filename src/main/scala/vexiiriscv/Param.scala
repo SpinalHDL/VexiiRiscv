@@ -553,7 +553,7 @@ class ParamSimple(){
       plugins += shifter(early1, formatAt = relaxedShift.toInt)
       plugins += new IntFormatPlugin("lane1")
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
-      if(withRvZb) plugins += new ZbPlugin(early1, formatAt=0)
+      if(withRvZb) plugins ++= ZbPlugin.make(early1, formatAt=0)
 
       if(withLateAlu) {
         val late1 = new LaneLayer("late1", lane1, priority = -3)
