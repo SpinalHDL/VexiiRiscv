@@ -124,7 +124,7 @@ class BranchPlugin(val layer : LaneLayer,
       val sliceShift = Fetch.SLICE_RANGE_LOW.get
       val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH)); PC_TRUE(0) := False //PC RESIZED
       val PC_FALSE = insert(PC + (slices << sliceShift))
-      val PC_LAST_SLICE = PC + (Decode.INSTRUCTION_SLICE_COUNT << sliceShift)
+      val PC_LAST_SLICE = insert(PC + (Decode.INSTRUCTION_SLICE_COUNT << sliceShift))
 
 
       // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
