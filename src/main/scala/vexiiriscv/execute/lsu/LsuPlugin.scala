@@ -23,6 +23,13 @@ import vexiiriscv.fetch.LsuL1Service
 
 import scala.collection.mutable.ArrayBuffer
 
+case class LsuL1Cmd() extends Bundle {
+  val address = LsuL1.MIXED_ADDRESS()
+  val size = SIZE()
+  val load, store, atomic = Bool()
+  val fromFlush = Bool()
+  val fromAccess = Bool()
+}
 
 class LsuPlugin(var layer : LaneLayer,
                 var withRva : Boolean,
@@ -148,18 +155,10 @@ class LsuPlugin(var layer : LaneLayer,
         storageSpec = translationStorage
       )
 
-      case class Cmd() extends Bundle {
-        val address = l1.MIXED_ADDRESS()
-        val size = SIZE()
-        val load, store, atomic = Bool()
-        val fromFlush = Bool()
-        val fromAccess = Bool()
-      }
-
-      val ports = ArrayBuffer[Stream[Cmd]]()
+      val ports = ArrayBuffer[Stream[LsuL1Cmd]]()
 
       val ls = new Area {
-        val port = ports.addRet(Stream(Cmd()))
+        val port = ports.addRet(Stream(LsuL1Cmd()))
         port.valid := isValid && SEL
         port.address := srcp.ADD_SUB.asUInt.resized  //TODO Overflow  ?
         port.size := SIZE
@@ -173,7 +172,7 @@ class LsuPlugin(var layer : LaneLayer,
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val cmd = dbusAccesses.head.cmd
-        val port = ports.addRet(Stream(Cmd()))
+        val port = ports.addRet(Stream(LsuL1Cmd()))
         port.arbitrationFrom(cmd)
         port.address := cmd.address.resized
         port.size := cmd.size
@@ -185,7 +184,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       val flush = new Area {
-        val port = ports.addRet(Stream(Cmd()))
+        val port = ports.addRet(Stream(LsuL1Cmd()))
         port.valid := flusher.isActive(flusher.CMD) && !flusher.cmdCounter.msb
         port.address := (flusher.cmdCounter << log2Up(l1.LINE_BYTES)).resized
         port.size := 0
