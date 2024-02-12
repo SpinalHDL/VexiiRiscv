@@ -564,7 +564,7 @@ object TestBenchServer extends App{
   simConfig.withTestFolder
 
   val param = new ParamSimple()
-  val compiled = simConfig.compile(VexiiRiscv(param.plugins()))
+  val compiled = simConfig.compile(VexiiRiscv(TestBench.paramToPlugins(param)))
   val serverSocket = new ServerSocket(8189)
   var i = 0
   println("Waiting for connections")

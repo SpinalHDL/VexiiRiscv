@@ -78,11 +78,6 @@ class ExecuteLanePlugin(override val laneName : String,
     ctrl(id + executeAt)
   }
 
-//  val flushPorts = mutable.LinkedHashMap[Int, ArrayBuffer[Flow[FlushCmd]]]()
-//  override def newFlushPort(executeId: Int): Flow[FlushCmd] = {
-//    flushPorts.getOrElseUpdate(executeId, ArrayBuffer[Flow[FlushCmd]]()).addRet()
-//  }
-
   override def rfReadHazardFrom(usedAt : Int) : Int = if(withBypasses) usedAt else rfReadAt+1
 
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.completions.onCtrl.map(_.port).toSeq

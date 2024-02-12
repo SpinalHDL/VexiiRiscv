@@ -76,6 +76,7 @@ class ParamSimple(){
   var relaxedBranch = false
   var relaxedShift = false
   var relaxedSrc = true
+  var relaxedBtb = false
   var allowBypassFrom = 100 //100 => disabled
   var additionalPerformanceCounters = 0
   var withPerformanceCounters = true
@@ -95,38 +96,54 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
-    decoders = 2
-    lanes = 2
     regFileSync = false
+    allowBypassFrom = 0
     withGShare = true
     withBtb = true
     withRas = true
-//    withMul = false
-//    withDiv = false
-    withLateAlu = true
-    allowBypassFrom = 0
-    relaxedBranch = false
-    relaxedShift = false
-    relaxedSrc = true
-    additionalPerformanceCounters = 4
-    privParam.withSupervisor = true
-    privParam.withUser = true
-    withMmu = true
-    withRva = true
-    withRvc = false
-    withAlignerBuffer = withRvc
-    withFetchL1 = false
-    withLsuL1 = false
-    xlen = 32
+    decoders = 2
+    lanes = 2
+    relaxedBranch = true
+    relaxedBtb = true
+    withFetchL1 = true
+    withLsuL1 = true
     fetchL1Sets = 64
     fetchL1Ways = 4
     lsuL1Sets = 64
     lsuL1Ways = 4
-    withLsuBypass = true
-    divImpl = ""
-    divRadix = 2
-    divArea = true
-    lsuForkAt = 1
+
+//    decoders = 2
+//    lanes = 2
+//    regFileSync = false
+//    withGShare = true
+//    withBtb = true
+//    withRas = true
+////    withMul = false
+////    withDiv = false
+//    withLateAlu = true
+//    allowBypassFrom = 0
+//    relaxedBranch = false
+//    relaxedShift = false
+//    relaxedSrc = true
+//    additionalPerformanceCounters = 4
+//    privParam.withSupervisor = true
+//    privParam.withUser = true
+//    withMmu = true
+//    withRva = true
+//    withRvc = false
+//    withAlignerBuffer = withRvc
+//    withFetchL1 = false
+//    withLsuL1 = false
+//    xlen = 32
+//    fetchL1Sets = 64
+//    fetchL1Ways = 4
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    withLsuBypass = true
+//    divImpl = ""
+//    divRadix = 2
+//    divArea = true
+//    lsuForkAt = 1
   }
 
 
@@ -146,7 +163,7 @@ class ParamSimple(){
     if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}" else r += s"fclF${fetchCachelessForkAt}"
     if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuF$lsuForkAt"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
-    if (withBtb) r += "btb"
+    if (withBtb) r += s"btb${if(relaxedBtb)"R" else ""}"
     if (withRas) r += "ras"
     if (withGShare) r += "gshare"
     if (withLateAlu) r += "la"
@@ -168,6 +185,7 @@ class ParamSimple(){
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
+    opt[Unit]("relaxed-btb") action { (v, c) => relaxedBtb = true }
     opt[Unit]("with-mul") unbounded() action { (v, c) => withMul = true }
     opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
@@ -229,7 +247,7 @@ class ParamSimple(){
         hashWidth = 16,
         readAt = 0,
         hitAt = 1,
-        jumpAt = 1
+        jumpAt = 1+relaxedBtb.toInt
       )
       plugins += new prediction.DecodePredictionPlugin(
         decodeAt = 1,
@@ -339,9 +357,9 @@ class ParamSimple(){
 
     def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(
       name,
-      rfReadAt = 0,
-      decodeAt = regFileSync.toInt,
-      executeAt = regFileSync.toInt + 1,
+      rfReadAt = 1,
+      decodeAt = 1+regFileSync.toInt,
+      executeAt = 1+regFileSync.toInt + 1,
       withBypasses = allowBypassFrom == 0
     )
 
