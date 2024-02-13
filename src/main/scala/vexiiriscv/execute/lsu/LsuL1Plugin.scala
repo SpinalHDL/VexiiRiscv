@@ -768,7 +768,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val reservation = tagsWriteArbiter.create(2)
         val bankWriteReservation = bankWriteArbiter.create(2)
-//        val refillWayWithoutUpdate = CombInit(plruLogic.core.io.evict.id)
+        val refillWayWithoutUpdate = CombInit(plruLogic.core.io.evict.id)
         val refillWayNeedWriteback = WAYS_TAGS.map(w => w.loaded && withCoherency.mux(True, w.dirty)).read(refillWayWithoutUpdate)
 
         //Warning, those two signals aren't stable when lane.isFreezed
