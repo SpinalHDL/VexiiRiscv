@@ -28,6 +28,8 @@ class BtbPlugin(var sets : Int,
                 var jumpAt : Int = 1) extends FiberPlugin with FetchWordPrediction {
 
 
+  override def useAccurateHistory: Boolean = jumpAt == 1
+
   def chunksRange = 0 until chunks
 
   val logic = during setup new Area{

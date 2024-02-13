@@ -147,7 +147,7 @@ class BranchPlugin(val layer : LaneLayer,
 
       val history = new Area{
         val fetched, next = Prediction.BRANCH_HISTORY()
-        val withSelfHistory = Global.HART_COUNT.get == 1 && Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1
+        val withSelfHistory = Global.HART_COUNT.get == 1 && Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1 && host[FetchWordPrediction].useAccurateHistory
 
         val fromSelf = withSelfHistory generate new Area {
           val state = Reg(Prediction.BRANCH_HISTORY) init (0)
