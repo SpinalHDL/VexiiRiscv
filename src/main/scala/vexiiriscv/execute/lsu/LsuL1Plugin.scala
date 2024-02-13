@@ -654,13 +654,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
-
-//    def waysHazard(stages: Seq[Stage], address: Stageable[UInt]): Unit = {
-//      for (s <- stages) {
-//        s.overloaded(WAYS_HAZARD) := s(WAYS_HAZARD) | waysWrite.maskLast.andMask(waysWrite.addressLast === s(address)(lineRange))
-//      }
-//    }
-
     val ls = new Area {
       val rb0 = new lane.Execute(bankReadAt){
         val readAddress = MIXED_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
@@ -757,15 +750,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       assert(Global.HART_COUNT.get == 1)
-      //TODO Store AMO SC need to be sure the cache line didn't just start being written back when theiy reach ctrl stage / warning prefetch
       val preCtrl = new lane.Execute(ctrlAt){
         NEED_UNIQUE := STORE || ATOMIC
         WAYS_HAZARD := 0 //TODO
       }
-
-//      val rcl = new lane.Execute(ctrlAt){
-//        REFILL_HITS := B(refill.slots.map(r => r.valid && r.address(hazardCheckRange) === PHYSICAL_ADDRESS(hazardCheckRange)))
-//      }
 
       val ctrl = new lane.Execute(ctrlAt) {
         val plruLogic = new Area {
@@ -780,21 +768,14 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val reservation = tagsWriteArbiter.create(2)
         val bankWriteReservation = bankWriteArbiter.create(2)
-        val refillWayWithoutUpdate = CombInit(plruLogic.core.io.evict.id)
-//        val refillWayWithoutUpdate = CombInit(wayRandom.value)
+//        val refillWayWithoutUpdate = CombInit(plruLogic.core.io.evict.id)
         val refillWayNeedWriteback = WAYS_TAGS.map(w => w.loaded && withCoherency.mux(True, w.dirty)).read(refillWayWithoutUpdate)
-//        val refillHit = REFILL_HITS.orR
-//        val refillLoaded = (B(refill.slots.map(_.loaded)) & REFILL_HITS).orR
 
         //Warning, those two signals aren't stable when lane.isFreezed
         val refillHazard =  refill.isLineBusy(PHYSICAL_ADDRESS)
         val writebackHazard =  writeback.isLineBusy(PHYSICAL_ADDRESS)
 
-//        val bankBusy = (BANK_BUSY_REMAPPED & WAYS_HITS) =/= 0 // Not needed anymore as the cpu freeze early
-//        val waysHitHazard = (WAYS_HITS & WAYS_HAZARD).orR
         val waysHazard = WAYS_HAZARD.orR
-//        val hitUnique = withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(_.unique).asBits).orR, True)
-//        val uniqueMiss = NEED_UNIQUE && !hitUnique
         val wasDirty = (B(WAYS_TAGS.map(_.dirty)) & WAYS_HITS).orR
         val refillWayWasDirty = WAYS_TAGS.map(w => w.loaded && w.dirty).read(refillWayWithoutUpdate)
         val loadBankHazard = withBypass.mux(False, LOAD && WRITE_TO_READ_HAZARDS.orR)
@@ -834,8 +815,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         when(SEL) {
           assert(CountOne(WAYS_HITS) <= 1, "Multiple way hit ???")
         }
-
-//        assert(!startFlush)
 
         val freezeIt = SEL && STORE && (!bankWriteReservation.win || !reservation.win)
         lane.freezeWhen(freezeIt)
@@ -965,9 +944,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           }
         }
         READ_DATA := BYPASSED_DATA
-
-//        REFILL_SLOT_FULL := MISS && !refillHit && refill.full
-//        REFILL_SLOT := REFILL_HITS.andMask(!refillLoaded) | refill.free.andMask(askRefill)
       }
     }
 
