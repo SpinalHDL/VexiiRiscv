@@ -145,9 +145,9 @@ class BranchPlugin(val layer : LaneLayer,
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
 
 
-      val history = new Area{
+      val history = historyPort.nonEmpty generate new Area{
         val fetched, next = Prediction.BRANCH_HISTORY()
-        val withSelfHistory = Global.HART_COUNT.get == 1 && Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1 && host[FetchWordPrediction].useAccurateHistory
+        val withSelfHistory = Global.HART_COUNT.get == 1 && Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1 && host.get[FetchWordPrediction].get.useAccurateHistory
 
         val fromSelf = withSelfHistory generate new Area {
           val state = Reg(Prediction.BRANCH_HISTORY) init (0)
@@ -227,7 +227,7 @@ class BranchPlugin(val layer : LaneLayer,
         learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
         learn.wasWrong := needFix
         learn.badPredictedTarget := withBtb.mux(alu.btb.BAD_TARGET, False)
-        learn.history := history.fetched
+        if(historyPort.nonEmpty) learn.history := history.fetched
         learn.uopId := Decode.UOP_ID
         learn.hartId := Global.HART_ID
         for (e <- ls.learnCtxElements) {
