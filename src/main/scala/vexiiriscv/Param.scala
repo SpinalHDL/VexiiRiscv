@@ -68,8 +68,8 @@ class ParamSimple(){
   var withBtb = false
   var withRas = false
   var withLateAlu = false
-  var withMul = true
-  var withDiv = true
+  var withMul = false
+  var withDiv = false
   var withRva = false
   var privParam = PrivilegedParam.base
   var lsuForkAt = 0
@@ -79,7 +79,7 @@ class ParamSimple(){
   var relaxedBtb = false
   var allowBypassFrom = 100 //100 => disabled
   var additionalPerformanceCounters = 0
-  var withPerformanceCounters = true
+  var withPerformanceCounters = false
   var withFetchL1 = false
   var withLsuL1 = false
   var fetchL1Sets = 64
@@ -96,6 +96,7 @@ class ParamSimple(){
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
+    withPerformanceCounters = true
     regFileSync = false
     allowBypassFrom = 0
     withGShare = true
@@ -111,6 +112,9 @@ class ParamSimple(){
     lsuL1Ways = 4
     withLsuBypass = true
     divArea = false
+    decoders = 2
+    lanes = 2
+    withLateAlu = false
 
 //    decoders = 2
 //    lanes = 2
@@ -203,7 +207,7 @@ class ParamSimple(){
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
     opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
-    opt[Int]("performance-counters") action { (v, c) => additionalPerformanceCounters = v }
+    opt[Int]("performance-counters") action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
     opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => withLsuL1 = true }
     opt[Int]("fetch-l1-sets") action { (v, c) => fetchL1Sets = v }
@@ -301,8 +305,8 @@ class ParamSimple(){
     )
     if(withFetchL1) plugins += new fetch.FetchL1Plugin(
       lineSize = 64,
-      setCount = 64,
-      wayCount = 4,
+      setCount = fetchL1Sets,
+      wayCount = fetchL1Ways,
       fetchDataWidth = 32*decoders,
       memDataWidth = 32*decoders,
       reducedBankWidth = false,
