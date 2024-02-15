@@ -26,8 +26,8 @@ class DivRadix2(width: Int, val lowArea: Boolean = true) extends DivComp(width){
 
 
   val counter = Reg(UInt(log2Up(width - 1) bits))
-  val busy = RegInit(False) clearWhen (io.rsp.fire)
-  val done = RegInit(False) setWhen (busy && False) clearWhen (io.rsp.fire)
+  val busy = RegInit(False)
+  val done = RegInit(False) clearWhen (io.rsp.fire)
 
   val remainder = Reg(UInt(width * 2 bits))
   val denominator = io.cmd.b
@@ -58,7 +58,7 @@ class DivRadix2(width: Int, val lowArea: Boolean = true) extends DivComp(width){
     remainder
   }
 
-  when(!busy) {
+  when(!busy && !done) {
     // Initialize.
     busy := io.cmd.valid
     remainder := remainderInput
@@ -249,7 +249,7 @@ object DivRadix2TesterRandomized extends App {
 
     dut.clockDomain.forkStimulus(10)
     dut.io.cmd.valid #= false
-    dut.io.rsp.ready #= true
+    dut.clockDomain.onSamplings(dut.io.rsp.ready.randomize())
     dut.clockDomain.waitSampling()
 
     for (i <- 0 until 1000) {
@@ -262,7 +262,7 @@ object DivRadix2TesterRandomized extends App {
 
       dut.clockDomain.waitSampling()
       dut.io.cmd.valid #= false
-      dut.clockDomain.waitSamplingWhere(dut.io.rsp.valid.toBoolean)
+      dut.clockDomain.waitSamplingWhere(dut.io.rsp.valid.toBoolean && dut.io.rsp.ready.toBoolean)
 
       if (b != 0) {
         assert(dut.io.rsp.result.toInt == a / b)
