@@ -11,6 +11,7 @@ import vexiiriscv.riscv.{CSR, Const, IMM, RD, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
+import spinal.core.fiber.Handle
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
@@ -28,14 +29,61 @@ object BranchPlugin extends AreaObject {
   val BRANCH_CTRL =  Payload(BranchCtrlEnum())
 }
 
+
+class PcCalc(bp: BranchPlugin, at: Int) extends Area {
+  import bp._
+  import BranchPlugin._
+  val ctrl = bp.layer.el.execute(at)
+  import ctrl._
+
+  val srcp = host.find[SrcPlugin](_.layer == layer)
+  val imm = IMM(UOP)
+  val target_a = BRANCH_CTRL.mux(
+    default -> S(PC),
+    BranchCtrlEnum.JALR -> srcp.SRC1.resize(PC_WIDTH)
+  )
+
+  val target_b = BRANCH_CTRL.mux(
+    default -> imm.b_sext,
+    BranchCtrlEnum.JAL -> imm.j_sext,
+    BranchCtrlEnum.JALR -> imm.i_sext
+  )
+
+  val slices = Decode.INSTRUCTION_SLICE_COUNT +^ 1
+  val sliceShift = Fetch.SLICE_RANGE_LOW.get
+  val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH));
+  PC_TRUE(0) := False //PC RESIZED
+  val PC_FALSE = insert(PC + (slices << sliceShift))
+  val PC_LAST_SLICE = insert(PC + (Decode.INSTRUCTION_SLICE_COUNT << sliceShift))
+
+
+  // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
+  // with the 32 bits of the TRUE/FALSE adders, ending up in a quite long combinatorial path (21 lut XD)
+  KeepAttribute(apply(PC_TRUE))
+  KeepAttribute(apply(PC_FALSE))
+  KeepAttribute(apply(PC_LAST_SLICE))
+}
+
 class BranchPlugin(val layer : LaneLayer,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
-                   var wbAt: Int = 0) extends ExecutionUnitElementSimple(layer) with LearnSource {
+                   var wbAt: Int = 0,
+                   var withJalr : Boolean = true) extends ExecutionUnitElementSimple(layer) with LearnSource {
   import BranchPlugin._
 
   def catchMissaligned = !Riscv.RVC
   override def getLearnPort(): Option[Stream[LearnCmd]] = logic.jumpLogic.learn
+
+  def pluginsOnLane = host.list[BranchPlugin].filter(_.layer.el == layer.el)
+  val pcCalc : Handle[PcCalc] = during build {
+    // So, here we look for other branchplugins on the same lane to try reusing their calculation (better for fmax / LUT, cost some FF)
+    val firstOfLane = pluginsOnLane.sortBy(_.jumpAt).head
+    if(firstOfLane == BranchPlugin.this || withJalr){
+      new PcCalc(this, Math.max(0, aluAt-(!withJalr).toInt))
+    } else {
+      firstOfLane.pcCalc.get
+    }
+  }
 
   val logic = during setup new Logic{
     val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
@@ -48,7 +96,6 @@ class BranchPlugin(val layer : LaneLayer,
     val ioRetainer = retains(wbp.elaborationLock, sp.elaborationLock, pcp.elaborationLock, ts.trapLock)
     hp.foreach(ioRetainer += _.elaborationLock)
 
-    val pluginsOnLane = host.list[BranchPlugin].filter(_.layer.el == layer.el)
     val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last
     val isLastOfLane = BranchPlugin.this == lastOfLane
     val branchMissEvent = (isLastOfLane && pcs.nonEmpty).option(pcs.get.createEventPort(PerformanceCounterService.BRANCH_MISS))
@@ -58,7 +105,7 @@ class BranchPlugin(val layer : LaneLayer,
     if(hp.nonEmpty) host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
 
     add(Rvi.JAL ).decode(BRANCH_CTRL -> BranchCtrlEnum.JAL )
-    add(Rvi.JALR).decode(BRANCH_CTRL -> BranchCtrlEnum.JALR).srcs(SRC1.RF)
+    if(withJalr) add(Rvi.JALR).decode(BRANCH_CTRL -> BranchCtrlEnum.JALR).srcs(SRC1.RF)
     add(Rvi.BEQ ).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF)
     add(Rvi.BNE ).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF)
     add(Rvi.BLT ).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS  )
@@ -66,7 +113,7 @@ class BranchPlugin(val layer : LaneLayer,
     add(Rvi.BLTU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
     add(Rvi.BGEU).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS_U)
 
-    val jList = List(Rvi.JAL, Rvi.JALR)
+    val jList = List(Rvi.JAL) ++ withJalr.option(Rvi.JALR)
     val bList = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU)
 
     val wb = wbp.createPort(wbAt)
@@ -93,6 +140,10 @@ class BranchPlugin(val layer : LaneLayer,
     // leading to a simpler design.
     val withBtb = host.get[FetchWordPrediction].nonEmpty
 
+    val PC_TRUE = pcCalc.PC_TRUE
+    val PC_FALSE = pcCalc.PC_FALSE
+    val PC_LAST_SLICE = pcCalc.PC_LAST_SLICE
+
     val alu = new el.Execute(aluAt) {
       val ss = SrcStageables
       val EQ = insert(srcp.SRC1 === srcp.SRC2)
@@ -108,30 +159,6 @@ class BranchPlugin(val layer : LaneLayer,
         )
       ))
 
-      val imm = IMM(UOP)
-      val target_a = BRANCH_CTRL.mux(
-        default -> S(PC),
-        BranchCtrlEnum.JALR -> srcp.SRC1.resize(PC_WIDTH)
-      )
-
-      val target_b = BRANCH_CTRL.mux(
-        default -> imm.b_sext,
-        BranchCtrlEnum.JAL -> imm.j_sext,
-        BranchCtrlEnum.JALR -> imm.i_sext
-      )
-
-      val slices = Decode.INSTRUCTION_SLICE_COUNT +^ 1
-      val sliceShift = Fetch.SLICE_RANGE_LOW.get
-      val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH)); PC_TRUE(0) := False //PC RESIZED
-      val PC_FALSE = insert(PC + (slices << sliceShift))
-      val PC_LAST_SLICE = insert(PC + (Decode.INSTRUCTION_SLICE_COUNT << sliceShift))
-
-
-      // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
-      // with the 32 bits of the TRUE/FALSE adders, ending up in a quite long combinatorial path (21 lut XD)
-      KeepAttribute(this(PC_TRUE ))
-      KeepAttribute(this(PC_FALSE))
-
       val btb = withBtb generate new Area {
         val BAD_TARGET = insert(Prediction.ALIGNED_JUMPED_PC =/= PC_TRUE)
         val REAL_TARGET = insert(COND.mux[UInt](PC_TRUE, PC_FALSE))
@@ -142,7 +169,7 @@ class BranchPlugin(val layer : LaneLayer,
       val wrongCond = withBtb.mux[Bool](Prediction.ALIGNED_JUMPED =/= alu.COND     , alu.COND )
       val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond)
       val doIt = isValid && SEL && needFix
-      val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, alu.PC_TRUE)
+      val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, PC_TRUE)
 
 
       val history = historyPort.nonEmpty generate new Area{
@@ -192,12 +219,12 @@ class BranchPlugin(val layer : LaneLayer,
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
 
-      val MISSALIGNED = insert(alu.PC_TRUE(0, Fetch.SLICE_RANGE_LOW bits) =/= 0 && alu.COND)
+      val MISSALIGNED = insert(PC_TRUE(0, Fetch.SLICE_RANGE_LOW bits) =/= 0 && alu.COND)
       if (catchMissaligned) { //Non RVC can trap on missaligned branches
         trapPort.valid := False
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.FETCH_MISSALIGNED
-        trapPort.tval := B(alu.PC_TRUE)
+        trapPort.tval := B(PC_TRUE)
         trapPort.arg := 0
         trapPort.laneAge := Execute.LANE_AGE
 
@@ -220,8 +247,8 @@ class BranchPlugin(val layer : LaneLayer,
       learn.foreach { learn =>
         learn.valid := isValid && isReady && !isCancel && pluginsOnLane.map(p => apply(p.SEL)).orR
         learn.taken := alu.COND
-        learn.pcTarget := alu.PC_TRUE
-        learn.pcOnLastSlice := alu.PC_LAST_SLICE
+        learn.pcTarget := PC_TRUE
+        learn.pcOnLastSlice := PC_LAST_SLICE
         learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B
         learn.isPush := (IS_JAL || IS_JALR) && rdLink
         learn.isPop := IS_JALR && (!rdLink && rs1Link || rdLink && rs1Link && !rdEquRs1)
@@ -240,7 +267,7 @@ class BranchPlugin(val layer : LaneLayer,
 
     val wbLogic = new el.Execute(wbAt){
       wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
-      wb.payload := Global.expendPc(alu.PC_FALSE, Riscv.XLEN).asBits
+      wb.payload := Global.expendPc(PC_FALSE, Riscv.XLEN).asBits
     }
   }
 }
