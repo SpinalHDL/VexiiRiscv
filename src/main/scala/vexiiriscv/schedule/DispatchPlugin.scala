@@ -7,7 +7,7 @@ import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
 import spinal.lib.misc.pipeline.{CtrlApi, CtrlLaneApi, CtrlLink, NodeApi, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
-import vexiiriscv.Global.TRAP
+import vexiiriscv.Global.{HART_COUNT, TRAP}
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
 import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin, LaneLayer}
 import vexiiriscv.misc.{CommitService, PipelineBuilderPlugin, TrapService}
@@ -31,7 +31,9 @@ Schedule euristic :
 - If the slot can't be schedule, disable all following ones with same HART_ID
 */
 
-class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends FiberPlugin{
+class DispatchPlugin(var dispatchAt : Int,
+                     var trapLayer : LaneLayer,
+                     var withBuffer : Boolean) extends FiberPlugin{
   val elaborationLock = Retainer()
 
   val MAY_FLUSH = Payload(Bool())
@@ -52,13 +54,16 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
     val dp = host[DecoderService]
     val eupp = host[ExecutePipelinePlugin]
     val pbp = host[PipelineBuilderPlugin]
+    val ts = host[TrapService]
     val buildBefore = retains(
       List(pbp.elaborationLock, dpp.elaborationLock, eupp.pipelineLock) ++ host.list[ExecuteLaneService].map(_.pipelineLock)
     )
     val dpRetains = retains(dp.elaborationLock)
+    val tsRetains = retains(ts.trapLock)
     awaitBuild()
 
     Execute.LANE_AGE_WIDTH.set(log2Up(Decode.LANES))
+    val trapPendings = ts.newTrapPending(); tsRetains.release()
 
     elaborationLock.await()
     val dispatchCtrl = dpp.ctrl(dispatchAt)
@@ -121,7 +126,6 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
     }
 
     dpRetains.release()
-    val slotsCount = 0 //Warning, if not zero you need to notify TrapService when flush is pending
 
     hmKeys.add(Global.PC)
     hmKeys.add(Global.TRAP)
@@ -145,6 +149,15 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
     assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
     assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
 
+    val slotsCount = if(withBuffer) Decode.LANES-1 else 0
+    val slots = for(slotId <- 0 until slotsCount) yield new Area {
+      val ctx = Reg(MicroOpCtx())
+      ctx.valid init(False)
+    }
+    for(hartId <- 0 until HART_COUNT.get){
+      trapPendings(hartId) := slots.map(s => s.ctx.valid && s.ctx.hm(TRAP)).orR
+    }
+
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
@@ -153,6 +166,12 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       val rsHazards = Bits(lanesLayers.size bits)
       val flushHazards = Bool() //Pessimistic, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
       val fenceOlderHazards = Bool()
+      val age = Execute.LANE_AGE()
+      val moving = !ctx.valid || fire || cancel
+    }
+
+    for((c,i) <- candidates.zipWithIndex){
+      c.age := CountOne(candidates.take(i).map(o => o.ctx.valid && o.ctx.hartId === c.ctx.hartId)).resize(Execute.LANE_AGE_WIDTH)
     }
 
     case class BypassedSpec(el: ExecuteLaneService, at: Int, value : Payload[Bool])
@@ -255,6 +274,8 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
       }
     }
 
+
+
     dispatchCtrl.link.down.ready := True
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
       val c = candidates(slotsCount + lane)
@@ -271,6 +292,33 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
         c.ctx.laneLayerHits := 1 << lanesLayers.indexOf(trapLayer)
       }
     }
+
+    for (slotId <- 0 until slotsCount) {
+      val c = candidates(slotId)
+      val s =  slots(slotId)
+      c.ctx := s.ctx
+      s.ctx.valid clearWhen (c.fire || c.cancel)
+      val rp = host[ReschedulePlugin]
+      c.cancel := rp.isFlushedAt(dpp.getAge(dispatchAt + 1, false), s.ctx.hartId, 0).getOrElse(False)
+    }
+
+    val slotsFeeds = (slotsCount != 0) generate new Area {
+      val upCand = candidates.drop(slotsCount)
+      val slotCand = candidates.take(slotsCount)
+      val free = slotCand.map(_.moving).andR
+      val fit = CountOne(upCand.map(!_.moving)) <= slotsCount
+      val doIt = free && fit
+      when(doIt) {
+        dispatchCtrl.link.down.ready := True
+        var mask = CombInit(B(upCand.map(!_.moving)))
+        val on = for((slot, slotId) <- slots.zipWithIndex) yield new Area{
+          val oh = OHMasking.firstV2(mask)
+          slot.ctx := OHMux.or(oh, upCand.drop(slotId).map(_.ctx), true)
+          mask = (mask & ~oh).drop(1)
+        }
+      }
+    }
+
 
     val scheduler = new Area {
       val eusFree = Array.fill(candidates.size + 1)(Bits(eus.size bits))
@@ -312,7 +360,7 @@ class DispatchPlugin(var dispatchAt : Int, var trapLayer : LaneLayer) extends Fi
         rdKeys.ENABLE := False
         MAY_FLUSH := False
       }
-      Execute.LANE_AGE := OHToUInt(oh)
+      Execute.LANE_AGE := mux(_.age)
 
       val layerOhUnfiltred = scheduler.arbiters.reader(oh)(_.layerOh) // include the bits of the other eu
       val layersOfInterest = lanesLayers.zipWithIndex.filter(_._1.el == eu) // Only the bits for our eu  (LaneLayer -> Int

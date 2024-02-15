@@ -58,6 +58,7 @@ class ParamSimple(){
   var xlen = 32
   var withRvc = false
   var withAlignerBuffer = false
+  var withDispatchBuffer = false
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
@@ -104,17 +105,22 @@ class ParamSimple(){
     withRas = true
     relaxedBranch = false
     relaxedBtb = false
-    withFetchL1 = true
-    withLsuL1 = true
+    withFetchL1 = false
+    withLsuL1 = false
     fetchL1Sets = 64
     fetchL1Ways = 4
     lsuL1Sets = 64
     lsuL1Ways = 4
     withLsuBypass = true
     divArea = false
+    divRadix = 4
     decoders = 2
     lanes = 2
-    withLateAlu = false
+    withLateAlu = true
+    withMul = true
+    withDiv = true
+    withAlignerBuffer = true
+    withDispatchBuffer = true
 
 //    decoders = 2
 //    lanes = 2
@@ -172,6 +178,7 @@ class ParamSimple(){
     if (withGShare) r += "gshare"
     if (withLateAlu) r += "la"
     if (withAlignerBuffer) r += "ab"
+    if (withDispatchBuffer) r += "db"
     if (relaxedBranch) r += "rbra"
     if (relaxedShift) r += "rsft"
     if (relaxedSrc) r += "rsrc"
@@ -194,6 +201,7 @@ class ParamSimple(){
     opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
+    opt[Unit]("with-dispatch-buffer") action { (v, c) => withDispatchBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
     opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
@@ -349,7 +357,8 @@ class ParamSimple(){
     )
     plugins += new schedule.DispatchPlugin(
       dispatchAt = 1,
-      trapLayer = null
+      trapLayer = null,
+      withBuffer = withDispatchBuffer
     )
 
     plugins += new regfile.RegFilePlugin(
@@ -528,13 +537,14 @@ class ParamSimple(){
 }
 
 /*
-jump at 0 :
-1l btb gshare ras => 1.64 dhrystone 3.26 coremark 1.04 embench
-       + late alu => 1.72 dhrystone 3.54 coremark 1.10
-2l btb gshare ras => 1.92 dhrystone 3.93 coremark 1.34 embench
-       + late alu => 2.09 dhrystone 4.39 coremark
-    + 4b late alu => 2.24 dhrystone 4.55 coremark 1.47 embench
-
+jump at 0 :       dhrystone coremark   embench
+1l btb gshare ras => 1.64     3.26      1.04
+       + late alu => 1.72     3.54      1.10
+2l btb gshare ras => 1.92     3.93      1.34
+       + late alu => 2.09     4.39
+    + 4b late alu => 2.24     4.55      1.47
+    + aligner buf => 2.29     4.70      1.50
+    + ali/dis buf => 2.46     4.80      1.59
 
 
 jump at 1
