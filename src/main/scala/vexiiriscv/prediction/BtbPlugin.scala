@@ -267,16 +267,16 @@ class BtbPlugin(var sets : Int,
 
           port.valid := isValid && !gotSkip && !correctionSent && chunksLogic.map(e => apply(e.hitCalc.HIT)).orR
           port.history := layers.last.history
+        }
+      }
 
-          val slicePerChunk = SLICE_COUNT/chunks
-          for(chunk <- 0 until chunks){
-            val cl = chunksLogic(chunk)
-            for(slice <- 0 until slicePerChunk){
-              val i = slice + chunk*slicePerChunk
-              WORD_SLICES_BRANCH(i) := cl.hitCalc.HIT && cl.readRsp.ENTRY.isBranch && cl.readRsp.ENTRY.sliceLow === slice
-              WORD_SLICES_TAKEN(i) := cl.predict.TAKEN
-            }
-          }
+      val slicePerChunk = SLICE_COUNT / chunks
+      for (chunk <- 0 until chunks) {
+        val cl = chunksLogic(chunk)
+        for (slice <- 0 until slicePerChunk) {
+          val i = slice + chunk * slicePerChunk
+          WORD_SLICES_BRANCH(i) := cl.hitCalc.HIT && cl.readRsp.ENTRY.isBranch && cl.readRsp.ENTRY.sliceLow === slice
+          WORD_SLICES_TAKEN(i) := cl.predict.TAKEN
         }
       }
     }
