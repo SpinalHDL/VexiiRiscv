@@ -58,7 +58,7 @@ class ParamSimple(){
   var xlen = 32
   var withRvc = false
   var withAlignerBuffer = false
-  var withDispatchBuffer = false
+  var withDispatcherBuffer = false
   var hartCount = 1
   var withMmu = false
   var resetVector = 0x80000000l
@@ -120,7 +120,7 @@ class ParamSimple(){
     withMul = true
     withDiv = true
     withAlignerBuffer = true
-    withDispatchBuffer = true
+    withDispatcherBuffer = true
 
 //    decoders = 2
 //    lanes = 2
@@ -178,7 +178,7 @@ class ParamSimple(){
     if (withGShare) r += "gshare"
     if (withLateAlu) r += "la"
     if (withAlignerBuffer) r += "ab"
-    if (withDispatchBuffer) r += "db"
+    if (withDispatcherBuffer) r += "db"
     if (relaxedBranch) r += "rbra"
     if (relaxedShift) r += "rsft"
     if (relaxedSrc) r += "rsrc"
@@ -201,7 +201,8 @@ class ParamSimple(){
     opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
-    opt[Unit]("with-dispatch-buffer") action { (v, c) => withDispatchBuffer = true }
+    opt[Unit]("with-aligner-buffer") action { (v, c) => withAlignerBuffer = true }
+    opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
     opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
@@ -358,7 +359,7 @@ class ParamSimple(){
     plugins += new schedule.DispatchPlugin(
       dispatchAt = 1,
       trapLayer = null,
-      withBuffer = withDispatchBuffer
+      withBuffer = withDispatcherBuffer
     )
 
     plugins += new regfile.RegFilePlugin(
@@ -500,7 +501,7 @@ class ParamSimple(){
       plugins += new SrcPlugin(late0, executeAt = 2, relaxedRs = relaxedSrc)
       plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
       plugins += shifter(late0, shiftAt = 2, formatAt = 2)
-      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2)
+      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
     }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
@@ -521,7 +522,7 @@ class ParamSimple(){
         plugins += new SrcPlugin(late1, executeAt = 2, relaxedRs = relaxedSrc)
         plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
         plugins += shifter(late1, shiftAt = 2, formatAt = 2)
-        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2)
+        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
       }
 
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
