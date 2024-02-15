@@ -234,7 +234,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     val testPath = new File(compiled.simConfig.getTestPath(t.testName.get))
     val passFile = new File(testPath, "PASS")
     val failFile = new File(testPath, "FAIL")
-    FileUtils.deleteQuietly(passFile)
+//    FileUtils.deleteQuietly(passFile)
     FileUtils.deleteQuietly(failFile)
 
     val testName = t.testName.get
@@ -334,7 +334,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     override def getPositions(): Seq[String] = poses
   }
 
-  addDim("lanes", List(1, 2).map(v => s"--lanes $v"))
+  addDim("lanes", List(1, 2).map(v => s"--lanes $v --decoders $v"))
   addDim("rf", List("--regfile-sync", "--regfile-async"))
   addDim("bypass", List(0,0,0,1,2,3,100).map(v => s"--allow-bypass-from $v")) //More weight to fully bypassed configs
   addDim("xlen", List(32, 64).map(v => s"--xlen $v"))
@@ -369,6 +369,8 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   })
   addDim("lsu bypass", List("", "--with-lsu-bypass"))
   addDim("ishift", List("", "--with-iterative-shift"))
+  addDim("alignBuf", List("", "--with-aligner-buffer"))
+  addDim("dispBuf", List("", "--with-dispatcher-buffer"))
 
   val default = "--with-mul --with-div --performance-counters 4"
 
