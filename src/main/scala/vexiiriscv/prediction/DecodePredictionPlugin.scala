@@ -54,7 +54,6 @@ class DecodePredictionPlugin(var decodeAt: Int,
 
       val fixer = new dpp.LaneArea(jumpAt, slotId){
         val fixIt = up.isValid && (ALIGNED_JUMPED && !decoder.IS_ANY || Prediction.ALIGN_REDO)
-        val fixed = RegInit(False) setWhen(fixIt) clearWhen(up.isReady || up.isCancel)
 
         val flushPort = flushPorts(slotId)
         flushPort.valid := fixIt
