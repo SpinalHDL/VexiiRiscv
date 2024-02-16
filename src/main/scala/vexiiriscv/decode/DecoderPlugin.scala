@@ -172,6 +172,9 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
           forgetPort.valid := True
           forgetPort.hartId := Global.HART_ID
           forgetPort.pcOnLastSlice := Global.PC + (Decode.INSTRUCTION_SLICE_COUNT << Fetch.SLICE_RANGE_LOW.get).andMask(!Prediction.ALIGN_REDO)
+          assert(Decode.INSTRUCTION_SLICE_COUNT_MAX < 3)
+          //Prediction.ALIGN_REDO mean that a branch prediction cuted a instruction fetch
+          //Prediction.ALIGNED_JUMPED && !isJb mean that it predicted a taken jump instruction where it wasn't a jump even an instruction to begin width
         }
       }
 
@@ -190,6 +193,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       when(isValid && (!LEGAL || interruptPending || withPredictionFixer.mux(fixer.doIt, False))) {
         bypass(Global.TRAP) := True
         trapPort.valid := !up(Global.TRAP)
+        if(withPredictionFixer) trapPort.valid setWhen(fixer.doIt)
       }
 
       //Will also flush instructions after a fetch trap
