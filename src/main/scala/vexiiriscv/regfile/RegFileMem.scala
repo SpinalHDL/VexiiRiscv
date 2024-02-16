@@ -5,6 +5,7 @@ import spinal.core.fiber._
 import spinal.lib._
 import spinal.lib.eda.bench.{Bench, Rtl, XilinxStdTargets}
 import spinal.lib.misc.plugin.FiberPlugin
+import vexiiriscv.compat.{RamAsyncMwMux, RamAsyncMwReg, RamMwIo, RamSyncMwMux}
 import vexiiriscv.riscv.RegfileSpec
 
 import scala.collection.mutable.ArrayBuffer
@@ -17,10 +18,9 @@ case class RegFileWriteParameter(withReady : Boolean)
 class RegFileMem(rfpp : RegFilePortParam,
                  readsParameter  : Seq[RegFileReadParameter],
                  writesParameter : Seq[RegFileWriteParameter],
-//                 bypassCount     : Int,
-                 preferedWritePortForInit : Int,
                  headZero        : Boolean,
                  syncRead        : Boolean,
+                 dualPortRam     : Boolean,
                  asyncReadBySyncReadRevertedClk : Boolean = false,
                  maskReadDuringWrite: Boolean = true) extends Component {
   import rfpp._
@@ -28,47 +28,54 @@ class RegFileMem(rfpp : RegFilePortParam,
   val io = RegFileIo(rfpp, readsParameter, writesParameter)
   io.reads.foreach(e => assert(!e.withReady))
   io.writes.foreach(e => assert(!e.withReady))
-  val ram = Mem.fill((1 << addressWidth))(Bits(dataWidth bits))
-  Verilator.public(ram)
 
-  io.initDone := True
-  val writes = for ((w, i) <- io.writes.zipWithIndex) yield new Area {
-    //    ram.write(w.address, w.data, w.valid)
-    val port = ram.writePort()
-    port.valid := w.valid
-    port.address := w.address
-    port.data := w.data
+  val conv = RamMwIo(Bits(rfpp.dataWidth bits), 1 << rfpp.addressWidth, writesParameter.size, readsParameter.size).setAsDirectionLess()
+  for((to, from) <- (conv.writes, io.writes).zipped){
+    to.valid := from.valid
+    to.address := from.address
+    to.data := from.data
+  }
+  for ((to, from) <- (conv.read, io.reads).zipped) {
+    to.cmd.valid := from.valid
+    to.cmd.payload := from.address
+    from.data := to.rsp
+  }
 
-    if (i == preferedWritePortForInit) {
-      if (headZero) {
-        val counter = Reg(UInt(addressWidth + 1 bits)) init (0)
-        val done = counter.msb
-        when(!done) {
-          port.valid := True
-          port.address := counter.resized
-          port.data := 0
-          counter := counter + 1
-          io.initDone := False
-        }
+  val asMem = (writesParameter.size == 1 || !dualPortRam) generate new Area {
+    val ram = Mem.fill((1 << addressWidth))(Bits(dataWidth bits))
+    Verilator.public(ram)
+
+    val writes = for ((w, i) <- conv.writes.zipWithIndex) yield new Area {
+      val port = ram.writePort()
+      port.valid := w.valid
+      port.address := w.address
+      port.data := w.data
+    }
+
+    val reads = for ((r, i) <- conv.read.zipWithIndex) yield new Area {
+      val async = !syncRead generate new Area {
+        val port = if (asyncReadBySyncReadRevertedClk) ram.readAsyncPortBySyncReadRevertedClk else ram.readAsyncPort
+        port.address := r.cmd.payload
+        r.rsp := port.data
+      }
+      val sync = syncRead generate new Area {
+        val port = ram.readSyncPort
+        port.cmd.valid := r.cmd.valid
+        port.cmd.payload := r.cmd.payload
+        r.rsp := port.rsp
       }
     }
   }
 
-  val reads = for ((r, i) <- io.reads.zipWithIndex) yield new Area {
-    val valid = maskReadDuringWrite match {
-      case false => r.valid
-      case true => r.valid && !io.writes.map(w => w.valid && w.address === r.address).orR
-    }
-    val async = !syncRead generate new Area {
-      val port = if (asyncReadBySyncReadRevertedClk) ram.readAsyncPortBySyncReadRevertedClk else ram.readAsyncPort
-      port.address := r.address
-      r.data := port.data
-    }
-    val sync = syncRead generate new Area {
-      val port = ram.readSyncPort
-      port.cmd.valid := valid
-      port.cmd.payload := r.address
-      r.data := port.rsp
-    }
+  val asAsyncDp = (asMem == null && !syncRead) generate {
+    assert(!asyncReadBySyncReadRevertedClk)
+    val logic = new RamAsyncMwMux(Bits(rfpp.dataWidth bits), 1 << rfpp.addressWidth, writesParameter.size, readsParameter.size)
+    logic.io <> conv
+  }
+
+  val asSyncDp = (asMem == null && syncRead) generate {
+    assert(!asyncReadBySyncReadRevertedClk)
+    val logic = new RamSyncMwMux(Bits(rfpp.dataWidth bits), 1 << rfpp.addressWidth, writesParameter.size, readsParameter.size)
+    logic.io <> conv
   }
 }

@@ -22,6 +22,7 @@ class RegFilePlugin(var spec : RegfileSpec,
                     var asyncReadBySyncReadRevertedClk : Boolean = false,
                     var allOne : Boolean = false,
                     var syncRead : Boolean = true,
+                    var dualPortRam : Boolean = true,
                     var latchBased : Boolean = false,
                     var maskReadDuringWrite : Boolean = true) extends FiberPlugin with RegfileService with InitService {
   withPrefix(spec.getName())
@@ -59,7 +60,7 @@ class RegFilePlugin(var spec : RegfileSpec,
   }
 
 
-  override def initHold(): Bool = !logic.regfile.io.initDone
+  override def initHold(): Bool = !logic.initalizer.done
 
   val logic = during build new Area{
     elaborationLock.await()
@@ -96,36 +97,43 @@ class RegFilePlugin(var spec : RegfileSpec,
     }
 
     val regfile = new Area{
+      val readsParameter = reads.map(e => RegFileReadParameter(withReady = e.withReady))
+      val writesParameter = writeMerges.map(e => RegFileWriteParameter(withReady = false)).toList
       val fpga = !latchBased generate new RegFileMem(
         rfpp = rfpp,
-        readsParameter = reads.map(e => RegFileReadParameter(withReady = e.withReady)),
-        writesParameter = writeMerges.map(e => RegFileWriteParameter(withReady = false)).toList,
+        readsParameter = readsParameter,
+        writesParameter = writesParameter,
         headZero = spec.x0AlwaysZero,
-        preferedWritePortForInit = writeGroups.zipWithIndex.find(_._1._2.exists(_.port.getName().contains(preferedWritePortForInit))).map(_._2).getOrElse(0),
         syncRead = syncRead,
+        dualPortRam = dualPortRam,
         asyncReadBySyncReadRevertedClk = asyncReadBySyncReadRevertedClk,
         maskReadDuringWrite = maskReadDuringWrite
       )
-
-      val latches = latchBased generate ???
-
-
       val io = !latchBased generate fpga.io
-      // latchBased match {
-      //  case false => fpga.io
-      //  case true => latches.io
-      //}
     }
-
 
     (regfile.io.reads, reads).zipped.foreach(_ <> _)
     (regfile.io.writes, writeMerges.map(_.bus)).zipped.foreach(_ <> _)
 
+    val masker = maskReadDuringWrite generate new Area{
+      for(r <- regfile.io.reads) {
+        r.valid clearWhen(regfile.io.writes.map(w => w.valid && w.address === r.address).orR)
+      }
+    }
+    val initalizer = new Area {
+      val port = regfile.io.writes(writeGroups.zipWithIndex.find(_._1._2.exists(_.port.getName().contains(preferedWritePortForInit))).map(_._2).getOrElse(0))
+      val counter = Reg(UInt(addressWidth + 1 bits)) init (0)
+      val done = counter.msb
+      when(!done) {
+        port.valid := True
+        port.address := counter.resized
+        port.data := 0
+        counter := counter + 1
+      }
+    }
+
     //Used for tracing in verilator sim
     val writeEvents = Vec(writeMerges.map(e => CombInit(e.bus)))
     writeEvents.setName(spec.getName()+"_write").addAttribute(Verilator.public)
-    //    val doc = getService[DocPlugin]
-    //    doc.property(writeEvents.getName() +"_count", writeEvents.size)
-    //    doc.property(spec.getName() +"_PHYSICAL_DEPTH", physicalDepth)
   }
 }

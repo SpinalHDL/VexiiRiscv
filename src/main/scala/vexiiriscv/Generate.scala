@@ -22,7 +22,6 @@ object Generate extends App {
     param.addOptions(this)
   }.parse(args, Unit).nonEmpty)
 
-  sc.addTransformationPhase(new MultiPortWritesSymplifier)
   val report = sc.generateVerilog {
     val plugins = param.plugins()
     ParamSimple.setPma(plugins)

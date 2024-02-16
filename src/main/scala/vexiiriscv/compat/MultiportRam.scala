@@ -28,13 +28,13 @@ case class MemRead[T <: Data](payloadType : HardType[T], depth : Int) extends Bu
 }
 
 
-case class RamAxyncMwIo[T <: Data](payloadType : HardType[T], depth : Int, writePorts : Int, readPorts : Int) extends Bundle {
+case class RamMwIo[T <: Data](payloadType : HardType[T], depth : Int, writePorts : Int, readPorts : Int) extends Bundle {
   val writes = Vec.fill(writePorts)(slave(Flow(MemWriteCmd(payloadType, depth))))
   val read = Vec.fill(readPorts)(slave(MemRead(payloadType, depth)))
 }
 
 case class RamAsyncMwXor[T <: Data](payloadType : HardType[T], depth : Int, writePorts : Int, readPorts : Int) extends Component {
-  val io = RamAxyncMwIo(payloadType, depth, writePorts, readPorts)
+  val io = RamMwIo(payloadType, depth, writePorts, readPorts)
   val rawBits = payloadType.getBitsWidth
   val rawType = HardType(Bits(rawBits bits))
   val ram = List.fill(writePorts)(Mem.fill(depth)(rawType))
@@ -61,11 +61,64 @@ case class RamAsyncMwXor[T <: Data](payloadType : HardType[T], depth : Int, writ
   }
 }
 
+case class RamAsyncMwReg[T <: Data](payloadType : HardType[T], depth : Int, writePorts : Int, readPorts : Int) extends Component {
+  val io = RamMwIo(payloadType, depth, writePorts, readPorts)
+  val rawBits = payloadType.getBitsWidth
+  val rawType = HardType(Bits(rawBits bits))
+  val ram = Vec.fill(depth)(Reg(rawType()))
+
+  for(p <- io.writes){
+    when(p.fire){
+      ram(p.address) := p.data.asBits
+    }
+  }
+//  val writesOh = io.writes.map(p => UIntToOh(p.address))
+//  for(i <- 0 until depth){
+//    when(writesOh.map(_(i)).orR){
+//      ram(i) := (0 until writePorts).map(pid => writesBits(pid).andMask(io.writes(pid).valid && writesOh(pid)(i))).reduce(_ | _)
+//    }
+//  }
+
+  val reads = for(port <- io.read) yield new Area{
+    port.rsp.assignFromBits(ram.read(port.cmd.payload))
+  }
+
+  def addMemTags(spinalTags: Seq[SpinalTag]) : this.type = {
+    ram.foreach(_.addTags(spinalTags))
+    this
+  }
+}
+
+//case class RamAsyncMwMem[T <: Data](payloadType : HardType[T], depth : Int, writePorts : Int, readPorts : Int) extends Component {
+//  val io = RamMwIo(payloadType, depth, writePorts, readPorts)
+//  val rawBits = payloadType.getBitsWidth
+//  val rawType = HardType(Bits(rawBits bits))
+//  val ram = Mem.fill(depth)(Reg(rawType()))
+//
+//  val writesOh = io.writes.map(p => UIntToOh(p.address))
+//  val writesBits = io.writes.map(_.data.asBits)
+//  for(p <- io.writes){
+//    p.
+//    when(p.){
+//      ram(i) := (0 until writePorts).map(pid => writesBits(pid).andMask(io.writes(pid).valid && writesOh(pid)(i))).reduce(_ | _)
+//    }
+//  }
+//
+//  val reads = for(port <- io.read) yield new Area{
+//    port.rsp.assignFromBits(ram.read(port.cmd.payload))
+//  }
+//
+//  def addMemTags(spinalTags: Seq[SpinalTag]) : this.type = {
+//    ram.foreach(_.addTags(spinalTags))
+//    this
+//  }
+//}
+
 case class RamAsyncMwMux[T <: Data](payloadType : HardType[T],
                                     depth : Int,
                                     writePorts : Int,
                                     readPorts : Int) extends Component {
-  val io = RamAxyncMwIo(payloadType, depth, writePorts, readPorts)
+  val io = RamMwIo(payloadType, depth, writePorts, readPorts)
   val rawBits = payloadType.getBitsWidth
   val rawType = HardType(Bits(rawBits bits))
   val ram = List.fill(writePorts)(Mem.fill(depth)(rawType))
@@ -103,10 +156,7 @@ case class RamAsyncMwMux[T <: Data](payloadType : HardType[T],
 }
 
 case class RamSyncMwXor[T <: Data](payloadType : HardType[T], depth : Int, writePorts : Int, readPorts : Int) extends Component {
-  val io = new Bundle {
-    val writes = Vec.fill(writePorts)(slave(Flow(MemWriteCmd(payloadType, depth))))
-    val read = Vec.fill(readPorts)(slave(MemRead(payloadType, depth)))
-  }
+  val io = RamMwIo(payloadType, depth, writePorts, readPorts)
   val rawBits = payloadType.getBitsWidth
   val rawType = HardType(Bits(rawBits bits))
   val ram = List.fill(writePorts)(Mem.fill(depth)(rawType))
@@ -132,6 +182,49 @@ case class RamSyncMwXor[T <: Data](payloadType : HardType[T], depth : Int, write
     this
   }
 }
+
+case class RamSyncMwMux[T <: Data](payloadType : HardType[T],
+                                    depth : Int,
+                                    writePorts : Int,
+                                    readPorts : Int) extends Component {
+  val io = RamMwIo(payloadType, depth, writePorts, readPorts)
+  val rawBits = payloadType.getBitsWidth
+  val rawType = HardType(Bits(rawBits bits))
+  val ram = List.fill(writePorts)(Mem.fill(depth)(rawType))
+
+  val location = RamAsyncMwReg(
+    payloadType = UInt(log2Up(writePorts) bits),
+    depth       = depth,
+    writePorts  = writePorts,
+    readPorts   = readPorts
+  )
+
+  val writes = for((port, storage, loc) <- (io.writes, ram, location.io.writes).zipped) yield new Area{
+    storage.write(
+      enable = port.valid,
+      address = port.address,
+      data = port.data.asBits
+    )
+    loc.valid := port.valid
+    loc.address := port.address
+    loc.data := U(ram.indexOf(storage))
+  }
+
+  val reads = for((port, loc) <- (io.read, location.io.read).zipped) yield new Area{
+    val reads  = ram.map(_.readSync(port.cmd.payload, port.cmd.fire))
+    val addressReg = RegNextWhen(port.cmd.payload, port.cmd.fire)
+
+    loc.cmd.valid := True
+    loc.cmd.payload := addressReg
+    port.rsp := reads.read(loc.rsp).as(payloadType)
+  }
+
+  def addMemTags(spinalTags: Seq[SpinalTag]) : this.type = {
+    ram.foreach(_.addTags(spinalTags))
+    this
+  }
+}
+
 
 case class RamMr[T <: Data](payloadType : HardType[T], depth : Int, readPorts : Int) extends Component {
   val io = new Bundle {
@@ -242,7 +335,7 @@ class MultiPortWritesSymplifier(onlyTagged : Boolean = false) extends PhaseMemBl
       import typo._
       val ctx = List(mem.parentScope.push(), cd.push())
 
-      val c = RamSyncMwXor(
+      val c = RamSyncMwMux(
         payloadType = Bits(mem.width bits),
         depth       = mem.wordCount,
         writePorts  = writes.size,

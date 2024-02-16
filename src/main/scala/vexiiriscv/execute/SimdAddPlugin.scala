@@ -90,7 +90,6 @@ object VexiiSimdAddGen extends App {
     param.addOptions(this)
   }.parse(args, Unit).nonEmpty)
 
-  sc.addTransformationPhase(new MultiPortWritesSymplifier)
   val report = sc.generateVerilog {
     val pa = param.pluginsArea()
     pa.plugins += new SimdAddPlugin(pa.early0)

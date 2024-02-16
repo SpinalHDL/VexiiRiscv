@@ -65,6 +65,7 @@ class ParamSimple(){
   var decoders = 1
   var lanes = 1
   var regFileSync = true
+  var regFileDualPortRam = true
   var withGShare = false
   var withBtb = false
   var withRas = false
@@ -99,6 +100,7 @@ class ParamSimple(){
   if(debugParam) {
     withPerformanceCounters = true
     regFileSync = false
+    regFileDualPortRam = false
     allowBypassFrom = 0
     withGShare = true
     withBtb = true
@@ -169,7 +171,7 @@ class ParamSimple(){
     r += isa
     r += s"d${decoders}"
     r += s"l${lanes}"
-    r += regFileSync.mux("rfs","rfa")
+    r += regFileSync.mux("rfs","rfa") + regFileDualPortRam.mux("Dp","Mem")
     if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}" else r += s"fclF${fetchCachelessForkAt}"
     if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuF$lsuForkAt"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
@@ -215,6 +217,8 @@ class ParamSimple(){
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0 }
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
     opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
+    opt[Unit]("regfile-dual-ports") action { (v, c) => regFileDualPortRam = true }
+    opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
     opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
@@ -366,7 +370,8 @@ class ParamSimple(){
       spec = riscv.IntRegFile,
       physicalDepth = 32,
       preferedWritePortForInit = "lane0",
-      syncRead = regFileSync
+      syncRead = regFileSync,
+      dualPortRam = regFileDualPortRam
     )
 
     def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(

@@ -336,6 +336,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
 
   addDim("lanes", List(1, 2).map(v => s"--lanes $v --decoders $v"))
   addDim("rf", List("--regfile-sync", "--regfile-async"))
+  addDim("rfPorts", List("--regfile-infer-ports", "--regfile-dual-ports"))
   addDim("bypass", List(0,0,0,1,2,3,100).map(v => s"--allow-bypass-from $v")) //More weight to fully bypassed configs
   addDim("xlen", List(32, 64).map(v => s"--xlen $v"))
   addDim("prediction", List("--with-btb", "--with-btb --with-ras", "--with-btb --with-ras --with-gshare"))

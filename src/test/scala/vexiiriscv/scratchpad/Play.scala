@@ -10,7 +10,6 @@ import vexiiriscv.execute.{SrcPlugin}
 
 object Play1 extends App {
   val sc = SpinalConfig()
-  sc.addTransformationPhase(new MultiPortWritesSymplifier)
   val report = sc.generateVerilog {
     val param = new ParamSimple()
     VexiiRiscv(param.plugins())
