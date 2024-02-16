@@ -171,7 +171,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
           trapPort.code := TrapReason.REDO
           forgetPort.valid := True
           forgetPort.hartId := Global.HART_ID
-          forgetPort.pcOnLastSlice := Global.PC + (Decode.INSTRUCTION_SLICE_COUNT << Fetch.SLICE_RANGE_LOW.get)
+          forgetPort.pcOnLastSlice := Global.PC + (Decode.INSTRUCTION_SLICE_COUNT << Fetch.SLICE_RANGE_LOW.get).andMask(!Prediction.ALIGN_REDO)
         }
       }
 
