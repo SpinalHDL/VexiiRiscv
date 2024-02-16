@@ -195,21 +195,7 @@ class BtbPlugin(var sets : Int,
       val chunksMask = B(for (self <- chunksLogic) yield self.hitCalc.HIT && chunksLogic.takeWhile(_ != self).map(other => other.hitCalc.HIT && other.predict.TAKEN).norR)
       val chunksTakenOh = B(for (self <- chunksLogic) yield apply(self.predict.TAKEN)) & chunksMask
 
-
-      val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
-        val skip = RegInit(False)
-      }
-      when(up.isMoving) {
-        harts.onSel(HART_ID)(_.skip := False)
-      }
-      for (skipTrigger <- host[DecodePredictionPlugin].logic.flushPorts) {
-        when(skipTrigger.valid) {
-          harts.onSel(skipTrigger.hartId)(_.skip := True)
-        }
-      }
-
-      val gotSkip = harts.map(_.skip).read(HART_ID)
-      val needIt = isValid && !gotSkip && chunksTakenOh.orR
+      val needIt = isValid && chunksTakenOh.orR
       val correctionSent = RegInit(False) setWhen (isValid) clearWhen (up.isReady || up.isCancel)
       val doIt = needIt && !correctionSent
       val entry = OHMux.or(chunksTakenOh, chunksLogic.map(_.readRsp.ENTRY).map(this (_)), bypassIfSingle = true)
@@ -265,7 +251,7 @@ class BtbPlugin(var sets : Int,
             layers(i + 1).history := doIt.mux(shifted, layers(i).history)
           }
 
-          port.valid := isValid && !gotSkip && !correctionSent && chunksLogic.map(e => apply(e.hitCalc.HIT)).orR
+          port.valid := isValid && !correctionSent && chunksLogic.map(e => apply(e.hitCalc.HIT)).orR
           port.history := layers.last.history
         }
       }

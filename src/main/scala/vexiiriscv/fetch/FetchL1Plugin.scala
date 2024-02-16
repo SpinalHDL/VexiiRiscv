@@ -94,8 +94,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     atsStorageLock.release()
 
     val age = pp.getAge(ctrlAt, false)
-    val pcPort = pcp.newJumpInterface(age, 0, 0)
-    val flushPort = rp.newFlushPort(age, 0, false)
     val trapPort = ts.newTrap(pp.getAge(ctrlAt), 0)
     val holdPorts = (0 until HART_COUNT).map(pcp.newHoldPort)
     setupLock.release()
@@ -397,28 +395,38 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       assert(Global.HART_COUNT.get == 1) //Would require proper clearWhen(up.isCancel) and trapSent per hart
       val trapSent = RegInit(False) setWhen (trapPort.valid) clearWhen (up.isCancel)
 
-      TRAP := False
-      trapPort.valid := TRAP && !trapSent
+      trapPort.valid := False
       trapPort.tval := Fetch.WORD_PC.asBits
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
+      val allowRefill = !WAYS_HIT && !HAZARD && !trapSent
+
+      when(!WAYS_HIT || HAZARD) {
+        trapPort.valid := True
+        trapPort.exception := False
+        trapPort.code := TrapReason.REDO
+      }
+
       when(dataAccessFault || pmaPort.rsp.fault) {
-        TRAP := True
+        allowRefill := False
+        trapPort.valid := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
       }
 
       when(tpk.PAGE_FAULT || !tpk.ALLOW_EXECUTE) {
-        TRAP := True
+        allowRefill := False
+        trapPort.valid := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT
       }
 
       when(tpk.ACCESS_FAULT) {
-        TRAP := True
+        allowRefill := False
+        trapPort.valid := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
       }
@@ -426,29 +434,23 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
       trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REDO) {
-        TRAP := True
+        trapPort.valid := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
       }
 
-      TRAP.clearWhen(!isValid)
-
-      val redoIt = isValid && !TRAP && (!WAYS_HIT || HAZARD)
-
-      flushPort.valid := redoIt
-      flushPort.self := True
-      flushPort.hartId := HART_ID
-
-      pcPort.valid := redoIt
-      pcPort.pc := WORD_PC
-
-      refill.start.valid := redoIt && !HAZARD
+      refill.start.valid := allowRefill && !trapSent
       refill.start.address := tpk.TRANSLATED
       refill.start.hartId := HART_ID
       refill.start.isIo := pmaPort.rsp.io
 
-      when(redoIt){
-        pp.fetch(0).haltIt() //"optional"
+      TRAP := trapPort.valid || trapSent
+
+      when(!isValid){
+        refill.start.valid := False
+      }
+      when(!isValid || trapSent){
+        trapPort.valid := False
       }
 
       when(down.isValid && down.isReady){

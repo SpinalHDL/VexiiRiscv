@@ -26,9 +26,9 @@ object IntegrationSynthBench extends App{
     add(p, postfix)
   }
 
-  add("nothing"){ p =>
-
-  }
+//  add("nothing"){ p =>
+//
+//  }
 
 //
 //  add("bypass all") { p =>
@@ -105,9 +105,9 @@ object IntegrationSynthBench extends App{
 //  }
 
 
-//  add("btb") { p =>
-//    p.withBtb = true
-//  }
+  add("btb") { p =>
+    p.withBtb = true
+  }
 
 
 //  add("btb gshare") { p =>
@@ -127,24 +127,24 @@ object IntegrationSynthBench extends App{
     p.withGShare = true
     p.withRas = true
   }
-
-  add("late alu") { p =>
-    p.allowBypassFrom = 0
-    p.withLateAlu = true
-  }
-
-  add("issuex2") { p =>
-    p.allowBypassFrom = 0
-    p.decoders = 2
-    p.lanes = 2
-  }
-
-  add("issuex2_late") { p =>
-    p.allowBypassFrom = 0
-    p.decoders = 2
-    p.lanes = 2
-    p.withLateAlu = true
-  }
+//
+//  add("late alu") { p =>
+//    p.allowBypassFrom = 0
+//    p.withLateAlu = true
+//  }
+//
+//  add("issuex2") { p =>
+//    p.allowBypassFrom = 0
+//    p.decoders = 2
+//    p.lanes = 2
+//  }
+//
+//  add("issuex2_late") { p =>
+//    p.allowBypassFrom = 0
+//    p.decoders = 2
+//    p.lanes = 2
+//    p.withLateAlu = true
+//  }
 
 
   //  def cachedPerf(p : ParamSimple): ParamSimple = {
@@ -393,7 +393,7 @@ object IntegrationSynthBench extends App{
 //    rtls += Rtl(sc.generateVerilog {
 //      new StreamFifo(UInt(8 bits), 16)
 //    })
-  val targets = XilinxStdTargets(withFMax = true, withArea = true) ++ EfinixStdTargets(withFMax = true, withArea = true) ++ AlteraStdTargets()
+  val targets = XilinxStdTargets(withFMax = true, withArea = true)// ++ EfinixStdTargets(withFMax = true, withArea = true) ++ AlteraStdTargets()
 
   Bench(rtls, targets)
 }
@@ -705,4 +705,22 @@ Cyclone V -> FAILED
 Cyclone IV -> 81 Mhz 5,991 LUT 2,416 FF
 
 
+
+nothing ->
+Artix 7 -> 90 Mhz 1098 LUT 997 FF
+Artix 7 -> 193 Mhz 1199 LUT 997 FF
+btb ->
+Artix 7 -> 90 Mhz 1211 LUT 1092 FF
+Artix 7 -> 134 Mhz 1333 LUT 1096 FF
+btb_gshare_ras ->
+Artix 7 -> 90 Mhz 1369 LUT 1221 FF
+Artix 7 -> 128 Mhz 1473 LUT 1239 FF
+
+
+btb ->
+Artix 7 -> 90 Mhz 1198 LUT 1091 FF
+Artix 7 -> 148 Mhz 1325 LUT 1091 FF
+btb_gshare_ras ->
+Artix 7 -> 90 Mhz 1344 LUT 1220 FF
+Artix 7 -> 146 Mhz 1471 LUT 1229 FF 
  */

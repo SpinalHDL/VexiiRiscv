@@ -5,18 +5,21 @@ import spinal.lib._
 import spinal.lib.misc.pipeline.{CtrlLink, Link, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.execute.{CompletionPayload, CompletionService, ExecuteLaneService}
-import vexiiriscv.fetch.FetchPipelinePlugin
+import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.{PipelineService, PrivilegedPlugin, TrapReason, TrapService}
 import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
+import vexiiriscv.prediction.{ForgetCmd, ForgetSource, Prediction}
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.{Ages, ScheduleService}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService with CompletionService{
+class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService with CompletionService with ForgetSource{
+
+  def getForgetPort() = logic.forgetPort
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.laneLogic.map(_.completionPort)
 
   val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
@@ -53,6 +56,9 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     elaborationLock.await()
 
     Decode.INSTRUCTION_WIDTH.set(32)
+
+    val forgetPort = Flow(ForgetCmd())
+    forgetPort.setIdle()
 
     val eus = host.list[ExecuteLaneService]
     val microOps = eus.flatMap(_.getUops())
@@ -122,6 +128,13 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       val buffered = RegNextWhen(async, !decodeCtrl.link.up.valid || decodeCtrl.link.up.ready || decodeCtrl.link.up.isCanceling) init(0)
     }
 
+    val predictionSpec = new Area {
+      val branchKeys = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU).map(e => Masked(e.key))
+      val jalKeys = List(Rvi.JAL, Rvi.JALR).map(e => Masked(e.key))
+      val any = new DecodingSpec(Bool()).setDefault(Masked.zero)
+      any.addNeeds(branchKeys ++ jalKeys, Masked.one)
+    }
+
     val laneLogic = for(laneId <- 0 until Decode.LANES) yield new decodeCtrl.LaneArea(laneId) {
       for(rfa <- rfAccesses){
         val keys = rfaKeys(rfa)
@@ -138,17 +151,28 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       LEGAL := Symplify(Decode.INSTRUCTION, encodings.all) && !Decode.DECOMPRESSION_FAULT
 
+      val isJb = predictionSpec.any.build(Decode.INSTRUCTION, encodings.all)
+      val fixPrediction = up.isValid && (Prediction.ALIGNED_JUMPED && !isJb || Prediction.ALIGN_REDO)
+
       val interruptPending = interrupt.buffered(Global.HART_ID)
       val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)
       trapPort.valid := False
-      trapPort.exception := !interruptPending
+      trapPort.exception := True
       trapPort.tval := Decode.INSTRUCTION_RAW.resized
       trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
       trapPort.laneAge := laneId
       trapPort.hartId := Global.HART_ID
       trapPort.arg := 0
 
+      when(fixPrediction){
+        trapPort.exception := False
+        trapPort.code := TrapReason.REDO
+        forgetPort.valid := True
+        forgetPort.hartId := Global.HART_ID
+        forgetPort.pcOnLastSlice := Global.PC + (Decode.INSTRUCTION_SLICE_COUNT << Fetch.SLICE_RANGE_LOW.get)
+      }
       when(interruptPending){
+        trapPort.exception := False
         trapPort.code := TrapReason.INTERRUPT
       }
 
@@ -159,7 +183,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       completionPort.trap := True
       completionPort.commit := False
 
-      when(isValid && (!LEGAL || interruptPending)) {
+      when(isValid && (!LEGAL || interruptPending || fixPrediction)) {
         bypass(Global.TRAP) := True
         trapPort.valid := !up(Global.TRAP)
       }

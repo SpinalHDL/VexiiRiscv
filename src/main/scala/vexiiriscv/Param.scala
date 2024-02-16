@@ -64,6 +64,8 @@ class ParamSimple(){
   var resetVector = 0x80000000l
   var decoders = 1
   var lanes = 1
+  var decoderAt = 1
+  var dispatcherAt = 1
   var regFileSync = true
   var regFileDualPortRam = true
   var withGShare = false
@@ -100,14 +102,14 @@ class ParamSimple(){
   if(debugParam) {
     withPerformanceCounters = true
     regFileSync = false
-    regFileDualPortRam = false
+    regFileDualPortRam = true
     allowBypassFrom = 0
     withGShare = true
     withBtb = true
     withRas = true
     relaxedBranch = false
     relaxedBtb = false
-    withFetchL1 = false
+    withFetchL1 = true
     withLsuL1 = false
     fetchL1Sets = 64
     fetchL1Ways = 4
@@ -123,6 +125,7 @@ class ParamSimple(){
     withDiv = true
     withAlignerBuffer = true
     withDispatcherBuffer = true
+//    withRvc = true
 
 //    decoders = 2
 //    lanes = 2
@@ -169,8 +172,9 @@ class ParamSimple(){
     if (privParam.withUser) isa += "u"
     val r = new ArrayBuffer[String]()
     r += isa
-    r += s"d${decoders}"
+    r += s"d${decoders}At${decoderAt}"
     r += s"l${lanes}"
+    r += s"disAt${dispatcherAt}"
     r += regFileSync.mux("rfs","rfa") + regFileDualPortRam.mux("Dp","Mem")
     if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}" else r += s"fclF${fetchCachelessForkAt}"
     if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuF$lsuForkAt"
@@ -195,6 +199,8 @@ class ParamSimple(){
     opt[Int]("xlen") action { (v, c) => xlen = v }
     opt[Int]("decoders") action { (v, c) => decoders = v }
     opt[Int]("lanes") action { (v, c) => lanes = v }
+    opt[Int]("decoder-at") action { (v, c) => decoderAt = v }
+    opt[Int]("dispatcher-at") action { (v, c) => dispatcherAt = v }
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
@@ -266,10 +272,10 @@ class ParamSimple(){
         hitAt = 1,
         jumpAt = 1+relaxedBtb.toInt
       )
-      plugins += new prediction.DecodePredictionPlugin(
-        decodeAt = 1,
-        jumpAt = 1
-      )
+//      plugins += new prediction.DecodePredictionPlugin(
+//        decodeAt = decoderAt,
+//        jumpAt = decoderAt
+//      )
     }
     if(withGShare) {
       plugins += new prediction.GSharePlugin (
@@ -358,10 +364,10 @@ class ParamSimple(){
       withBuffer = withAlignerBuffer
     )
     plugins += new decode.DecoderPlugin(
-      decodeAt = 1
+      decodeAt = decoderAt
     )
     plugins += new schedule.DispatchPlugin(
-      dispatchAt = 1,
+      dispatchAt = dispatcherAt,
       trapLayer = null,
       withBuffer = withDispatcherBuffer
     )
