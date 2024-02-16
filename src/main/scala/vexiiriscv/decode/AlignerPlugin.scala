@@ -242,19 +242,12 @@ class AlignerPlugin(fetchAt : Int,
         for(e <- hmElements) hm(e).assignFrom(up(e))
       }
 
-      val flusher = new Area {
-        //So, the flusher here is a bit tricky, as there is a combinatorial junction between fetch.last -> aligner -> decode.head
-        //For that reason, the flushing of the aligner and fetch.last is done here and only here.
-        val age = Ages.DECODE - Ages.STAGE
-        val rp = host[ReschedulePlugin]
-        val flushNow = rp.isFlushedAt(Ages.DECODE + Ages.STAGE, U(0), U(0)).getOrElse(False)
-        val flushDec0 = rp.hasFlushRequestBetween(Ages.DECODE, Ages.DECODE + Ages.STAGE, U(0), U(0)).getOrElse(False)
-        val flushIt = flushNow || flushDec0 && downNode.isReady
-        when(flushIt) {
-          fpp.fetch(fetchAt).forgetOneNow()
-          mask := 0
-          last := 0
-        }
+      //TODO improve the flush condition ?
+      val age = Ages.DECODE - Ages.STAGE
+      val flushIt = host[ReschedulePlugin].isFlushedAt(age, U(0), U(0)).getOrElse(False)
+      when(flushIt/* && !(downNode.isValid && !downNode.isReady)*/) {
+        mask := 0
+        last := 0
       }
 
       val readers = for(spec <- slices.readCtxs) yield new Area{

@@ -30,7 +30,7 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
     val connectors = (sc ++ ctrls).toSeq
 
     val rp = host[ReschedulePlugin]
-    val flushRange = 1 until ctrls.size-1
+    val flushRange = 1 until ctrls.size
     val flushes = for(id <- flushRange) yield new Area {
       val age = getAge(id)
       val c = fetch(id)

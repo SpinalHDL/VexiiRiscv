@@ -38,7 +38,6 @@ trait ScheduleService {
 //  def newPcPort(age : Int, aggregationPriority : Int = 0) : Flow[JumpCmd]
   def newTrapPort(age : Int, causeWidth : Int = 4) : Flow[TrapCmd]
   def isFlushedAt(age: Int, hartId : UInt, laneAge : UInt): Option[Bool]
-  def hasFlushRequestBetween(from: Int, until : Int, hartId: UInt, laneAge: UInt): Option[Bool]
 //  def addCtrl(age : Int, ctrl : CtrlLink) : Unit
 
   val elaborationLock = Retainer()

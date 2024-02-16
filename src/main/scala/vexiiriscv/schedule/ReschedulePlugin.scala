@@ -39,14 +39,6 @@ class ReschedulePlugin extends FiberPlugin with ScheduleService {
     Some(hits.orR)
   }
 
-  override def hasFlushRequestBetween(from: Int, until : Int, hartId: UInt, laneAge: UInt): Option[Bool] = {
-    elaborationLock.await()
-    val filtred = flushPorts.filter(p => p.age >= from && p.age < until)
-    if (filtred.isEmpty) return None
-    val hits = filtred.map(p => p.valid && p.hartId === hartId)
-    Some(hits.orR)
-  }
-
 
   val logic = during build new Area{
     val ps = host[PcService]
