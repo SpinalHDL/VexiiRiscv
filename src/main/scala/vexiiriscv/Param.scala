@@ -96,6 +96,8 @@ class ParamSimple(){
   var divImpl = ""
   var divArea = true
   var fetchCachelessForkAt = 0
+  var btbSets = 512
+  var btbHashWidth = 16
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
@@ -127,6 +129,10 @@ class ParamSimple(){
     withAlignerBuffer = true
     withDispatcherBuffer = true
 //    withRvc = true
+    withRva = true
+    withMmu = true
+    privParam.withSupervisor = true
+    privParam.withUser = true
 
 //    decoders = 2
 //    lanes = 2
@@ -180,7 +186,7 @@ class ParamSimple(){
     if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}" else r += s"fclF${fetchCachelessForkAt}"
     if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuF$lsuForkAt"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
-    if (withBtb) r += s"btb${if(relaxedBtb)"R" else ""}"
+    if (withBtb) r += s"btbS${btbSets}H${btbHashWidth}${if(relaxedBtb)"R" else ""}"
     if (withRas) r += "ras"
     if (withGShare) r += "gshare"
     if (withLateAlu) r += "la"
@@ -222,6 +228,8 @@ class ParamSimple(){
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0 }
+    opt[Int]("btb-sets") action { (v, c) => btbSets = v }
+    opt[Int]("btb-hash-width") action { (v, c) => btbHashWidth = v }
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
     opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
     opt[Unit]("regfile-dual-ports") action { (v, c) => regFileDualPortRam = true }
@@ -265,10 +273,10 @@ class ParamSimple(){
     if(withGShare) assert(withBtb)
     if(withBtb) {
       plugins += new prediction.BtbPlugin(
-        sets = 512 / decoders,
+        sets = btbSets / decoders,
         chunks = decoders,
         rasDepth = if(withRas) 4 else 0,
-        hashWidth = 16,
+        hashWidth = btbHashWidth,
         readAt = 0,
         hitAt = 1,
         jumpAt = 1+relaxedBtb.toInt

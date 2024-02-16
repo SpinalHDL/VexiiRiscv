@@ -287,7 +287,7 @@ object RegressionSingle extends App{
   }
 
   def test(ps : ParamSimple, dutArgs : Seq[String] = Nil): Unit = {
-    test(ps.getName(), TestBench.paramToPlugins(ps), dutArgs)
+    test(ps.getName().hashCode.abs.toString, TestBench.paramToPlugins(ps), dutArgs)
   }
 
   def test(args : String) : Unit = test(args.split(" "))
@@ -372,6 +372,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("ishift", List("", "--with-iterative-shift"))
   addDim("alignBuf", List("", "--with-aligner-buffer"))
   addDim("dispBuf", List("", "--with-dispatcher-buffer"))
+  addDim("btbParam", List("--btb-sets 512 --btb-hash-width 16", "--btb-sets 128 --btb-hash-width 6"))
 
   val default = "--with-mul --with-div --performance-counters 4"
 
