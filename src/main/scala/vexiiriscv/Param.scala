@@ -101,6 +101,7 @@ class ParamSimple(){
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
     withPerformanceCounters = true
+    additionalPerformanceCounters = 4
     regFileSync = false
     regFileDualPortRam = true
     allowBypassFrom = 0
@@ -109,7 +110,7 @@ class ParamSimple(){
     withRas = true
     relaxedBranch = false
     relaxedBtb = false
-    withFetchL1 = true
+    withFetchL1 = false
     withLsuL1 = false
     fetchL1Sets = 64
     fetchL1Ways = 4

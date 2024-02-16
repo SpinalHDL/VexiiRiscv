@@ -10,7 +10,7 @@ import vexiiriscv.misc.{PipelineService, PrivilegedPlugin, TrapReason, TrapServi
 import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
-import vexiiriscv.prediction.{ForgetCmd, ForgetSource, Prediction}
+import vexiiriscv.prediction.{FetchWordPrediction, ForgetCmd, ForgetSource, Prediction}
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.{Ages, ScheduleService}
 
@@ -57,8 +57,9 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
     Decode.INSTRUCTION_WIDTH.set(32)
 
-    val forgetPort = Flow(ForgetCmd())
-    forgetPort.setIdle()
+    val withPredictionFixer = host.get[FetchWordPrediction].nonEmpty
+    val forgetPort = withPredictionFixer generate Flow(ForgetCmd()).setIdle()
+
 
     val eus = host.list[ExecuteLaneService]
     val microOps = eus.flatMap(_.getUops())
@@ -151,8 +152,6 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       LEGAL := Symplify(Decode.INSTRUCTION, encodings.all) && !Decode.DECOMPRESSION_FAULT
 
-      val isJb = predictionSpec.any.build(Decode.INSTRUCTION, encodings.all)
-      val fixPrediction = up.isValid && (Prediction.ALIGNED_JUMPED && !isJb || Prediction.ALIGN_REDO)
 
       val interruptPending = interrupt.buffered(Global.HART_ID)
       val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)
@@ -164,13 +163,18 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       trapPort.hartId := Global.HART_ID
       trapPort.arg := 0
 
-      when(fixPrediction){
-        trapPort.exception := False
-        trapPort.code := TrapReason.REDO
-        forgetPort.valid := True
-        forgetPort.hartId := Global.HART_ID
-        forgetPort.pcOnLastSlice := Global.PC + (Decode.INSTRUCTION_SLICE_COUNT << Fetch.SLICE_RANGE_LOW.get)
+      val fixer = withPredictionFixer generate new Area{
+        val isJb = predictionSpec.any.build(Decode.INSTRUCTION, encodings.all)
+        val doIt = up.isValid && (Prediction.ALIGNED_JUMPED && !isJb || Prediction.ALIGN_REDO)
+        when(doIt) {
+          trapPort.exception := False
+          trapPort.code := TrapReason.REDO
+          forgetPort.valid := True
+          forgetPort.hartId := Global.HART_ID
+          forgetPort.pcOnLastSlice := Global.PC + (Decode.INSTRUCTION_SLICE_COUNT << Fetch.SLICE_RANGE_LOW.get)
+        }
       }
+
       when(interruptPending){
         trapPort.exception := False
         trapPort.code := TrapReason.INTERRUPT
@@ -183,7 +187,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       completionPort.trap := True
       completionPort.commit := False
 
-      when(isValid && (!LEGAL || interruptPending || fixPrediction)) {
+      when(isValid && (!LEGAL || interruptPending || withPredictionFixer.mux(fixer.doIt, False))) {
         bypass(Global.TRAP) := True
         trapPort.valid := !up(Global.TRAP)
       }
