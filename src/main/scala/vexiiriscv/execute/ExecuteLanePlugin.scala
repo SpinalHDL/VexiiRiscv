@@ -186,12 +186,18 @@ class ExecuteLanePlugin(override val laneName : String,
           val bypasses = for (ctrlId <- ctrlRange) yield new Area{
             val on = ctrl(ctrlId)
             val filtred = updateSpecs.filter(_.nodeId > ctrlId).toSeq
-            val hits = filtred.map{ f =>
+            val checks = filtred.map{ f => new Area {
               val node = f.eu.ctrl(f.nodeId)
-              node.isValid && node(rfaRd.ENABLE) && node(rfaRd.PHYS) === on(rfa.PHYS) && node(rfaRd.RFID) === on(rfa.RFID)
-            }.asBits
+              val selfHit = node.isValid && node(rfaRd.ENABLE) && node(rfaRd.PHYS) === on(rfa.PHYS) && node(rfaRd.RFID) === on(rfa.RFID)
+              val youngerHits = for(youngerId <- ctrlId + 1 until f.nodeId; youngerEu <- eus) yield {
+                val yn = youngerEu.ctrl(youngerId)
+                yn.isValid && yn(rfaRd.ENABLE) && yn(rfaRd.PHYS) === on(rfa.PHYS) && yn(rfaRd.RFID) === on(rfa.RFID)
+              }
+              val hit = selfHit && !youngerHits.orR
+            }}
+            val hits = checks.map(_.hit).asBits
 
-             on.bypass(apply(spec)) := OHMux.or(Cat(hits, !hits.orR), on.up(apply(spec)) +: filtred.map(f => f.eu.ctrl(f.nodeId)(f.payload)), true)
+            on.bypass(apply(spec)) := OHMux.or(Cat(hits, !hits.orR), on.up(apply(spec)) +: filtred.map(f => f.eu.ctrl(f.nodeId)(f.payload)), true)
           }
         }
       }

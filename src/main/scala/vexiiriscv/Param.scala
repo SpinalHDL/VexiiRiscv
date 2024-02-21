@@ -114,20 +114,20 @@ class ParamSimple(){
     withRas = true
     relaxedBranch = false
     relaxedBtb = false
+//    fetchL1Enable = true
+//    fetchL1ReducedBank = true
+//    fetchL1MemDataWidthMin = 256
+//    fetchL1Sets = 64
+//    fetchL1Ways = 4
     lsuL1Enable = true
-    fetchL1Enable = true
-    fetchL1ReducedBank = true
-    fetchL1MemDataWidthMin = 256
-    fetchL1Sets = 64
-    fetchL1Ways = 4
     lsuL1Sets = 64
-    lsuL1Ways = 4
+    lsuL1Ways = 16
     withLsuBypass = true
     divArea = false
     divRadix = 4
     decoders = 2
     lanes = 2
-//    withLateAlu = true
+    withLateAlu = true
     withMul = true
     withDiv = true
     withAlignerBuffer = true
@@ -454,6 +454,7 @@ class ParamSimple(){
       plugins += new LsuPlugin(
         layer = early0,
         withRva = withRva,
+        storeRs2At = withLateAlu.mux(2, 0),
         translationStorageParameter = MmuStorageParameter(
           levels = List(
             MmuStorageLevel(

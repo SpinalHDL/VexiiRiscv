@@ -79,7 +79,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     for(store <- frontend.writingMem ++ amos){
       val op = layer(store)
       op.mayFlushUpTo(forkAt)
-      op.addRsSpec(RS2, 0) //TODO ! for now the executeLanePlugin store bypass bypass its own value XD, need fix to only bypass from point which are solved
+      op.addRsSpec(RS2, 0)
       op.dontFlushFrom(forkAt+1)
     }
 

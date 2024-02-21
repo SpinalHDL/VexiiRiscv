@@ -37,7 +37,8 @@ class LsuPlugin(var layer : LaneLayer,
                 var translationPortParameter: Any,
                 var addressAt: Int = 0,
                 var ctrlAt: Int = 2,
-                var wbAt : Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuL1Service{
+                var wbAt : Int = 2,
+                var storeRs2At : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuL1Service{
 
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
@@ -83,7 +84,7 @@ class LsuPlugin(var layer : LaneLayer,
       val op = layer(store)
       op.mayFlushUpTo(ctrlAt)
       op.dontFlushFrom(ctrlAt)
-      op.addRsSpec(RS2, 0) //TODO ! for now the executeLanePlugin store bypass bypass its own value XD, need fix to only bypass from point which are solved
+      op.addRsSpec(RS2, storeRs2At)
     }
 
     layer.add(Rvi.FENCE) //TODO
