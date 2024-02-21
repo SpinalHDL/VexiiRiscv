@@ -172,7 +172,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val refillCompletions = Bits(refillCount bits)
     val writebackBusy = Bool()
 
-    val banksWrite = new Area {
+    val withMergedBanksWrite = !reducedBankWidth
+
+    val banksWrite = withMergedBanksWrite generate new Area {
       val mask = Bits(bankCount bits)
       val address = UInt(log2Up(bankWordCount) bits).assignDontCare()
       val writeData = Bits(bankWidth bits).assignDontCare()
@@ -188,10 +190,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val banks = for (id <- 0 until bankCount) yield new Area {
       val mem = Mem(Bits(bankWidth bits), bankWordCount)
       val write = mem.writePortWithMask(mem.getWidth / 8)
-      write.valid := banksWrite.mask(id)
-      write.address := banksWrite.address
-      write.data := banksWrite.writeData
-      write.mask := banksWrite.writeMask
+      if(withMergedBanksWrite) {
+        write.valid := banksWrite.mask(id)
+        write.address := banksWrite.address
+        write.data := banksWrite.writeData
+        write.mask := banksWrite.writeMask
+      }
       val read = new Area{
         val cmd = Flow(mem.addressType).setIdle()
         val rsp = mem.readSync(cmd.payload, cmd.valid)
