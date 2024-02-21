@@ -146,7 +146,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     }
 
 
-//    val STATUS = Payload(Vec.fill(wayCount)(Status()))
     val BANKS_WORDS = Payload(Vec.fill(bankCount)(bankWord()))
     val MUXED_DATA, BYPASSED_DATA = Payload(Bits(cpuDataWidth bits))
     val WAYS_TAGS = Payload(Vec.fill(wayCount)(Tag()))
@@ -167,32 +166,38 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val BANKS_MUXES = Payload(Vec.fill(bankCount)(Bits(cpuWordWidth bits)))
 
     val tagsWriteArbiter = new Reservation()
-    val bankWriteArbiter = new Reservation() //TODO
+    val bankWriteArbiter = new Reservation()
     val bankReadArbiter  = new Reservation()
 
     val refillCompletions = Bits(refillCount bits)
     val writebackBusy = Bool()
 
-    val banks = for (id <- 0 until bankCount) yield new Area {
-      val mem = Mem(Bits(bankWidth bits), bankWordCount)
-      val write = mem.writePortWithMask(mem.getWidth / 8)
-      val read = new Area{
-        val cmd = Flow(mem.addressType).setIdle()
-        val rsp = mem.readSync(cmd.payload, cmd.valid)
-        KeepAttribute(rsp) //Ensure that it will not use 2 cycle latency ram block
-      }
+    val banksWrite = new Area {
+      val mask = Bits(bankCount bits)
+      val address = UInt(log2Up(bankWordCount) bits).assignDontCare()
+      val writeData = Bits(bankWidth bits).assignDontCare()
+      val writeMask = Bits(bankWidth/8 bits).assignDontCare()
     }
 
     val waysWrite = new Area {
       val mask = B(0, wayCount bits)
       val address = UInt(log2Up(linePerWay) bits).assignDontCare()
       val tag = Tag().assignDontCare()
-
-      //Used for hazard tracking in a pipelined way
-      val maskLast = RegNext(mask)
-      val addressLast = RegNext(address)
     }
 
+    val banks = for (id <- 0 until bankCount) yield new Area {
+      val mem = Mem(Bits(bankWidth bits), bankWordCount)
+      val write = mem.writePortWithMask(mem.getWidth / 8)
+      write.valid := banksWrite.mask(id)
+      write.address := banksWrite.address
+      write.data := banksWrite.writeData
+      write.mask := banksWrite.writeMask
+      val read = new Area{
+        val cmd = Flow(mem.addressType).setIdle()
+        val rsp = mem.readSync(cmd.payload, cmd.valid)
+        KeepAttribute(rsp) //Ensure that it will not use 2 cycle latency ram block
+      }
+    }
 
     val ways = for (id <- 0 until wayCount) yield new Area {
       val mem = Mem.fill(linePerWay)(Tag())
@@ -350,22 +355,28 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           writeReservation.takeIt()
           assert(writeReservation.win)
         }
+
+        banksWrite.address := rspAddress(lineRange) @@ wordIndex
+        banksWrite.writeData := bus.read.rsp.data
+        banksWrite.writeMask.setAll()
         for ((bank, bankId) <- banks.zipWithIndex) {
           if (!reducedBankWidth) {
             bankWriteNotif(bankId) := bus.read.rsp.valid && rspWithData && way === bankId
-            bank.write.valid := bankWriteNotif(bankId)
-            bank.write.address := rspAddress(lineRange) @@ wordIndex
-            bank.write.data := bus.read.rsp.data
+            banksWrite.mask(bankId) :=  bankWriteNotif(bankId)
+//            bank.write.valid := bankWriteNotif(bankId)
+//            bank.write.address := rspAddress(lineRange) @@ wordIndex
+//            bank.write.data := bus.read.rsp.data
           } else {
             val sel = U(bankId) - way
             val groupSel = way(log2Up(bankCount) - 1 downto log2Up(bankCount / memToBankRatio))
             val subSel = sel(log2Up(bankCount / memToBankRatio) - 1 downto 0)
             bankWriteNotif(bankId) := bus.read.rsp.valid && rspWithData && groupSel === (bankId >> log2Up(bankCount / memToBankRatio))
-            bank.write.valid := bankWriteNotif(bankId)
-            bank.write.address := rspAddress(lineRange) @@ wordIndex @@ (subSel)
-            bank.write.data := bus.read.rsp.data.subdivideIn(bankCount / memToBankRatio slices)(subSel)
+            ???
+//            bank.write.valid := bankWriteNotif(bankId)
+//            bank.write.address := rspAddress(lineRange) @@ wordIndex @@ (subSel)
+//            bank.write.data := bus.read.rsp.data.subdivideIn(bankCount / memToBankRatio slices)(subSel)
           }
-          banks(bankId).write.mask := (default -> true)
+//          banks(bankId).write.mask := (default -> true)
         }
 
         val hadError = RegInit(False) setWhen (bus.read.rsp.valid && bus.read.rsp.error)
@@ -665,7 +676,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         freezeIt setWhen(SEL && refill.slots.map(s => s.valid && !s.loaded).orR) //TODO PREFETCH not friendly
 
         for ((bank, bankId) <- banks.zipWithIndex) {
-          BANK_BUSY(bankId) := bank.write.valid && bank.write.address === readAddress //Write to read hazard
+//          BANK_BUSY(bankId) := bank.write.valid && bank.write.address === readAddress //Write to read hazard
           when(SEL){
             when(reservation.win){
               reservation.takeIt()
@@ -686,13 +697,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
 
         for ((bank, bankId) <- banks.zipWithIndex) {
-          BANKS_WORDS(bankId) := banks(bankId).read.rsp
+          BANKS_WORDS(bankId) := bank.read.rsp
           BANK_BUSY_REMAPPED(bankId) := BANK_BUSY(wayToBank(bankId))
         }
       }
 
       val bm = new lane.Execute(bankMuxesAt){
-        for ((bank, bankId) <- banks.zipWithIndex) {
+        for (bankId <- banks.indices) {
           BANKS_MUXES(bankId) := BANKS_WORDS(bankId).subdivideIn(cpuWordWidth bits).read(MIXED_ADDRESS(bankWordToCpuWordRange))
         }
       }
@@ -708,7 +719,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
 
-      val weh = new Area {
+      val w2rh = new Area {
         val dst = lane.execute(ctrlAt-1)
         for(id <- 0 until widthOf(WRITE_TO_READ_HAZARDS)) {
           val src = lane.execute(bankReadAt+id)
@@ -722,7 +733,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val PLRU_BYPASS_VALID = insert(plru.write.valid && plru.write.address === plru.read.cmd.payload)
         val PLRU_BYPASS_VALUE = insert(plru.write.data)
 
-        for ((way, wayId) <- ways.zipWithIndex){
+        for (way <- ways){
           way.lsuRead.cmd.valid := !lane.isFreezed()
           way.lsuRead.cmd.payload := MIXED_ADDRESS(lineRange)
         }
@@ -736,12 +747,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           }
         }
 
-        for ((way, wayId) <- ways.zipWithIndex) {
+        for (wayId <- ways.indices) {
           WAYS_TAGS(wayId) := ways(wayId).lsuRead.rsp
         }
       }
       val hs  = new lane.Execute(hitsAt){
-        for ((way, wayId) <- ways.zipWithIndex) {
+        for (wayId <- ways.indices) {
           WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === PHYSICAL_ADDRESS(tagRange)
         }
       }
@@ -769,6 +780,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val reservation = tagsWriteArbiter.create(2)
         val bankWriteReservation = bankWriteArbiter.create(2)
         val refillWayWithoutUpdate = CombInit(plruLogic.core.io.evict.id)
+//        val refillWayWithoutUpdate = CounterFreeRun(BigInt(ways.size)).value
         val refillWayNeedWriteback = WAYS_TAGS.map(w => w.loaded && withCoherency.mux(True, w.dirty)).read(refillWayWithoutUpdate)
 
         //Warning, those two signals aren't stable when lane.isFreezed
@@ -869,12 +881,17 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
 
         when(doWrite) {
+          banksWrite.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
+          banksWrite.writeData.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
+          banksWrite.writeMask := 0
+          banksWrite.writeMask.subdivideIn(cpuWordWidth / 8 bits)(PHYSICAL_ADDRESS(bankWordToCpuWordRange)) := MASK
           for ((bank, bankId) <- banks.zipWithIndex) when(WAYS_HITS(bankId)) {
-            bank.write.valid := bankId === bankHitId && allowSideEffects
-            bank.write.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
-            bank.write.data.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
-            bank.write.mask := 0
-            bank.write.mask.subdivideIn(cpuWordWidth / 8 bits)(PHYSICAL_ADDRESS(bankWordToCpuWordRange)) := MASK
+            banksWrite.mask(bankId) := bankId === bankHitId && allowSideEffects
+//            bank.write.valid := bankId === bankHitId && allowSideEffects
+//            bank.write.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
+//            bank.write.data.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
+//            bank.write.mask := 0
+//            bank.write.mask.subdivideIn(cpuWordWidth / 8 bits)(PHYSICAL_ADDRESS(bankWordToCpuWordRange)) := MASK
           }
         }
 
