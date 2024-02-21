@@ -30,7 +30,7 @@ class MulPlugin(val layer : LaneLayer,
   import MulPlugin._
 
   val logic = during setup new Logic {
-    Riscv.RVM.set(true)
+    if(Riscv.RVM.isEmpty) Riscv.RVM.set(true)
     awaitBuild()
     import SrcKeys._
 

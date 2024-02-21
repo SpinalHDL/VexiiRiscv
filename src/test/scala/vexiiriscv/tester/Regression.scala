@@ -149,7 +149,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   if (rvc) doArchTest("C")
 
 
-  val regulars = ArrayBuffer("dhrystone", "coremark_vexii", "machine_vexii")
+  val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
   if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
   for(name <- regulars){
@@ -159,7 +159,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.name(s"regular/$name")
   }
 
-  val benchmarks = ArrayBuffer("dhrystone", "coremark_vexii")
+  val benchmarks = ArrayBuffer("dhrystone_vexii", "coremark_vexii")
   for (name <- benchmarks) {
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))

@@ -123,7 +123,7 @@ class BtbPlugin(var sets : Int,
       val hash = getHash(cmd.pcOnLastSlice)
 
       val port = mem.writePortWithMask(chunks)
-      port.valid := cmd.valid && withCondPrediction.mux(cmd.badPredictedTarget, cmd.wasWrong || cmd.badPredictedTarget)
+      port.valid := cmd.valid && withCondPrediction.mux(cmd.badPredictedTarget && cmd.taken, cmd.wasWrong || cmd.badPredictedTarget)
       port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
       port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
       for(data <- port.data) {
