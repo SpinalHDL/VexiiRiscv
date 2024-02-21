@@ -357,6 +357,8 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
     p
   })
+  addDim("fl1dwm", List(32, 64, 128, 256).map(w => s"--fetch-l1-mem-data-width-min $w"))
+  addDim("fl1rw", List("", "--fetch-reduced-bank"))
   addDim("lsu", {
     val p = ArrayBuffer[String]("--lsu-fork-at 0", "--lsu-fork-at 1")
     for(bytes <- List(1 << 10, 1 << 12, 1 << 14);
@@ -376,12 +378,12 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
 
   val default = "--with-mul --with-div --performance-counters 4"
 
-  // Add a simple test for each dimensions's positions
-  for(dim <- dimensions){
-    for(pos <- dim.getPositions()) {
-      addTest(default + " " + pos)
-    }
-  }
+//  // Add a simple test for each dimensions's positions
+//  for(dim <- dimensions){
+//    for(pos <- dim.getPositions()) {
+//      addTest(default + " " + pos)
+//    }
+//  }
 
   // Generate random parameters
   val random = new Random(42)

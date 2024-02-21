@@ -84,10 +84,12 @@ class ParamSimple(){
   var allowBypassFrom = 100 //100 => disabled
   var additionalPerformanceCounters = 0
   var withPerformanceCounters = false
-  var withFetchL1 = false
-  var withLsuL1 = false
+  var fetchL1Enable = false
   var fetchL1Sets = 64
   var fetchL1Ways = 1
+  var fetchL1ReducedBank = false
+  var fetchL1MemDataWidthMin = 32
+  var lsuL1Enable = false
   var lsuL1Sets = 64
   var lsuL1Ways = 1
   var withLsuBypass = false
@@ -112,8 +114,10 @@ class ParamSimple(){
     withRas = true
     relaxedBranch = false
     relaxedBtb = false
-    withFetchL1 = false
-    withLsuL1 = false
+    lsuL1Enable = true
+    fetchL1Enable = true
+    fetchL1ReducedBank = true
+    fetchL1MemDataWidthMin = 256
     fetchL1Sets = 64
     fetchL1Ways = 4
     lsuL1Sets = 64
@@ -123,7 +127,7 @@ class ParamSimple(){
     divRadix = 4
     decoders = 2
     lanes = 2
-    withLateAlu = true
+//    withLateAlu = true
     withMul = true
     withDiv = true
     withAlignerBuffer = true
@@ -133,6 +137,7 @@ class ParamSimple(){
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
+
 
 //    decoders = 2
 //    lanes = 2
@@ -183,8 +188,8 @@ class ParamSimple(){
     r += s"l${lanes}"
     r += s"disAt${dispatcherAt}"
     r += regFileSync.mux("rfs","rfa") + regFileDualPortRam.mux("Dp","Mem")
-    if (withFetchL1) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}" else r += s"fclF${fetchCachelessForkAt}"
-    if (withLsuL1) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuF$lsuForkAt"
+    if (fetchL1Enable) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}Dwm$fetchL1MemDataWidthMin${fetchL1ReducedBank.mux("Rb", "")}" else r += s"fclF${fetchCachelessForkAt}"
+    if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuF$lsuForkAt"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += s"btbS${btbSets}H${btbHashWidth}${if(relaxedBtb)"R" else ""}"
     if (withRas) r += "ras"
@@ -236,10 +241,12 @@ class ParamSimple(){
     opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
-    opt[Unit]("with-fetch-l1") action { (v, c) => withFetchL1 = true }
-    opt[Unit]("with-lsu-l1") action { (v, c) => withLsuL1 = true }
+    opt[Unit]("with-fetch-l1") action { (v, c) => fetchL1Enable = true }
+    opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Int]("fetch-l1-sets") action { (v, c) => fetchL1Sets = v }
     opt[Int]("fetch-l1-ways") action { (v, c) => fetchL1Ways = v }
+    opt[Int]("fetch-l1-mem-data-width-min") action { (v, c) => fetchL1MemDataWidthMin = v }
+    opt[Unit]("fetch-reduced-bank") action { (v, c) => fetchL1ReducedBank = true }
     opt[Int]("lsu-l1-sets") action { (v, c) => lsuL1Sets = v }
     opt[Int]("lsu-l1-ways") action { (v, c) => lsuL1Ways = v }
     opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
@@ -302,7 +309,7 @@ class ParamSimple(){
 
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
-    if(!withFetchL1) plugins += new fetch.FetchCachelessPlugin(
+    if(!fetchL1Enable) plugins += new fetch.FetchCachelessPlugin(
       forkAt = fetchCachelessForkAt,
       joinAt = fetchCachelessForkAt+1, //You can for instance allow the external memory to have more latency by changing this
       wordWidth = 32*decoders,
@@ -331,13 +338,13 @@ class ParamSimple(){
         )
       }
     )
-    if(withFetchL1) plugins += new fetch.FetchL1Plugin(
+    if(fetchL1Enable) plugins += new fetch.FetchL1Plugin(
       lineSize = 64,
       setCount = fetchL1Sets,
       wayCount = fetchL1Ways,
       fetchDataWidth = 32*decoders,
-      memDataWidth = 32*decoders,
-      reducedBankWidth = false,
+      memDataWidth = 32*decoders max fetchL1MemDataWidthMin,
+      reducedBankWidth = fetchL1ReducedBank,
       hitsWithTranslationWays = true,
       tagsReadAsync = false,
       translationStorageParameter = MmuStorageParameter(
@@ -368,7 +375,7 @@ class ParamSimple(){
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = withFetchL1.mux(2, 1+fetchCachelessForkAt),
+      fetchAt = fetchL1Enable.mux(2, 1+fetchCachelessForkAt),
       lanes = decoders,
       withBuffer = withAlignerBuffer
     )
@@ -409,7 +416,7 @@ class ParamSimple(){
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    if(!withLsuL1) plugins += new LsuCachelessPlugin(
+    if(!lsuL1Enable) plugins += new LsuCachelessPlugin(
       layer     = early0,
       withAmo   = withRva,
       withSpeculativeLoadFlush = true,
@@ -443,7 +450,7 @@ class ParamSimple(){
         )
       }
     )
-    if(withLsuL1){
+    if(lsuL1Enable){
       plugins += new LsuPlugin(
         layer = early0,
         withRva = withRva,
