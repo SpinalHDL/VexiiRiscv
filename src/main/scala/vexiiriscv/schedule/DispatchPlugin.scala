@@ -208,6 +208,7 @@ class DispatchPlugin(var dispatchAt : Int,
               }
             }
           }
+
           for(writeEu <- eus) {
             val hazardFrom = ll.el.rfReadHazardFrom(ll.getRsUseAtMin()) // This is a pessimistic aproach
             val hazardUntil = writeEu.getRdBroadcastedFromMax()
@@ -217,7 +218,21 @@ class DispatchPlugin(var dispatchAt : Int,
               hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && !node(getBypassed(writeEu, id))
             }
           }
-          val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR && !skip
+
+          val guesser = ll.name.contains("late") generate new Area{
+            val ko = True
+            hazards += ko
+            for (writeEu <- eus) {
+              val hazardRange = 1 until 2
+              for (id <- hazardRange) {
+                val node = writeEu.ctrl(id)
+                when(node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS)){
+                  ko := False
+                }
+              }
+            }
+          }
+          val hazard = c.ctx.hm(rs.ENABLE) && (hazards.orR && !skip || (guesser != null).mux(guesser.ko, False))
         }
         c.rsHazards(llId) := onRs.map(_.hazard).orR
       }
