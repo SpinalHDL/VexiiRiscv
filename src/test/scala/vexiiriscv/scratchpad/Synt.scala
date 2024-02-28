@@ -60,31 +60,28 @@ object IntegrationSynthBench extends App{
 //    p.fetchL1Ways = 4
 //  }
 //
-//  add("lsu l1") { p =>
-//    p.withLsuL1 = true
-//  }
-//
-//  add("lsu l1 bypass all") { p =>
-//    p.withLsuL1 = true
-//    p.allowBypassFrom = 0
-//  }
-//
+
+
 //  add("lsu l1 4k") { p =>
-//    p.withLsuL1 = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 1
-//  }
-//
-//
-//  add("lsu l1 4k") { p =>
-//    p.withLsuL1 = true
+//    p.lsuL1Enable = true
 //    p.lsuL1Sets = 64
 //    p.lsuL1Ways = 1
 //  }
 //  add("lsu l1 16k") { p =>
-//    p.withLsuL1 = true
+//    p.lsuL1Enable = true
 //    p.lsuL1Sets = 64
 //    p.lsuL1Ways = 4
+//  }
+//  add("lsu l1 64k") { p =>
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 16
+//  }
+//  add("lsu l1 4k bypass all") { p =>
+//    p.withLsuL1 = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 1
+//    p.allowBypassFrom = 0
 //  }
 //  add("lsu l1 4k su") { p =>
 //    p.regFileSync = false
@@ -105,9 +102,9 @@ object IntegrationSynthBench extends App{
 //  }
 
 
-  add("btb") { p =>
-    p.withBtb = true
-  }
+//  add("btb") { p =>
+//    p.withBtb = true
+//  }
 
 
 //  add("btb gshare") { p =>
@@ -122,11 +119,11 @@ object IntegrationSynthBench extends App{
 //    p.withRas = true
 //  }
 
-  add("btb gshare ras") { p =>
-    p.withBtb = true
-    p.withGShare = true
-    p.withRas = true
-  }
+//  add("btb gshare ras") { p =>
+//    p.withBtb = true
+//    p.withGShare = true
+//    p.withRas = true
+//  }
 //
 //  add("late alu") { p =>
 //    p.allowBypassFrom = 0
@@ -145,6 +142,62 @@ object IntegrationSynthBench extends App{
 //    p.lanes = 2
 //    p.withLateAlu = true
 //  }
+
+  add("fullPerf") { p =>
+    p.allowBypassFrom = 0
+    p.decoders = 2
+    p.lanes = 2
+    p.withDispatcherBuffer = true
+
+    p.withMul = true
+    p.withDiv = true
+
+    p.withBtb = true
+    p.withGShare = true
+    p.withRas = true
+    p.relaxedBranch = true
+    p.relaxedBtb = true
+
+//    p.privParam.withSupervisor = true;
+//    p.privParam.withUser = true;
+//    p.withMmu = true
+
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 4
+
+    p.fetchL1Enable = true
+    p.fetchL1Sets = 64
+    p.fetchL1Ways = 4
+  }
+
+//    add("fullPerf2") { p =>
+//      p.allowBypassFrom = 0
+//      p.decoders = 2
+//      p.lanes = 2
+//      p.withDispatcherBuffer = true
+//
+//      p.withMul = true
+//      p.withDiv = true
+//
+//      p.withBtb = true
+//      p.withGShare = true
+//      p.withRas = true
+//      p.relaxedBranch = true
+//      p.relaxedBtb = true
+//
+//      p.privParam.withSupervisor = true;
+//      p.privParam.withUser = true;
+//      p.withMmu = true
+//
+//      p.lsuL1Enable = true
+//      p.lsuL1Sets = 64
+//      p.lsuL1Ways = 4
+//
+//      p.fetchL1Enable = true
+//      p.fetchL1Sets = 64
+//      p.fetchL1Ways = 4
+//    }
 
 
   //  def cachedPerf(p : ParamSimple): ParamSimple = {
@@ -722,5 +775,77 @@ Artix 7 -> 90 Mhz 1198 LUT 1091 FF
 Artix 7 -> 148 Mhz 1325 LUT 1091 FF
 btb_gshare_ras ->
 Artix 7 -> 90 Mhz 1344 LUT 1220 FF
-Artix 7 -> 146 Mhz 1471 LUT 1229 FF 
+Artix 7 -> 146 Mhz 1471 LUT 1229 FF
+
+
+upstream
+lsu_l1_4k ->
+Artix 7 -> 90 Mhz 1376 LUT 1266 FF
+Artix 7 -> 204 Mhz 1509 LUT 1270 FF
+lsu_l1_16k ->
+Artix 7 -> 90 Mhz 1778 LUT 1453 FF
+Artix 7 -> 192 Mhz 2046 LUT 1502 FF
+lsu_l1_64k ->
+Artix 7 -> 90 Mhz 2940 LUT 2182 FF
+Artix 7 -> 163 Mhz 3352 LUT 2237 FF
+
+patched
+lsu_l1_4k ->
+Artix 7 -> 90 Mhz 1372 LUT 1266 FF
+Artix 7 -> 194 Mhz 1519 LUT 1266 FF
+lsu_l1_16k ->
+Artix 7 -> 90 Mhz 1717 LUT 1453 FF
+Artix 7 -> 191 Mhz 1960 LUT 1524 FF
+lsu_l1_64k ->
+Artix 7 -> 90 Mhz 2363 LUT 2179 FF
+Artix 7 -> 165 Mhz 2583 LUT 2210 FF
+
+patched without dirty
+lsu_l1_4k ->
+Artix 7 -> 90 Mhz 1358 LUT 1264 FF
+Artix 7 -> 198 Mhz 1539 LUT 1270 FF
+lsu_l1_16k ->
+Artix 7 -> 90 Mhz 1693 LUT 1445 FF
+Artix 7 -> 184 Mhz 1989 LUT 1537 FF
+lsu_l1_64k ->
+Artix 7 -> 90 Mhz 2344 LUT 2147 FF
+Artix 7 -> 161 Mhz 2557 LUT 2155 FF
+
+patched without plru
+lsu_l1_4k ->
+Artix 7 -> 90 Mhz 1372 LUT 1266 FF
+Artix 7 -> 194 Mhz 1519 LUT 1266 FF
+lsu_l1_16k ->
+Artix 7 -> 90 Mhz 1688 LUT 1449 FF
+Artix 7 -> 192 Mhz 1927 LUT 1521 FF
+lsu_l1_64k ->
+Artix 7 -> 90 Mhz 2342 LUT 2153 FF
+Artix 7 -> 165 Mhz 2528 LUT 2158 FF
+
+patched without plru / dirty bypass
+lsu_l1_4k ->
+Artix 7 -> 90 Mhz 1358 LUT 1264 FF
+Artix 7 -> 198 Mhz 1539 LUT 1270 FF
+lsu_l1_16k ->
+Artix 7 -> 90 Mhz 1589 LUT 1441 FF
+Artix 7 -> 196 Mhz 1753 LUT 1441 FF
+lsu_l1_64k ->
+Artix 7 -> 90 Mhz 2298 LUT 2121 FF
+Artix 7 -> 165 Mhz 2485 LUT 2136 FF
+
+
+fullPerf no bpre->
+Artix 7 -> 90 Mhz 3784 LUT 2621 FF
+Artix 7 -> 142 Mhz 4098 LUT 2707 FF
+fullPerf2 no bpre ->
+Artix 7 -> 88 Mhz 4714 LUT 3056 FF
+Artix 7 -> 140 Mhz 5079 LUT 3087 FF
+
+fullPerf ->
+Artix 7 -> 77 Mhz 4144 LUT 3257 FF
+Artix 7 -> 114 Mhz 4534 LUT 3303 FF
+fullPerf2 ->
+Artix 7 -> 65 Mhz 5030 LUT 3694 FF
+Artix 7 -> 117 Mhz 5404 LUT 3749 FF
+
  */

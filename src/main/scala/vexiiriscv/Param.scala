@@ -107,36 +107,38 @@ class ParamSimple(){
     withPerformanceCounters = true
     additionalPerformanceCounters = 4
     regFileSync = false
-    regFileDualPortRam = true
     allowBypassFrom = 0
     withGShare = true
     withBtb = true
     withRas = true
-    relaxedBranch = false
-    relaxedBtb = false
+    relaxedBranch = true  // !!
+//    relaxedBtb = true     // !!
 //    fetchL1Enable = true
 //    fetchL1ReducedBank = true
 //    fetchL1MemDataWidthMin = 256
 //    fetchL1Sets = 64
 //    fetchL1Ways = 4
-    lsuL1Enable = true
-    lsuL1Sets = 64
-    lsuL1Ways = 16
-    withLsuBypass = true
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    withLsuBypass = true
     divArea = false
     divRadix = 4
     decoders = 2
     lanes = 2
-    withLateAlu = true
+//    withLateAlu = true
     withMul = true
     withDiv = true
-    withAlignerBuffer = true
     withDispatcherBuffer = true
+//    withAlignerBuffer = true
 //    withRvc = true
     withRva = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
+//    xlen = 64
+
+
 
 
 //    decoders = 2
@@ -552,7 +554,9 @@ class ParamSimple(){
         plugins += shifter(late1, shiftAt = 2, formatAt = 2)
         plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
       }
-
+//      if (withMul) {
+//        plugins += new MulPlugin(early1)
+//      }
       plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
     }
 

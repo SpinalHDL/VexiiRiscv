@@ -368,6 +368,13 @@ class DispatchPlugin(var dispatchAt : Int,
       eu.LAYER_SEL := OHMux.or(layer.map(_._2).asBits(), layer.map(_._1), true)
     }
 
+
+//    for(c <- candidates){
+//      c.rsHazards.removeAssignments().clearAll()
+//      c.flushHazards.removeAssignments().clearAll()
+//      c.fenceOlderHazards.removeAssignments().clearAll()
+//    }
+
     buildBefore.release()
   }
 }
