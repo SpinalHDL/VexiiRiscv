@@ -89,7 +89,7 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
       wb.valid := isValid && hits.orR
 
       val raw = MuxOH.or(hits, group.map(_.port.payload), true)
-      wb.payload := raw
+      wb.payload := raw.resized
 
       val extendSpecs = group.flatMap(_.extendSpecs)
       val extendBitIds = extendSpecs.map(_.bitId).distinct.sorted

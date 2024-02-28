@@ -8,7 +8,7 @@ import spinal.core.{AreaObject, MaskedLiteral}
 
 object IntRegFile extends RegfileSpec with AreaObject {
   override def sizeArch = 32
-  override def width = Riscv.XLEN
+  override def width = 128
   override def x0AlwaysZero = true
   override def getName() = "integer"
 

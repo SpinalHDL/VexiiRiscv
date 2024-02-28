@@ -11,6 +11,7 @@ import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
 import vexiiriscv.fetch.{Fetch, PcService}
+import vexiiriscv.prediction.Prediction
 import vexiiriscv.schedule.Ages
 
 import scala.collection.mutable

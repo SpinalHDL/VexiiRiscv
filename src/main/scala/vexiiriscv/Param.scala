@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
-import spinal.lib.misc.plugin.Hostable
+import spinal.lib.misc.plugin.{FiberPlugin, Hostable}
 import spinal.lib.system.tag.{PmaRegion, PmaRegionImpl}
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
@@ -13,8 +13,8 @@ import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin}
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
-import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
-import vexiiriscv.riscv.IntRegFile
+import vexiiriscv.prediction.{LearnCmd, LearnPlugin, Prediction}
+import vexiiriscv.riscv.{IntRegFile, Riscv}
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
@@ -277,7 +277,7 @@ class ParamSimple(){
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
 
-    plugins += new LearnPlugin()
+//    plugins += new LearnPlugin()
     if(withRas) assert(withBtb)
     if(withGShare) assert(withBtb)
     if(withBtb) {
@@ -414,110 +414,110 @@ class ParamSimple(){
 
 //    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
-    plugins += new IntAluPlugin(early0, formatAt = 0)
-    plugins += shifter(early0, formatAt = relaxedShift.toInt)
+//    plugins += new IntAluPlugin(early0, formatAt = 0)
+//    plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
-    plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    if(!lsuL1Enable) plugins += new LsuCachelessPlugin(
-      layer     = early0,
-      withAmo   = withRva,
-      withSpeculativeLoadFlush = true,
-      addressAt = 0,
-      pmaAt     = 0,
-      forkAt    = lsuForkAt+0,
-      joinAt    = lsuForkAt+1,
-      wbAt      = 2, //TODO
-      translationStorageParameter = MmuStorageParameter(
-        levels = List(
-          MmuStorageLevel(
-            id = 0,
-            ways = 4,
-            depth = 32
-          ),
-          MmuStorageLevel(
-            id = 1,
-            ways = 2,
-            depth = 32
-          )
-        ),
-        priority = 1
-      ),
-      translationPortParameter = withMmu match {
-        case false => null
-        case true => MmuPortParameter(
-          readAt = 0,
-          hitsAt = 0,
-          ctrlAt = 0,
-          rspAt = 0
-        )
-      }
-    )
-    if(lsuL1Enable){
-      plugins += new LsuPlugin(
-        layer = early0,
-        withRva = withRva,
-        storeRs2At = withLateAlu.mux(2, 0),
-        translationStorageParameter = MmuStorageParameter(
-          levels = List(
-            MmuStorageLevel(
-              id = 0,
-              ways = 4,
-              depth = 32
-            ),
-            MmuStorageLevel(
-              id = 1,
-              ways = 2,
-              depth = 32
-            )
-          ),
-          priority = 1
-        ),
-        translationPortParameter = withMmu match {
-          case false => null
-          case true => MmuPortParameter(
-            readAt = 0,
-            hitsAt = 1,
-            ctrlAt = 1,
-            rspAt = 1
-          )
-        }
-      )
-      plugins += new LsuL1Plugin(
-        lane           = lane0,
-        memDataWidth   = xlen,
-        cpuDataWidth   = xlen,
-        refillCount    = 1,
-        writebackCount = 1,
-        setCount       = lsuL1Sets,
-        wayCount       = lsuL1Ways,
-        withBypass     = withLsuBypass
-      )
-    }
+//    plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
+//    if(!lsuL1Enable) plugins += new LsuCachelessPlugin(
+//      layer     = early0,
+//      withAmo   = withRva,
+//      withSpeculativeLoadFlush = true,
+//      addressAt = 0,
+//      pmaAt     = 0,
+//      forkAt    = lsuForkAt+0,
+//      joinAt    = lsuForkAt+1,
+//      wbAt      = 2, //TODO
+//      translationStorageParameter = MmuStorageParameter(
+//        levels = List(
+//          MmuStorageLevel(
+//            id = 0,
+//            ways = 4,
+//            depth = 32
+//          ),
+//          MmuStorageLevel(
+//            id = 1,
+//            ways = 2,
+//            depth = 32
+//          )
+//        ),
+//        priority = 1
+//      ),
+//      translationPortParameter = withMmu match {
+//        case false => null
+//        case true => MmuPortParameter(
+//          readAt = 0,
+//          hitsAt = 0,
+//          ctrlAt = 0,
+//          rspAt = 0
+//        )
+//      }
+//    )
+//    if(lsuL1Enable){
+//      plugins += new LsuPlugin(
+//        layer = early0,
+//        withRva = withRva,
+//        storeRs2At = withLateAlu.mux(2, 0),
+//        translationStorageParameter = MmuStorageParameter(
+//          levels = List(
+//            MmuStorageLevel(
+//              id = 0,
+//              ways = 4,
+//              depth = 32
+//            ),
+//            MmuStorageLevel(
+//              id = 1,
+//              ways = 2,
+//              depth = 32
+//            )
+//          ),
+//          priority = 1
+//        ),
+//        translationPortParameter = withMmu match {
+//          case false => null
+//          case true => MmuPortParameter(
+//            readAt = 0,
+//            hitsAt = 1,
+//            ctrlAt = 1,
+//            rspAt = 1
+//          )
+//        }
+//      )
+//      plugins += new LsuL1Plugin(
+//        lane           = lane0,
+//        memDataWidth   = xlen,
+//        cpuDataWidth   = xlen,
+//        refillCount    = 1,
+//        writebackCount = 1,
+//        setCount       = lsuL1Sets,
+//        wayCount       = lsuL1Ways,
+//        withBypass     = withLsuBypass
+//      )
+//    }
 
-    if(withMul) {
-      plugins += new MulPlugin(early0)
-    }
-    if(withDiv) {
-      plugins += new RsUnsignedPlugin("lane0")
-      plugins += new DivPlugin(
-        layer = early0,
-        radix = divRadix,
-        area  = divArea,
-        impl = {
-          def pasta(width: Int, radix: Int, area : Boolean) = new DivRadix2(width, lowArea = area)
-          def vexii(width: Int, radix: Int, area: Boolean) = new DivRadix(width, radix)
-          def default(width: Int, radix: Int, area: Boolean) = radix match {
-            case 2 if area => pasta(width, radix, area)
-            case _ => vexii(width, radix, area)
-          }
-          divImpl match {
-            case "" => default
-            case "bitpasta" => pasta
-            case "vexii" => vexii
-          }
-        }
-      )
-    }
+//    if(withMul) {
+//      plugins += new MulPlugin(early0)
+//    }
+//    if(withDiv) {
+//      plugins += new RsUnsignedPlugin("lane0")
+//      plugins += new DivPlugin(
+//        layer = early0,
+//        radix = divRadix,
+//        area  = divArea,
+//        impl = {
+//          def pasta(width: Int, radix: Int, area : Boolean) = new DivRadix2(width, lowArea = area)
+//          def vexii(width: Int, radix: Int, area: Boolean) = new DivRadix(width, radix)
+//          def default(width: Int, radix: Int, area: Boolean) = radix match {
+//            case 2 if area => pasta(width, radix, area)
+//            case _ => vexii(width, radix, area)
+//          }
+//          divImpl match {
+//            case "" => default
+//            case "bitpasta" => pasta
+//            case "vexii" => vexii
+//          }
+//        }
+//      )
+//    }
 
     plugins += new CsrRamPlugin()
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
@@ -526,38 +526,46 @@ class ParamSimple(){
     plugins += new TrapPlugin(trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
 
-    if(withLateAlu) {
-      val late0 = new LaneLayer("late0", lane0, priority = -5)
-      plugins += new SrcPlugin(late0, executeAt = 2, relaxedRs = relaxedSrc)
-      plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
-      plugins += shifter(late0, shiftAt = 2, formatAt = 2)
-      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
-    }
+//    if(withLateAlu) {
+//      val late0 = new LaneLayer("late0", lane0, priority = -5)
+//      plugins += new SrcPlugin(late0, executeAt = 2, relaxedRs = relaxedSrc)
+//      plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
+//      plugins += shifter(late0, shiftAt = 2, formatAt = 2)
+//      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
+//    }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
 
-    if(lanes >= 2) {
-      val lane1 = newExecuteLanePlugin("lane1")
-      val early1 = new LaneLayer("early1", lane1, priority = 10)
-      plugins += lane1
-
-      plugins += new SrcPlugin(early1, executeAt = 0, relaxedRs = relaxedSrc)
-      plugins += new IntAluPlugin(early1, formatAt = 0)
-      plugins += shifter(early1, formatAt = relaxedShift.toInt)
-      plugins += new IntFormatPlugin("lane1")
-      plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
-
-      if(withLateAlu) {
-        val late1 = new LaneLayer("late1", lane1, priority = -3)
-        plugins += new SrcPlugin(late1, executeAt = 2, relaxedRs = relaxedSrc)
-        plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
-        plugins += shifter(late1, shiftAt = 2, formatAt = 2)
-        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
-      }
-//      if (withMul) {
-//        plugins += new MulPlugin(early1)
+//    if(lanes >= 2) {
+//      val lane1 = newExecuteLanePlugin("lane1")
+//      val early1 = new LaneLayer("early1", lane1, priority = 10)
+//      plugins += lane1
+//
+//      plugins += new SrcPlugin(early1, executeAt = 0, relaxedRs = relaxedSrc)
+//      plugins += new IntAluPlugin(early1, formatAt = 0)
+//      plugins += shifter(early1, formatAt = relaxedShift.toInt)
+//      plugins += new IntFormatPlugin("lane1")
+//      plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
+//
+//      if(withLateAlu) {
+//        val late1 = new LaneLayer("late1", lane1, priority = -3)
+//        plugins += new SrcPlugin(late1, executeAt = 2, relaxedRs = relaxedSrc)
+//        plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
+//        plugins += shifter(late1, shiftAt = 2, formatAt = 2)
+//        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
 //      }
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
+////      if (withMul) {
+////        plugins += new MulPlugin(early1)
+////      }
+//      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
+//    }
+
+    // Temporary workaround
+    plugins += new FiberPlugin{
+      during setup {
+        Riscv.RVA.set(false)
+        Prediction.BRANCH_HISTORY_WIDTH.set(0)
+      }
     }
 
     plugins.foreach {
@@ -565,7 +573,7 @@ class ParamSimple(){
       case _ =>
     }
 
-    plugins += new WhiteboxerPlugin()
+//    plugins += new WhiteboxerPlugin()
   }
 }
 
