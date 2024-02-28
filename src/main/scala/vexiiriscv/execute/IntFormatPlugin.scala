@@ -26,7 +26,7 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
   val portToSpec = mutable.LinkedHashMap[Flow[Bits],Spec]()
 
   def access(executeId : Int) : Flow[Bits] = {
-    val port = Flow(Bits(Riscv.XLEN bits))
+    val port = Flow(Bits(128 bits))
     portToSpec(port) = Spec(port, executeId)
     port
   }

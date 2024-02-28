@@ -117,13 +117,13 @@ class SrcPlugin(val layer : LaneLayer,
       }
       val imm = new IMM(Decode.UOP)
       if(src1Keys.nonEmpty) SRC1 := SRC1_CTRL.muxListDc[SInt](src1Keys.map {
-        case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(get(RS1))
+        case sk.SRC1.RF => src1ToEnum(sk.SRC1.RF) -> S(get(RS1).resize(Riscv.XLEN))
         case sk.SRC1.U  => src1ToEnum(sk.SRC1.U ) -> S(imm.u).resize(Riscv.XLEN)
       })
 
       val pcExtended = PHYSICAL_WIDTH.get < VIRTUAL_WIDTH.get
       if(src2Keys.nonEmpty) SRC2 := SRC2_CTRL.muxListDc[SInt](src2Keys.map {
-        case sk.SRC2.RF => src2ToEnum(sk.SRC2.RF) -> S(get(RS2))
+        case sk.SRC2.RF => src2ToEnum(sk.SRC2.RF) -> S(get(RS2).resize(Riscv.XLEN))
         case sk.SRC2.I  => src2ToEnum(sk.SRC2.I ) -> imm.i_sext
         case sk.SRC2.S  => src2ToEnum(sk.SRC2.S ) -> imm.s_sext
         case sk.SRC2.PC => src2ToEnum(sk.SRC2.PC) -> pcExtended.mux(S(this(Global.PC)).resize(Riscv.XLEN), S(this(Global.PC).resize(Riscv.XLEN)))

@@ -430,7 +430,7 @@ class CsrAccessPlugin(layer : LaneLayer,
       integrated match {
         case true => {
           wbWi.valid := inject(SEL)
-          wbWi.payload := regs.csrValue
+          wbWi.payload := regs.csrValue.resized
         }
         case false =>{
           wbNi.valid := False

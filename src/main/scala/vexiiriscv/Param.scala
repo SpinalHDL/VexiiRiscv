@@ -414,7 +414,7 @@ class ParamSimple(){
 
 //    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
-//    plugins += new IntAluPlugin(early0, formatAt = 0)
+    plugins += new IntAluPlugin(early0, formatAt = 0)
 //    plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
 //    plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)

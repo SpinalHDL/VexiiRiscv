@@ -88,7 +88,7 @@ class IntAluPlugin(var layer: LaneLayer,
 
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
-      wb.payload := ALU_RESULT
+      wb.payload := ALU_RESULT.resized
     }
   }
 }
