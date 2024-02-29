@@ -70,6 +70,11 @@ class ElementBlocking[T](sp : ScopeProperty[Database] = Database) extends Elemen
     assert(!getHandle(db).isLoaded)
     getHandle(db).load(value)
   }
+
+  def soon(): Unit = {
+    getHandle(sp.get).willBeLoadedBy = AsyncThread.current
+    AsyncThread.current.willLoadHandles += getHandle(sp.get)
+  }
   override def isEmpty(db: Database): Boolean = !getHandle(db).isLoaded
 }
 

@@ -9,6 +9,7 @@ import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
 import vexiiriscv.misc.{PipelineService, PrivilegedPlugin, TrapReason, TrapService}
 import vexiiriscv.{Global, riscv}
 import Decode._
+import spinal.core
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
 import vexiiriscv.prediction.{FetchWordPrediction, ForgetCmd, ForgetSource, Prediction}
 import vexiiriscv.riscv._
@@ -51,6 +52,8 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     val ts = host[TrapService]
     val ss = host[ScheduleService]
     val buildBefore = retains(dpp.elaborationLock, ts.trapLock, ss.elaborationLock)
+    Decode.INSTRUCTION_WIDTH.soon()
+
     awaitBuild()
 
     elaborationLock.await()
