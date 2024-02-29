@@ -93,7 +93,7 @@ class DispatchPlugin(var dispatchAt : Int,
     for (eu <- eus; spec <- eu.getUopLayerSpec()) {
       spec.mayFlushUpTo foreach( x => mayFlushUops += spec.uop )
       spec.dontFlushFrom foreach { x =>
-        dontFlushFromLanesUops += spec.uop
+        if (x <= mayFlushUpToMax) dontFlushFromLanesUops += spec.uop
         if (x < mayFlushUpToMax) dontFlushUops += spec.uop
       }
     }

@@ -77,13 +77,13 @@ class LsuPlugin(var layer : LaneLayer,
         case true  => ifp.signExtend(iwb, op, spec.width)
       }
       op.mayFlushUpTo(ctrlAt) // page fault / trap
-      op.dontFlushFrom(ctrlAt)
+      op.dontFlushFrom(ctrlAt+1) //The +1 make the assumption that if a flush happen it is the first cycle in ctrlAt. Also, io access wait one cycle before starting
     }
 
     for(store <- frontend.writingMem ++ amos){
       val op = layer(store)
       op.mayFlushUpTo(ctrlAt)
-      op.dontFlushFrom(ctrlAt)
+      op.dontFlushFrom(ctrlAt+1)
       op.addRsSpec(RS2, storeRs2At)
     }
 
@@ -231,6 +231,7 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
     val onCtrl = new elp.Execute(ctrlAt) {
+      val lsuTrap = False
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
       val mmuPageFault = tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
 
@@ -248,11 +249,12 @@ class LsuPlugin(var layer : LaneLayer,
       val scMiss = Bool()
 
       val io = new Area {
-        val allowed = CombInit[Bool](IO)
-        val doIt = isValid && l1.SEL && allowed
+        val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False)
+        val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel) init(False)
+        val doIt = isValid && l1.SEL && IO
 
         val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
-        bus.cmd.valid := doIt && !cmdSent
+        bus.cmd.valid := doIt && !cmdSent && allowIt && !tooEarly
         bus.cmd.write := l1.STORE
         bus.cmd.address := l1.PHYSICAL_ADDRESS //TODO Overflow on TRANSLATED itself ?
         bus.cmd.data := l1.WRITE_DATA
@@ -270,7 +272,7 @@ class LsuPlugin(var layer : LaneLayer,
         val rsp = bus.rsp.toStream.halfPipe()
         rsp.ready := !elp.isFreezed()
 
-        val freezeIt = doIt && !rsp.valid
+        val freezeIt = doIt && (tooEarly || !rsp.valid && allowIt)
         elp.freezeWhen(freezeIt)
       }
 
@@ -349,7 +351,6 @@ class LsuPlugin(var layer : LaneLayer,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      val lsuTrap = False
       when((!pmaIo.rsp.fault).mux[Bool](io.rsp.valid && io.rsp.error, l1.FAULT)) {
         lsuTrap := True
         trapPort.exception := True
@@ -366,21 +367,21 @@ class LsuPlugin(var layer : LaneLayer,
 
       val pmaFault = pmaL1.rsp.fault && pmaIo.rsp.fault
       when(pmaFault) {
-        lsuTrap := True; io.allowed := False
+        lsuTrap := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
         trapPort.code(1) setWhen (STORE)
       }
 
       when(mmuPageFault) {
-        lsuTrap := True; io.allowed := False
+        lsuTrap := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
         trapPort.code(1) setWhen (STORE)
       }
 
       when(tpk.ACCESS_FAULT) {
-        lsuTrap := True; io.allowed := False
+        lsuTrap := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
         trapPort.code(1) setWhen (STORE)
@@ -389,13 +390,13 @@ class LsuPlugin(var layer : LaneLayer,
       trapPort.arg(0, 2 bits) := STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
       trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REDO) {
-        lsuTrap := True; io.allowed := False
+        lsuTrap := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
       }
 
       when(MISS_ALIGNED) {
-        lsuTrap := True; io.allowed := False
+        lsuTrap := True
         trapPort.exception := True
         trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(MISS_ALIGNED).resized
       }
