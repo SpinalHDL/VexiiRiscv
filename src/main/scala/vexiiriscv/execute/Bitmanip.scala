@@ -302,43 +302,17 @@ class ZbbExtendPlugin(val layer: LaneLayer,
     }
   }
 }
-/*
-
-let rs1_val = X(rs1);
-let rs2_val = X(rs2);
-let output : xlenbits = 0;
-
-CLMUL
-
-foreach (i from 0 to xlen by 1) {
-  if ((rs2_val >> i) & 1)
-    output = output ^ (rs1_val << i);
-}
-
-CLMULH
-
-foreach (i from 1 to xlen by 1) {
-  if ((rs2_val >> i) & 1)
-    output = output ^ (rs1_val >> (xlen - i));
-}
-
-CLMULR
-
-foreach (i from 0 to (xlen - 1) by 1) {
-  if ((rs2_val >> i) & 1)
-    output = output ^ (rs1_val >> (xlen - i - 1));
-}
-
-
-X[rd] = output
-
- */
 
 object ZbcPlugin {
-  val FLIP_RS1 = Payload(Bool())
+  val FLIP = Payload(Bool())
   val SHIFT_RS2 = Payload(Bool())
+  val MASK_RS2 = Payload(Bool())
 }
 
+// Use common CLMUL HW by modifying inputs:
+// CLMUL as spec
+// CLMULH reversed rs1, rs2, output, rs2 shifted << 1
+// CLMULR reversed rs1, rs2, output, rs2 LSB masked
 class ZbcPlugin(val layer: LaneLayer,
                 val executeAt: Int = 0,
                 val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
@@ -350,24 +324,32 @@ class ZbcPlugin(val layer: LaneLayer,
     import SrcKeys._
 
     val wb = newWriteback(ifp, formatAt)
-    add(RvZbx.CLMUL).srcs(SRC1.RF, SRC2.RF).decode(FLIP_RS1 -> False, SHIFT_RS2 -> False)
-    add(RvZbx.CLMULH).srcs(SRC1.RF, SRC2.RF).decode(FLIP_RS1 -> True, SHIFT_RS2 -> True)
-    add(RvZbx.CLMULR).srcs(SRC1.RF, SRC2.RF).decode(FLIP_RS1 -> True, SHIFT_RS2 -> False)
+    add(RvZbx.CLMUL).srcs(SRC1.RF, SRC2.RF).decode(FLIP -> False, SHIFT_RS2 -> False, MASK_RS2 -> False)
+    add(RvZbx.CLMULH).srcs(SRC1.RF, SRC2.RF).decode(FLIP -> True, SHIFT_RS2 -> True, MASK_RS2 -> False)
+    add(RvZbx.CLMULR).srcs(SRC1.RF, SRC2.RF).decode(FLIP -> True, SHIFT_RS2 -> False, MASK_RS2 -> True)
 
     uopRetainer.release()
 
     val execute = new el.Execute(executeAt) {
-      val rs1 = FLIP_RS1 ? el(IntRegFile, RS1).reversed | el(IntRegFile, RS1)
-      val rs2 = SHIFT_RS2 ? (el(IntRegFile, RS2) |>> 1) | el(IntRegFile, RS2)
+      val rs1 = this(el(IntRegFile, RS1))
+      val rs2 = this(el(IntRegFile, RS2))
+      val multiplicand = FLIP ? rs1.reversed | rs1
+      val rs2_flipped = el(IntRegFile, RS2).reversed
+      val multiplier = (this(SHIFT_RS2) ## this(MASK_RS2)).muxDc(
+        0 -> rs2,
+        1 -> rs2_flipped,
+        2 -> (rs2_flipped |<< 1),
+      )
 
-      RESULT := (0 until Riscv.XLEN.get).map(
-        i => (rs1 |<< i) & (rs2(i) #* Riscv.XLEN.get)
-      ).reduceBalancedTree(_ ^ _)
+      val masked = Vec.tabulate(Riscv.XLEN.get) { i =>
+        multiplier(i) ? (multiplicand |<< i) | (B"0").resized
+      }
+      RESULT := masked.reduceBalancedTree(_ ^ _)
     }
 
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
-      wb.payload := RESULT
+      wb.payload := FLIP ? RESULT.reversed | RESULT
     }
   }
 }
