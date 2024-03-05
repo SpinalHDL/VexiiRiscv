@@ -77,6 +77,7 @@ class ParamSimple(){
   var withRva = false
   var privParam = PrivilegedParam.base
   var lsuForkAt = 0
+  var lsuPmaAt = 0
   var relaxedBranch = false
   var relaxedShift = false
   var relaxedSrc = true
@@ -113,15 +114,15 @@ class ParamSimple(){
     withRas = true
     relaxedBranch = true  // !!
 //    relaxedBtb = true     // !!
-//    fetchL1Enable = true
-//    fetchL1ReducedBank = true
-//    fetchL1MemDataWidthMin = 256
-//    fetchL1Sets = 64
-//    fetchL1Ways = 4
-//    lsuL1Enable = true
-//    lsuL1Sets = 64
-//    lsuL1Ways = 4
-//    withLsuBypass = true
+    fetchL1Enable = true
+    fetchL1Sets = 64
+    fetchL1Ways = 4
+    //fetchL1ReducedBank = true
+    //fetchL1MemDataWidthMin = 256
+    lsuL1Enable = true
+    lsuL1Sets = 64
+    lsuL1Ways = 4
+    withLsuBypass = true
     divArea = false
     divRadix = 4
     decoders = 2
@@ -191,7 +192,7 @@ class ParamSimple(){
     r += s"disAt${dispatcherAt}"
     r += regFileSync.mux("rfs","rfa") + regFileDualPortRam.mux("Dp","Mem")
     if (fetchL1Enable) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}Dwm$fetchL1MemDataWidthMin${fetchL1ReducedBank.mux("Rb", "")}" else r += s"fclF${fetchCachelessForkAt}"
-    if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuF$lsuForkAt"
+    if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuP${lsuPmaAt}F$lsuForkAt"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += s"btbS${btbSets}H${btbHashWidth}${if(relaxedBtb)"R" else ""}"
     if (withRas) r += "ras"
@@ -258,6 +259,7 @@ class ParamSimple(){
     opt[Unit]("div-ipc") action { (v, c) => divArea = false }
     opt[Int]("fetch-fork-at") action { (v, c) => fetchCachelessForkAt = v }
     opt[Int]("lsu-fork-at") action { (v, c) => lsuForkAt = v }
+    opt[Int]("lsu-pma-at") action { (v, c) => lsuPmaAt = v }
   }
 
   def plugins() = pluginsArea.plugins
@@ -423,7 +425,7 @@ class ParamSimple(){
       withAmo   = withRva,
       withSpeculativeLoadFlush = true,
       addressAt = 0,
-      pmaAt     = 0,
+      pmaAt     = lsuPmaAt,
       forkAt    = lsuForkAt+0,
       joinAt    = lsuForkAt+1,
       wbAt      = 2, //TODO

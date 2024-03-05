@@ -38,6 +38,7 @@ class MicroSoc() extends Component {
     param.withMul = false
     param.withDiv = false
     param.fetchCachelessForkAt = 1
+    param.lsuPmaAt = 1
     param.lsuForkAt = 1
     param.relaxedBranch = true
     param.withPerformanceCounters = false
@@ -86,9 +87,16 @@ object MicroSocGen extends App{
 object MicroSocSynt extends App{
   import spinal.lib.eda.bench._
   val rtls = ArrayBuffer[Rtl]()
-  rtls += Rtl(SpinalVerilog(new MicroSoc()))
+  rtls += Rtl(SpinalVerilog(new MicroSoc(){
+    cd100.readClockWire.setName("clk")
+    setDefinitionName("MicroSoc")
+  }))
 
-  val targets = XilinxStdTargets().take(2)
+  val targets = ArrayBuffer[Target]()
+  //  targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
+  //  targets ++= AlteraStdTargets()
+  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
+
   Bench(rtls, targets)
 }
 
