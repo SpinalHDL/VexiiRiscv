@@ -3,6 +3,7 @@ package vexiiriscv.execute.lsu
 import spinal.core._
 import spinal.core.fiber.Handle
 import spinal.core.sim.SimDataPimper
+import spinal.lib
 import spinal.lib._
 import spinal.lib.bus.tilelink.M2sTransfers
 import spinal.lib.fsm.{State, StateMachine}
@@ -29,6 +30,7 @@ case class LsuL1Cmd() extends Bundle {
   val load, store, atomic = Bool()
   val fromFlush = Bool()
   val fromAccess = Bool()
+  val fromWriteBuffer = Bool()
 }
 
 class LsuPlugin(var layer : LaneLayer,
@@ -38,7 +40,9 @@ class LsuPlugin(var layer : LaneLayer,
                 var addressAt: Int = 0,
                 var ctrlAt: Int = 2,
                 var wbAt : Int = 2,
-                var storeRs2At : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuL1Service{
+                var storeRs2At : Int = 0,
+                var writeBufferSlots : Int = 0,
+                var writeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuL1Service{
 
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
@@ -46,6 +50,8 @@ class LsuPlugin(var layer : LaneLayer,
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
 
   val logic = during setup new Area{
+    assert(!(writeBufferSlots != 0 ^ writeBufferOps != 0))
+    val withWriteBuffer = writeBufferSlots != 0
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
     val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
     val srcp = host.find[SrcPlugin](_.layer == layer)
@@ -113,6 +119,8 @@ class LsuPlugin(var layer : LaneLayer,
     val l1 = LsuL1
     val FROM_ACCESS = Payload(Bool())
     val FROM_LSU = Payload(Bool())
+    val FROM_WB = Payload(Bool())
+    val FORCE_PHYSICAL = Payload(Bool())
 
 
     invalidationRetainer.await()
@@ -146,11 +154,84 @@ class LsuPlugin(var layer : LaneLayer,
       }
     }
 
+    case class WriteBufferOp() extends Bundle {
+      val slotId = UInt(log2Up(writeBufferSlots) bits)
+      val address =  Global.PHYSICAL_ADDRESS()
+      val data = LsuL1.WRITE_DATA()
+      val size = LsuL1.SIZE()
+    }
+
+    val tagWidth = 6
+    def p2t(that : UInt) = B(that(tagWidth, log2Up(LsuL1.LINE_BYTES) bits))
+    case class WriteBufferPush() extends Bundle {
+      val slotOh = Bits(writeBufferSlots bits)
+      val tag = Bits(tagWidth bits)
+      val op = WriteBufferOp()
+    }
+
+
+    val PTR = Payload(UInt(log2Up(writeBufferOps) + 1 bits))
+    case class WriteBufferPop() extends Bundle {
+      val ptr = PTR()
+      val op = WriteBufferOp()
+    }
+
+    val writeBuffer = withWriteBuffer generate new Area {
+      assert(isPow2(writeBufferOps))
+
+      val push = Flow(WriteBufferPush())
+      val pop = Stream(WriteBufferPop())
+
+      val ops = new Area {
+        val mem = Mem.fill(writeBufferOps)(WriteBufferOp())
+        val pushPtr, popPtr, freePtr = Reg(PTR) init (0)
+        val full = (pushPtr ^ freePtr ^ writeBufferOps) === 0
+
+        val stages = 2
+        val ctrls = List.fill(stages)(CtrlLink())
+        val regs = for((from, to) <- (ctrls, ctrls.tail).zipped) yield StageLink(from.down, to.up)
+
+        ctrls(0).up.valid := popPtr =/= pushPtr
+        ctrls(0).up(PTR) := popPtr
+        val doRead = ctrls(0).up.isFiring
+        popPtr := popPtr + U(doRead)
+        val OPS = ctrls(1).insert(mem.readSync(popPtr.resized, doRead))
+        ctrls.last.down.driveTo(pop){(p, n) =>
+          p.op := n(OPS)
+          p.ptr := n(PTR)
+        }
+
+        Builder(ctrls ++ regs)
+      }
+
+      val tagRange = tagWidth + log2Up(LsuL1.LINE_BYTES) -1 downto log2Up(LsuL1.LINE_BYTES)
+      val TAG = Payload(Bits(tagWidth bits))
+      val slots = for(slotId <- 0 until writeBufferSlots) yield new Area {
+        val valid = RegInit(False)
+        val ptr = Reg(PTR)
+        val tag = Reg(TAG)
+      }
+      val slotsFree = slots.map(!_.valid).orR
+      val slotsFreeFirst = B(OHMasking.firstV2(B(slots.map(!_.valid))))
+
+      when(push.fire){
+        ops.mem.write(ops.pushPtr.resized, push.op)
+        ops.pushPtr := ops.pushPtr + U(push.fire)
+        slots.onMask(push.slotOh){slot =>
+          slot.valid := True
+          slot.ptr   := ops.pushPtr
+          slot.tag   := push.tag
+        }
+      }
+    }
+
+
     val onAddress0 = new elp.Execute(addressAt){
+      FORCE_PHYSICAL := FROM_ACCESS || FROM_WB
       val translationPort = ats.newTranslationPort(
         nodes = Seq(elp.execute(addressAt).down, elp.execute(addressAt+1).down),
         rawAddress = l1.MIXED_ADDRESS,
-        forcePhysical = FROM_ACCESS,
+        forcePhysical = FORCE_PHYSICAL,
         usage = AddressTranslationPortUsage.LOAD_STORE,
         portSpec = translationPortParameter,
         storageSpec = translationStorage
@@ -168,6 +249,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := ATOMIC
         port.fromFlush := False
         port.fromAccess := False
+        port.fromWriteBuffer := False
       }
 
       val access = dbusAccesses.nonEmpty generate new Area {
@@ -182,6 +264,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := False
         port.fromFlush := False
         port.fromAccess := True
+        port.fromWriteBuffer := False
       }
 
       val flush = new Area {
@@ -194,9 +277,24 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := False
         port.fromFlush := True
         port.fromAccess := False
+        port.fromWriteBuffer := False
         when(port.fire) {
           flusher.cmdCounter := flusher.cmdCounter + 1
         }
+      }
+
+      val wb = new Area {
+        val port = ports.addRet(Stream(LsuL1Cmd()))
+        port.valid := writeBuffer.pop.valid
+        port.address := writeBuffer.pop.op.address.resized
+        port.size := writeBuffer.pop.op.size
+        port.load := False
+        port.store := True
+        port.atomic := False
+        port.fromFlush := False
+        port.fromAccess := False
+        port.fromWriteBuffer := True
+        writeBuffer.pop.ready := port.ready
       }
 
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
@@ -210,7 +308,10 @@ class LsuPlugin(var layer : LaneLayer,
       l1.STORE := arbiter.io.output.store
       l1.FLUSH := arbiter.io.output.fromFlush
       FROM_ACCESS := arbiter.io.output.fromAccess
-      FROM_LSU := !(arbiter.io.output.fromFlush || arbiter.io.output.fromAccess)
+      FROM_WB := arbiter.io.output.fromWriteBuffer
+      FROM_LSU := !(arbiter.io.output.fromFlush || arbiter.io.output.fromAccess || arbiter.io.output.fromWriteBuffer)
+      PTR := writeBuffer.pop.ptr
+      val WRITE_BUFFER_DATA = insert(writeBuffer.pop.op.data)
     }
 
     val tpk = onAddress0.translationPort.keys
@@ -334,7 +435,20 @@ class LsuPlugin(var layer : LaneLayer,
         size -> writeData(0, w bits).#*(Riscv.LSLEN / w)
       }
       l1.WRITE_DATA := l1.SIZE.muxListDc(mapping)
+      when(FROM_WB){
+        l1.WRITE_DATA := onAddress0.WRITE_BUFFER_DATA
+      }
 
+      val wb = withWriteBuffer generate new Area{
+        val tag = p2t(LsuL1.PHYSICAL_ADDRESS)
+        val hits = B(writeBuffer.slots.map(s => s.valid && s.tag === tag))
+        val hit = hits.orR
+        val allowed = !writeBuffer.ops.full && (writeBuffer.slotsFree || hit) && FROM_LSU && STORE && !ATOMIC
+        val slotOh = hits | writeBuffer.slotsFreeFirst.andMask(!hit)
+        val slotId = OHToUInt(slotOh)
+        val loadHazard = LOAD && hit
+        val selfHazard = FROM_WB && PTR =/= writeBuffer.ops.freePtr
+      }
 
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
@@ -358,8 +472,8 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code(1) setWhen (STORE)
       }
 
-      val l1Redo = !pmaL1.rsp.fault && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
-      when(l1Redo){
+      val l1Failed = !pmaL1.rsp.fault && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
+      when((l1Failed || wb.hit) && !wb.allowed){
         lsuTrap := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
@@ -401,18 +515,42 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(MISS_ALIGNED).resized
       }
 
-      when(isValid && SEL && lsuTrap) {
-        trapPort.valid := True
-        flushPort.valid := True
-        bypass(Global.TRAP) := True
-        bypass(Global.COMMIT) := False
+
+      writeBuffer.push.valid  := False
+      writeBuffer.push.slotOh := wb.slotOh
+      writeBuffer.push.tag    := wb.tag
+      writeBuffer.push.op.slotId  := wb.slotId
+      writeBuffer.push.op.address := l1.PHYSICAL_ADDRESS
+      writeBuffer.push.op.data    := LsuL1.WRITE_DATA
+      writeBuffer.push.op.size    := LsuL1.SIZE
+
+      when(isValid && SEL) {
+        when(lsuTrap) {
+          trapPort.valid := True
+          flushPort.valid := True
+          bypass(Global.TRAP) := True
+          bypass(Global.COMMIT) := False
+        }elsewhen((l1Failed || wb.hit) && wb.allowed && down.isFiring){
+          writeBuffer.push.valid   := True
+        }
       }
 
-      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED || pmaFault)
-      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss
+      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED || pmaFault || wb.loadHazard)
+      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || !FROM_WB && wb.hit || wb.selfHazard
 
       when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){
         flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
+      }
+
+      when(l1.SEL && FROM_WB && !elp.isFreezed() && !wb.selfHazard){
+        when(l1Failed) {
+          writeBuffer.ops.popPtr := writeBuffer.ops.freePtr
+        } otherwise {
+          writeBuffer.ops.freePtr := writeBuffer.ops.freePtr + 1
+          for (slot <- writeBuffer.slots) when(slot.ptr === writeBuffer.ops.freePtr) {
+            slot.valid := False
+          }
+        }
       }
 
       val access = dbusAccesses.nonEmpty generate new Area {
@@ -421,7 +559,7 @@ class LsuPlugin(var layer : LaneLayer,
         rsp.valid := l1.SEL && FROM_ACCESS && !elp.isFreezed()
         rsp.data     := l1.READ_DATA
         rsp.error    := l1.FAULT
-        rsp.redo     := l1Redo
+        rsp.redo     := l1Failed || wb.hit
         rsp.waitSlot := 0
         rsp.waitAny  := False //TODO
         when(pmaFault){

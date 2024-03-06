@@ -677,7 +677,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         lane.freezeWhen(freezeIt)
 
         assert(Global.HART_COUNT.get == 1)
-        freezeIt setWhen(SEL && refill.slots.map(s => s.valid && !s.loaded).orR) //TODO PREFETCH not friendly
+//        freezeIt setWhen(SEL && refill.slots.map(s => s.valid && !s.loaded).orR) //TODO PREFETCH not friendly
 
         for ((bank, bankId) <- banks.zipWithIndex) {
 //          BANK_BUSY(bankId) := bank.write.valid && bank.write.address === readAddress //Write to read hazard
@@ -800,7 +800,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val spawn = RegNext(!lane.isFreezed()) init(True)
         val hazardReg = RegNextWhen(this(HAZARD), spawn) init(False)
         //TODO writeBackHazard hit performance and isn't required in most case ?
-        HAZARD := spawn.mux(waysHazard || loadBankHazard || refillHazard || writebackHazard, hazardReg)  //TODO Line busy can likely be removed if single hart with no prefetch
+        HAZARD := spawn.mux(waysHazard || loadBankHazard || refillHazard || writebackHazard || STORE && (!bankWriteReservation.win || !reservation.win), hazardReg)  //TODO Line busy can likely be removed if single hart with no prefetch
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
@@ -832,8 +832,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           assert(CountOne(WAYS_HITS) <= 1, "Multiple way hit ???")
         }
 
-        val freezeIt = SEL && STORE && (!bankWriteReservation.win || !reservation.win)
-        lane.freezeWhen(freezeIt)
+//        val freezeIt = SEL && STORE && (!bankWriteReservation.win || !reservation.win)
+//        lane.freezeWhen(freezeIt)
 
         //TODO preset dirty if it come from a store
         refill.push.valid := allowSideEffects && (doRefill || doUpgrade)
