@@ -112,9 +112,10 @@ class TestOptions{
   val elfs = ArrayBuffer[File]()
   var testName = Option.empty[String]
   var passSymbolName = "pass"
-  val fsmTasks = mutable.Queue[FsmTask]()
+  val fsmTasksGen = mutable.Queue[() => FsmTask]()
   var ibusReadyFactor = 1.01f
   var dbusReadyFactor = 1.01f
+  var dbusBaseLatency = 0
   var seed = 2
 
   def getTestName() = testName.getOrElse("test")
@@ -149,23 +150,25 @@ class TestOptions{
     opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
 
-    opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasks += new FsmPutc(v) }
-    opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasks += new FsmPutc("\n") }
-    opt[String]("fsm-getc") unbounded() action { (v, c) => fsmTasks += new FsmGetc(v) }
-    opt[Long]("fsm-sleep") unbounded() action { (v, c) => fsmTasks += new FsmSleep(v) }
-    opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasks += new FsmSuccess() }
+    opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
+    opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
+    opt[String]("fsm-getc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmGetc(v)) }
+    opt[Long]("fsm-sleep") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSleep(v)) }
+    opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSuccess()) }
     opt[Int]("seed") action { (v, c) => seed = v }
     opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
-      case true => DualSimTracer.withCb(compiled, window = 500000 * 10, seed=seed)(test)
+      case true => DualSimTracer.withCb(compiled, window = 2000000 * 10, seed=seed)(test)
       case false => compiled.doSimUntilVoid(name = getTestName(), seed=seed) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
 
   def test(dut : VexiiRiscv, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
+    val fsmTasks =  mutable.Queue[FsmTask]()
+    for(gen <- fsmTasksGen) fsmTasks += gen()
     val cd = dut.clockDomain
     cd.forkStimulus(10)
     simSpeedPrinter.foreach(cd.forkSimSpeedPrinter)
@@ -462,6 +465,7 @@ class TestOptions{
 //            println(f"miaou ${mem.readByteAsInt(0x817FFFF3l)}%x")
 //            println(s"\n!! $simTime ${a.opcode.getName} ${a.data}")
 //          }
+          if(dbusBaseLatency != 0) cd.waitSampling(dbusBaseLatency)
           if(dbusReadyFactor < 1.0) super.delayOnA(a)
         }
       }

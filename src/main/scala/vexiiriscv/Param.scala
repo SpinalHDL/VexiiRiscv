@@ -90,9 +90,13 @@ class ParamSimple(){
   var fetchL1Ways = 1
   var fetchL1ReducedBank = false
   var fetchL1MemDataWidthMin = 32
+  var lsuWriteBufferSlots = 0
+  var lsuWriteBufferOps = 0
   var lsuL1Enable = false
   var lsuL1Sets = 64
   var lsuL1Ways = 1
+  var LsuL1RefillCount = 1
+  var lsuL1WritebackCount = 1
   var withLsuBypass = false
   var withIterativeShift = false
   var divRadix = 2
@@ -123,6 +127,10 @@ class ParamSimple(){
     lsuL1Enable = true
     lsuL1Sets = 64
     lsuL1Ways = 4
+    LsuL1RefillCount = 2
+    lsuL1WritebackCount = 2
+    lsuWriteBufferSlots = 2
+    lsuWriteBufferOps = 32
     withLsuBypass = true
     divArea = false
     divRadix = 4
@@ -460,8 +468,8 @@ class ParamSimple(){
         layer = early0,
         withRva = withRva,
         storeRs2At = withLateAlu.mux(2, 0),
-        writeBufferSlots = 4,
-        writeBufferOps = 32,
+        writeBufferSlots =lsuWriteBufferSlots,
+        writeBufferOps = lsuWriteBufferOps,
         translationStorageParameter = MmuStorageParameter(
           levels = List(
             MmuStorageLevel(
@@ -491,8 +499,8 @@ class ParamSimple(){
         lane           = lane0,
         memDataWidth   = xlen,
         cpuDataWidth   = xlen,
-        refillCount    = 1,
-        writebackCount = 1,
+        refillCount    = LsuL1RefillCount,
+        writebackCount = lsuL1WritebackCount,
         setCount       = lsuL1Sets,
         wayCount       = lsuL1Ways,
         withBypass     = withLsuBypass

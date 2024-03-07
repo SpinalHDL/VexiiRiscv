@@ -2,7 +2,7 @@ package vexiiriscv.scratchpad
 
 import spinal.core._
 import spinal.lib.StreamFifo
-import spinal.lib.eda.bench.{AlteraStdTargets, Bench, EfinixStdTargets, Rtl, XilinxStdTargets}
+import spinal.lib.eda.bench.{AlteraStdTargets, Bench, EfinixStdTargets, Rtl, Target, XilinxStdTargets}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 
@@ -29,6 +29,25 @@ object IntegrationSynthBench extends App{
 //  add("nothing"){ p =>
 //
 //  }
+
+//  add("lsu16k") { p =>
+//    import p._
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//  }
+
+  add("lsu16kwb") { p =>
+    import p._
+    lsuL1Enable = true
+    lsuL1Sets = 64
+    lsuL1Ways = 4
+    LsuL1RefillCount = 2
+    lsuL1WritebackCount = 2
+    lsuWriteBufferSlots = 2
+    lsuWriteBufferOps = 32
+  }
+
 
 //
 //  add("bypass all") { p =>
@@ -143,33 +162,33 @@ object IntegrationSynthBench extends App{
 //    p.withLateAlu = true
 //  }
 
-  add("fullPerf") { p =>
-    p.allowBypassFrom = 0
-    p.decoders = 2
-    p.lanes = 2
-    p.withDispatcherBuffer = true
-
-    p.withMul = true
-    p.withDiv = true
-
-    p.withBtb = true
-    p.withGShare = true
-    p.withRas = true
-    p.relaxedBranch = true
-    p.relaxedBtb = true
-
-//    p.privParam.withSupervisor = true;
-//    p.privParam.withUser = true;
-//    p.withMmu = true
-
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 4
-
-    p.fetchL1Enable = true
-    p.fetchL1Sets = 64
-    p.fetchL1Ways = 4
-  }
+//  add("fullPerf") { p =>
+//    p.allowBypassFrom = 0
+//    p.decoders = 2
+//    p.lanes = 2
+//    p.withDispatcherBuffer = true
+//
+//    p.withMul = true
+//    p.withDiv = true
+//
+//    p.withBtb = true
+//    p.withGShare = true
+//    p.withRas = true
+//    p.relaxedBranch = true
+//    p.relaxedBtb = true
+//
+////    p.privParam.withSupervisor = true;
+////    p.privParam.withUser = true;
+////    p.withMmu = true
+//
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 4
+//
+//    p.fetchL1Enable = true
+//    p.fetchL1Sets = 64
+//    p.fetchL1Ways = 4
+//  }
 
 //    add("fullPerf2") { p =>
 //      p.allowBypassFrom = 0
@@ -446,7 +465,11 @@ object IntegrationSynthBench extends App{
 //    rtls += Rtl(sc.generateVerilog {
 //      new StreamFifo(UInt(8 bits), 16)
 //    })
-  val targets = XilinxStdTargets(withFMax = true, withArea = true)// ++ EfinixStdTargets(withFMax = true, withArea = true) ++ AlteraStdTargets()
+
+  val targets = ArrayBuffer[Target]()
+  targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
+  targets ++= AlteraStdTargets()
+  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
 
   Bench(rtls, targets)
 }
