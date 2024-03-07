@@ -186,6 +186,7 @@ class LsuPlugin(var layer : LaneLayer,
         val mem = Mem.fill(writeBufferOps)(WriteBufferOp())
         val pushPtr, popPtr, freePtr = Reg(PTR) init (0)
         val full = (pushPtr ^ freePtr ^ writeBufferOps) === 0
+        val occupancy = pushPtr - freePtr //For debug purpose only
 
         val stages = 2
         val ctrls = List.fill(stages)(CtrlLink())

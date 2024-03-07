@@ -797,10 +797,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val loadBankHazard = withBypass.mux(False, LOAD && WRITE_TO_READ_HAZARDS.orR)
 
         //WARNING, when lane.isFreezed, nothing should change. If a hazard was detected, is has to stay
-        val spawn = RegNext(!lane.isFreezed()) init(True)
-        val hazardReg = RegNextWhen(this(HAZARD), spawn) init(False)
+        val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False)
         //TODO writeBackHazard hit performance and isn't required in most case ?
-        HAZARD := spawn.mux(waysHazard || loadBankHazard || refillHazard || writebackHazard || STORE && (!bankWriteReservation.win || !reservation.win), hazardReg)  //TODO Line busy can likely be removed if single hart with no prefetch
+        HAZARD := hazardReg || waysHazard || loadBankHazard || refillHazard || writebackHazard || STORE && (!bankWriteReservation.win || !reservation.win)  //TODO Line busy can likely be removed if single hart with no prefetch
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
