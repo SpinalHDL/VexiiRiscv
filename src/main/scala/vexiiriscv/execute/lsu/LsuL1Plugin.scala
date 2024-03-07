@@ -167,7 +167,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     val tagsWriteArbiter = new Reservation()
     val bankWriteArbiter = new Reservation()
-    val bankReadArbiter  = new Reservation()
+//    val bankReadArbiter  = new Reservation()
 
     val refillCompletions = Bits(refillCount bits)
     val writebackBusy = Bool()
@@ -188,6 +188,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     }
 
     val banks = for (id <- 0 until bankCount) yield new Area {
+      val usedByWriteback = Bool()
       val mem = Mem(Bits(bankWidth bits), bankWordCount)
       val write = mem.writePortWithMask(mem.getWidth / 8)
       if(withMergedBanksWrite) {
@@ -197,7 +198,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         write.mask := banksWrite.writeMask
       }
       val read = new Area{
-        val cmd = Flow(mem.addressType).setIdle()
+        val cmd = Flow(mem.addressType)
         val rsp = mem.readSync(cmd.payload, cmd.valid)
         KeepAttribute(rsp) //Ensure that it will not use 2 cycle latency ram block
       }
@@ -559,25 +560,22 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           for (slot <- refill.slots) slot.victim(slotRead.id) := False
         }
 
-        val brr = bankReadArbiter.create(0)
-        when(slotRead.valid) {
-          brr.takeIt()
-          assert(brr.win)
-        }
+//        val brr = bankReadArbiter.create(0)
+//        when(slotRead.valid) {
+//          brr.takeIt()
+//          assert(brr.win)
+//        }
         for ((bank, bankId) <- banks.zipWithIndex) {
+          bank.read.cmd.valid := bank.usedByWriteback
           if (!reducedBankWidth) {
-            when(slotRead.valid && way === bankId) {
-              bank.read.cmd.valid := True
-              bank.read.cmd.payload := address(lineRange) @@ wordIndex
-            }
+            bank.usedByWriteback := slotRead.valid && way === bankId
+            bank.read.cmd.payload := address(lineRange) @@ wordIndex
           } else {
             val sel = U(bankId) - way
             val groupSel = way(log2Up(bankCount) - 1 downto log2Up(bankCount / memToBankRatio))
             val subSel = sel(log2Up(bankCount / memToBankRatio) - 1 downto 0)
-            when(arbiter.hit && groupSel === (bankId >> log2Up(bankCount / memToBankRatio))) {
-              bank.read.cmd.valid := True
-              bank.read.cmd.payload := address(lineRange) @@ wordIndex @@ (subSel)
-            }
+            bank.usedByWriteback := arbiter.hit && groupSel === (bankId >> log2Up(bankCount / memToBankRatio))
+            bank.read.cmd.payload := address(lineRange) @@ wordIndex @@ (subSel)
           }
         }
 
@@ -672,23 +670,23 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val ls = new Area {
       val rb0 = new lane.Execute(bankReadAt){
         val readAddress = MIXED_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
-        val reservation = bankReadArbiter.create(1)
-        val freezeIt = False
-        lane.freezeWhen(freezeIt)
+//        val reservation = bankReadArbiter.create(1)
+//        val freezeIt = False
+//        lane.freezeWhen(freezeIt)
 
         assert(Global.HART_COUNT.get == 1)
 //        freezeIt setWhen(SEL && refill.slots.map(s => s.valid && !s.loaded).orR) //TODO PREFETCH not friendly
 
         for ((bank, bankId) <- banks.zipWithIndex) {
-//          BANK_BUSY(bankId) := bank.write.valid && bank.write.address === readAddress //Write to read hazard
-          when(SEL){
-            when(reservation.win){
-              reservation.takeIt()
+          BANK_BUSY(bankId) := bank.usedByWriteback
+          when(SEL && !bank.usedByWriteback){
+//            when(reservation.win){
+//              reservation.takeIt()
               bank.read.cmd.valid := !lane.isFreezed()
               bank.read.cmd.payload := readAddress
-            } otherwise {
-              freezeIt := True
-            }
+//            } otherwise {
+//              freezeIt := True
+//            }
           }
         }
       }
@@ -697,12 +695,14 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         def wayToBank(way: Int): UInt = {
           val wayId = U(way, log2Up(wayCount) bits)
           if (!reducedBankWidth) return wayId
+          ??? //and would need to check busyReg down
           (wayId >> log2Up(bankCount / memToBankRatio)) @@ ((wayId + (MIXED_ADDRESS(log2Up(bankWidth / 8), log2Up(bankCount) bits))).resize(log2Up(bankCount / memToBankRatio)))
         }
 
-        for ((bank, bankId) <- banks.zipWithIndex) {
+        val onBanks = for ((bank, bankId) <- banks.zipWithIndex) yield new Area{
+          val busyReg = RegInit(False) setWhen(bank.usedByWriteback) clearWhen(!lane.isFreezed())
           BANKS_WORDS(bankId) := bank.read.rsp
-          BANK_BUSY_REMAPPED(bankId) := BANK_BUSY(wayToBank(bankId))
+          BANK_BUSY_REMAPPED(bankId) := BANK_BUSY(wayToBank(bankId)) || busyReg
         }
       }
 
@@ -795,11 +795,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val wasDirty = (B(WAYS_TAGS.map(_.dirty)) & WAYS_HITS).orR
         val refillWayWasDirty = WAYS_TAGS.map(w => w.loaded && w.dirty).read(refillWayWithoutUpdate)
         val loadBankHazard = withBypass.mux(False, LOAD && WRITE_TO_READ_HAZARDS.orR)
+        val loadBankNotRead = LOAD && (BANK_BUSY_REMAPPED & WAYS_HITS).orR
 
         //WARNING, when lane.isFreezed, nothing should change. If a hazard was detected, is has to stay
         val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False)
         //TODO writeBackHazard hit performance and isn't required in most case ?
-        HAZARD := hazardReg || waysHazard || loadBankHazard || refillHazard || writebackHazard || STORE && (!bankWriteReservation.win || !reservation.win)  //TODO Line busy can likely be removed if single hart with no prefetch
+        HAZARD := hazardReg || waysHazard || loadBankHazard || loadBankNotRead || refillHazard || writebackHazard || STORE && (!bankWriteReservation.win || !reservation.win)  //TODO Line busy can likely be removed if single hart with no prefetch
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
@@ -969,6 +970,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     tagsWriteArbiter.build()
     bankWriteArbiter.build()
-    bankReadArbiter.build()
+//    bankReadArbiter.build()
   }
 }
