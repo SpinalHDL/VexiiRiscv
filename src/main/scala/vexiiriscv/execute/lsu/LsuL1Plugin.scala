@@ -670,23 +670,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val ls = new Area {
       val rb0 = new lane.Execute(bankReadAt){
         val readAddress = MIXED_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
-//        val reservation = bankReadArbiter.create(1)
-//        val freezeIt = False
-//        lane.freezeWhen(freezeIt)
-
-        assert(Global.HART_COUNT.get == 1)
-//        freezeIt setWhen(SEL && refill.slots.map(s => s.valid && !s.loaded).orR) //TODO PREFETCH not friendly
-
         for ((bank, bankId) <- banks.zipWithIndex) {
           BANK_BUSY(bankId) := bank.usedByWriteback
-          when(SEL && !bank.usedByWriteback){
-//            when(reservation.win){
-//              reservation.takeIt()
-              bank.read.cmd.valid := !lane.isFreezed()
-              bank.read.cmd.payload := readAddress
-//            } otherwise {
-//              freezeIt := True
-//            }
+          bank.read.cmd.valid setWhen(!lane.isFreezed())
+          when(!bank.usedByWriteback){
+            bank.read.cmd.payload := readAddress
           }
         }
       }
