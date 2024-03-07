@@ -65,7 +65,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var bankMuxesAt: Int = 1,
                   var bankMuxAt: Int = 2,
                   var ctrlAt: Int = 2,
-                  var hazardCheckWidth : Int = 12,
+//                  var hazardCheckWidth : Int = 12,
                   var hitsWithTranslationWays: Boolean = false,
                   var reducedBankWidth: Boolean = false,
                   var tagsReadAsync: Boolean = false,
@@ -114,7 +114,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val tagRange = postTranslationWidth - 1 downto log2Up(linePerWay * lineSize)
     val lineRange = tagRange.low - 1 downto log2Up(lineSize)
     val refillRange = tagRange.high downto lineRange.low
-    val hazardCheckRange = hazardCheckWidth+lineRange.low-1 downto lineRange.low
+    val hazardCheckRange = 11 downto lineRange.low
     val notWordRange = tagRange.high downto log2Up(cpuDataWidth/8)
 
     val bankCount = wayCount
@@ -788,6 +788,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val refillWayNeedWriteback = WAYS_TAGS.map(w => w.loaded && withCoherency.mux(True, w.dirty)).read(refillWayWithoutUpdate)
 
         //Warning, those two signals aren't stable when lane.isFreezed
+        //Note that will also prevent refill/writeback on a cache line which is already busy
         val refillHazard =  refill.isLineBusy(PHYSICAL_ADDRESS)
         val writebackHazard =  writeback.isLineBusy(PHYSICAL_ADDRESS)
 

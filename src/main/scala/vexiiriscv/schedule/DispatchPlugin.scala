@@ -48,6 +48,11 @@ class DispatchPlugin(var dispatchAt : Int,
   val fenceOlderOps = mutable.LinkedHashSet[MicroOp]()
 //  def fenceYounger(op : MicroOp) = fenceYoungerOps += op
   def fenceOlder(op : MicroOp) = fenceOlderOps += op
+  def haltDispatchWhen(cond : Bool) = api.haltDispatch.setWhen(cond)
+
+  val api = during build new Area{
+    val haltDispatch = False
+  }
 
   val logic = during setup new Area{
     val dpp = host[DecodePipelinePlugin]
@@ -343,7 +348,7 @@ class DispatchPlugin(var dispatchAt : Int,
         val doIt = c.ctx.valid && !c.flushHazards && !c.fenceOlderHazards && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
         eusFree(id + 1) := eusFree(id) & (~eusOh).orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(!c.ctx.valid || doIt)
-        c.fire := doIt && !eupp.isFreezed()
+        c.fire := doIt && !eupp.isFreezed() && !api.haltDispatch
       }
     }
 
@@ -351,7 +356,7 @@ class DispatchPlugin(var dispatchAt : Int,
       import insertNode._
       val oh = B(scheduler.arbiters.map(l => l.doIt && l.eusOh(id)))
       val mux = candidates.reader(oh, true)
-      insertNode(CtrlLaneApi.LANE_SEL) := oh.orR && !mux(_.cancel)
+      insertNode(CtrlLaneApi.LANE_SEL) := oh.orR && !mux(_.cancel) && !api.haltDispatch
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.UOP := mux(_.ctx.uop)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))

@@ -14,9 +14,9 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.UOP
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
 import vexiiriscv.misc.{AddressToMask, TrapArg, TrapReason, TrapService}
-import vexiiriscv.riscv.Riscv.LSLEN
+import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import vexiiriscv.riscv._
-import vexiiriscv.schedule.ScheduleService
+import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
 import vexiiriscv.{Global, riscv}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu.AguPlugin._
@@ -186,7 +186,7 @@ class LsuPlugin(var layer : LaneLayer,
         val mem = Mem.fill(writeBufferOps)(WriteBufferOp())
         val pushPtr, popPtr, freePtr = Reg(PTR) init (0)
         val full = (pushPtr ^ freePtr ^ writeBufferOps) === 0
-        val occupancy = pushPtr - freePtr //For debug purpose only
+        val occupancy = pushPtr - freePtr
 
         val stages = 2
         val ctrls = List.fill(stages)(CtrlLink())
@@ -223,6 +223,16 @@ class LsuPlugin(var layer : LaneLayer,
           slot.ptr   := ops.pushPtr
           slot.tag   := push.tag
         }
+      }
+
+      val regulation = new Area{
+        val wordPerLine = LsuL1.LINE_BYTES*8/XLEN
+        assert(writeBufferOps >= wordPerLine)
+//        val waitSlot = RegInit(False) clearWhen(slotsFree)
+//        val waitOps = RegInit(False) clearWhen(ops.occupancy <= writeBufferOps-wordPerLine)
+//        host[DispatchPlugin].haltDispatchWhen(waitSlot || waitOps)
+        val waitIt = RegInit(False) clearWhen (slotsFree && ops.occupancy <= writeBufferOps - wordPerLine)
+        host[DispatchPlugin].haltDispatchWhen(waitIt)
       }
     }
 
@@ -444,7 +454,9 @@ class LsuPlugin(var layer : LaneLayer,
         val tag = p2t(LsuL1.PHYSICAL_ADDRESS)
         val hits = B(writeBuffer.slots.map(s => s.valid && s.tag === tag))
         val hit = hits.orR
-        val allowed = !writeBuffer.ops.full && (writeBuffer.slotsFree || hit) && FROM_LSU && STORE && !ATOMIC
+        val compatibleOp = FROM_LSU && STORE && !ATOMIC
+        val notFull = !writeBuffer.ops.full && (writeBuffer.slotsFree || hit)
+        val allowed = notFull && compatibleOp
         val slotOh = hits | writeBuffer.slotsFreeFirst.andMask(!hit)
         val slotId = OHToUInt(slotOh)
         val loadHazard = LOAD && hit
@@ -531,8 +543,11 @@ class LsuPlugin(var layer : LaneLayer,
           flushPort.valid := True
           bypass(Global.TRAP) := True
           bypass(Global.COMMIT) := False
-        }elsewhen((l1Failed || wb.hit) && wb.allowed && down.isFiring){
+        } elsewhen((l1Failed || wb.hit) && wb.allowed && down.isFiring){
           writeBuffer.push.valid   := True
+        }
+        when(wb.compatibleOp && !wb.notFull){
+          writeBuffer.regulation.waitIt := True
         }
       }
 
