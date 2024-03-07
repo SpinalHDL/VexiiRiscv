@@ -44,8 +44,8 @@ object IntegrationSynthBench extends App{
     lsuL1Ways = 4
     LsuL1RefillCount = 2
     lsuL1WritebackCount = 2
-    lsuWriteBufferSlots = 2
-    lsuWriteBufferOps = 32
+    lsuStoreBufferSlots = 2
+    lsuStoreBufferOps = 32
   }
 
 

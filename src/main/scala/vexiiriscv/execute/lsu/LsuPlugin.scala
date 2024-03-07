@@ -30,7 +30,7 @@ case class LsuL1Cmd() extends Bundle {
   val load, store, atomic = Bool()
   val fromFlush = Bool()
   val fromAccess = Bool()
-  val fromWriteBuffer = Bool()
+  val fromStoreBuffer = Bool()
 }
 
 class LsuPlugin(var layer : LaneLayer,
@@ -41,8 +41,8 @@ class LsuPlugin(var layer : LaneLayer,
                 var ctrlAt: Int = 2,
                 var wbAt : Int = 2,
                 var storeRs2At : Int = 0,
-                var writeBufferSlots : Int = 0,
-                var writeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuL1Service{
+                var storeBufferSlots : Int = 0,
+                var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuL1Service{
 
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
@@ -50,8 +50,8 @@ class LsuPlugin(var layer : LaneLayer,
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
 
   val logic = during setup new Area{
-    assert(!(writeBufferSlots != 0 ^ writeBufferOps != 0))
-    val withWriteBuffer = writeBufferSlots != 0
+    assert(!(storeBufferSlots != 0 ^ storeBufferOps != 0))
+    val withStoreBuffer = storeBufferSlots != 0
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
     val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
     val srcp = host.find[SrcPlugin](_.layer == layer)
@@ -154,8 +154,8 @@ class LsuPlugin(var layer : LaneLayer,
       }
     }
 
-    case class WriteBufferOp() extends Bundle {
-      val slotId = UInt(log2Up(writeBufferSlots) bits)
+    case class StoreBufferOp() extends Bundle {
+      val slotId = UInt(log2Up(storeBufferSlots) bits)
       val address =  Global.PHYSICAL_ADDRESS()
       val data = LsuL1.WRITE_DATA()
       val size = LsuL1.SIZE()
@@ -163,29 +163,29 @@ class LsuPlugin(var layer : LaneLayer,
 
     val tagWidth = 6
     def p2t(that : UInt) = B(that(tagWidth, log2Up(LsuL1.LINE_BYTES) bits))
-    case class WriteBufferPush() extends Bundle {
-      val slotOh = Bits(writeBufferSlots bits)
+    case class StoreBufferPush() extends Bundle {
+      val slotOh = Bits(storeBufferSlots bits)
       val tag = Bits(tagWidth bits)
-      val op = WriteBufferOp()
+      val op = StoreBufferOp()
     }
 
 
-    val PTR = Payload(UInt(log2Up(writeBufferOps) + 1 bits))
-    case class WriteBufferPop() extends Bundle {
+    val PTR = Payload(UInt(log2Up(storeBufferOps) + 1 bits))
+    case class StoreBufferPop() extends Bundle {
       val ptr = PTR()
-      val op = WriteBufferOp()
+      val op = StoreBufferOp()
     }
 
-    val writeBuffer = withWriteBuffer generate new Area {
-      assert(isPow2(writeBufferOps))
+    val storeBuffer = withStoreBuffer generate new Area {
+      assert(isPow2(storeBufferOps))
 
-      val push = Flow(WriteBufferPush())
-      val pop = Stream(WriteBufferPop())
+      val push = Flow(StoreBufferPush())
+      val pop = Stream(StoreBufferPop())
 
       val ops = new Area {
-        val mem = Mem.fill(writeBufferOps)(WriteBufferOp())
+        val mem = Mem.fill(storeBufferOps)(StoreBufferOp())
         val pushPtr, popPtr, freePtr = Reg(PTR) init (0)
-        val full = (pushPtr ^ freePtr ^ writeBufferOps) === 0
+        val full = (pushPtr ^ freePtr ^ storeBufferOps) === 0
         val occupancy = pushPtr - freePtr
 
         val stages = 2
@@ -207,7 +207,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val tagRange = tagWidth + log2Up(LsuL1.LINE_BYTES) -1 downto log2Up(LsuL1.LINE_BYTES)
       val TAG = Payload(Bits(tagWidth bits))
-      val slots = for(slotId <- 0 until writeBufferSlots) yield new Area {
+      val slots = for(slotId <- 0 until storeBufferSlots) yield new Area {
         val valid = RegInit(False)
         val ptr = Reg(PTR)
         val tag = Reg(TAG)
@@ -227,11 +227,11 @@ class LsuPlugin(var layer : LaneLayer,
 
       val regulation = new Area{
         val wordPerLine = LsuL1.LINE_BYTES*8/XLEN
-        assert(writeBufferOps >= wordPerLine)
+        assert(storeBufferOps >= wordPerLine)
 //        val waitSlot = RegInit(False) clearWhen(slotsFree)
-//        val waitOps = RegInit(False) clearWhen(ops.occupancy <= writeBufferOps-wordPerLine)
+//        val waitOps = RegInit(False) clearWhen(ops.occupancy <= storeBufferOps-wordPerLine)
 //        host[DispatchPlugin].haltDispatchWhen(waitSlot || waitOps)
-        val waitIt = RegInit(False) clearWhen (slotsFree && ops.occupancy <= writeBufferOps - wordPerLine)
+        val waitIt = RegInit(False) clearWhen (slotsFree && ops.occupancy <= storeBufferOps - wordPerLine)
         host[DispatchPlugin].haltDispatchWhen(waitIt)
       }
     }
@@ -260,7 +260,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := ATOMIC
         port.fromFlush := False
         port.fromAccess := False
-        port.fromWriteBuffer := False
+        port.fromStoreBuffer := False
       }
 
       val access = dbusAccesses.nonEmpty generate new Area {
@@ -275,7 +275,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := False
         port.fromFlush := False
         port.fromAccess := True
-        port.fromWriteBuffer := False
+        port.fromStoreBuffer := False
       }
 
       val flush = new Area {
@@ -288,7 +288,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := False
         port.fromFlush := True
         port.fromAccess := False
-        port.fromWriteBuffer := False
+        port.fromStoreBuffer := False
         when(port.fire) {
           flusher.cmdCounter := flusher.cmdCounter + 1
         }
@@ -296,16 +296,16 @@ class LsuPlugin(var layer : LaneLayer,
 
       val wb = new Area {
         val port = ports.addRet(Stream(LsuL1Cmd()))
-        port.valid := writeBuffer.pop.valid
-        port.address := writeBuffer.pop.op.address.resized
-        port.size := writeBuffer.pop.op.size
+        port.valid := storeBuffer.pop.valid
+        port.address := storeBuffer.pop.op.address.resized
+        port.size := storeBuffer.pop.op.size
         port.load := False
         port.store := True
         port.atomic := False
         port.fromFlush := False
         port.fromAccess := False
-        port.fromWriteBuffer := True
-        writeBuffer.pop.ready := port.ready
+        port.fromStoreBuffer := True
+        storeBuffer.pop.ready := port.ready
       }
 
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
@@ -319,10 +319,10 @@ class LsuPlugin(var layer : LaneLayer,
       l1.STORE := arbiter.io.output.store
       l1.FLUSH := arbiter.io.output.fromFlush
       FROM_ACCESS := arbiter.io.output.fromAccess
-      FROM_WB := arbiter.io.output.fromWriteBuffer
-      FROM_LSU := !(arbiter.io.output.fromFlush || arbiter.io.output.fromAccess || arbiter.io.output.fromWriteBuffer)
-      PTR := writeBuffer.pop.ptr
-      val WRITE_BUFFER_DATA = insert(writeBuffer.pop.op.data)
+      FROM_WB := arbiter.io.output.fromStoreBuffer
+      FROM_LSU := !(arbiter.io.output.fromFlush || arbiter.io.output.fromAccess || arbiter.io.output.fromStoreBuffer)
+      PTR := storeBuffer.pop.ptr
+      val WRITE_BUFFER_DATA = insert(storeBuffer.pop.op.data)
     }
 
     val tpk = onAddress0.translationPort.keys
@@ -450,17 +450,17 @@ class LsuPlugin(var layer : LaneLayer,
         l1.WRITE_DATA := onAddress0.WRITE_BUFFER_DATA
       }
 
-      val wb = withWriteBuffer generate new Area{
+      val wb = withStoreBuffer generate new Area{
         val tag = p2t(LsuL1.PHYSICAL_ADDRESS)
-        val hits = B(writeBuffer.slots.map(s => s.valid && s.tag === tag))
+        val hits = B(storeBuffer.slots.map(s => s.valid && s.tag === tag))
         val hit = hits.orR
         val compatibleOp = FROM_LSU && STORE && !ATOMIC
-        val notFull = !writeBuffer.ops.full && (writeBuffer.slotsFree || hit)
+        val notFull = !storeBuffer.ops.full && (storeBuffer.slotsFree || hit)
         val allowed = notFull && compatibleOp
-        val slotOh = hits | writeBuffer.slotsFreeFirst.andMask(!hit)
+        val slotOh = hits | storeBuffer.slotsFreeFirst.andMask(!hit)
         val slotId = OHToUInt(slotOh)
         val loadHazard = LOAD && hit
-        val selfHazard = FROM_WB && PTR =/= writeBuffer.ops.freePtr
+        val selfHazard = FROM_WB && PTR =/= storeBuffer.ops.freePtr
       }
 
       flushPort.valid := False
@@ -529,13 +529,13 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
 
-      writeBuffer.push.valid  := False
-      writeBuffer.push.slotOh := wb.slotOh
-      writeBuffer.push.tag    := wb.tag
-      writeBuffer.push.op.slotId  := wb.slotId
-      writeBuffer.push.op.address := l1.PHYSICAL_ADDRESS
-      writeBuffer.push.op.data    := LsuL1.WRITE_DATA
-      writeBuffer.push.op.size    := LsuL1.SIZE
+      storeBuffer.push.valid  := False
+      storeBuffer.push.slotOh := wb.slotOh
+      storeBuffer.push.tag    := wb.tag
+      storeBuffer.push.op.slotId  := wb.slotId
+      storeBuffer.push.op.address := l1.PHYSICAL_ADDRESS
+      storeBuffer.push.op.data    := LsuL1.WRITE_DATA
+      storeBuffer.push.op.size    := LsuL1.SIZE
 
       when(isValid && SEL) {
         when(lsuTrap) {
@@ -544,10 +544,10 @@ class LsuPlugin(var layer : LaneLayer,
           bypass(Global.TRAP) := True
           bypass(Global.COMMIT) := False
         } elsewhen((l1Failed || wb.hit) && wb.allowed && down.isFiring){
-          writeBuffer.push.valid   := True
+          storeBuffer.push.valid   := True
         }
         when(wb.compatibleOp && !wb.notFull){
-          writeBuffer.regulation.waitIt := True
+          storeBuffer.regulation.waitIt := True
         }
       }
 
@@ -560,10 +560,10 @@ class LsuPlugin(var layer : LaneLayer,
 
       when(l1.SEL && FROM_WB && !elp.isFreezed() && !wb.selfHazard){
         when(l1Failed) {
-          writeBuffer.ops.popPtr := writeBuffer.ops.freePtr
+          storeBuffer.ops.popPtr := storeBuffer.ops.freePtr
         } otherwise {
-          writeBuffer.ops.freePtr := writeBuffer.ops.freePtr + 1
-          for (slot <- writeBuffer.slots) when(slot.ptr === writeBuffer.ops.freePtr) {
+          storeBuffer.ops.freePtr := storeBuffer.ops.freePtr + 1
+          for (slot <- storeBuffer.slots) when(slot.ptr === storeBuffer.ops.freePtr) {
             slot.valid := False
           }
         }
