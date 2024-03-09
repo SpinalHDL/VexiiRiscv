@@ -538,7 +538,7 @@ class ParamSimple(){
       plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
       plugins += shifter(late0, shiftAt = 2, formatAt = 2)
       plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
-      if(withRvZb) plugins += new ZbPlugin(late0, executeAt = 2, formatAt = 0)
+      if(withRvZb) plugins += new ZbPlugin(late0, executeAt = 2, formatAt = 2)
     }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
