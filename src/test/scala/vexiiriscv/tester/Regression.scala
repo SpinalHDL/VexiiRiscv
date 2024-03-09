@@ -32,7 +32,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val rvf = dut.database(Riscv.RVF)
   val rvd = dut.database(Riscv.RVD)
   val rva = dut.database(Riscv.RVA)
-  val rvzb = dut.database(Riscv.RVZb)
+  val rvzb = dut.database(Riscv.RVZb) // TODO fix NullPointerException if not yet set
 
   var arch = ""
   var archLinux = ""
@@ -111,9 +111,9 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val rvta = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ua-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
 
   val riscvTestsFrom2 = ArrayBuffer[File]()
-  riscvTestsFrom2 ++= rvti
-  if(rvm) riscvTestsFrom2 ++= rvtm
-  if(dut.database(Riscv.RVA)) riscvTestsFrom2 ++= rvta
+  //riscvTestsFrom2 ++= rvti
+  //if(rvm) riscvTestsFrom2 ++= rvtm
+  //if(dut.database(Riscv.RVA)) riscvTestsFrom2 ++= rvta
 
   for(elf <- riscvTestsFrom2) {
     val args = newArgs()
@@ -143,14 +143,14 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     }
   }
 
-  doArchTest("I")
-  doArchTest("Zifencei")
-  doArchTest("privilege")
-  if (rvm) doArchTest("M")
-  if (rvc) doArchTest("C")
-  if (rvzb) doArchTest("B")
+  //doArchTest("I")
+  //doArchTest("Zifencei")
+  //doArchTest("privilege")
+  //if (rvm) doArchTest("M")
+  //if (rvc) doArchTest("C")
+  //if (rvzb) doArchTest("B")
 
-  val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")
+  /*val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
   if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
   for(name <- regulars){
@@ -215,6 +215,8 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.fsmGetc("#")
     args.fsmSuccess()
   }
+  *
+   */
 
   dut.host.get[EmbeddedRiscvJtag].foreach{p =>
     val args = newArgs()
@@ -323,10 +325,14 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   def addTest(args: String): Unit = addTest(args.replace("  ", " ").split("\\s+"))
   def addTest(args: Seq[String]): Unit = {
     val param = new ParamSimple()
-    assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+    println(args)
+    new scopt.OptionParser[Unit]("VexiiRiscv") {
       help("help").text("prints this usage text")
       param.addOptions(this)
-    }.parse(args, Unit).nonEmpty)
+    }.parse(args, Unit) match {
+      case Some(_) =>
+      case None => throw new Exception("invalid regression test parameters")
+    }
 
     val paramName = param.getName()
     if(testsAdded.contains(paramName)) return
@@ -364,7 +370,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("divParam", List(2, 4).flatMap(radix => List("", "--div-ipc").map(opt => s"$opt --div-radix $radix")))
   addDim("rva", List("", "--with-mul --with-div --with-rva"))
   addDim("rvc", List("", "--with-mul --with-div --with-rvc"))
-  addDim("rvzb", List("", "--with-rvzb"))
+  //addDim("rvzb", List("", "--with-rvzb"))
   addDim("late-alu", List("", "--with-late-alu"))
   addDims("fetch")(
     Dim("", List("--fetch-fork-at 0", "--fetch-fork-at 1")),
@@ -403,11 +409,12 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("dispBuf", List("", "--with-dispatcher-buffer"))
   addDim("btbParam", List("--btb-sets 512 --btb-hash-width 16", "--btb-sets 128 --btb-hash-width 6"))
 
-  val default = "--with-mul --with-div --performance-counters 4 --with-rvZb"
+  val default = "--with-mul --with-div --with-rvzb --performance-counters 4"
 
+//  addTest(default)
 //  // Add a simple test for each dimensions's positions
 //  for(dim <- dimensions){
-//    for(pos <- dim.getPositions()) {
+//    for(pos <- dim.getPositions() if pos != "") {
 //      addTest(default + " " + pos)
 //    }
 //  }

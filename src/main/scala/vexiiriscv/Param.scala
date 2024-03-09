@@ -593,7 +593,7 @@ class ParamSimple(){
       plugins += new IntAluPlugin(late0, aluAt = lateAluAt, formatAt = lateAluAt)
       plugins += shifter(late0, shiftAt = lateAluAt, formatAt = lateAluAt)
       plugins += new BranchPlugin(late0, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
-      if(withRvZb) plugins += new ZbPlugin(late0, executeAt = lateAluAt, formatAt = lateAluAt)
+      if(withRvZb) plugins ++= ZbPlugin.make(late0, executeAt = lateAluAt, formatAt = lateAluAt)
     }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, 2), allowBypassFrom = allowBypassFrom)
@@ -616,7 +616,7 @@ class ParamSimple(){
         plugins += new IntAluPlugin(late1, aluAt = lateAluAt, formatAt = lateAluAt)
         plugins += shifter(late1, shiftAt = lateAluAt, formatAt = lateAluAt)
         plugins += new BranchPlugin(late1, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
-        if(withRvZb) plugins += new ZbPlugin(late1, formatAt = lateAluAt, formatAt = lateAluAt)
+        if(withRvZb) plugins ++= ZbPlugin.make(late1, executeAt = lateAluAt, formatAt = lateAluAt)
       }
 //      if (withMul) {
 //        plugins += new MulPlugin(early1)

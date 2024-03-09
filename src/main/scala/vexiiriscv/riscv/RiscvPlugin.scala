@@ -15,6 +15,7 @@ class RiscvPlugin(var xlen : Int,
     if(Riscv.RVM.isEmpty) Riscv.RVM.set(false)
     if(Riscv.RVF.isEmpty) Riscv.RVF.set(false)
     if(Riscv.RVD.isEmpty) Riscv.RVD.set(false)
+    if(Riscv.RVZb.isEmpty) Riscv.RVZb.set(false)
     Riscv.XLEN.set(xlen)
     Riscv.FLEN.set(List(Riscv.RVF.get.toInt*32, Riscv.RVD.get.toInt*64).max)
     Riscv.LSLEN.set(List(Riscv.XLEN.get, Riscv.FLEN.get).max)

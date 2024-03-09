@@ -14,8 +14,8 @@ object ZbPlugin {
   def make(layer: LaneLayer,
            executeAt: Int = 0,
            formatAt: Int = 0) = {
-      Seq(
-        new ZbaPlugin(layer, executeAt, formatAt),
+    Seq(
+        /*new ZbaPlugin(layer, executeAt, formatAt),
         new ZbbLogicPlugin(layer, executeAt, formatAt),
         new ZbbCountPlugin(layer, executeAt, formatAt),
         new ZbbMinMaxPlugin(layer, executeAt, formatAt),
@@ -23,7 +23,7 @@ object ZbPlugin {
         new ZbbOrPlugin(layer, executeAt, formatAt),
         new ZbbByteReversePlugin(layer, formatAt),
         new ZbbExtendPlugin(layer, formatAt),
-        new ZbcPlugin(layer, executeAt, formatAt),
+        new ZbcPlugin(layer, executeAt, formatAt),*/
         new ZbsPlugin(layer, executeAt, executeAt, formatAt)
       )
     }
@@ -76,7 +76,6 @@ class ZbbLogicPlugin(val layer: LaneLayer,
 
   val logic = during setup new Logic {
     awaitBuild()
-    Riscv.RVZb.set(true)
     import SrcKeys._
 
     val wb = newWriteback(ifp, formatAt)
@@ -200,19 +199,19 @@ class ZbbRotatePlugin(val layer: LaneLayer,
     import SrcKeys._
 
     val wb = newWriteback(ifp, formatAt)
-    add(RvZbx.ROL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True)
-    add(RvZbx.ROLW).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True)
-    add(RvZbx.ROR).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False)
-    add(RvZbx.RORI).srcs(SRC1.RF, SRC2.I).decode(LEFT -> False)
+    add(RvZbx.ROL).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True, IS_W -> False)
+    add(RvZbx.ROLW).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True, IS_W -> False)
+    add(RvZbx.ROR).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, IS_W -> False)
+    add(RvZbx.RORI).srcs(SRC1.RF, SRC2.I).decode(LEFT -> False, IS_W -> False)
     if(Riscv.XLEN.get == 64) {
-      add(RvZbx.RORIW).srcs(SRC1.RF, SRC2.I).decode(LEFT -> False)
-      add(RvZbx.RORW).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False)
+      add(RvZbx.RORIW).srcs(SRC1.RF, SRC2.I).decode(LEFT -> False, IS_W -> True)
+      add(RvZbx.RORW).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, IS_W -> True)
     }
     uopRetainer.release()
 
     val execute = new el.Execute(executeAt) {
       val src1 = if(Riscv.XLEN.get == 64)
-        (el(IntRegFile, RS1) & (!IS_W #* 32 ## True #* 32)).asBits
+        el(IntRegFile, RS1) & B(64 bits, (63 downto 32) -> !IS_W, default -> True)
       else
         el(IntRegFile, RS1).asBits
 
@@ -222,7 +221,7 @@ class ZbbRotatePlugin(val layer: LaneLayer,
       val patched = LEFT ? shifted.reversed | shifted
 
       RESULT := (if (Riscv.XLEN.get == 64) {
-        val wordResult = patched(31 downto 0) | patched(64 downto 32)
+        val wordResult = patched(31 downto 0) | patched(63 downto 32)
         IS_W ? wordResult.asSInt.resize(64).asBits | patched
       } else {
         patched
@@ -363,14 +362,16 @@ class ZbsPlugin(val layer: LaneLayer,
                 val executeAt: Int = 0,
                 val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
   import ZbsPlugin._
+  val MASK = Payload(Bits(Riscv.XLEN bits))
+  val RESULT = Payload(Bits(Riscv.XLEN bits))
 
   val logic = during setup new Logic {
+    Riscv.RVZb.set(true)
     awaitBuild()
     import SrcKeys._
-    val MASK = Payload(Bits(Riscv.XLEN bits))
-    val RESULT = Payload(Bits(Riscv.XLEN bits))
 
     val wb = newWriteback(ifp, formatAt)
+
     add(RvZbx.BCLR).srcs(SRC1.RF, SRC2.RF).decode(INSTRUCTION -> B"00")
     add(RvZbx.BEXT).srcs(SRC1.RF, SRC2.RF).decode(INSTRUCTION -> B"01")
     add(RvZbx.BINV).srcs(SRC1.RF, SRC2.RF).decode(INSTRUCTION -> B"10")
