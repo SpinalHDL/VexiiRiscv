@@ -68,8 +68,11 @@ class ElementBlocking[T](sp : ScopeProperty[Database] = Database) extends Elemen
   def getHandle(db : Database) : Handle[T] = db.storageGetElseUpdate(thing, new Handle[T].setCompositeName(this))
   def getOn(db: Database) : T = getHandle(db).get
   def set(db: Database, value : T) = {
-    assert(!getHandle(db).isLoaded)
-    getHandle(db).load(value)
+    val handle = getHandle(db)
+    if (handle.isLoaded) {
+      assert(handle.get == value, s"DB was set to ${handle.get} before, can't overwrite to $value")
+    }
+    handle.load(value)
   }
 
   def soon(): Unit = {
