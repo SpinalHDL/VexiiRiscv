@@ -233,8 +233,8 @@ class LsuPlugin(var layer : LaneLayer,
 
       val holdHart = new Area{
         val wordPerLine = LsuL1.LINE_BYTES*8/XLEN
-        assert(storeBufferOps >= wordPerLine)
-        val waitIt = RegInit(False) clearWhen (slotsFree && ops.occupancy <= storeBufferOps - wordPerLine)
+        val threshold = Math.max(storeBufferOps - wordPerLine, storeBufferOps/2)
+        val waitIt = RegInit(False) clearWhen (slotsFree && ops.occupancy <= threshold)
         host[DispatchPlugin].haltDispatchWhen(waitIt)
       }
 
@@ -305,8 +305,10 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       val wb = withStoreBuffer generate new Area {
+        val isHead = storeBuffer.pop.ptr === storeBuffer.ops.freePtr
+        val flush = storeBuffer.waitL1.valid && !isHead
         val port = ports.addRet(Stream(LsuL1Cmd()))
-        port.valid := storeBuffer.pop.valid && !storeBuffer.waitL1.valid
+        port.valid := storeBuffer.pop.valid && !storeBuffer.waitL1.valid && !flush
         port.address := storeBuffer.pop.op.address.resized
         port.size := storeBuffer.pop.op.size
         port.load := False
@@ -315,7 +317,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.fromFlush := False
         port.fromAccess := False
         port.fromStoreBuffer := True
-        storeBuffer.pop.ready := port.ready
+        storeBuffer.pop.ready := port.ready || flush
       }
 
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)

@@ -792,6 +792,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val loadDataHazard = LOAD && (bankNotRead || writeToReadHazard)
         val storeHazard = (STORE || FLUSH) && (!bankWriteReservation.win || !reservation.win)
 
+        // A few explanation : Some things have to be accurate, while some other can be deflected / ignored, especially
+        // when is need some shared ressources.
+        // For instance, a load miss may not trigger a refill, a flush may hit but may not trigger a flush
         val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False)
         HAZARD := hazardReg || loadDataHazard || refillHazard || storeHazard
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
