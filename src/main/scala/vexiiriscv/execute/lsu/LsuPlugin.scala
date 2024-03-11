@@ -126,6 +126,7 @@ class LsuPlugin(var layer : LaneLayer,
     invalidationRetainer.await()
     val flusher = new StateMachine {
       val IDLE = makeInstantEntry()
+      val SB_DRAIN = withStoreBuffer generate new State()
       val CMD, COMPLETION = new State()
       val arbiter = StreamArbiterFactory().transactionLock.lowerFirst.buildOn(invalidationPorts.map(_.cmd))
       val cmdCounter = Reg(UInt(log2Up(l1.SETS) + 1 bits))
@@ -136,6 +137,11 @@ class LsuPlugin(var layer : LaneLayer,
       IDLE.whenIsActive{
         cmdCounter := 0
         when(arbiter.io.output.valid) {
+          goto(withStoreBuffer.mux(SB_DRAIN, CMD))
+        }
+      }
+      if(withStoreBuffer) SB_DRAIN.whenIsActive {
+        when(storeBuffer.empty){
           goto(CMD)
         }
       }
@@ -236,6 +242,8 @@ class LsuPlugin(var layer : LaneLayer,
         val refill = Reg(l1.WAIT_REFILL)
         val valid = RegInit(False) clearWhen ((refill & ~l1.REFILL_BUSY).orR)
       }
+
+      val empty = slots.map(!_.valid).andR
     }
 
 
