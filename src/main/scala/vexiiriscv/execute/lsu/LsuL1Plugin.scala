@@ -133,7 +133,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     val bus = master(LsuL1Bus(memParameter)).simPublic()
 
-    val WAYS_HAZARD = Payload(Bits(wayCount bits))
     val BANK_BUSY = Payload(Bits(bankCount bits))
     val BANK_BUSY_REMAPPED = Payload(Bits(bankCount bits))
     val REFILL_HITS_EARLY = Payload(Bits(refillCount bits))
@@ -283,9 +282,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val victim = Reg(Bits(writebackCount bits))
         val writebackHazards = Reg(Bits(writebackCount bits)) //TODO Check it
       }
-
-      //Ignore the way, allowing coherent BtoT to detect ongoing NtoB
-      def isLineBusy(address: UInt) = slots.map(s => s.valid && s.address(hazardCheckRange) === address(hazardCheckRange)).orR
 
       val free = B(OHMasking.first(slots.map(_.free)))
       val full = slots.map(!_.free).andR
@@ -488,8 +484,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
       WRITEBACK_BUSY.set(B(slots.map(_.valid)))
       writebackBusy := slots.map(_.valid).orR
-
-      def isLineBusy(address: UInt) = slots.map(s => s.valid && s.address(hazardCheckRange) === address(hazardCheckRange)).orR
 
       val free = B(OHMasking.first(slots.map(_.free)))
       val full = slots.map(!_.free).andR
@@ -761,7 +755,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       assert(Global.HART_COUNT.get == 1)
       val preCtrl = new lane.Execute(ctrlAt){
         NEED_UNIQUE := STORE || ATOMIC
-        WAYS_HAZARD := 0 //TODO
       }
 
       val ctrl = new lane.Execute(ctrlAt) {
@@ -783,10 +776,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         //Warning, those two signals aren't stable when lane.isFreezed
         //Note that will also prevent refill/writeback on a cache line which is already busy
-        val refillHazard =  refill.isLineBusy(PHYSICAL_ADDRESS)
-        val writebackHazard =  writeback.isLineBusy(PHYSICAL_ADDRESS)
+        val refillHazards    =  B(refill.slots.map(s => s.valid && s.address(hazardCheckRange) === PHYSICAL_ADDRESS(hazardCheckRange)))
+        val writebackHazards =  B(writeback.slots.map(s => s.valid && s.address(hazardCheckRange) === PHYSICAL_ADDRESS(hazardCheckRange)))
 
-        val waysHazard = WAYS_HAZARD.orR
+        val refillHazard = refillHazards.orR
+        val writebackHazard = writebackHazards.orR
+
         val wasDirty = (B(WAYS_TAGS.map(_.dirty)) & WAYS_HITS).orR
         val refillWayWasDirty = WAYS_TAGS.map(w => w.loaded && w.dirty).read(refillWayWithoutUpdate)
         val loadBankHazard = withBypass.mux(False, LOAD && WRITE_TO_READ_HAZARDS.orR)
@@ -795,7 +790,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         //WARNING, when lane.isFreezed, nothing should change. If a hazard was detected, is has to stay
         val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False)
         //TODO writeBackHazard hit performance and isn't required in most case ?
-        HAZARD := hazardReg || waysHazard || loadBankHazard || loadBankNotRead || refillHazard || writebackHazard || STORE && (!bankWriteReservation.win || !reservation.win)  //TODO Line busy can likely be removed if single hart with no prefetch
+        HAZARD := hazardReg || loadBankHazard || loadBankNotRead || refillHazard || writebackHazard || STORE && (!bankWriteReservation.win || !reservation.win)  //TODO Line busy can likely be removed if single hart with no prefetch
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
@@ -844,7 +839,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           refill.push.victim := 0
         }
 
-//        WAIT_REFILL := OHToUInt(wayId).andMask(doRefillPush)
+//        WAIT_REFILL := refillHazards | UIntToOh(wayId).andMask(doRefillPush)
 
         assert(!doUpgrade)
         assert(CountOne(Cat(askRefill, doUpgrade, doDirty, doFlush)) < 2)

@@ -26,9 +26,27 @@ object IntegrationSynthBench extends App{
     add(p, postfix)
   }
 
-//  add("nothing"){ p =>
-//
-//  }
+  add("nothing") { p =>
+
+  }
+  add ("microsoc32") { p =>
+    import p._
+    fetchCachelessForkAt = 1
+    lsuPmaAt = 1
+    lsuForkAt = 1
+    relaxedBranch = true
+    allowBypassFrom = 0
+    xlen = 32
+  }
+  add("microsoc64") { p =>
+    import p._
+    fetchCachelessForkAt = 1
+    lsuPmaAt = 1
+    lsuForkAt = 1
+    relaxedBranch = true
+    allowBypassFrom = 0
+    xlen = 64
+  }
 
 //  add("lsu16k") { p =>
 //    import p._
@@ -37,16 +55,16 @@ object IntegrationSynthBench extends App{
 //    lsuL1Ways = 4
 //  }
 
-  add("lsu16kwb") { p =>
-    import p._
-    lsuL1Enable = true
-    lsuL1Sets = 64
-    lsuL1Ways = 4
-    LsuL1RefillCount = 2
-    lsuL1WritebackCount = 2
-    lsuStoreBufferSlots = 2
-    lsuStoreBufferOps = 32
-  }
+//  add("lsu16kwb") { p =>
+//    import p._
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    LsuL1RefillCount = 2
+//    lsuL1WritebackCount = 2
+//    lsuStoreBufferSlots = 2
+//    lsuStoreBufferOps = 32
+//  }
 
 
 //
