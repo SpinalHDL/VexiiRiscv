@@ -34,7 +34,7 @@ object LsuL1 extends AreaObject{
   // L1 ->
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
   val HAZARD, MISS, MISS_UNIQUE, FAULT = Payload(Bool())
-  val FLUSH_HIT = Payload(Bool())
+  val FLUSH_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
 
   val SETS = blocking[Int]
   val WAYS = blocking[Int]
@@ -270,12 +270,15 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         // This counter ensure that load/store which started before the end of the refill memory transfer but ended after the end
         // of the memory transfer do see that there was a refill ongoing and that they need to retry
-        val loaded = Reg(Bool()) init(True)
+        val loadedSet = False
+        val loaded = Reg(Bool()) init(True) setWhen(loadedSet)
         val loadedCounterMax = ctrlAt - Math.min(wayReadAt, bankReadAt)-1
         val loadedCounter = Reg(UInt(log2Up(loadedCounterMax + 1) bits))
         val loadedDone = loadedCounter === loadedCounterMax
         loadedCounter := loadedCounter + U(loaded && !loadedDone && !lane.isFreezed()).resized
-        valid clearWhen (loadedDone && withCoherency.mux(!ackValid, True))
+
+        val fire = !lane.isFreezed() && loadedDone && withCoherency.mux(!ackValid, True)
+        valid clearWhen (fire)
 
         val free = !valid
 
@@ -410,7 +413,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
               waysWrite.tag.unique := bus.read.rsp.unique
             }
             slots.onSel(bus.read.rsp.id) { s =>
-              s.loaded := True
+              s.loadedSet := True
               if (withCoherency) {
                 s.ackValid := True
                 s.ackId := bus.read.rsp.ackId
@@ -440,7 +443,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
 
-      REFILL_BUSY.set(B(slots.map(!_.loaded)))
+      REFILL_BUSY.set(B(slots.map(s => !s.loaded && !s.loadedSet)))
     }
 
     val writeback = new Area {
@@ -482,7 +485,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
-      WRITEBACK_BUSY.set(B(slots.map(_.valid)))
+      WRITEBACK_BUSY.set(B(slots.map(s => s.valid || s.fire)))
       writebackBusy := slots.map(_.valid).orR
 
       val free = B(OHMasking.first(slots.map(_.free)))
@@ -784,19 +787,19 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val wasDirty = (B(WAYS_TAGS.map(_.dirty)) & WAYS_HITS).orR
         val refillWayWasDirty = WAYS_TAGS.map(w => w.loaded && w.dirty).read(refillWayWithoutUpdate)
-        val loadBankHazard = withBypass.mux(False, LOAD && WRITE_TO_READ_HAZARDS.orR)
-        val loadBankNotRead = LOAD && (BANK_BUSY_REMAPPED & WAYS_HITS).orR
+        val writeToReadHazard = withBypass.mux(False, WRITE_TO_READ_HAZARDS.orR)
+        val bankNotRead = (BANK_BUSY_REMAPPED & WAYS_HITS).orR
+        val loadDataHazard = LOAD && (bankNotRead || writeToReadHazard)
+        val storeHazard = (STORE || FLUSH) && (!bankWriteReservation.win || !reservation.win)
 
-        //WARNING, when lane.isFreezed, nothing should change. If a hazard was detected, is has to stay
         val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False)
-        //TODO writeBackHazard hit performance and isn't required in most case ?
-        HAZARD := hazardReg || loadBankHazard || loadBankNotRead || refillHazard || writebackHazard || STORE && (!bankWriteReservation.win || !reservation.win)  //TODO Line busy can likely be removed if single hart with no prefetch
+        HAZARD := hazardReg || loadDataHazard || refillHazard || storeHazard
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
 
         val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full
-        val canFlush = reservation.win && !writeback.full && !refill.slots.map(_.valid).orR
+        val canFlush = reservation.win && !writeback.full && !refill.slots.map(_.valid).orR && !writebackHazard
         val canDirty = reservation.win
         val needFlushs = B(WAYS_TAGS.map(w => w.loaded && w.dirty))
         val needFlushOh = OHMasking.firstV2(needFlushs)
@@ -822,12 +825,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           assert(CountOne(WAYS_HITS) <= 1, "Multiple way hit ???")
         }
 
-//        val freezeIt = SEL && STORE && (!bankWriteReservation.win || !reservation.win)
-//        lane.freezeWhen(freezeIt)
-
-        //TODO preset dirty if it come from a store
         val doRefillPush = doRefill || doUpgrade
-        refill.push.valid := allowSideEffects && doRefillPush
+        refill.push.valid := allowSideEffects && doRefillPush && !writebackHazard
         refill.push.address := PHYSICAL_ADDRESS
         refill.push.unique := NEED_UNIQUE
         refill.push.data := askRefill
@@ -839,7 +838,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           refill.push.victim := 0
         }
 
-//        WAIT_REFILL := refillHazards | UIntToOh(wayId).andMask(doRefillPush)
+        WAIT_REFILL := refillHazards | refill.free.orMask(refill.full).andMask(!HAZARD && (askRefill || askUpgrade))
+        WAIT_WRITEBACK := 0 // TODO  // writebackHazards | writeback.free.andMask(askRefill && refillWayNeedWriteback)
 
         assert(!doUpgrade)
         assert(CountOne(Cat(askRefill, doUpgrade, doDirty, doFlush)) < 2)
@@ -895,7 +895,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         when(doFlush) {
           reservation.takeIt()
 
-
           val reader = this (WAYS_TAGS).reader(needFlushSel)
           val tag = reader(_.address)
           waysWrite.mask := needFlushOh
@@ -904,7 +903,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           waysWrite.tag.address := tag
           waysWrite.tag.fault := reader(_.fault)
           waysWrite.tag.dirty := False
-          if (withCoherency) ???
+          if (withCoherency) ??? //also warning with writebackHazard
 
           writeback.push.valid := allowSideEffects
           writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low

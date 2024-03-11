@@ -225,14 +225,16 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      val regulation = new Area{
+      val holdHart = new Area{
         val wordPerLine = LsuL1.LINE_BYTES*8/XLEN
         assert(storeBufferOps >= wordPerLine)
-//        val waitSlot = RegInit(False) clearWhen(slotsFree)
-//        val waitOps = RegInit(False) clearWhen(ops.occupancy <= storeBufferOps-wordPerLine)
-//        host[DispatchPlugin].haltDispatchWhen(waitSlot || waitOps)
         val waitIt = RegInit(False) clearWhen (slotsFree && ops.occupancy <= storeBufferOps - wordPerLine)
         host[DispatchPlugin].haltDispatchWhen(waitIt)
+      }
+
+      val waitL1 = new Area {
+        val refill = Reg(l1.WAIT_REFILL)
+        val valid = RegInit(False) clearWhen ((refill & ~l1.REFILL_BUSY).orR)
       }
     }
 
@@ -296,7 +298,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val wb = withStoreBuffer generate new Area {
         val port = ports.addRet(Stream(LsuL1Cmd()))
-        port.valid := storeBuffer.pop.valid
+        port.valid := storeBuffer.pop.valid && !storeBuffer.waitL1.valid
         port.address := storeBuffer.pop.op.address.resized
         port.size := storeBuffer.pop.op.size
         port.load := False
@@ -342,9 +344,12 @@ class LsuPlugin(var layer : LaneLayer,
       }
     }
 
+    val preCtrl = new elp.Execute(ctrlAt-1){
+      val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
+    }
+
     val onCtrl = new elp.Execute(ctrlAt) {
       val lsuTrap = False
-      val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
       val mmuPageFault = tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
 
       val pmaL1 = new PmaPort(Global.PHYSICAL_WIDTH, List(l1.LINE_BYTES), List(PmaLoad, PmaStore))
@@ -522,10 +527,10 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code := TrapReason.MMU_REFILL
       }
 
-      when(MISS_ALIGNED) {
+      when(preCtrl.MISS_ALIGNED) {
         lsuTrap := True
         trapPort.exception := True
-        trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(MISS_ALIGNED).resized
+        trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(preCtrl.MISS_ALIGNED).resized
       }
 
 
@@ -551,13 +556,15 @@ class LsuPlugin(var layer : LaneLayer,
             storeBuffer.push.valid   := True
           }
           when(wb.compatibleOp && !wb.notFull) {
-            storeBuffer.regulation.waitIt := True
+            storeBuffer.holdHart.waitIt := True
           }
         }
       }
 
-      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || MISS_ALIGNED || pmaFault || withStoreBuffer.mux(wb.loadHazard, False))
+      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || preCtrl.MISS_ALIGNED || pmaFault || withStoreBuffer.mux(wb.loadHazard, False))
       l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False)
+
+      if(withStoreBuffer) l1.ABORD setWhen(FROM_WB && wb.selfHazard)
 
       when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){
         flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
@@ -566,6 +573,10 @@ class LsuPlugin(var layer : LaneLayer,
       if(withStoreBuffer) when(l1.SEL && FROM_WB && !elp.isFreezed() && withStoreBuffer.mux(!wb.selfHazard, True)){
         when(l1Failed) {
           storeBuffer.ops.popPtr := storeBuffer.ops.freePtr
+          when(!wb.selfHazard && l1.WAIT_REFILL.orR) {
+            storeBuffer.waitL1.valid := True
+            storeBuffer.waitL1.refill := l1.WAIT_REFILL
+          }
         } otherwise {
           storeBuffer.ops.freePtr := storeBuffer.ops.freePtr + 1
           for (slot <- storeBuffer.slots) when(slot.ptr === storeBuffer.ops.freePtr) {
@@ -586,6 +597,17 @@ class LsuPlugin(var layer : LaneLayer,
         when(pmaFault){
           rsp.error := True
           rsp.redo := False
+        }
+      }
+
+      val hartRegulation = new Area {
+        val waitRefill = Reg(l1.WAIT_REFILL)
+        val waitIt = RegInit(False) clearWhen ((waitRefill & ~l1.REFILL_BUSY).orR)
+        host[DispatchPlugin].haltDispatchWhen(waitIt)
+
+        when(isValid && SEL && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE) && (l1.WAIT_REFILL.orR)){
+          waitIt := True
+          waitRefill := l1.WAIT_REFILL
         }
       }
     }
