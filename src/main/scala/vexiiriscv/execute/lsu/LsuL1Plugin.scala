@@ -28,6 +28,8 @@ object LsuL1 extends AreaObject{
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
   val MASK = Payload(Bits(Riscv.LSLEN / 8 bits)) //Also needed for loads
   val SIZE = Payload(UInt(log2Up(log2Up(Riscv.LSLEN / 8+1)) bits)) //Also needed for loads
+  val WAIT_WRITEBACK = Payload(WRITEBACK_BUSY.get) //Also needed for loads
+  val WAIT_REFILL = Payload(REFILL_BUSY.get) //Also needed for loads
 
   // L1 ->
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
@@ -38,6 +40,7 @@ object LsuL1 extends AreaObject{
   val WAYS = blocking[Int]
   val LINE_BYTES = blocking[Int]
   val WRITEBACK_BUSY = blocking[Bits]
+  val REFILL_BUSY = blocking[Bits]
 }
 
 /*
@@ -114,7 +117,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val tagRange = postTranslationWidth - 1 downto log2Up(linePerWay * lineSize)
     val lineRange = tagRange.low - 1 downto log2Up(lineSize)
     val refillRange = tagRange.high downto lineRange.low
-    val hazardCheckRange = 11 downto lineRange.low
+    val hazardCheckRange = (Math.min(11, lineRange.high)) downto lineRange.low
     val notWordRange = tagRange.high downto log2Up(cpuDataWidth/8)
 
     val bankCount = wayCount
@@ -268,7 +271,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         // This counter ensure that load/store which started before the end of the refill memory transfer but ended after the end
         // of the memory transfer do see that there was a refill ongoing and that they need to retry
-        val loaded = Reg(Bool())
+        val loaded = Reg(Bool()) init(True)
         val loadedCounterMax = ctrlAt - Math.min(wayReadAt, bankReadAt)-1
         val loadedCounter = Reg(UInt(log2Up(loadedCounterMax + 1) bits))
         val loadedDone = loadedCounter === loadedCounterMax
@@ -439,6 +442,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
         bus.read.ack << buffer.haltWhen(counter =/= 3) //Give some time for the CPU to do forward progress
       }
+
+
+      REFILL_BUSY.set(B(slots.map(!_.loaded)))
     }
 
     val writeback = new Area {
@@ -825,7 +831,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 //        lane.freezeWhen(freezeIt)
 
         //TODO preset dirty if it come from a store
-        refill.push.valid := allowSideEffects && (doRefill || doUpgrade)
+        val doRefillPush = doRefill || doUpgrade
+        refill.push.valid := allowSideEffects && doRefillPush
         refill.push.address := PHYSICAL_ADDRESS
         refill.push.unique := NEED_UNIQUE
         refill.push.data := askRefill
@@ -837,6 +844,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           refill.push.victim := 0
         }
 
+//        WAIT_REFILL := OHToUInt(wayId).andMask(doRefillPush)
 
         assert(!doUpgrade)
         assert(CountOne(Cat(askRefill, doUpgrade, doDirty, doFlush)) < 2)
