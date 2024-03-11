@@ -326,13 +326,20 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
 
 
   abstract class Dimensions(val name : String){
-    def getPositions() : Seq[String]
+    def getRandomPosition(random : Random) : String
   }
 
   val dimensions = ArrayBuffer[Dimensions]()
-  def addDim(name : String, poses : Seq[String]) = dimensions += new Dimensions(name){
-    override def getPositions(): Seq[String] = poses
+
+  def Dim(name : String, poses : Seq[String]) = new Dimensions(name) {
+    override def getRandomPosition(random: Random): String = poses.randomPick(random)
   }
+  def addDim(name : String, poses : Seq[String]) = dimensions += Dim(name, poses)
+
+  def addDims(name: String)(poses: Dimensions*) = dimensions += new Dimensions(name) {
+    override def getRandomPosition(random: Random): String = poses.randomPick(random).getRandomPosition(random)
+  }
+
 
   addDim("lanes", List(1, 2).map(v => s"--lanes $v --decoders $v"))
   addDim("rf", List("--regfile-sync", "--regfile-async"))
@@ -346,30 +353,33 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("rva", List("", "--with-mul --with-div --with-rva"))
   addDim("rvc", List("", "--with-mul --with-div --with-rvc"))
   addDim("late-alu", List("", "--with-late-alu"))
-  addDim("fetch", {
-    val p = ArrayBuffer[String]("--fetch-fork-at 0", "--fetch-fork-at 1")
-    for (bytes <- List(1 << 10, 1 << 12, 1 << 14);
-         sets <- List(16, 32, 64)) {
-      if (bytes / sets >= 64) {
+  addDims("fetch")(
+    Dim("", List("--fetch-fork-at 0", "--fetch-fork-at 1")),
+    Dim("", for (bytes <- List(1 << 10, 1 << 12, 1 << 14);
+                 sets <- List(16, 32, 64);
+                 if (bytes / sets >= 64)) yield {
         val ways = bytes / sets / 64
-        p += s"--with-fetch-l1 --fetch-l1-sets=$sets --fetch-l1-ways=$ways"
+        s"--with-fetch-l1 --fetch-l1-sets=$sets --fetch-l1-ways=$ways"
       }
-    }
-    p
-  })
+    )
+  )
+
   addDim("fl1dwm", List(32, 64, 128, 256).map(w => s"--fetch-l1-mem-data-width-min $w"))
   addDim("fl1rw", List("", "--fetch-reduced-bank"))
-  addDim("lsu", {
-    val p = ArrayBuffer[String]("--lsu-fork-at 0", "--lsu-fork-at 1")
-    for(bytes <- List(1 << 10, 1 << 12, 1 << 14);
-      sets <- List(16 , 32, 64)){
-      if(bytes / sets >= 64) {
-        val ways = bytes / sets / 64
-        p += s"--with-lsu-l1 --lsu-l1-sets=$sets --lsu-l1-ways=$ways"
+  addDims("lsu")(
+    Dim("", List("--lsu-fork-at 0", "--lsu-fork-at 1")),
+    Dim("", for (bytes <- List(1 << 10, 1 << 12, 1 << 14);
+                 sets <- List(16, 32, 64);
+                 if (bytes / sets >= 64);
+                 ways = bytes / sets / 64;
+                 slots <- List(0,1,2,3);
+                 ops <- List(8, 16, 32, 64);
+                 if !(slots != 0 ^ ops != 0)) yield {
+        s"--with-lsu-l1 --lsu-l1-sets=$sets --lsu-l1-ways=$ways --lsu-l1-store-buffer-slots=$slots --lsu-l1-store-buffer-ops=$ops"
       }
-    }
-    p
-  })
+    )
+  )
+
   addDim("lsu bypass", List("", "--with-lsu-bypass"))
   addDim("ishift", List("", "--with-iterative-shift"))
   addDim("alignBuf", List("", "--with-aligner-buffer"))
@@ -391,7 +401,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     val args = ArrayBuffer[String]()
     args += default
     for (dim <- dimensions) {
-      args += dim.getPositions().randomPick(random)
+      args += dim.getRandomPosition(random)
     }
     addTest(args.mkString(" "))
   }
