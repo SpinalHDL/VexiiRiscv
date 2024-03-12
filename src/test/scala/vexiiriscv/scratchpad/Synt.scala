@@ -2,7 +2,7 @@ package vexiiriscv.scratchpad
 
 import spinal.core._
 import spinal.lib.StreamFifo
-import spinal.lib.eda.bench.{AlteraStdTargets, Bench, EfinixStdTargets, Rtl, XilinxStdTargets}
+import spinal.lib.eda.bench.{AlteraStdTargets, Bench, EfinixStdTargets, Rtl, Target, XilinxStdTargets}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 
@@ -26,9 +26,55 @@ object IntegrationSynthBench extends App{
     add(p, postfix)
   }
 
-//  add("nothing"){ p =>
+//  add("nothing") { p =>
 //
 //  }
+
+  add("fetch lsu l1 4k") { p =>
+    p.fetchL1Enable = true
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 1
+    p.allowBypassFrom = 0
+    p.relaxedBranch = true
+  }
+//  add ("microsoc32") { p =>
+//    import p._
+//    fetchCachelessForkAt = 1
+//    lsuPmaAt = 1
+//    lsuForkAt = 1
+//    relaxedBranch = true
+//    allowBypassFrom = 0
+//    xlen = 32
+//  }
+//  add("microsoc64") { p =>
+//    import p._
+//    fetchCachelessForkAt = 1
+//    lsuPmaAt = 1
+//    lsuForkAt = 1
+//    relaxedBranch = true
+//    allowBypassFrom = 0
+//    xlen = 64
+//  }
+
+//  add("lsu16k") { p =>
+//    import p._
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//  }
+
+//  add("lsu16kwb") { p =>
+//    import p._
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    LsuL1RefillCount = 2
+//    lsuL1WritebackCount = 2
+//    lsuStoreBufferSlots = 2
+//    lsuStoreBufferOps = 32
+//  }
+
 
 //
 //  add("bypass all") { p =>
@@ -62,16 +108,16 @@ object IntegrationSynthBench extends App{
 //
 
 
-//  add("lsu l1 4k") { p =>
-//    p.lsuL1Enable = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 1
-//  }
-//  add("lsu l1 16k") { p =>
-//    p.lsuL1Enable = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 4
-//  }
+  add("lsu l1 4k") { p =>
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 1
+  }
+  add("lsu l1 16k") { p =>
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 4
+  }
 //  add("lsu l1 64k") { p =>
 //    p.lsuL1Enable = true
 //    p.lsuL1Sets = 64
@@ -143,33 +189,33 @@ object IntegrationSynthBench extends App{
 //    p.withLateAlu = true
 //  }
 
-  add("fullPerf") { p =>
-    p.allowBypassFrom = 0
-    p.decoders = 2
-    p.lanes = 2
-    p.withDispatcherBuffer = true
-
-    p.withMul = true
-    p.withDiv = true
-
-    p.withBtb = true
-    p.withGShare = true
-    p.withRas = true
-    p.relaxedBranch = true
-    p.relaxedBtb = true
-
-//    p.privParam.withSupervisor = true;
-//    p.privParam.withUser = true;
-//    p.withMmu = true
-
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 4
-
-    p.fetchL1Enable = true
-    p.fetchL1Sets = 64
-    p.fetchL1Ways = 4
-  }
+//  add("fullPerf") { p =>
+//    p.allowBypassFrom = 0
+//    p.decoders = 2
+//    p.lanes = 2
+//    p.withDispatcherBuffer = true
+//
+//    p.withMul = true
+//    p.withDiv = true
+//
+//    p.withBtb = true
+//    p.withGShare = true
+//    p.withRas = true
+//    p.relaxedBranch = true
+//    p.relaxedBtb = true
+//
+////    p.privParam.withSupervisor = true;
+////    p.privParam.withUser = true;
+////    p.withMmu = true
+//
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 4
+//
+//    p.fetchL1Enable = true
+//    p.fetchL1Sets = 64
+//    p.fetchL1Ways = 4
+//  }
 
 //    add("fullPerf2") { p =>
 //      p.allowBypassFrom = 0
@@ -446,7 +492,11 @@ object IntegrationSynthBench extends App{
 //    rtls += Rtl(sc.generateVerilog {
 //      new StreamFifo(UInt(8 bits), 16)
 //    })
-  val targets = XilinxStdTargets(withFMax = true, withArea = true)// ++ EfinixStdTargets(withFMax = true, withArea = true) ++ AlteraStdTargets()
+
+  val targets = ArrayBuffer[Target]()
+  targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
+//  targets ++= AlteraStdTargets()
+//  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
 
   Bench(rtls, targets)
 }
@@ -848,4 +898,11 @@ fullPerf2 ->
 Artix 7 -> 65 Mhz 5030 LUT 3694 FF
 Artix 7 -> 117 Mhz 5404 LUT 3749 FF
 
+
+lsu_l1_4k ->
+Artix 7 -> 90 Mhz 1379 LUT 1273 FF
+Artix 7 -> 196 Mhz 1546 LUT 1274 FF
+lsu_l1_16k ->
+Artix 7 -> 90 Mhz 1660 LUT 1472 FF
+Artix 7 -> 206 Mhz 1958 LUT 1577 FF
  */

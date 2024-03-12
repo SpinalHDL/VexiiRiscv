@@ -90,9 +90,13 @@ class ParamSimple(){
   var fetchL1Ways = 1
   var fetchL1ReducedBank = false
   var fetchL1MemDataWidthMin = 32
+  var lsuStoreBufferSlots = 0
+  var lsuStoreBufferOps = 0
   var lsuL1Enable = false
   var lsuL1Sets = 64
   var lsuL1Ways = 1
+  var LsuL1RefillCount = 1
+  var lsuL1WritebackCount = 1
   var withLsuBypass = false
   var withIterativeShift = false
   var divRadix = 2
@@ -109,30 +113,35 @@ class ParamSimple(){
     additionalPerformanceCounters = 4
     regFileSync = false
     allowBypassFrom = 0
+
     withGShare = true
     withBtb = true
     withRas = true
-    relaxedBranch = true  // !!
-//    relaxedBtb = true     // !!
-    fetchL1Enable = true
-    fetchL1Sets = 64
-    fetchL1Ways = 4
-    //fetchL1ReducedBank = true
-    //fetchL1MemDataWidthMin = 256
+////    relaxedBranch = true  // !!
+////    relaxedBtb = true     // !!
+//    fetchL1Enable = true
+//    fetchL1Sets = 64
+//    fetchL1Ways = 4
+//    //fetchL1ReducedBank = true
+//    //fetchL1MemDataWidthMin = 256
     lsuL1Enable = true
     lsuL1Sets = 64
     lsuL1Ways = 4
+    LsuL1RefillCount = 2
+    lsuL1WritebackCount = 2
+    lsuStoreBufferSlots = 2
+    lsuStoreBufferOps = 32
     withLsuBypass = true
     divArea = false
     divRadix = 4
-    decoders = 2
-    lanes = 2
+//    decoders = 2
+//    lanes = 2
 //    withLateAlu = true
     withMul = true
     withDiv = true
-    withDispatcherBuffer = true
-//    withAlignerBuffer = true
-//    withRvc = true
+//    withDispatcherBuffer = true
+////    withAlignerBuffer = true
+////    withRvc = true
     withRva = true
     withMmu = true
     privParam.withSupervisor = true
@@ -192,7 +201,7 @@ class ParamSimple(){
     r += s"disAt${dispatcherAt}"
     r += regFileSync.mux("rfs","rfa") + regFileDualPortRam.mux("Dp","Mem")
     if (fetchL1Enable) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}Dwm$fetchL1MemDataWidthMin${fetchL1ReducedBank.mux("Rb", "")}" else r += s"fclF${fetchCachelessForkAt}"
-    if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}" else r += s"lsuP${lsuPmaAt}F$lsuForkAt"
+    if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}Sb${lsuStoreBufferSlots}w${lsuStoreBufferOps}" else r += s"lsuP${lsuPmaAt}F$lsuForkAt"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += s"btbS${btbSets}H${btbHashWidth}${if(relaxedBtb)"R" else ""}"
     if (withRas) r += "ras"
@@ -252,6 +261,8 @@ class ParamSimple(){
     opt[Unit]("fetch-reduced-bank") action { (v, c) => fetchL1ReducedBank = true }
     opt[Int]("lsu-l1-sets") action { (v, c) => lsuL1Sets = v }
     opt[Int]("lsu-l1-ways") action { (v, c) => lsuL1Ways = v }
+    opt[Int]("lsu-l1-store-buffer-slots") action { (v, c) => lsuStoreBufferSlots = v }
+    opt[Int]("lsu-l1-store-buffer-ops") action { (v, c) => lsuStoreBufferOps = v }
     opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
     opt[Unit]("with-iterative-shift") action { (v, c) => withIterativeShift = true }
     opt[Int]("div-radix") action { (v, c) => divRadix = v }
@@ -459,6 +470,8 @@ class ParamSimple(){
         layer = early0,
         withRva = withRva,
         storeRs2At = withLateAlu.mux(2, 0),
+        storeBufferSlots =lsuStoreBufferSlots,
+        storeBufferOps = lsuStoreBufferOps,
         translationStorageParameter = MmuStorageParameter(
           levels = List(
             MmuStorageLevel(
@@ -488,8 +501,8 @@ class ParamSimple(){
         lane           = lane0,
         memDataWidth   = xlen,
         cpuDataWidth   = xlen,
-        refillCount    = 1,
-        writebackCount = 1,
+        refillCount    = LsuL1RefillCount,
+        writebackCount = lsuL1WritebackCount,
         setCount       = lsuL1Sets,
         wayCount       = lsuL1Ways,
         withBypass     = withLsuBypass

@@ -35,13 +35,10 @@ class MicroSoc() extends Component {
     val sharedBus = tilelink.fabric.Node()
 
     val param = new ParamSimple()
-    param.withMul = false
-    param.withDiv = false
     param.fetchCachelessForkAt = 1
     param.lsuPmaAt = 1
     param.lsuForkAt = 1
     param.relaxedBranch = true
-    param.withPerformanceCounters = false
     
     val plugins = param.plugins()
     val cpu = new TilelinkVexiiRiscvFiber(plugins)
