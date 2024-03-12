@@ -26,27 +26,36 @@ object IntegrationSynthBench extends App{
     add(p, postfix)
   }
 
-  add("nothing") { p =>
+//  add("nothing") { p =>
+//
+//  }
 
+  add("fetch lsu l1 4k") { p =>
+    p.fetchL1Enable = true
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 1
+    p.allowBypassFrom = 0
+    p.relaxedBranch = true
   }
-  add ("microsoc32") { p =>
-    import p._
-    fetchCachelessForkAt = 1
-    lsuPmaAt = 1
-    lsuForkAt = 1
-    relaxedBranch = true
-    allowBypassFrom = 0
-    xlen = 32
-  }
-  add("microsoc64") { p =>
-    import p._
-    fetchCachelessForkAt = 1
-    lsuPmaAt = 1
-    lsuForkAt = 1
-    relaxedBranch = true
-    allowBypassFrom = 0
-    xlen = 64
-  }
+//  add ("microsoc32") { p =>
+//    import p._
+//    fetchCachelessForkAt = 1
+//    lsuPmaAt = 1
+//    lsuForkAt = 1
+//    relaxedBranch = true
+//    allowBypassFrom = 0
+//    xlen = 32
+//  }
+//  add("microsoc64") { p =>
+//    import p._
+//    fetchCachelessForkAt = 1
+//    lsuPmaAt = 1
+//    lsuForkAt = 1
+//    relaxedBranch = true
+//    allowBypassFrom = 0
+//    xlen = 64
+//  }
 
 //  add("lsu16k") { p =>
 //    import p._
@@ -99,16 +108,16 @@ object IntegrationSynthBench extends App{
 //
 
 
-//  add("lsu l1 4k") { p =>
-//    p.lsuL1Enable = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 1
-//  }
-//  add("lsu l1 16k") { p =>
-//    p.lsuL1Enable = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 4
-//  }
+  add("lsu l1 4k") { p =>
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 1
+  }
+  add("lsu l1 16k") { p =>
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 4
+  }
 //  add("lsu l1 64k") { p =>
 //    p.lsuL1Enable = true
 //    p.lsuL1Sets = 64
@@ -486,8 +495,8 @@ object IntegrationSynthBench extends App{
 
   val targets = ArrayBuffer[Target]()
   targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
-  targets ++= AlteraStdTargets()
-  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
+//  targets ++= AlteraStdTargets()
+//  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
 
   Bench(rtls, targets)
 }
@@ -889,4 +898,11 @@ fullPerf2 ->
 Artix 7 -> 65 Mhz 5030 LUT 3694 FF
 Artix 7 -> 117 Mhz 5404 LUT 3749 FF
 
+
+lsu_l1_4k ->
+Artix 7 -> 90 Mhz 1379 LUT 1273 FF
+Artix 7 -> 196 Mhz 1546 LUT 1274 FF
+lsu_l1_16k ->
+Artix 7 -> 90 Mhz 1660 LUT 1472 FF
+Artix 7 -> 206 Mhz 1958 LUT 1577 FF
  */
