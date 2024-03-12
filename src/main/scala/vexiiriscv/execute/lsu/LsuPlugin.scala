@@ -122,6 +122,18 @@ class LsuPlugin(var layer : LaneLayer,
     val FROM_WB = Payload(Bool())
     val FORCE_PHYSICAL = Payload(Bool())
 
+    class L1Waiter extends Area {
+      val refill = Reg(l1.WAIT_REFILL)
+      val valid = RegInit(False) clearWhen ((refill & ~l1.REFILL_BUSY).orR)
+
+      def capture(node : NodeBaseApi) = {
+        import node._
+        when(l1.WAIT_REFILL.orR) {
+          this.valid := True
+          this.refill := l1.WAIT_REFILL
+        }
+      }
+    }
 
     invalidationRetainer.await()
     val flusher = new StateMachine {
@@ -238,10 +250,7 @@ class LsuPlugin(var layer : LaneLayer,
         host[DispatchPlugin].haltDispatchWhen(waitIt)
       }
 
-      val waitL1 = new Area {
-        val refill = Reg(l1.WAIT_REFILL)
-        val valid = RegInit(False) clearWhen ((refill & ~l1.REFILL_BUSY).orR)
-      }
+      val waitL1 = new L1Waiter()
 
       val empty = slots.map(!_.valid).andR
     }
@@ -275,9 +284,10 @@ class LsuPlugin(var layer : LaneLayer,
 
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
+        val waiter = new L1Waiter
         val cmd = dbusAccesses.head.cmd
         val port = ports.addRet(Stream(LsuL1Cmd()))
-        port.arbitrationFrom(cmd)
+        port.arbitrationFrom(cmd.haltWhen(waiter.valid))
         port.address := cmd.address.resized
         port.size := cmd.size
         port.load := True
@@ -304,7 +314,7 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      val wb = withStoreBuffer generate new Area {
+      val sb = withStoreBuffer generate new Area {
         val isHead = storeBuffer.pop.ptr === storeBuffer.ops.freePtr
         val flush = storeBuffer.waitL1.valid && !isHead
         val port = ports.addRet(Stream(LsuL1Cmd()))
@@ -583,9 +593,8 @@ class LsuPlugin(var layer : LaneLayer,
       if(withStoreBuffer) when(l1.SEL && FROM_WB && !elp.isFreezed() && withStoreBuffer.mux(!wb.selfHazard, True)){
         when(l1Failed) {
           storeBuffer.ops.popPtr := storeBuffer.ops.freePtr
-          when(!wb.selfHazard && l1.WAIT_REFILL.orR) {
-            storeBuffer.waitL1.valid := True
-            storeBuffer.waitL1.refill := l1.WAIT_REFILL
+          when(!wb.selfHazard){
+            storeBuffer.waitL1.capture(down)
           }
         } otherwise {
           storeBuffer.ops.freePtr := storeBuffer.ops.freePtr + 1
@@ -608,16 +617,15 @@ class LsuPlugin(var layer : LaneLayer,
           rsp.error := True
           rsp.redo := False
         }
+        when(rsp.fire && rsp.redo) {
+          onAddress0.access.waiter.capture(down)
+        }
       }
 
-      val hartRegulation = new Area {
-        val waitRefill = Reg(l1.WAIT_REFILL)
-        val waitIt = RegInit(False) clearWhen ((waitRefill & ~l1.REFILL_BUSY).orR)
-        host[DispatchPlugin].haltDispatchWhen(waitIt)
-
-        when(isValid && SEL && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE) && (l1.WAIT_REFILL.orR)){
-          waitIt := True
-          waitRefill := l1.WAIT_REFILL
+      val hartRegulation = new L1Waiter{
+        host[DispatchPlugin].haltDispatchWhen(valid)
+        when(isValid && SEL && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
+          capture(down)
         }
       }
     }
