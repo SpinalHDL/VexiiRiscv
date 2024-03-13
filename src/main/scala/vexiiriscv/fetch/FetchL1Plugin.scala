@@ -95,7 +95,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val age = pp.getAge(ctrlAt, false)
     val trapPort = ts.newTrap(pp.getAge(ctrlAt), 0)
-    val holdPorts = (0 until HART_COUNT).map(pcp.newHoldPort)
+    val holdPorts = (0 until HART_COUNT).map(pcp.newHoldPort(_))
     setupLock.release()
 
     val cacheSize = wayCount*setCount*lineSize
@@ -306,16 +306,16 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val cmd = new pp.Fetch(readAt) {
       for ((bank, bankId) <- banks.zipWithIndex) {
-        bank.read.cmd.valid := up.isValid && up.isReady
+        bank.read.cmd.valid := up.isReady
         bank.read.cmd.payload := WORD_PC(lineRange.high downto log2Up(bankWidth / 8))
       }
 
       for((way, wayId) <- ways.zipWithIndex) {
-        way.read.cmd.valid := up.isValid && up.isReady
+        way.read.cmd.valid := up.isReady
         way.read.cmd.payload := WORD_PC(lineRange)
       }
 
-      plru.read.cmd.valid := up.isValid && up.isReady
+      plru.read.cmd.valid := up.isReady
       plru.read.cmd.payload := WORD_PC(lineRange)
 
       val PLRU_BYPASS_VALID = insert(plru.write.valid && plru.write.address === plru.read.cmd.payload)
@@ -453,7 +453,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         trapPort.valid := False
       }
 
-      when(down.isValid && down.isReady){
+      when(up.isValid && up.isReady){
         plru.write.valid := True
       }
     }
