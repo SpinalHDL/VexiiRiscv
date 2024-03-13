@@ -155,6 +155,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       val cmdCounter = Counter(bufferSize, bus.cmd.fire)
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
+      bus.cmd.assertPersistence()
       bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip && !doFence
       bus.cmd.id := cmdCounter
       bus.cmd.write := STORE
