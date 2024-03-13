@@ -173,7 +173,6 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
     case class StoreBufferOp() extends Bundle {
-      val slotId = UInt(log2Up(storeBufferSlots) bits)
       val address =  Global.PHYSICAL_ADDRESS()
       val data = LsuL1.WRITE_DATA()
       val size = LsuL1.SIZE()
@@ -483,7 +482,6 @@ class LsuPlugin(var layer : LaneLayer,
         val notFull = !storeBuffer.ops.full && (storeBuffer.slotsFree || hit)
         val allowed = notFull && compatibleOp
         val slotOh = hits | storeBuffer.slotsFreeFirst.andMask(!hit)
-        val slotId = OHToUInt(slotOh)
         val loadHazard = LOAD && hit
         val selfHazard = FROM_WB && SB_PTR =/= storeBuffer.ops.freePtr
       }
@@ -558,7 +556,6 @@ class LsuPlugin(var layer : LaneLayer,
         storeBuffer.push.valid := False
         storeBuffer.push.slotOh := wb.slotOh
         storeBuffer.push.tag := wb.tag
-        storeBuffer.push.op.slotId := wb.slotId
         storeBuffer.push.op.address := l1.PHYSICAL_ADDRESS
         storeBuffer.push.op.data := LsuL1.WRITE_DATA
         storeBuffer.push.op.size := LsuL1.SIZE

@@ -24,7 +24,7 @@ class RegFilePlugin(var spec : RegfileSpec,
                     var syncRead : Boolean = true,
                     var dualPortRam : Boolean = true,
                     var latchBased : Boolean = false,
-                    var maskReadDuringWrite : Boolean = true) extends FiberPlugin with RegfileService with InitService {
+                    var maskReadDuringWrite : Boolean = false) extends FiberPlugin with RegfileService with InitService {
   withPrefix(spec.getName())
   lazy val rfpp = RegFilePortParam(addressWidth, dataWidth, Global.HART_ID_WIDTH, Decode.UOP_ID_WIDTH)
 

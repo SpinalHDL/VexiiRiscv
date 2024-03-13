@@ -26,9 +26,9 @@ object IntegrationSynthBench extends App{
     add(p, postfix)
   }
 
-//  add("nothing") { p =>
-//
-//  }
+  add("nothing") { p =>
+
+  }
   add ("fmax") { p =>
     import p._
     fetchCachelessForkAt = 1
@@ -38,23 +38,36 @@ object IntegrationSynthBench extends App{
     xlen = 32
   }
 
-  add("fmax with counters") { p =>
-    import p._
-    fetchCachelessForkAt = 1
-    lsuPmaAt = 1
-    lsuForkAt = 1
-    relaxedBranch = true
-    xlen = 32
-    withPerformanceCounters = true
-  }
-//  add("fetch lsu l1 4k") { p =>
-//    p.fetchL1Enable = true
-//    p.lsuL1Enable = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 1
-//    p.allowBypassFrom = 0
-//    p.relaxedBranch = true
+//  add("fmax with counters") { p =>
+//    import p._
+//    fetchCachelessForkAt = 1
+//    lsuPmaAt = 1
+//    lsuForkAt = 1
+//    relaxedBranch = true
+//    xlen = 32
+//    withPerformanceCounters = true
 //  }
+  add("fetch lsu l1 4k") { p =>
+    p.fetchL1Enable = true
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 1
+//    p.allowBypassFrom = 0
+    p.relaxedBranch = true
+  }
+  add("fetch lsu l1 4k sb") { p =>
+    p.fetchL1Enable = true
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 1
+//    p.allowBypassFrom = 0
+    p.relaxedBranch = true
+    p.lsuStoreBufferSlots = 2
+    p.lsuStoreBufferOps = 32
+  }
+
+
+
 //  add ("microsoc32") { p =>
 //    import p._
 //    fetchCachelessForkAt = 1
@@ -511,7 +524,7 @@ object IntegrationSynthBench extends App{
 //    })
 
   val targets = ArrayBuffer[Target]()
-  targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
+  targets ++=  XilinxStdTargets(withFMax = true, withArea = false)
 //  targets ++= AlteraStdTargets()
 //  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
 
@@ -922,4 +935,23 @@ Artix 7 -> 196 Mhz 1546 LUT 1274 FF
 lsu_l1_16k ->
 Artix 7 -> 90 Mhz 1660 LUT 1472 FF
 Artix 7 -> 206 Mhz 1958 LUT 1577 FF
+
+
+fmax ->
+Artix 7 -> 234 Mhz 1256 LUT 1128 FF
+fmax_with_counters ->
+Artix 7 -> 219 Mhz 1351 LUT 1198 FF
+fetch_lsu_l1_4k ->
+Artix 7 -> 223 Mhz 1759 LUT 1510 FF
+fetch_lsu_l1_4k_sb ->
+Artix 7 -> 219 Mhz 1762 LUT 1596 FF
+
+nothing ->
+Artix 7 -> 204 Mhz 1233 LUT 1032 FF
+fmax ->
+Artix 7 -> 247 Mhz 1267 LUT 1123 FF
+fetch_lsu_l1_4k ->
+Artix 7 -> 236 Mhz 1501 LUT 1431 FF
+fetch_lsu_l1_4k_sb ->
+Artix 7 -> 225 Mhz 1611 LUT 1571 FF
  */

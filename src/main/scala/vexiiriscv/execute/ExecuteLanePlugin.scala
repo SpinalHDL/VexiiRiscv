@@ -116,7 +116,7 @@ class ExecuteLanePlugin(override val laneName : String,
         val rfa = Decode.rfaKeys.get(spec.access)
         val rfPlugin = host.find[RegfileService](_.rfSpec == spec.rf)
         val port = rfPlugin.newRead(false)
-        port.valid := !eupp.isFreezed() && readCtrl(rfa.ENABLE) && rfa.is(spec.rf, readCtrl(rfa.RFID))
+        port.valid := !eupp.isFreezed() // && readCtrl(rfa.ENABLE) && rfa.is(spec.rf, readCtrl(rfa.RFID))
         port.address := readCtrl(rfa.PHYS)
 
         // Generate a bypass specification for the regfile readed data

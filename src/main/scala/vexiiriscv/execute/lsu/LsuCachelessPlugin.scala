@@ -177,7 +177,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
       //TODO amo AQ/RL
 
-      val freezeIt = bus.cmd.isStall || doFence
+      val freezeIt = bus.cmd.isStall || doFence //TODO less combinatorial path
       elp.freezeWhen(freezeIt)
 
       flushPort.valid := False

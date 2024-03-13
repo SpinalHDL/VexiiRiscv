@@ -124,14 +124,14 @@ class ParamSimple(){
 //    fetchL1Ways = 4
 //    //fetchL1ReducedBank = true
 //    //fetchL1MemDataWidthMin = 256
-//    lsuL1Enable = true
-//    lsuL1Sets = 64
-//    lsuL1Ways = 4
-//    LsuL1RefillCount = 2
-//    lsuL1WritebackCount = 2
-//    lsuStoreBufferSlots = 2
-//    lsuStoreBufferOps = 32
-//    withLsuBypass = true
+    lsuL1Enable = true
+    lsuL1Sets = 64
+    lsuL1Ways = 4
+    LsuL1RefillCount = 2
+    lsuL1WritebackCount = 2
+    lsuStoreBufferSlots = 2
+    lsuStoreBufferOps = 32
+    withLsuBypass = true
 
 //    lsuForkAt = 1
     divArea = false
@@ -410,7 +410,8 @@ class ParamSimple(){
       physicalDepth = 32,
       preferedWritePortForInit = "lane0",
       syncRead = regFileSync,
-      dualPortRam = regFileDualPortRam
+      dualPortRam = regFileDualPortRam,
+      maskReadDuringWrite = false
     )
 
     def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(

@@ -109,7 +109,7 @@ class CsrAccessPlugin(layer : LaneLayer,
 
     val fsm = new StateMachine{
       val IDLE = makeInstantEntry()
-      val READ, WRITE, DONE = new State()
+      val READ, WRITE, COMPLETION = new State()
 
       val rd = rfaKeys.get(RD)
 
@@ -117,7 +117,7 @@ class CsrAccessPlugin(layer : LaneLayer,
       val regs = new Area {
         def doReg[T <: Data](that : HardType[T]) : T = if(integrated) that() else Reg(that)
         val sels = grouped.map(e => e._1 -> Reg(Bool()).setName("REG_CSR_" + filterToName(e._1)))
-        val read, write = doReg(Bool())
+        val read, write = Reg(Bool())
         val rs1 = doReg(CSR_VALUE)
         val aluInput, csrValue, onWriteBits = Reg(CSR_VALUE) //onWriteBits is only for whiteboxing
         val hartId = doReg(Global.HART_ID)
@@ -130,7 +130,6 @@ class CsrAccessPlugin(layer : LaneLayer,
       }
 
       val inject = new elp.Execute(injectAt){
-
         assert(!(up(LANE_SEL) && SEL && isCancel), "CsrAccessPlugin saw forbidden select && cancel request")
         val imm = IMM(UOP)
         val csrAddress = UOP(Const.csrRange)
@@ -145,9 +144,7 @@ class CsrAccessPlugin(layer : LaneLayer,
         })
         val implemented = sels.values.orR
 
-        val onDecodeDo = Bool()
-        val spawned = RegInit(False) setWhen(onDecodeDo) clearWhen(isReady)
-        onDecodeDo := isValid && !spawned && SEL && isActive(IDLE)
+        val onDecodeDo = isValid && SEL && isActive(IDLE)
         val priorities = spec.collect { case e: CsrOnDecode => e.priority }.distinct.sorted
         for (priority <- priorities) {
           for ((csrFilter, elements) <- grouped) {
@@ -181,9 +178,10 @@ class CsrAccessPlugin(layer : LaneLayer,
         bus.decode.hartId := Global.HART_ID
         bus.decode.address := csrAddress.asUInt
 
+        val unfreeze = RegNext(False) init(False)
         val iLogic = integrated generate new Area{
           connectRegs()
-          val freeze = isValid && SEL && !isActive(DONE)
+          val freeze = isValid && SEL && !unfreeze
           elp.freezeWhen(freeze)
         }
         val niLogic = !integrated generate new Area{
@@ -213,14 +211,13 @@ class CsrAccessPlugin(layer : LaneLayer,
 
         IDLE whenIsActive {
           (regs.sels.values, sels.values).zipped.foreach(_ := _)
-
           when(onDecodeDo) {
             when(trap) {
               bypass(Global.TRAP) := True
               bypass(Global.COMMIT) := False
               flushPort.valid := True
               trapPort.valid := True
-              iLogic.freeze := False
+              unfreeze := elp.isFreezed()
             } otherwise {
               goto(READ)
               when(bus.decode.trap){
@@ -325,7 +322,7 @@ class CsrAccessPlugin(layer : LaneLayer,
           onWritesDo := regs.write
           when(!bus.write.halt) {
             onWritesFireDo := regs.write
-            goto(DONE)
+            goto(COMPLETION)
           }
         }
 
@@ -379,14 +376,14 @@ class CsrAccessPlugin(layer : LaneLayer,
         }
       }
 
-
-      DONE.whenIsActive {
-        regs.fire := True
-        completion.valid := True
+      COMPLETION.whenIsNext(inject.unfreeze := True)
+      COMPLETION.whenIsActive {
         when(regs.rdEnable){
           if(!integrated) wbNi.valid := True
         }
         when(inject.isReady) {
+          regs.fire := True
+          completion.valid := True
           goto(IDLE)
         }
       }
