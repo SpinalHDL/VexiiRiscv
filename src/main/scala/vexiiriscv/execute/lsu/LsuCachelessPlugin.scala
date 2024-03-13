@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class LsuCachelessPlugin(var layer : LaneLayer,
                          var withAmo : Boolean,
-                         var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing
+                         var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing if any plugin doesn't flush from the first cycle after !freeze
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
                          var addressAt: Int = 0,
@@ -155,6 +155,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       val cmdCounter = Counter(bufferSize, bus.cmd.fire)
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
+      bus.cmd.assertPersistence()
       bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip && !doFence
       bus.cmd.id := cmdCounter
       bus.cmd.write := STORE

@@ -45,7 +45,7 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
     val ramAddressMask = ramAddress.maxValue
     val addressDecoder = new DecodingSpec(RAM_ADDRESS)
     val selDecoder = ArrayBuffer[Int]()
-    switch(cas.onDecodeAddress) {
+    switch(cas.bus.decode.address) {
       for (e <- csrMappings) {
         e.csrFilter match {
           case filter: CsrListFilter => for (csrId <- filter.mapping) {
@@ -64,7 +64,7 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
       }
     }
 
-    ramAddress := addressDecoder.build(cas.onDecodeAddress.asBits, Nil)
+    ramAddress := addressDecoder.build(cas.bus.decode.address.asBits, Nil)
     val selFilter = CsrListFilter(selDecoder)
     cas.allowCsr(selFilter)
 
@@ -75,18 +75,18 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
     read.address := ramAddress
     cas.readAlways(read.data.andMask(withRead))
     when (withRead && !read.ready){
-      cas.onReadHalt()
+      cas.bus.read.doHalt()
     }
 
     // Write stuff
     val doWrite = False
     cas.onWrite(selFilter, false)(doWrite := True)
-    val fired = RegInit(False) setWhen (write.fire) clearWhen (cas.onWriteMovingOff)
+    val fired = RegInit(False) setWhen (write.fire) clearWhen (cas.bus.write.moving)
     write.valid := doWrite && !fired && !api.holdWrite
     write.address := ramAddress
-    write.data := cas.onWriteBits
+    write.data := cas.bus.write.bits
     when ((doWrite && !fired) && !write.ready){
-      cas.onWriteHalt()
+      cas.bus.write.doHalt()
     }
 
     casRetainer.release()

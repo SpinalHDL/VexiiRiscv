@@ -150,7 +150,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           read(11 -> mpp)
           if (p.withUser) {
             onWrite(true) {
-              switch(cap.onWriteBits(12 downto 11)) {
+              switch(cap.bus.write.bits(12 downto 11)) {
                 is(3) { mpp := 3 }
                 if (p.withSupervisor) is(1) { mpp := 1 }
                 is(0) { mpp := 0 }
@@ -270,10 +270,10 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     }
 
     val defaultTrap = new Area {
-      val csrPrivilege = cap.onDecodeAddress(8, 2 bits)
-      val csrReadOnly = cap.onDecodeAddress(10, 2 bits) === U"11"
-      when(csrReadOnly && cap.onDecodeWrite || csrPrivilege > harts.reader(cap.onDecodeHartId)(_.privilege)) {
-        cap.onDecodeException()
+      val csrPrivilege = cap.bus.decode.address(8, 2 bits)
+      val csrReadOnly = cap.bus.decode.address(10, 2 bits) === U"11"
+      when(csrReadOnly && cap.bus.decode.write || csrPrivilege > harts.reader(cap.bus.decode.hartId)(_.privilege)) {
+        cap.bus.decode.doException()
       }
     }
 
@@ -281,10 +281,10 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       val tvecFilter = CsrListFilter(List(CSR.MTVEC) ++ p.withSupervisor.option(CSR.STVEC))
       val epcFilter = CsrListFilter(List(CSR.MEPC) ++ p.withSupervisor.option(CSR.SEPC))
       cap.onWrite(tvecFilter, false) {
-        cap.onWriteBits(0, 2 bits) := 0
+        cap.bus.write.bits(0, 2 bits) := 0
       }
       cap.onWrite(epcFilter, false) {
-        cap.onWriteBits(0, log2Up(Fetch.SLICE_BYTES) bits) := 0
+        cap.bus.write.bits(0, log2Up(Fetch.SLICE_BYTES) bits) := 0
       }
     }
 

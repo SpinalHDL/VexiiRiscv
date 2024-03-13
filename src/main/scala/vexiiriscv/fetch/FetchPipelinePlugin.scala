@@ -20,14 +20,18 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   val idToFetch = mutable.LinkedHashMap[Int, pipeline.CtrlLink]()
   def fetch(id : Int) = idToFetch.getOrElseUpdate(id, pipeline.CtrlLink())
 
+  val persistenceSpec = mutable.LinkedHashSet[Int]()
+  def setPersistence(id : Int) = persistenceSpec += id
+
   def up = fetch(0).up
   val logic = during build new Area{
     elaborationLock.await()
     val idMax = idToFetch.keys.max
     for(i <- 0 to idMax) fetch(i).unsetName() //To ensure the creation to all intermediate nodes
     val ctrls = idToFetch.toList.sortBy(_._1).map(_._2)
-    val sc = for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageLink(from.down, to.up) //.withoutCollapse()
+    val sc = (for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageLink(from.down, to.up)).toSeq
     val connectors = (sc ++ ctrls).toSeq
+    for(e <- persistenceSpec) sc(e-1).withoutCollapse().withPayloadHold()
 
     val rp = host[ReschedulePlugin]
     val flushRange = 1 until ctrls.size

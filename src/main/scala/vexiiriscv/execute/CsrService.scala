@@ -23,6 +23,60 @@ case class CsrIsReadingHartId(hartId : Int, value : Bool)
 
 
 case class CsrListFilter(mapping : Seq[Int]) extends Nameable
+
+case class CsrDecode() extends Bundle {
+  val exception = Bool()
+  val read, write = Bool()
+  val hartId = Global.HART_ID()
+  val address = UInt(12 bits)
+  val trap = Bool()
+  val trapCode = Global.CODE()
+
+  def doException(): Unit = {
+    exception := True
+  }
+  def doTrap(code: Int): Unit = {
+    trap := True
+    trapCode := code
+  }
+}
+
+case class CsrRead() extends Bundle {
+  val valid, moving = Bool()
+  val address = UInt(12 bits)
+  val halt = Bool()
+  val hartId = Global.HART_ID()
+  val toWriteBits = Bits(Riscv.XLEN bits)
+
+  def doHalt(): Unit = halt := True
+}
+
+case class CsrWrite() extends Bundle {
+  val valid, moving = Bool()
+  val halt = Bool()
+  val bits = Bits(Riscv.XLEN bits)
+  val address = UInt(12 bits)
+  val hartId = Global.HART_ID()
+
+  def doHalt(): Unit = halt := True
+}
+
+case class CsrBus() extends Bundle {
+  val decode = CsrDecode()
+  val read = CsrRead()
+  val write = CsrWrite()
+
+  def setup(): this.type = {
+    decode.exception := False
+    decode.trap := False
+    decode.trapCode.assignDontCare()
+    read.halt := False
+    write.halt := False
+    this
+  }
+}
+
+
 trait CsrService {
   val csrLock = Retainer()
   val spec = ArrayBuffer[CsrSpec]()
@@ -33,36 +87,12 @@ trait CsrService {
   val onWritingHartIdMap = mutable.LinkedHashMap[Int, Bool]()
   val trapNextOnWrite = mutable.LinkedHashSet[Any]()
 
+  val bus = Handle[CsrBus]
+
   def onDecode(csrFilter : Any, priority : Int = 0)(body : => Unit) = spec += CsrOnDecode(csrFilter, priority, () => body)
-  def onDecodeException() : Unit
-  def onDecodeUnException() : Unit
-  def onDecodeTrap(): Unit
-  def onDecodeRead : Bool
-  def onDecodeWrite : Bool
-  def onDecodeHartId : UInt
-  def onDecodeAddress: UInt
-  def onDecodeTrapCode: Bits
-
-  def isReading : Bool
   def onRead (csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = spec += CsrOnRead(csrFilter, onlyOnFire, () => body)
-  def onReadAddress: UInt
-  def onReadHartId: UInt
-  def onReadHalt(): Unit
-
   def onReadToWrite (csrFilter : Any)(body : => Unit) = spec += CsrOnReadToWrite(csrFilter, () => body)
-  def onReadToWriteBits: Bits
-
-  def isWriting: Bool
   def onWrite(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = spec += CsrOnWrite(csrFilter, onlyOnFire, () => body)
-  def onWriteHalt() : Unit
-  def onWriteBits : Bits
-  def onWriteAddress : UInt
-  def onWriteHartId: UInt
-  def onWriteFlushPipeline() : Unit
-
-  def onReadMovingOff : Bool
-  def onWriteMovingOff : Bool
-
   def allowCsr(csrFilter : Any) = onDecode(csrFilter){}
 
   def readingCsr(csrFilter : Any): Bool = {
@@ -96,11 +126,11 @@ trait CsrService {
   }
 
   def write[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : T = {
-    onWrite(csrId, true){ value.assignFromBits(onWriteBits(bitOffset, widthOf(value) bits)) }
+    onWrite(csrId, true){ value.assignFromBits(bus.write.bits(bitOffset, widthOf(value) bits)) }
     value
   }
   def writeWhen[T <: Data](value : T, cond : Bool, csrId : Int, bitOffset : Int = 0) : T = {
-    onWrite(csrId, true){ when(cond) { value.assignFromBits(onWriteBits(bitOffset, widthOf(value) bits)) }}
+    onWrite(csrId, true){ when(cond) { value.assignFromBits(bus.write.bits(bitOffset, widthOf(value) bits)) }}
     value
   }
   def readWrite[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : T = {
@@ -111,7 +141,7 @@ trait CsrService {
 
   def readToWrite[T <: Data](value : T, csrFilter : Any, bitOffset : Int = 0) : Unit = {
     onReadToWrite(csrFilter){
-      onReadToWriteBits(bitOffset, widthOf(value) bits) := value.asBits
+      bus.read.toWriteBits(bitOffset, widthOf(value) bits) := value.asBits
     }
   }
 
@@ -136,7 +166,7 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
   def writeWhen[T <: Data](value: T, cond: Bool, csrId: Int, bitOffset: Int = 0): Unit = {
     onWrite(csrId, true) {
       when(cond) {
-        value.assignFromBits(csrService.onWriteBits(bitOffset, widthOf(value) bits))
+        value.assignFromBits(csrService.bus.write.bits(bitOffset, widthOf(value) bits))
       }
     }
   }
@@ -148,7 +178,7 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
   }
   def readToWrite[T <: Data](value: T, csrFilter: Any, bitOffset: Int = 0): Unit = {
     onReadToWrite(csrFilter) {
-      csrService.onReadToWriteBits(bitOffset, widthOf(value) bits) := value.asBits
+      csrService.bus.read.toWriteBits(bitOffset, widthOf(value) bits) := value.asBits
     }
   }
 
@@ -164,9 +194,9 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     val hartSel = csrService.writingHartId(hartId)
     csrService.onWrite(csrFilter, true) {
       if(Global.HART_COUNT > 1) when(hartSel) {
-        value.assignFromBits(csrService.onWriteBits(bitOffset, widthOf(value) bits))
+        value.assignFromBits(csrService.bus.write.bits(bitOffset, widthOf(value) bits))
       } else {
-        value.assignFromBits(csrService.onWriteBits(bitOffset, widthOf(value) bits))
+        value.assignFromBits(csrService.bus.write.bits(bitOffset, widthOf(value) bits))
       }
     }
   }
@@ -239,6 +269,7 @@ object CsrRamService{
     val COUNTER = 3
   }
 }
+
 //usefull for, for instance, mscratch scratch mtvec stvec mepc sepc mtval stval satp pmp stuff
 trait CsrRamService extends Area{
   val portLock = Retainer()

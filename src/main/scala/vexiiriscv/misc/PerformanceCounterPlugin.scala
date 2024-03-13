@@ -168,9 +168,9 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 
       CSR_WRITE whenIsActive {
         holdCsrWrite := False
-        when(csr.onWriteAddress(7) === False) {
+        when(csr.bus.write.address(7) === False) {
           counters.list.onMask(cmd.oh) { c =>
-            c.value := csr.onWriteBits.asUInt.resized
+            c.value := csr.bus.write.bits.asUInt.resized
             c.value.msb := False
           }
         }
@@ -234,14 +234,14 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 
     // Trap eventual bad accesses
     val csrDecode = new Area{
-      val addr = csr.onDecodeAddress(0, log2Up(counterCount + 1) bits)
+      val addr = csr.bus.decode.address(0, log2Up(counterCount + 1) bits)
       val mok = addr.muxListDc(counters.list.map(e => e.counterId -> e.mcounteren))
       val sok = priv.p.withSupervisor.mux(addr.muxListDc(counters.list.map(e => e.counterId -> e.scounteren)), True)
-      val privOk = (priv.getPrivilege(csr.onDecodeHartId) | U(mok ## sok)).andR
+      val privOk = (priv.getPrivilege(csr.bus.decode.hartId) | U(mok ## sok)).andR
       csr.onDecode(csrFilter){ //TODO test
-        when(csr.onDecodeAddress(9 downto 8) === 0){
-          when(csr.onDecodeWrite || !privOk){
-            csr.onDecodeException()
+        when(csr.bus.decode.address(9 downto 8) === 0){
+          when(csr.bus.decode.write || !privOk){
+            csr.bus.decode.doException()
           }
         }
       }
@@ -249,16 +249,16 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 
     val csrRead = new Area {
       val fired = RegInit(False) setWhen(fsm.csrReadCmd.fire)
-      val requested = csr.isReading && csr.readingCsr(csrFilter)
+      val requested = csr.bus.read.valid && csr.readingCsr(csrFilter)
       fsm.csrReadCmd.valid := requested && !fired
-      fsm.csrReadCmd.address := csr.onReadAddress(0, log2Up(counterCount+1) bits)
+      fsm.csrReadCmd.address := csr.bus.read.address(0, log2Up(counterCount+1) bits)
 
       when(requested){
         when(!fired || !fsm.done){
           ram.holdCsrRead()
         }
       }
-      when(csr.onReadMovingOff){
+      when(csr.bus.read.moving){
         fired := False
       }
     }
@@ -266,17 +266,17 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val csrWrite = new Area{
       val fired = RegInit(False) setWhen(fsm.csrWriteCmd.fire)
       fsm.csrWriteCmd.valid := False
-      fsm.csrWriteCmd.address := csr.onWriteAddress(0, log2Up(counterCount+1) bits)
+      fsm.csrWriteCmd.address := csr.bus.write.address(0, log2Up(counterCount+1) bits)
 
       csr.onWrite(csrFilter, false){
         when(!fired){
           fsm.csrWriteCmd.valid := True
           when(!fsm.csrWriteCmd.ready){
-            csr.onWriteHalt()
+            csr.bus.write.doHalt()
           }
         }
       }
-      when(csr.onWriteMovingOff){
+      when(csr.bus.write.moving){
         fired := False
       }
     }

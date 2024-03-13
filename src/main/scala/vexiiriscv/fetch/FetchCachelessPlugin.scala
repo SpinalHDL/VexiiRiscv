@@ -67,7 +67,8 @@ class FetchCachelessPlugin(var wordWidth : Int,
       }
       val full = CombInit(reservedHits.orR || inflight.read(reserveId)) //TODO that's one cycle late, can use sort of ahead value
 
-      when(bus.cmd.fire) {
+      val inflightSpawn = Bool()
+      when(inflightSpawn) {
         inflight(reserveId) := True
       }
 
@@ -99,19 +100,28 @@ class FetchCachelessPlugin(var wordWidth : Int,
     }
 
     val fork = new pp.Fetch(forkAt){
-
       val fresh = (forkAt == 0).option(host[PcPlugin].forcedSpawn())
-      val cmdFork = forkStream(fresh)
-      bus.cmd.arbitrationFrom(cmdFork.haltWhen(buffer.full))
-      bus.cmd.id := buffer.reserveId
-      bus.cmd.address := tpk.TRANSLATED
-      bus.cmd.address(Fetch.SLICE_RANGE) := 0
+      val forked = forkStream(fresh)
+      val halted = forked.haltWhen(buffer.full)
+      val translated = cloneOf(bus.cmd)
+      translated.arbitrationFrom(halted)
+      translated.id := buffer.reserveId
+      translated.address := tpk.TRANSLATED
+      translated.address(Fetch.SLICE_RANGE) := 0
+      val persistent = translated.pipelined(s2m = cmdForkPersistence)
+      bus.cmd << persistent
+
+      buffer.inflightSpawn := translated.fire
+
+      if (cmdForkPersistence) {
+        bus.cmd.assertPersistence()
+      }
 
       BUFFER_ID := buffer.reserveId
 
       val PMA_FAULT = insert(onPma.RSP.fault)
       when(tpk.REDO || PMA_FAULT) {
-        bus.cmd.valid := False
+        halted.valid := False
       }otherwise {
         when(up.isMoving) {
           buffer.reserveId.increment()
@@ -177,3 +187,10 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
   val pmaBuilder = during build new PmaLogic(logic.onPma.port, regions.filter(_.isExecutable))
 }
+
+
+//      val persist = (forkAt > 0 && cmdForkPersistence) generate new Area{
+//        val started = RegNext(translated.isStall) init(False)
+//        translated.valid setWhen(started)
+//        pp.setPersistence(forkAt)
+//      }
