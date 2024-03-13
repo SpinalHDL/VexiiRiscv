@@ -36,60 +36,8 @@ class CsrAccessPlugin(layer : LaneLayer,
   val CSR_ADDRESS = Payload(UInt(12 bits))
 
   import CsrFsm._
-
-  override def onDecodeException(): Unit = apiIo.onDecodeException := True
-  override def onDecodeUnException(): Unit = apiIo.onDecodeException := False
-  override def onDecodeTrap(): Unit = apiIo.onDecodeTrap := True
-  override def onDecodeRead: Bool = apiIo.onDecodeRead
-  override def onDecodeWrite: Bool = apiIo.onDecodeWrite
-  override def onDecodeHartId: UInt = apiIo.onDecodeHartId
-  override def onDecodeAddress: UInt = apiIo.onDecodeAddress
-  override def onDecodeTrapCode: Bits = apiIo.onDecodeTrapCode
-  def onDecodeTrap(code : Int) : Unit = {
-    onDecodeTrap()
-    onDecodeTrapCode := code
-  }
-
-
-  override def isReading: Bool = apiIo.isReading
-  override def onReadAddress: UInt = apiIo.onReadAddress
-  override def onReadHartId: UInt = apiIo.onReadHartId
-  override def onReadHalt(): Unit = apiIo.onReadHalt := True
-
-  override def onReadToWriteBits: Bits = apiIo.onReadToWriteBits
-
-  override def isWriting: Bool = apiIo.isWriting
-  override def onWriteHalt(): Unit = apiIo.onWriteHalt := True
-  override def onWriteBits: Bits = apiIo.onWriteBits
-  override def onWriteAddress: UInt = apiIo.onWriteAddress
-  override def onWriteHartId: UInt = apiIo.onWriteHartId
-  override def onWriteFlushPipeline(): Unit = ???
-
-  override def onReadMovingOff: Bool = apiIo.onReadMovingOff
-  override def onWriteMovingOff: Bool = apiIo.onWriteMovingOff
-
-  val apiIo = during build new Area{
-    val onDecodeException = False
-    val onDecodeTrap = False
-    val onDecodeRead = Bool()
-    val onDecodeWrite = Bool()
-    val onDecodeHartId = Global.HART_ID()
-    val onDecodeAddress = CSR_ADDRESS()
-    val onDecodeTrapCode = Global.CODE().assignDontCare()
-    val isReading = Bool()
-    val onReadAddress = CSR_ADDRESS()
-    val onReadHalt = False
-    val onReadHartId = Global.HART_ID()
-    val onReadToWriteBits = CSR_VALUE()
-    val isWriting = Bool()
-    val onWriteHalt = False
-    val onWriteBits = CSR_VALUE()
-    val onWriteAddress = CSR_ADDRESS()
-    val onWriteHartId = Global.HART_ID()
-//    val onWriteFlushPipeline(): Unit
-    val onReadMovingOff = Bool()
-    val onWriteMovingOff = Bool()
-  }
+  
+  override val bus = during build CsrBus().setup()
 
   val logic = during setup new Area {
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
@@ -142,9 +90,8 @@ class CsrAccessPlugin(layer : LaneLayer,
     }.toList)
 
     onDecode(trapNextOnWriteFilter) {
-      when(onDecodeWrite) {
-        onDecodeTrap()
-        onDecodeTrapCode := TrapReason.NEXT
+      when(bus.decode.write) {
+        bus.decode.doTrap(TrapReason.NEXT)
       }
     }
 
@@ -222,7 +169,7 @@ class CsrAccessPlugin(layer : LaneLayer,
 
 
 
-        val trap = !implemented || apiIo.onDecodeException
+        val trap = !implemented || bus.decode.exception
 
         def connectRegs(): Unit = {
           regs.hartId := Global.HART_ID
@@ -238,10 +185,10 @@ class CsrAccessPlugin(layer : LaneLayer,
           regs.rdPhys := rd.PHYS
         }
 
-        apiIo.onDecodeRead := csrRead
-        apiIo.onDecodeWrite := csrWrite
-        apiIo.onDecodeHartId := Global.HART_ID
-        apiIo.onDecodeAddress := csrAddress.asUInt
+        bus.decode.read := csrRead
+        bus.decode.write := csrWrite
+        bus.decode.hartId := Global.HART_ID
+        bus.decode.address := csrAddress.asUInt
 
         val iLogic = integrated generate new Area{
           connectRegs()
@@ -285,12 +232,12 @@ class CsrAccessPlugin(layer : LaneLayer,
               iLogic.freeze := False
             } otherwise {
               goto(READ)
-              when(apiIo.onDecodeTrap){
+              when(bus.decode.trap){
                 bypass(Global.TRAP) := True
                 flushPort.valid := True
                 trapPort.valid := True
                 trapPort.exception := False
-                trapPort.code := apiIo.onDecodeTrapCode
+                trapPort.code := bus.decode.trapCode
               }
             }
           }
@@ -300,10 +247,10 @@ class CsrAccessPlugin(layer : LaneLayer,
       val readLogic = new Area {
         val onReadsDo = False
         val onReadsFireDo = False
-        apiIo.isReading := onReadsDo
-        apiIo.onReadAddress := U(regs.uop(Const.csrRange))
+        bus.read.valid := onReadsDo
+        bus.read.address := U(regs.uop(Const.csrRange))
 
-        apiIo.onReadMovingOff := !apiIo.onReadHalt //TODO || eu.getExecute(0).isFlushed
+        bus.read.moving := !bus.read.halt //TODO || eu.getExecute(0).isFlushed
 
         val groupedLogic = for ((csrFilter, elements) <- grouped) yield new Area {
           setPartialName(filterToName(csrFilter))
@@ -335,7 +282,7 @@ class CsrAccessPlugin(layer : LaneLayer,
           csrValue := 0
         }
 
-        apiIo.onReadToWriteBits := csrValue
+        bus.read.toWriteBits := csrValue
         for ((csrFilter, elements) <- grouped) {
           val onReadToWrite = elements.collect { case e: CsrOnReadToWrite => e }
           if (onReadToWrite.nonEmpty) when(onReadsDo && regs.sels(csrFilter)) {
@@ -349,13 +296,13 @@ class CsrAccessPlugin(layer : LaneLayer,
           case _ =>
         }
 
-        for((id, value) <- onReadingHartIdMap) value := onReadHartId === id
+        for((id, value) <- onReadingHartIdMap) value := bus.read.hartId === id
 
         READ.whenIsActive {
           onReadsDo := regs.read
-          regs.aluInput := apiIo.onReadToWriteBits
+          regs.aluInput := bus.read.toWriteBits
           regs.csrValue := csrValue
-          when(!apiIo.onReadHalt) {
+          when(!bus.read.halt) {
             onReadsFireDo := regs.read
             goto(WRITE)
           }
@@ -365,7 +312,7 @@ class CsrAccessPlugin(layer : LaneLayer,
 
       val writeLogic = new Area {
         val imm = IMM(regs.uop)
-        apiIo.onWriteMovingOff := !apiIo.onWriteHalt //TODO || eu.getExecute(0).isFlushed
+        bus.write.moving := !bus.write.halt //TODO || eu.getExecute(0).isFlushed
 
         val alu = new Area {
           val mask = regs.doImm ? imm.z.resized | regs.rs1
@@ -374,25 +321,25 @@ class CsrAccessPlugin(layer : LaneLayer,
         }
 
         regs.onWriteBits := alu.result
-        apiIo.onWriteBits := alu.result
-        apiIo.onWriteAddress := U(regs.uop(Const.csrRange))
+        bus.write.bits := alu.result
+        bus.write.address := U(regs.uop(Const.csrRange))
 
         val onWritesDo = False
         val onWritesFireDo = False
 
-        apiIo.isWriting := onWritesDo
+        bus.write.valid := onWritesDo
 
         WRITE.whenIsActive {
 //          regs.flushPipeline setWhen (io.onWriteFlushPipeline)
           onWritesDo := regs.write
-          when(!apiIo.onWriteHalt) {
+          when(!bus.write.halt) {
             onWritesFireDo := regs.write
             goto(DONE)
           }
         }
 
 
-        for ((id, value) <- onWritingHartIdMap) value := onWriteHartId === id
+        for ((id, value) <- onWritingHartIdMap) value := bus.write.hartId === id
 
         val groupedLogic = for ((csrFilter, elements) <- grouped) yield new Area {
           setPartialName(filterToName(csrFilter))

@@ -191,11 +191,11 @@ class MmuPlugin(var spec : MmuSpec,
     csr.readWrite(CSR.MSTATUS, 17 -> status.mprv)
 
     csr.readWrite(CSR.SATP, satp.modeOffset -> satp.mode/*, 22 -> satp.asid*/, 0 -> satp.ppn)
-    val satpModeWrite = csr.onWriteBits(satp.modeOffset, satp.modeWidth bits)
+    val satpModeWrite = csr.bus.write.bits(satp.modeOffset, satp.modeWidth bits)
     csr.writeCancel(CSR.SATP, satpModeWrite =/= 0 && satpModeWrite =/= spec.satpMode)
 
     csr.onDecode(CSR.SATP){
-      csr.onDecodeTrap(TrapReason.SFENCE_VMA)
+      csr.bus.decode.doTrap(TrapReason.SFENCE_VMA)
     }
 
     csr.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUS, CSR.SSTATUS))
