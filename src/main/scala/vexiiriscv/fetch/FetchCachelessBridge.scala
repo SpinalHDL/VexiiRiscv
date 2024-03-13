@@ -7,6 +7,7 @@ import spinal.lib.bus.tilelink.{DebugId, S2mSupport}
 import spinal.lib.misc.plugin.FiberPlugin
 
 class CachelessBusToTilelink(up : CachelessBus) extends Area{
+  assert(up.p.cmdPersistence)
   val m2sParam = up.p.toTilelinkM2s(this)
   val down = tilelink.Bus(m2sParam)
   down.a.arbitrationFrom(up.cmd)
