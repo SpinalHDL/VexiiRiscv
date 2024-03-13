@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class LsuCachelessPlugin(var layer : LaneLayer,
                          var withAmo : Boolean,
-                         var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing
+                         var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing if any plugin doesn't flush from the first cycle after !freeze
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
                          var addressAt: Int = 0,

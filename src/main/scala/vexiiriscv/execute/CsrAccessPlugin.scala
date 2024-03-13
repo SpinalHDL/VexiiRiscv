@@ -95,14 +95,6 @@ class CsrAccessPlugin(layer : LaneLayer,
       }
     }
 
-//    val useRamRead = spec.exists(_.isInstanceOf[CsrRamSpec])
-//    val useRamWrite = spec.exists(_.isInstanceOf[CsrRamSpec])
-//    val useRam = spec.exists(_.isInstanceOf[CsrRamSpec])
-
-//    val ramPorts = useRam generate new Area{
-//      val read = useRamRead generate ram.get.ramReadPort(CsrRamService.priority.CSR)
-//      val write = useRamWrite generate ram.get.ramWritePort(CsrRamService.priority.CSR)
-//    }
     ramPortRetainer.foreach(_.release())
 
     val wbNi = !integrated generate irf.newWrite(withReady = true, sharingKey = writeBackKey)
@@ -118,7 +110,6 @@ class CsrAccessPlugin(layer : LaneLayer,
     val fsm = new StateMachine{
       val IDLE = makeInstantEntry()
       val READ, WRITE, DONE = new State()
-
 
       val rd = rfaKeys.get(RD)
 

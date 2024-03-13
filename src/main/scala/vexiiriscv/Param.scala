@@ -124,23 +124,25 @@ class ParamSimple(){
 //    fetchL1Ways = 4
 //    //fetchL1ReducedBank = true
 //    //fetchL1MemDataWidthMin = 256
-    lsuL1Enable = true
-    lsuL1Sets = 64
-    lsuL1Ways = 4
-    LsuL1RefillCount = 2
-    lsuL1WritebackCount = 2
-    lsuStoreBufferSlots = 2
-    lsuStoreBufferOps = 32
-    withLsuBypass = true
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    LsuL1RefillCount = 2
+//    lsuL1WritebackCount = 2
+//    lsuStoreBufferSlots = 2
+//    lsuStoreBufferOps = 32
+//    withLsuBypass = true
+
+//    lsuForkAt = 1
     divArea = false
     divRadix = 4
-//    decoders = 2
-//    lanes = 2
-//    withLateAlu = true
+    decoders = 2
+    lanes = 2
+    withLateAlu = true
     withMul = true
     withDiv = true
-//    withDispatcherBuffer = true
-////    withAlignerBuffer = true
+    withDispatcherBuffer = true
+//    withAlignerBuffer = true
 ////    withRvc = true
     withRva = true
     withMmu = true
@@ -541,15 +543,17 @@ class ParamSimple(){
     plugins += new TrapPlugin(trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
 
+    val lateAluAt = 2
+    
     if(withLateAlu) {
       val late0 = new LaneLayer("late0", lane0, priority = -5)
-      plugins += new SrcPlugin(late0, executeAt = 2, relaxedRs = relaxedSrc)
-      plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
-      plugins += shifter(late0, shiftAt = 2, formatAt = 2)
-      plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
+      plugins += new SrcPlugin(late0, executeAt = lateAluAt, relaxedRs = relaxedSrc)
+      plugins += new IntAluPlugin(late0, aluAt = lateAluAt, formatAt = lateAluAt)
+      plugins += shifter(late0, shiftAt = lateAluAt, formatAt = lateAluAt)
+      plugins += new BranchPlugin(late0, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
     }
 
-    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
+    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, 2), allowBypassFrom = allowBypassFrom)
 
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
@@ -564,15 +568,15 @@ class ParamSimple(){
 
       if(withLateAlu) {
         val late1 = new LaneLayer("late1", lane1, priority = -3)
-        plugins += new SrcPlugin(late1, executeAt = 2, relaxedRs = relaxedSrc)
-        plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
-        plugins += shifter(late1, shiftAt = 2, formatAt = 2)
-        plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
+        plugins += new SrcPlugin(late1, executeAt = lateAluAt, relaxedRs = relaxedSrc)
+        plugins += new IntAluPlugin(late1, aluAt = lateAluAt, formatAt = lateAluAt)
+        plugins += shifter(late1, shiftAt = lateAluAt, formatAt = lateAluAt)
+        plugins += new BranchPlugin(late1, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
       }
 //      if (withMul) {
 //        plugins += new MulPlugin(early1)
 //      }
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
+      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, 2), allowBypassFrom = allowBypassFrom)
     }
 
     plugins.foreach {

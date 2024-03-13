@@ -29,15 +29,32 @@ object IntegrationSynthBench extends App{
 //  add("nothing") { p =>
 //
 //  }
-
-  add("fetch lsu l1 4k") { p =>
-    p.fetchL1Enable = true
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 1
-    p.allowBypassFrom = 0
-    p.relaxedBranch = true
+  add ("fmax") { p =>
+    import p._
+    fetchCachelessForkAt = 1
+    lsuPmaAt = 1
+    lsuForkAt = 1
+    relaxedBranch = true
+    xlen = 32
   }
+
+  add("fmax with counters") { p =>
+    import p._
+    fetchCachelessForkAt = 1
+    lsuPmaAt = 1
+    lsuForkAt = 1
+    relaxedBranch = true
+    xlen = 32
+    withPerformanceCounters = true
+  }
+//  add("fetch lsu l1 4k") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 1
+//    p.allowBypassFrom = 0
+//    p.relaxedBranch = true
+//  }
 //  add ("microsoc32") { p =>
 //    import p._
 //    fetchCachelessForkAt = 1
@@ -108,16 +125,16 @@ object IntegrationSynthBench extends App{
 //
 
 
-  add("lsu l1 4k") { p =>
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 1
-  }
-  add("lsu l1 16k") { p =>
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 4
-  }
+//  add("lsu l1 4k") { p =>
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 1
+//  }
+//  add("lsu l1 16k") { p =>
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 4
+//  }
 //  add("lsu l1 64k") { p =>
 //    p.lsuL1Enable = true
 //    p.lsuL1Sets = 64
