@@ -118,7 +118,7 @@ class TestOptions{
   var dbusReadyFactor = 1.01f
   var dbusBaseLatency = 0
   var seed = 2
-  var jtagTcp = false
+  var jtagRemote = false
 
   def getTestName() = testName.getOrElse("test")
 
@@ -151,7 +151,7 @@ class TestOptions{
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
     opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
-    opt[Unit]("jtag-tcp") unbounded() action { (v, c) => jtagTcp = true }
+    opt[Unit]("jtag-remote") unbounded() action { (v, c) => jtagRemote = true }
 
     opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
     opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
@@ -474,13 +474,13 @@ class TestOptions{
       }
     })
 
-    if(jtagTcp) dut.host.services.foreach{
+    if(jtagRemote) dut.host.services.foreach{
       case p : EmbeddedRiscvJtag => {
         p.debugCd.resetSim #= true
         delayed(20){
           p.debugCd.resetSim #= false
         }
-        spinal.lib.com.jtag.sim.JtagTcp(p.logic.jtag, 10*4)
+        spinal.lib.com.jtag.sim.JtagRemote(p.logic.jtag, 10*4)
         probe.checkLiveness = false
       }
       case _ =>
