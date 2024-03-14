@@ -8,6 +8,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv.riscv.{MicroOp, RegfileSpec, RfRead}
 
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 trait DecoderService {
   val elaborationLock = Retainer()
@@ -22,4 +23,10 @@ trait DecoderService {
 trait AlignerService{
   val lastSliceData, firstSliceData = mutable.LinkedHashSet[NamedType[_ <: Data]]()
   val elaborationLock = Retainer()
+}
+
+trait InjectorService {
+  val injectRetainer = Retainer()
+  var injectPorts = ArrayBuffer[Flow[Bits]]()
+  def injectPort() = injectPorts.addRet(Flow(Decode.INSTRUCTION))
 }

@@ -81,7 +81,7 @@ class Backend(f : File) {
 
   def refresh(): Unit = {
     val cycleEnd = threads.map(_.cycleLock).min
-    var skips = 0
+    var skips = 0l
 
     while(cycle != cycleEnd && pendings.nonEmpty){
       skips += 1

@@ -47,6 +47,7 @@ case class CsrRead() extends Bundle {
   val halt = Bool()
   val hartId = Global.HART_ID()
   val toWriteBits = Bits(Riscv.XLEN bits)
+  val data = Bits(Riscv.XLEN bits)
 
   def doHalt(): Unit = halt := True
 }
@@ -163,6 +164,17 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
   def onWrite(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = csrService.onWrite(csrFilter, onlyOnFire){
     when(csrService.writingHartId(hartId)){ body }
   }
+
+  def isWriting(csrFilter: Any, onlyOnFire: Boolean) = {
+    val ret = False
+    csrService.onWrite(csrFilter, onlyOnFire) {
+      when(csrService.writingHartId(hartId)) {
+        ret := True
+      }
+    }
+    ret
+  }
+
   def writeWhen[T <: Data](value: T, cond: Bool, csrId: Int, bitOffset: Int = 0): Unit = {
     onWrite(csrId, true) {
       when(cond) {

@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
+import spinal.lib.cpu.riscv.debug.DebugTransportModuleParameter
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.system.tag.{PmaRegion, PmaRegionImpl}
 import vexiiriscv._
@@ -105,6 +106,8 @@ class ParamSimple(){
   var fetchCachelessForkAt = 0
   var btbSets = 512
   var btbHashWidth = 16
+  var embeddedJtag = false
+  var embeddedJtagInstruction = false
 
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
@@ -114,9 +117,9 @@ class ParamSimple(){
     regFileSync = false
     allowBypassFrom = 0
 
-    withGShare = true
-    withBtb = true
-    withRas = true
+//    withGShare = true
+//    withBtb = true
+//    withRas = true
 ////    relaxedBranch = true  // !!
 ////    relaxedBtb = true     // !!
 //    fetchL1Enable = true
@@ -124,24 +127,24 @@ class ParamSimple(){
 //    fetchL1Ways = 4
 //    //fetchL1ReducedBank = true
 //    //fetchL1MemDataWidthMin = 256
-    lsuL1Enable = true
-    lsuL1Sets = 64
-    lsuL1Ways = 4
-    LsuL1RefillCount = 2
-    lsuL1WritebackCount = 2
-    lsuStoreBufferSlots = 2
-    lsuStoreBufferOps = 32
-    withLsuBypass = true
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    LsuL1RefillCount = 2
+//    lsuL1WritebackCount = 2
+//    lsuStoreBufferSlots = 2
+//    lsuStoreBufferOps = 32
+//    withLsuBypass = true
 
 //    lsuForkAt = 1
     divArea = false
     divRadix = 4
-    decoders = 2
-    lanes = 2
-    withLateAlu = true
+//    decoders = 2
+//    lanes = 2
+//    withLateAlu = true
     withMul = true
     withDiv = true
-    withDispatcherBuffer = true
+//    withDispatcherBuffer = true
 //    withAlignerBuffer = true
 ////    withRvc = true
     withRva = true
@@ -151,6 +154,8 @@ class ParamSimple(){
 //    xlen = 64
 
 
+    privParam.withDebug = true
+    embeddedJtag = true
 
 
 //    decoders = 2
@@ -217,6 +222,9 @@ class ParamSimple(){
     if (withPerformanceCounters) r += s"pc$additionalPerformanceCounters"
     if (withIterativeShift) r += "isft"
     if (withDiv) r += s"d${divRadix}${divImpl}${if(divArea)"Area" else ""}"
+    if (privParam.withDebug) r += s"pdbg"
+    if (embeddedJtag) r += s"ejtag"
+    if (embeddedJtagInstruction) r += s"ejtagi"
     r.mkString("_")
   }
 
@@ -273,6 +281,7 @@ class ParamSimple(){
     opt[Int]("fetch-fork-at") action { (v, c) => fetchCachelessForkAt = v }
     opt[Int]("lsu-fork-at") action { (v, c) => lsuForkAt = v }
     opt[Int]("lsu-pma-at") action { (v, c) => lsuPmaAt = v }
+    opt[Unit]("with-privileged-debug") action { (v, c) => privParam.withDebug = true }
   }
 
   def plugins() = pluginsArea.plugins
@@ -543,7 +552,15 @@ class ParamSimple(){
     plugins += new PrivilegedPlugin(privParam, 0 until hartCount)
     plugins += new TrapPlugin(trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
-
+    if(embeddedJtag || embeddedJtagInstruction) plugins += new EmbeddedRiscvJtag(
+      p = DebugTransportModuleParameter(
+        addressWidth = 7,
+        version = 1,
+        idle = 7
+      ),
+      withTunneling = false,
+      withTap = embeddedJtag
+    )
     val lateAluAt = 2
     
     if(withLateAlu) {

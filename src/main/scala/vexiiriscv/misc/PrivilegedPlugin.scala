@@ -3,6 +3,7 @@ package vexiiriscv.misc
 import spinal.core.{Bool, _}
 import spinal.core.fiber.Retainer
 import spinal.lib._
+import spinal.lib.cpu.riscv.debug.{DebugDmToHartOp, DebugHartBus, DebugModule}
 import spinal.lib.fsm._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global._
@@ -10,6 +11,7 @@ import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamPlugin, CsrRamS
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
+import vexiiriscv.decode.{AlignerPlugin, DecodePipelinePlugin, InjectorService}
 import vexiiriscv.fetch.{Fetch, PcService}
 import vexiiriscv.schedule.Ages
 
@@ -66,13 +68,28 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
   def hart(id : Int) = logic.harts(id)
 
+  val api = during build new Area{
+    val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
+      val allowInterrupts      = True
+      val allowException       = True
+      val allowEbreakException = True
+    }
+  }
+
+  def inhibateInterrupts(hartId : Int): Unit = api.harts(hartId).allowInterrupts := False
+  def inhibateException(hartId : Int): Unit = api.harts(hartId).allowException := False
+  def inhibateEbreakException(hartId : Int): Unit = api.harts(hartId).allowEbreakException := False
+
   val logic = during setup new Area {
     val cap = host[CsrAccessPlugin]
     val pp = host[PipelineBuilderPlugin]
+    val ap = host[AlignerPlugin]
     val pcs = host[PcService]
+    val tp = host[TrapPlugin]
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
-    val buildBefore = retains(List(cap.csrLock) ++ withRam.option(crs.csrLock))
+    val injs = host[InjectorService]
+    val buildBefore = retains(List(cap.csrLock, injs.injectRetainer, pcs.elaborationLock) ++ withRam.option(crs.csrLock))
 
     awaitBuild()
     p.check()
@@ -124,6 +141,143 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       val privilege = RegInit(U"11")
       val withMachinePrivilege = privilege >= U"11"
       val withSupervisorPrivilege = privilege >= U"01"
+
+
+      val debug = p.withDebug generate new Area{
+        val injector = p.withDebug generate injs.injectPort()
+        val bus = slave(DebugHartBus())
+        val running = RegInit(True)
+        val debugMode = !running
+        val fetchHold = pcs.newHoldPort(hartId)
+        fetchHold := !running
+
+        bus.resume.rsp.valid := False
+
+        bus.running := running
+        bus.halted := !running
+        bus.unavailable := BufferCC(ClockDomain.current.isResetActive)
+        when(debugMode) {
+          inhibateInterrupts(hartId)
+        }
+
+        val reseting = RegNext(False) init (True)
+        bus.haveReset := RegInit(False) setWhen (reseting) clearWhen (bus.ackReset)
+
+        val enterHalt = running.getAheadValue().fall(False)
+        val doHalt = RegInit(False) setWhen (bus.haltReq && bus.running && !debugMode) clearWhen (enterHalt)
+        val forceResume = False
+        val doResume = forceResume || bus.resume.isPending(1)
+
+        val dataCsrr = new Area {
+          bus.hartToDm.valid := api.isWriting(DebugModule.CSR_DATA, true)
+          bus.hartToDm.address := 0
+          bus.hartToDm.data := cap.bus.write.bits
+        }
+
+        val withDebugFpuAccess = false //withPrivilegedDebug && pipeline.config.FLEN == 64 && XLEN == 32
+        val dataCsrw = new Area {
+          val value = Vec.fill(1 + withDebugFpuAccess.toInt)(Reg(Bits(XLEN bits)))
+
+          val fromDm = new Area {
+            when(bus.dmToHart.valid && bus.dmToHart.op === DebugDmToHartOp.DATA) {
+              value(bus.dmToHart.address.resized) := bus.dmToHart.data
+            }
+          }
+
+          val toHart = new Area {
+            api.read(value(0), DebugModule.CSR_DATA)
+          }
+        }
+
+        val inject = new Area {
+          val cmd = bus.dmToHart.takeWhen(bus.dmToHart.op === DebugDmToHartOp.EXECUTE || bus.dmToHart.op === DebugDmToHartOp.REG_READ || bus.dmToHart.op === DebugDmToHartOp.REG_WRITE)
+          val buffer = cmd.toStream.stage
+          injector.valid := buffer.valid && buffer.op === DebugDmToHartOp.EXECUTE
+          injector.payload := buffer.data
+
+          buffer.ready := injector.fire
+          val fpu = withDebugFpuAccess generate new Area {
+            ???
+          }
+
+          if (!withDebugFpuAccess) bus.regSuccess := False
+
+          val pending = RegInit(False) setWhen (cmd.valid && bus.dmToHart.op === DebugDmToHartOp.EXECUTE) clearWhen (bus.exception || bus.commit || bus.ebreak || bus.redo)
+          bus.redo := pending && tp.api.harts(hartId).redo
+
+          val commited = Reg(Bool()) clearWhen(cmd.fire) setWhen(commitMask.orR)
+          bus.commit := pending && commited && !tp.api.harts(hartId).fsmBusy
+        }
+
+        val dpc = crs.readWriteRam(CSR.DPC)
+        val dcsr = new Area {
+          val prv       = RegInit(U"11")
+          val step      = RegInit(False) //TODO
+          val nmip      = False
+          val mprven    = True
+          val cause     = RegInit(U"000")
+          val stoptime  = RegInit(False)
+          val stopcount = RegInit(False)
+          val stepie    = RegInit(False) //TODO
+          val ebreaku   = p.withUser generate RegInit(False)
+          val ebreaks   = p.withSupervisor generate RegInit(False)
+          val ebreakm   = RegInit(False)
+          val xdebugver = U(4, 4 bits)
+
+          val stepLogic = new StateMachine {
+            val IDLE, SINGLE, WAIT = new State()
+            setEntry(IDLE)
+
+            val stepped = Reg(Bool()) setWhen(commitMask.orR || tp.api.harts(hartId).rvTrap)
+            val counter = Reg(UInt(2 bits)) init(0)
+            host[AlignerPlugin].api.singleFetch setWhen(step)
+
+            IDLE whenIsActive {
+              when(step && bus.resume.rsp.valid) {
+                goto(SINGLE)
+              }
+            }
+            SINGLE whenIsActive {
+              when(ap.api.downMoving) {
+                stepped := False
+                counter := 0
+                goto(WAIT)
+              }
+            }
+
+            WAIT whenIsActive {
+              ap.api.haltIt := True
+              when(tp.api.harts(hartId).redo) {
+                goto(SINGLE)
+              }
+              when(stepped && !tp.api.harts(hartId).fsmBusy) {
+                doHalt := True
+                counter := counter + 1
+                when(counter.andR) {
+                  goto(IDLE)
+                }
+              }
+            }
+            always {
+              when(enterHalt) {
+                goto(IDLE)
+              }
+            }
+            build()
+          }
+
+
+          api.read(CSR.DCSR, 3 -> nmip, 6 -> cause, 28 -> xdebugver, 4 -> mprven)
+          api.readWrite(CSR.DCSR, 0 -> prv, 2 -> step, 9 -> stoptime, 10 -> stopcount, 11 -> stepie, 15 -> ebreakm)
+          if (p.withSupervisor) api.readWrite(CSR.DCSR, 13 -> ebreaks)
+          if (p.withUser) api.readWrite(CSR.DCSR, 12 -> ebreaku)
+
+          when(debugMode || step || bus.haltReq) {
+            tp.askWake(hartId)
+          }
+        }
+        val stoptime = out(RegNext(debugMode && dcsr.stoptime) init(False))
+      }
 
       val m = new Area {
         api.read(U(p.vendorId), CSR.MVENDORID) // MRO Vendor ID.
@@ -193,7 +347,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         val tvec = crs.readWriteRam(CSR.MTVEC)
         val tval = crs.readWriteRam(CSR.MTVAL)
-        val epc = crs.readWriteRam(CSR.MEPC)
+        val epc  = crs.readWriteRam(CSR.MEPC)
         val scratch = crs.readWriteRam(CSR.MSCRATCH)
 
         spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = 3, delegators = Nil)

@@ -6,6 +6,7 @@ import spinal.core.sim._
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
+import spinal.lib.com.jtag.sim.JtagTcp
 import spinal.lib.misc.Elf
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
@@ -14,7 +15,7 @@ import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
 import vexiiriscv._
 import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
-import vexiiriscv.misc.PrivilegedPlugin
+import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.test.konata.Backend
 import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
@@ -117,6 +118,7 @@ class TestOptions{
   var dbusReadyFactor = 1.01f
   var dbusBaseLatency = 0
   var seed = 2
+  var jtagTcp = false
 
   def getTestName() = testName.getOrElse("test")
 
@@ -149,6 +151,7 @@ class TestOptions{
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
     opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
+    opt[Unit]("jtag-tcp") unbounded() action { (v, c) => jtagTcp = true }
 
     opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
     opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
@@ -471,6 +474,18 @@ class TestOptions{
       }
     })
 
+    if(jtagTcp) dut.host.services.foreach{
+      case p : EmbeddedRiscvJtag => {
+        p.debugCd.resetSim #= true
+        delayed(20){
+          p.debugCd.resetSim #= false
+        }
+        spinal.lib.com.jtag.sim.JtagTcp(p.logic.jtag, 10*4)
+        probe.checkLiveness = false
+      }
+      case _ =>
+    }
+
     if(printStats) onSimEnd{
       println(probe.getStats())
     }
@@ -523,6 +538,7 @@ object TestBench extends App{
       case p: FetchL1Plugin => p.regions.load(regions)
       case p: LsuPlugin => p.ioRegions.load(regions)
       case p: LsuL1Plugin => p.regions.load(regions)
+      case p: EmbeddedRiscvJtag => p.debugCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
       case _ =>
     }
 
