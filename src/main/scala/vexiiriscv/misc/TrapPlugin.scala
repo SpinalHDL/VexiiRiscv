@@ -551,9 +551,9 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             goto(RUNNING)
           }
 
-          csr.debug.bus.exception := False
-          csr.debug.bus.ebreak    := False
           if(priv.p.withDebug) {
+            csr.debug.bus.exception := False
+            csr.debug.bus.ebreak := False
             ENTER_DEBUG.whenIsActive{
               csr.debug.running := False
               when(!csr.debug.debugMode) {

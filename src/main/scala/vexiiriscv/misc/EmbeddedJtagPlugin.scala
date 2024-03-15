@@ -2,13 +2,14 @@ package vexiiriscv.misc
 import spinal.core._
 import spinal.lib._
 import spinal.lib.com.jtag.{Jtag, JtagTapInstructionCtrl}
-import spinal.lib.cpu.riscv.debug.{DebugModule, DebugModuleCpuConfig, DebugModuleParameter, DebugTransportModuleJtagTap, DebugTransportModuleJtagTapWithTunnel, DebugTransportModuleParameter}
+import spinal.lib.cpu.riscv.debug.{DebugModule, DebugModuleCpuConfig, DebugModuleParameter, DebugTransportModuleJtagTap, DebugTransportModuleJtagTapWithTunnel, DebugTransportModuleParameter, DebugTransportModuleTunneled}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.riscv.Riscv._
 
 class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
-                        var debugCd : ClockDomain = null,
+                        var debugCd: ClockDomain = null,
+                        var noTapCd: ClockDomain = null,
                         var withTap : Boolean = true,
                         var withTunneling : Boolean = false
                        ) extends FiberPlugin {
@@ -56,6 +57,16 @@ class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
         dm.io.ctrl <> logic.io.bus
         logic.io.jtag <> jtag
       }
+      val dmiNoTap = if (!withTap) new Area {
+        val logic = DebugTransportModuleTunneled(
+          p = p,
+          jtagCd = noTapCd,
+          debugCd = ClockDomain.current
+        )
+        jtagInstruction <> logic.io.instruction
+        dm.io.ctrl <> logic.io.bus
+      }
+
       assert(Global.HART_COUNT.get == 1)
       val privBus = host[PrivilegedPlugin].logic.harts(0).debug.bus.setAsDirectionLess()
       privBus <> dm.io.harts(0)
@@ -65,9 +76,9 @@ class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
 }
 
 /*
-src/openocd -f ../../vexii/VexiiRiscv/src/main/tcl/openocd/vexiiriscv_sim.tcl
+src/openocd -f $VEXIIRISCV/src/main/tcl/openocd/vexiiriscv_sim.tcl
 
-src/openocd -f ../../vexii/VexiiRiscv/src/main/tcl/openocd/vexiiriscv_sim.tcl "sleep 5000" -c "reg pc 0x80000000" -c "exit" -d3
+src/openocd -f $VEXIIRISCV/src/main/tcl/openocd/vexiiriscv_sim.tcl "sleep 5000" -c "reg pc 0x80000000" -c "exit" -d3
 
 -c "sleep 5000" -c "reg a0 0x12345678" -c "exit" -d3
 
