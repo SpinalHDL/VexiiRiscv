@@ -188,6 +188,7 @@ class LsuPlugin(var layer : LaneLayer,
         waiter := waiter & l1.WRITEBACK_BUSY
         when(!waiter.orR){
           arbiter.io.output.ready := True
+          goto(IDLE)
         }
       }
     }
