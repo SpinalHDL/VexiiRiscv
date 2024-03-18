@@ -11,7 +11,7 @@ import spinal.core.sim.SimDataPimper
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
-import vexiiriscv.misc.{AddressToMask, TrapArg, TrapReason, TrapService}
+import vexiiriscv.misc.{AddressToMask, LsuTriggerService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
 import spinal.lib.system.tag.PmaRegion
@@ -28,6 +28,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
                          var addressAt: Int = 0,
+                         var triggerAt: Int = 0,
                          var pmaAt : Int = 0,
                          var forkAt: Int = 0,
                          var joinAt: Int = 1,
@@ -144,6 +145,19 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     val cmdInflights = Bool()
 
+    val onTrigger = new elp.Execute(triggerAt) {
+      val bus = host[LsuTriggerService].getLsuTriggerBus
+      bus.hartId := Global.HART_ID
+      bus.load := LOAD
+      bus.store := STORE
+      bus.virtual := onAddress.RAW_ADDRESS
+      bus.size := SIZE
+
+      val HITS = insert(bus.hits)
+      val HIT = insert(bus.hits.orR)
+    }
+
+
     val onFork = new forkCtrl.Area{
       val RS2 = elp(IntRegFile, riscv.RS2)
 
@@ -234,6 +248,14 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         skip := True
         trapPort.exception := True
         trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(onAddress.MISS_ALIGNED).resized
+      }
+
+      val triggerId = B(OHToUInt(onTrigger.HITS))
+      when(onTrigger.HIT) {
+        skip := True
+        trapPort.exception := False
+        trapPort.code := TrapReason.DEBUG_TRIGGER
+        trapPort.tval(triggerId.bitsRange) := B(OHToUInt(onTrigger.HITS))
       }
 
       when(isValid && SEL && skip){

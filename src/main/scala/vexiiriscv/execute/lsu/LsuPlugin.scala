@@ -13,7 +13,7 @@ import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.UOP
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
-import vexiiriscv.misc.{AddressToMask, TrapArg, TrapReason, TrapService}
+import vexiiriscv.misc.{AddressToMask, LsuTriggerService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
@@ -44,6 +44,7 @@ class LsuPlugin(var layer : LaneLayer,
                 var translationStorageParameter: Any,
                 var translationPortParameter: Any,
                 var addressAt: Int = 0,
+                var triggerAt : Int = 1,
                 var ctrlAt: Int = 2,
                 var wbAt : Int = 2,
                 var storeRs2At : Int = 0,
@@ -260,6 +261,18 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
 
+    val onTrigger = new elp.Execute(triggerAt){
+      val bus = host[LsuTriggerService].getLsuTriggerBus
+      bus.hartId  := Global.HART_ID
+      bus.load    := l1.LOAD
+      bus.store   := l1.STORE
+      bus.virtual := l1.MIXED_ADDRESS
+      bus.size    := l1.SIZE
+
+      val HITS = insert(bus.hits)
+      val HIT = insert(bus.hits.orR)
+    }
+
     val onAddress0 = new elp.Execute(addressAt){
       FORCE_PHYSICAL := FROM_ACCESS || FROM_WB
       val translationPort = ats.newTranslationPort(
@@ -358,7 +371,6 @@ class LsuPlugin(var layer : LaneLayer,
     val onAddress1 = new elp.Execute(addressAt+1) {
       l1.PHYSICAL_ADDRESS := tpk.TRANSLATED
     }
-
 
     for(eid <- addressAt + 1 to ctrlAt) {
       val e = elp.execute(eid)
@@ -556,6 +568,13 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(preCtrl.MISS_ALIGNED).resized
       }
 
+      val triggerId = B(OHToUInt(onTrigger.HITS))
+      when(onTrigger.HIT) {
+        lsuTrap := True
+        trapPort.exception := False
+        trapPort.code := TrapReason.DEBUG_TRIGGER
+        trapPort.tval(triggerId.bitsRange) := B(OHToUInt(onTrigger.HITS))
+      }
 
       if(withStoreBuffer) {
         storeBuffer.push.valid := False
@@ -584,7 +603,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || preCtrl.MISS_ALIGNED || pmaFault || withStoreBuffer.mux(wb.loadHazard, False))
-      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False)
+      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT
 
       if(withStoreBuffer) l1.ABORD setWhen(FROM_WB && wb.selfHazard)
 

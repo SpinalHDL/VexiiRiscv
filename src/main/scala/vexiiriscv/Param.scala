@@ -122,32 +122,32 @@ class ParamSimple(){
     withGShare = true
     withBtb = true
     withRas = true
-////    relaxedBranch = true  // !!
-////    relaxedBtb = true     // !!
+//    relaxedBranch = true  // !!
+//    relaxedBtb = true     // !!
     fetchL1Enable = true
     fetchL1Sets = 64
     fetchL1Ways = 4
-//    //fetchL1ReducedBank = true
-//    //fetchL1MemDataWidthMin = 256
-    lsuL1Enable = true
-    lsuL1Sets = 64
-    lsuL1Ways = 4
-    LsuL1RefillCount = 2
-    lsuL1WritebackCount = 2
-    lsuStoreBufferSlots = 2
-    lsuStoreBufferOps = 32
-    withLsuBypass = true
+    //fetchL1ReducedBank = true
+    //fetchL1MemDataWidthMin = 256
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    LsuL1RefillCount = 2
+//    lsuL1WritebackCount = 2
+//    lsuStoreBufferSlots = 2
+//    lsuStoreBufferOps = 32
+//    withLsuBypass = true
 
 //    lsuForkAt = 1
     divArea = false
-    divRadix = 4
-    decoders = 2
-    lanes = 2
+//    divRadix = 4
+//    decoders = 2
+//    lanes = 2
     withLateAlu = true
     withMul = true
     withDiv = true
-    withDispatcherBuffer = true
-    withAlignerBuffer = true
+//    withDispatcherBuffer = true
+//    withAlignerBuffer = true
 ////    withRvc = true
     withRva = true
     withMmu = true
@@ -157,6 +157,8 @@ class ParamSimple(){
 
 
     privParam.withDebug = true
+    privParam.debugTriggers = 4
+    privParam.debugTriggersLsu = true
     embeddedJtagTap = true
 
 
