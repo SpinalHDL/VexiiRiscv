@@ -297,7 +297,7 @@ class AlignerPlugin(fetchAt : Int,
       }
 
       slices.data.assignFromBits(up(Fetch.WORD))
-      slices.mask := up(FETCH_MASK).andMask(up.valid) & mask
+      slices.mask := up(FETCH_MASK).andMask(up.valid) & (Decode.LANES.get > 1).mux(mask, mask.getAllTrue)
       slices.last := 0
 
       up.ready := downNode.isReady && !api.haltIt && remaningMask === 0
