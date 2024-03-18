@@ -11,7 +11,7 @@ import spinal.lib.cpu.riscv.RiscvHart
 import spinal.lib.cpu.riscv.debug.DebugHartBus
 import spinal.lib.misc.plic.InterruptCtrlFiber
 import spinal.lib.misc.plugin.Hostable
-import spinal.lib.misc.{ClintPort, DataNode, Elf, InterruptCtrl, InterruptNode, TilelinkClintFiber}
+import spinal.lib.misc.{ClintPort, Elf, InterruptCtrl, InterruptNode, TilelinkClintFiber}
 import spinal.lib.sim.SparseMemory
 import spinal.lib.system.tag.{MemoryConnection, PMA, PmaRegion}
 import spinal.sim.{Signal, SimManagerContext}
