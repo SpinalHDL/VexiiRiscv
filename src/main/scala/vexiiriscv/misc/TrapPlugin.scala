@@ -80,6 +80,7 @@ object TrapReason{
   val SFENCE_VMA = 5
   val MMU_REFILL = 6
   val WFI = 7
+  val DEBUG_TRIGGER = 8
 }
 
 object TrapArg{
@@ -436,6 +437,13 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                     goto(ATS_RSP)
                   }
                 }
+                if(priv.p.debugTriggers > 0 ) is(TrapReason.DEBUG_TRIGGER) {
+                  csr.debug.trigger.slots.onSel(U(pending.state.tval).resized){slot =>
+                    slot.tdata1.hit := True
+                  }
+                  trapEnterDebug := True
+                  goto(TRAP_EPC)
+                }
                 default {
                   assert(False, "Unexpected trap reason")
                 }
@@ -561,7 +569,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                 when(csr.debug.dcsr.step){ csr.debug.dcsr.cause := 4 }
                 when(csr.debug.bus.haltReq) { csr.debug.dcsr.cause := 3 }
                 when(pending.state.exception && exception.code === CSR.MCAUSE_ENUM.BREAKPOINT) { csr.debug.dcsr.cause := 1 }
-                //when(???) { csr.debug.dcsr.cause := 2 } //TODO trigger
+                when(!pending.state.exception && exception.code === TrapReason.DEBUG_TRIGGER) { csr.debug.dcsr.cause := 2 }
                 csr.debug.dcsr.prv := csr.privilege
               } otherwise {
                 csr.debug.bus.exception := pending.state.exception && exception.code =/= CSR.MCAUSE_ENUM.BREAKPOINT

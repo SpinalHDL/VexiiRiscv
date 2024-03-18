@@ -5,15 +5,16 @@ import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.cpu.riscv.debug.{DebugDmToHartOp, DebugHartBus, DebugModule}
 import spinal.lib.fsm._
+import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global._
 import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamPlugin, CsrRamService, ExecuteLanePlugin}
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
-import vexiiriscv.decode.{AlignerPlugin, DecodePipelinePlugin, InjectorService}
+import vexiiriscv.decode.{AlignerPlugin, Decode, DecodePipelinePlugin, InjectorService}
 import vexiiriscv.fetch.{Fetch, PcService}
-import vexiiriscv.schedule.Ages
+import vexiiriscv.schedule.{Ages, ScheduleService}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -68,6 +69,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
   def hart(id : Int) = logic.harts(id)
 
+  val PC_TRIGGER_HITS = Payload(Bits(p.debugTriggers bits))
+
   val api = during build new Area{
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
       val allowInterrupts      = True
@@ -86,10 +89,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     val ap = host[AlignerPlugin]
     val pcs = host[PcService]
     val tp = host[TrapPlugin]
+    val ss = host[ScheduleService]
+    val dpp = host[DecodePipelinePlugin]
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
     val injs = host[InjectorService]
-    val buildBefore = retains(List(cap.csrLock, injs.injectRetainer, pcs.elaborationLock) ++ withRam.option(crs.csrLock))
+    val buildBefore = retains(List(cap.csrLock, injs.injectRetainer, pcs.elaborationLock, tp.trapLock, dpp.elaborationLock, ss.elaborationLock) ++ withRam.option(crs.csrLock))
 
     awaitBuild()
     p.check()
@@ -277,8 +282,216 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           }
         }
         val stoptime = out(RegNext(debugMode && dcsr.stoptime) init(False))
-      }
 
+        val debugTriggersLsu = false
+        val trigger = (p.debugTriggers > 0) generate new Area {
+          val tselect = new Area {
+            val index = Reg(UInt(log2Up(p.debugTriggers) bits))
+            api.readWrite(index, CSR.TSELECT)
+
+            val outOfRange = if (isPow2(p.debugTriggers)) False else index < p.debugTriggers
+          }
+
+          //TODO may remove tinfo, as it is optional
+          val tinfo = new Area {
+            api.read(CSR.TINFO, 0 -> tselect.outOfRange, 2 -> !tselect.outOfRange)
+          }
+
+          val pcBreakMatchAt = 0
+          val pcBreakTrapAt = 1
+
+          val pcBreaks = for(laneId <- 0 until Decode.LANES) yield new dpp.LaneArea(pcBreakTrapAt, laneId) {
+            val doIt = isValid && PC_TRIGGER_HITS.orR
+            when(doIt) {
+              bypass(Global.TRAP) := True
+            }
+
+            val trapPort = tp.newTrap(dpp.getAge(pcBreakTrapAt)+1, Decode.LANES)
+            trapPort.valid     := doIt
+            trapPort.exception := False
+            trapPort.tval      := B(OHToUInt(PC_TRIGGER_HITS)).resized
+            trapPort.code      := TrapReason.DEBUG_TRIGGER
+            trapPort.arg       := 0
+            trapPort.laneAge   := laneId
+            trapPort.hartId    := HART_ID
+
+            val flushPort = ss.newFlushPort(dpp.getAge(pcBreakTrapAt), log2Up(Decode.LANES), true)
+            flushPort.valid   := doIt
+            flushPort.hartId  := Global.HART_ID
+            flushPort.uopId   := Decode.UOP_ID
+            flushPort.laneAge := laneId
+            flushPort.self    := False
+
+
+          }
+//            val doIt = False
+//            val enabled = False
+//            val timeout = Timeout(3).clearWhen(!enabled || stages.tail.map(_.arbitration.isValid).orR)
+//            when(enabled) {
+//              decode.arbitration.haltByOther := True
+//              when(timeout.state) {
+//                trapEvent := True
+//                decode.arbitration.flushNext := True
+//                decode.arbitration.removeIt := True
+//                dpc := decode.input(PC)
+//                running := False
+//                dcsr.cause := 2
+//                dcsr.prv := privilege
+//                privilegeReg := 3
+//                doIt := True
+//              }
+//            }
+//          }
+
+//          val lsuTrigger = pipeline.serviceExist(classOf[DBusCachedPlugin]) generate new Area {
+//            val bus = pipeline.service(classOf[DBusCachedPlugin]).trigger
+//            val data = bus.load.mux(bus.readData, bus.writeData)
+//          }
+          val slots = for (slotId <- 0 until p.debugTriggers) yield new Area {
+            val selected = tselect.index === slotId
+
+            def csrw(csrId: Int, thats: (Int, Data)*): Unit = {
+              api.onWrite(csrId, false) {
+                when(selected) {
+                  for ((offset, data) <- thats) {
+                    data.assignFromBits(cap.bus.write.bits(offset, widthOf(data) bits))
+                  }
+                }
+              }
+            }
+
+            def csrr(csrId: Int, read: Bits, thats: (Int, Data)*): Unit = {
+              when(selected) {
+                for ((offset, data) <- thats) {
+                  read(offset, widthOf(data) bits) := data.asBits
+                }
+              }
+            }
+
+            def csrrw(csrId: Int, read: Bits, thats: (Int, Data)*): Unit = {
+              csrw(csrId, thats: _*)
+              csrr(csrId, read, thats: _*)
+            }
+
+            val tdata1 = new Area {
+              val read = B(0, XLEN bits)
+              val tpe = U(2, 4 bits)
+              val dmode = Reg(Bool()) init (False) //TODO
+
+              val execute = RegInit(False)
+              val m, s, u = RegInit(False)
+              val action = RegInit(U"0000")
+              val privilegeHit = !debugMode && privilege.mux(
+                0 -> u,
+                1 -> s,
+                3 -> m,
+                default -> False
+              )
+              val hit = RegInit(False)
+              val size = Reg(UInt(2 bits)) init (0)
+
+              csrrw(CSR.TDATA1, read, 2 -> execute, 3 -> u, 4 -> s, 6 -> m, XLEN - 5 -> dmode, 12 -> action, 20 -> hit, 16 -> size(1 downto 0))
+              csrr(CSR.TDATA1, read, XLEN - 4 -> tpe)
+              csrr(CSR.TDATA1, read, 21 -> B(12))
+
+              val load, store = RegInit(False)
+              val chain = RegInit(False).allowUnsetRegToAvoidLatch
+              val select = False
+              val matcher = Reg(Bits(4 bits)) init (0)
+              if (debugTriggersLsu) {
+                csrrw(CSR.TDATA1, read, 11 -> chain, 0 -> load, 1 -> store, 7 -> matcher)
+                csrr(CSR.TDATA1, read, 18 -> (load && select))
+              }
+            }
+
+            val chainBroken = False //TODO
+            val tdata2 = new Area {
+              val value = Reg(Global.MIXED_ADDRESS)
+              csrw(CSR.TDATA2, 0 -> value)
+              val enabled = !debugMode && tdata1.action === 1 && tdata1.privilegeHit// && !chainBroken
+
+
+              val execute = for (laneId <- 0 until Decode.LANES) yield new dpp.LaneArea(pcBreakMatchAt, laneId) {
+                PC_TRIGGER_HITS(slotId) := enabled && tdata1.execute && value === Global.PC
+              }
+
+//              val lsu = debugTriggersLsu generate new Area {
+//                val sizeOk = tdata1.size.mux(
+//                  0 -> True,
+//                  1 -> (lsuTrigger.bus.size === 0),
+//                  2 -> (lsuTrigger.bus.size === 1),
+//                  3 -> (lsuTrigger.bus.size === 2)
+//                )
+//                val matcher = new Area {
+//                  //                val cpu = tdata1.select.mux(lsuTriggerData, B(lsuTrigger.virtual))
+//                  val cpu = B(lsuTrigger.bus.virtual)
+//                  val cmp = U(cpu) < U(value)
+//
+//                  val mask = B(32 - 12 bits, default -> true) ## Napot(value(12 - 2 downto 0)).orMask(tdata1.matcher =/= 1)
+//                  val cpuMasked = CombInit(cpu)
+//                  when(tdata1.matcher === 4 || tdata1.matcher === 5) {
+//                    cpuMasked(15 downto 0) := cpu.subdivideIn(2 slices)(U(tdata1.matcher.lsb)) & value(31 downto 16)
+//                  }
+//                  val maskHits = (~((B(cpuMasked) & mask) ^ (value & mask))).subdivideIn(2 slices).map(_.andR)
+//                  val maskHit = maskHits.andR
+//
+//                  val ok = tdata1.matcher.mux(
+//                    0 -> maskHit,
+//                    1 -> maskHit,
+//                    2 -> !cmp,
+//                    3 -> cmp,
+//                    4 -> maskHits(0),
+//                    5 -> maskHits(0),
+//                    default -> False
+//                  )
+//                }
+//                val dataTrigger = tdata1.store && lsuTrigger.bus.store ||
+//                  tdata1.load && lsuTrigger.bus.load && lsuTrigger.bus.readDataValid
+//                val virtualTrigger = (tdata1.store && lsuTrigger.bus.store || tdata1.load && lsuTrigger.bus.load)
+//                val hitNoChain = enabled && lsuTrigger.bus.valid && sizeOk && matcher.ok && tdata1.select.mux(dataTrigger, virtualTrigger)
+//                val hit = hitNoChain && !tdata1.chain
+//                tdata1.hit setWhen (hit)
+//              }
+            }
+          }
+
+//          for (slotId <- slots.indices) {
+//            val slot = slots(slotId)
+//            slotId match {
+//              case 0 => slot.chainBroken := False
+//              case _ => {
+//                val prev = slots(slotId - 1)
+//                slot.chainBroken := prev.tdata1.chain && (prev.chainBroken || debugTriggersLsu.mux(!prev.tdata2.lsu.hitNoChain, False))
+//              }
+//            }
+//          }
+
+//          val lsuBreak = debugTriggersLsu generate new Area {
+//            lsuTrigger.bus.hit := slots.map(s => s.tdata2.lsu.hit).orR
+//            lsuTrigger.bus.hitBefore := slots.map(s => s.tdata2.lsu.hit && !s.tdata1.select).orR
+//
+//            val enabled = RegNext(lsuTrigger.bus.hit && !debugMode)
+//            val dpcReg = RegNext(lsuTrigger.bus.dpc)
+//            when(enabled) {
+//              decode.arbitration.haltByOther := True
+//              trapEvent := True
+//              stages.last.arbitration.flushNext := True
+//              stages.last.arbitration.flushIt := True
+//              dpc := dpcReg
+//              running := False
+//              dcsr.cause := 2
+//              dcsr.prv := privilege
+//              privilegeReg := 3
+//            }
+//          }
+//
+          api.read(CSR.TDATA1, 0 -> slots.map(_.tdata1.read).read(tselect.index))
+          api.read(CSR.TDATA2, 0 -> S(slots.map(_.tdata2.value).read(tselect.index)).resize(XLEN))
+//
+//          decodeBreak.enabled clearWhen (!decode.arbitration.isValid)
+//        }
+        }
+      }
       val m = new Area {
         api.read(U(p.vendorId), CSR.MVENDORID) // MRO Vendor ID.
         api.read(U(p.archId), CSR.MARCHID) // MRO Architecture ID.
