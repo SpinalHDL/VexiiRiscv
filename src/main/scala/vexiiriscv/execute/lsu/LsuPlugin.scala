@@ -33,6 +33,12 @@ case class LsuL1Cmd() extends Bundle {
   val fromStoreBuffer = Bool()
 }
 
+case class StoreBufferOp() extends Bundle {
+  val address = Global.PHYSICAL_ADDRESS()
+  val data = LsuL1.WRITE_DATA()
+  val size = LsuL1.SIZE()
+}
+
 class LsuPlugin(var layer : LaneLayer,
                 var withRva : Boolean,
                 var translationStorageParameter: Any,
@@ -48,6 +54,20 @@ class LsuPlugin(var layer : LaneLayer,
   override def accessWake: Bits = B(0)
 
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
+
+
+  val tagWidth = 6
+  val SB_PTR = Payload(UInt(log2Up(storeBufferOps) + 1 bits))
+  case class StoreBufferPush() extends Bundle {
+    val slotOh = Bits(storeBufferSlots bits)
+    val tag = Bits(tagWidth bits)
+    val op = StoreBufferOp()
+  }
+
+  case class StoreBufferPop() extends Bundle {
+    val ptr = SB_PTR()
+    val op = StoreBufferOp()
+  }
 
   val logic = during setup new Area{
     assert(!(storeBufferSlots != 0 ^ storeBufferOps != 0))
@@ -172,26 +192,10 @@ class LsuPlugin(var layer : LaneLayer,
       }
     }
 
-    case class StoreBufferOp() extends Bundle {
-      val address =  Global.PHYSICAL_ADDRESS()
-      val data = LsuL1.WRITE_DATA()
-      val size = LsuL1.SIZE()
-    }
 
-    val tagWidth = 6
+
     def p2t(that : UInt) = B(that(tagWidth, log2Up(LsuL1.LINE_BYTES) bits))
-    case class StoreBufferPush() extends Bundle {
-      val slotOh = Bits(storeBufferSlots bits)
-      val tag = Bits(tagWidth bits)
-      val op = StoreBufferOp()
-    }
 
-
-    val SB_PTR = Payload(UInt(log2Up(storeBufferOps) + 1 bits))
-    case class StoreBufferPop() extends Bundle {
-      val ptr = SB_PTR()
-      val op = StoreBufferOp()
-    }
 
     val storeBuffer = withStoreBuffer generate new Area {
       assert(isPow2(storeBufferOps))

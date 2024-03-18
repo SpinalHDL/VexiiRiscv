@@ -52,7 +52,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
     trapLock.release()
 
     val idCount = joinAt - forkAt + 1
-    val p = CachelessBusParam(PHYSICAL_WIDTH, Fetch.WORD_WIDTH, idCount, false)
+    val p = CachelessBusParam(PHYSICAL_WIDTH, Fetch.WORD_WIDTH, idCount, cmdForkPersistence)
     val bus = master(CachelessBus(p))
 
     val BUFFER_ID = Payload(UInt(log2Up(idCount) bits))

@@ -103,7 +103,7 @@ class ParamSimple(){
   var divRadix = 2
   var divImpl = ""
   var divArea = true
-  var fetchCachelessForkAt = 0
+  var fetchForkAt = 0
   var btbSets = 512
   var btbHashWidth = 16
   var embeddedJtagTap = false
@@ -119,35 +119,35 @@ class ParamSimple(){
     regFileSync = false
     allowBypassFrom = 0
 
-//    withGShare = true
-//    withBtb = true
-//    withRas = true
+    withGShare = true
+    withBtb = true
+    withRas = true
 ////    relaxedBranch = true  // !!
 ////    relaxedBtb = true     // !!
-//    fetchL1Enable = true
-//    fetchL1Sets = 64
-//    fetchL1Ways = 4
+    fetchL1Enable = true
+    fetchL1Sets = 64
+    fetchL1Ways = 4
 //    //fetchL1ReducedBank = true
 //    //fetchL1MemDataWidthMin = 256
-//    lsuL1Enable = true
-//    lsuL1Sets = 64
-//    lsuL1Ways = 4
-//    LsuL1RefillCount = 2
-//    lsuL1WritebackCount = 2
-//    lsuStoreBufferSlots = 2
-//    lsuStoreBufferOps = 32
-//    withLsuBypass = true
+    lsuL1Enable = true
+    lsuL1Sets = 64
+    lsuL1Ways = 4
+    LsuL1RefillCount = 2
+    lsuL1WritebackCount = 2
+    lsuStoreBufferSlots = 2
+    lsuStoreBufferOps = 32
+    withLsuBypass = true
 
 //    lsuForkAt = 1
     divArea = false
     divRadix = 4
-//    decoders = 2
-//    lanes = 2
-//    withLateAlu = true
+    decoders = 2
+    lanes = 2
+    withLateAlu = true
     withMul = true
     withDiv = true
-//    withDispatcherBuffer = true
-//    withAlignerBuffer = true
+    withDispatcherBuffer = true
+    withAlignerBuffer = true
 ////    withRvc = true
     withRva = true
     withMmu = true
@@ -209,7 +209,7 @@ class ParamSimple(){
     r += s"l${lanes}"
     r += s"disAt${dispatcherAt}"
     r += regFileSync.mux("rfs","rfa") + regFileDualPortRam.mux("Dp","Mem")
-    if (fetchL1Enable) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}Dwm$fetchL1MemDataWidthMin${fetchL1ReducedBank.mux("Rb", "")}" else r += s"fclF${fetchCachelessForkAt}"
+    if (fetchL1Enable) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}Dwm$fetchL1MemDataWidthMin${fetchL1ReducedBank.mux("Rb", "")}" else r += s"fclF${fetchForkAt}"
     if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}Sb${lsuStoreBufferSlots}w${lsuStoreBufferOps}" else r += s"lsuP${lsuPmaAt}F$lsuForkAt"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += s"btbS${btbSets}H${btbHashWidth}${if(relaxedBtb)"R" else ""}"
@@ -280,7 +280,7 @@ class ParamSimple(){
     opt[Int]("div-radix") action { (v, c) => divRadix = v }
     opt[String]("div-impl") action { (v, c) => divImpl = v }
     opt[Unit]("div-ipc") action { (v, c) => divArea = false }
-    opt[Int]("fetch-fork-at") action { (v, c) => fetchCachelessForkAt = v }
+    opt[Int]("fetch-fork-at") action { (v, c) => fetchForkAt = v }
     opt[Int]("lsu-fork-at") action { (v, c) => lsuForkAt = v }
     opt[Int]("lsu-pma-at") action { (v, c) => lsuPmaAt = v }
     opt[Unit]("with-privileged-debug") action { (v, c) => privParam.withDebug = true }
@@ -338,8 +338,8 @@ class ParamSimple(){
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
     if(!fetchL1Enable) plugins += new fetch.FetchCachelessPlugin(
-      forkAt = fetchCachelessForkAt,
-      joinAt = fetchCachelessForkAt+1, //You can for instance allow the external memory to have more latency by changing this
+      forkAt = fetchForkAt,
+      joinAt = fetchForkAt+1, //You can for instance allow the external memory to have more latency by changing this
       wordWidth = 32*decoders,
       translationStorageParameter = MmuStorageParameter(
         levels = List(
@@ -403,7 +403,7 @@ class ParamSimple(){
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = fetchL1Enable.mux(2, 1+fetchCachelessForkAt),
+      fetchAt = fetchL1Enable.mux(2, 1+fetchForkAt),
       lanes = decoders,
       withBuffer = withAlignerBuffer
     )
