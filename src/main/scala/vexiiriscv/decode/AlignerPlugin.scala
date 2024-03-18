@@ -149,6 +149,7 @@ class AlignerPlugin(fetchAt : Int,
     usedMask(0) := 0
     val extractors = for (eid <- 0 until Decode.LANES) yield new Area {
       val usableSliceRange = if(withBuffer) eid until scannerSlices else eid to eid //Can be tweek to generate smaller designs
+      val first = if(withBuffer) Bool(eid == 0) else slices.mask.takeLow(usableSliceRange.low) === 0
       val usableMask = usableSliceRange.map(sid => scanners(sid).valid && !usedMask(eid)(sid)).asBits
       val slicesOh = OHMasking.firstV2(usableMask)
       val redo = MuxOH.or(slicesOh, usableSliceRange.map(sid => scanners(sid).redo), true)
@@ -159,9 +160,10 @@ class AlignerPlugin(fetchAt : Int,
       val valid = slicesOh.orR
       val ctx = slices.readCtx(usableSliceRange, slicesOh, usageMask)
 
-      when(api.haltIt || (eid != 0).mux(api.singleFetch, False)) {
+      when(api.haltIt || api.singleFetch && !first) {
         valid := False
         redo := False
+        usageMask := 0
       }
     }
 
@@ -281,12 +283,24 @@ class AlignerPlugin(fetchAt : Int,
     val nobuffer = !withBuffer generate new Area {
       assert(!Riscv.RVC)
       assert(Decode.INSTRUCTION_WIDTH.get*Decode.LANES == Fetch.WORD_WIDTH.get)
+      val mask = Reg(FETCH_MASK) init ((1 << Decode.LANES)-1)
+
+      val remaningMask = mask & ~usedMask.last
+      when(downNode.isValid && downNode.isReady) {
+        mask := remaningMask
+      }
+
+      val age = Ages.DECODE - Ages.STAGE
+      val flushIt = host[ReschedulePlugin].isFlushedAt(age, U(0), U(0)).getOrElse(False)
+      when(flushIt || !up.isValid || up.isReady) {
+        mask := (1 << Decode.LANES)-1
+      }
 
       slices.data.assignFromBits(up(Fetch.WORD))
-      slices.mask := up(FETCH_MASK).andMask(up.valid)
+      slices.mask := up(FETCH_MASK).andMask(up.valid) & mask
       slices.last := 0
 
-      up.ready := downNode.isReady && !api.haltIt
+      up.ready := downNode.isReady && !api.haltIt && remaningMask === 0
 
       val readers = for ((spec, sid) <- slices.readCtxs.zipWithIndex) yield new Area {
         assert(spec.first.size == 1 && spec.first.head.sid == sid)
