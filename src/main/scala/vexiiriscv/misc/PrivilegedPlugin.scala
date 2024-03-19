@@ -193,9 +193,17 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val doResume = forceResume || bus.resume.isPending(1)
 
         val dataCsrr = new Area {
-          bus.hartToDm.valid := api.isWriting(DebugModule.CSR_DATA, true)
-          bus.hartToDm.address := 0
-          bus.hartToDm.data := cap.bus.write.bits
+          val state = RegInit(U(0, log2Up(XLEN / 32) bits))
+          bus.hartToDm.valid := False
+          bus.hartToDm.address := state.resized
+          bus.hartToDm.data := cap.bus.write.bits.subdivideIn(32 bits).read(state)
+          api.onWrite(DebugModule.CSR_DATA, onlyOnFire = false) {
+            when(state =/= state.maxValue) {
+              cap.bus.write.doHalt()
+            }
+            bus.hartToDm.valid := True
+            state := (state + 1).resized
+          }
         }
 
         val withDebugFpuAccess = false //withPrivilegedDebug && pipeline.config.FLEN == 64 && XLEN == 32
@@ -204,7 +212,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
           val fromDm = new Area {
             when(bus.dmToHart.valid && bus.dmToHart.op === DebugDmToHartOp.DATA) {
-              value(bus.dmToHart.address.resized) := bus.dmToHart.data
+              value((bus.dmToHart.address >> (XLEN/32-1)).resized).subdivideIn(32 bits).onSel(bus.dmToHart.address, relaxedWidth = true) { chunk =>
+                chunk := bus.dmToHart.data
+              }
             }
           }
 

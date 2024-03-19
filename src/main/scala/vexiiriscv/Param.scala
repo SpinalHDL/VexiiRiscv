@@ -119,14 +119,14 @@ class ParamSimple(){
     regFileSync = false
     allowBypassFrom = 0
 
-    withGShare = true
-    withBtb = true
-    withRas = true
+//    withGShare = true
+//    withBtb = true
+//    withRas = true
 //    relaxedBranch = true  // !!
 //    relaxedBtb = true     // !!
-    fetchL1Enable = true
-    fetchL1Sets = 64
-    fetchL1Ways = 4
+//    fetchL1Enable = true
+//    fetchL1Sets = 64
+//    fetchL1Ways = 4
     //fetchL1ReducedBank = true
     //fetchL1MemDataWidthMin = 256
 //    lsuL1Enable = true
@@ -148,12 +148,12 @@ class ParamSimple(){
     withDiv = true
 //    withDispatcherBuffer = true
 //    withAlignerBuffer = true
-////    withRvc = true
+//    withRvc = true
     withRva = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-//    xlen = 64
+    xlen = 64
 
 
     privParam.withDebug = true
@@ -285,7 +285,12 @@ class ParamSimple(){
     opt[Int]("fetch-fork-at") action { (v, c) => fetchForkAt = v }
     opt[Int]("lsu-fork-at") action { (v, c) => lsuForkAt = v }
     opt[Int]("lsu-pma-at") action { (v, c) => lsuPmaAt = v }
-    opt[Unit]("with-privileged-debug") action { (v, c) => privParam.withDebug = true }
+    opt[Unit]("debug-privileged") action { (v, c) => privParam.withDebug = true }
+    opt[Int] ("debug-triggers") action { (v, c) => privParam.debugTriggers = v }
+    opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
+    opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true }
+
+
   }
 
   def plugins() = pluginsArea.plugins

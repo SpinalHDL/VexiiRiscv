@@ -6,7 +6,7 @@ import spinal.core.sim._
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.{AsyncJob, MultithreadedFunSuite}
 import vexiiriscv.memory.MmuPlugin
-import vexiiriscv.misc.PrivilegedPlugin
+import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.{Global, ParamSimple, VexiiRiscv}
 
@@ -215,6 +215,17 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.fsmSuccess()
   }
 
+  dut.host.get[EmbeddedRiscvJtag].foreach{p =>
+    val args = newArgs()
+    args.loadElf(new File(nsf, s"baremetal/debugger/build/$arch/debugger.elf"))
+    args.failAfter(100000000)
+    args.name(s"regular/debugger")
+    args.args += "--jtag-remote"
+    args.noRvlsCheck()
+    args.noProbe()
+    args.args ++= List("--spawn-process", s"openocd -f src/main/tcl/openocd/vexiiriscv_sim.tcl -f ${new File(nsf, s"baremetal/debugger/tcl/test.tcl")}")
+  }
+
   implicit val ec = ExecutionContext.global
   val jobs = ArrayBuffer[AsyncJob]()
 
@@ -363,6 +374,10 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       }
     )
   )
+
+  addDim("debugger", List("", "--debug-privileged --debug-triggers 4 --debug-triggers-lsu --debug-jtag-tap"))
+
+
 
   addDim("fl1dwm", List(32, 64, 128, 256).map(w => s"--fetch-l1-mem-data-width-min $w"))
   addDim("fl1rw", List("", "--fetch-reduced-bank"))

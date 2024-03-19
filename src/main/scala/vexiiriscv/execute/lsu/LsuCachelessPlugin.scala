@@ -150,7 +150,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.hartId := Global.HART_ID
       bus.load := LOAD
       bus.store := STORE
-      bus.virtual := onAddress.RAW_ADDRESS
+      bus.virtual := onAddress.RAW_ADDRESS.resized
       bus.size := SIZE
 
       val HITS = insert(bus.hits)

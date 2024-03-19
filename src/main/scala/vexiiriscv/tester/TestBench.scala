@@ -3,10 +3,11 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.{CheckSocketPort, DoCmd}
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
-import spinal.lib.com.jtag.sim.JtagTcp
+import spinal.lib.com.jtag.sim.{JtagRemote, JtagTcp}
 import spinal.lib.misc.Elf
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
@@ -119,6 +120,7 @@ class TestOptions{
   var dbusBaseLatency = 0
   var seed = 2
   var jtagRemote = false
+  var spawnProcess = Option.empty[String]
 
   def getTestName() = testName.getOrElse("test")
 
@@ -160,6 +162,8 @@ class TestOptions{
     opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSuccess()) }
     opt[Int]("seed") action { (v, c) => seed = v }
     opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
+
+    opt[String]("spawn-process") unbounded() action { (v, c) => spawnProcess = Some(v) }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
@@ -480,10 +484,30 @@ class TestOptions{
         delayed(20){
           p.debugCd.resetSim #= false
         }
-        spinal.lib.com.jtag.sim.JtagRemote(p.logic.jtag, 10*4)
+        CheckSocketPort.reserve(JtagRemote.defaultPort)
+        onSimEnd(CheckSocketPort.release(JtagRemote.defaultPort))
+        while(!CheckSocketPort(JtagRemote.defaultPort)){
+          Thread.sleep(100)
+        }
+        JtagRemote(p.logic.jtag, 10*4)
         probe.checkLiveness = false
       }
       case _ =>
+    }
+
+    spawnProcess.foreach{ v =>
+      delayed(10000){
+        val p = DoCmd.startCmd(v)
+        onSimEnd(if(p.isAlive())p.destroy())
+        periodicaly(10*1000) {
+          if (!p.isAlive()) {
+            p.exitValue() match {
+              case 0 => simSuccess()
+              case _ => simFailure()
+            }
+          }
+        }
+      }
     }
 
     if(printStats) onSimEnd{
