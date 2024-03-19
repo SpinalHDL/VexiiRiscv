@@ -195,7 +195,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       when(isValid && (!LEGAL || interruptPending || withPredictionFixer.mux(fixer.doIt, False))) {
         bypass(Global.TRAP) := True
-        trapPort.valid := !up(Global.TRAP)
+        trapPort.valid := !up(Global.TRAP) || interruptPending
         if(withPredictionFixer) trapPort.valid setWhen(fixer.doIt)
       }
 

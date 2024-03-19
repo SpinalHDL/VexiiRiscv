@@ -3,13 +3,10 @@ package vexiiriscv.soc
 import net.fornwall.jelf.{ElfFile, ElfSection, ElfSectionHeader}
 import spinal.core
 import spinal.core._
+import spinal.lib.misc._
 import spinal.core.fiber._
-import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.{DataCc, StreamCCByToggle}
 import spinal.lib.bus.tilelink.fabric._
-import spinal.lib.bus.tilelink
-import spinal.lib.bus.tilelink.coherent.{Hub, HubFiber}
-import spinal.lib.bus.tilelink.sim.{Checker, Endpoint, MemoryAgent, Monitor, MonitorSubscriber, SlaveDriver, TransactionA, TransactionC, TransactionD}
-import spinal.lib.bus.tilelink.{M2sSupport, M2sTransfers, Opcode, S2mSupport, SizeRange, fabric}
 import spinal.lib.cpu.riscv.RiscvHart
 import spinal.lib.cpu.riscv.debug.DebugHartBus
 import spinal.lib.misc.plic.InterruptCtrlFiber
@@ -23,12 +20,13 @@ import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuCachelessTileLinkPlugin, L
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchCachelessTileLinkPlugin, FetchFetchL1TileLinkPlugin, FetchL1Plugin}
 import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.misc.PrivilegedPlugin
+import vexiiriscv.riscv.Riscv
 
 import java.io.{BufferedWriter, File, FileWriter}
 import java.nio.file.Files
 import scala.collection.mutable.ArrayBuffer
 
-class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
+class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area with RiscvHart{
   val iBus = Node.down()
   val dBus = Node.down()
   val lsuL1Bus = plugins.exists(_.isInstanceOf[LsuL1Plugin]) generate Node.down()
@@ -40,6 +38,8 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
       val plugin = p
       val mti, msi, mei = InterruptNode.slave()
       val sei = p.p.withSupervisor generate InterruptNode.slave()
+      val stoptime = Bool()
+      val rdtime = p.p.withRdTime generate UInt(64 bits)
     }
   }
 
@@ -52,14 +52,14 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
     }
   }
 
-  var clint = Option.empty[TilelinkClintFiber]
   def bind(clint: TilelinkClintFiber): Unit = priv match {
     case Some(priv) => new Area {
       val pp = priv.plugin
       val up = clint.createPort(pp.hartIds(0))
       priv.mti << up.mti
       priv.msi << up.msi
-      TilelinkVexiiRiscvFiber.this.clint = Some(clint)
+      DataCc(up.stoptime, priv.stoptime)
+      if(priv.plugin.p.withRdTime) DataCc(priv.rdtime, clint.time)
     }
   }
 
@@ -96,10 +96,20 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area{
         hart.int.m.timer := priv.get.mti.flag
         hart.int.m.software := priv.get.msi.flag
         hart.int.m.external := priv.get.mei.flag
+        priv.get.stoptime := p.p.withDebug.mux(hart.debug.stoptime, False)
         if (p.p.withSupervisor) hart.int.s.external := priv.get.sei.flag
-        if (p.p.withRdTime) p.logic.rdtime := clint.get.thread.core.io.time
+        if (p.p.withRdTime) p.logic.rdtime := priv.get.rdtime
       }
       case _ =>
     }
   }
+
+  override def getXlen(): Int = logic.core.database(Riscv.XLEN)
+  override def getFlen(): Int = logic.core.database(Riscv.FLEN)
+  override def getHartId(): Int = ???
+  override def getIntMachineTimer(): Bool = ???
+  override def getIntMachineSoftware(): Bool = ???
+  override def getIntMachineExternal(): Bool = ???
+  override def getIntSupervisorExternal(): Bool = ???
+  override def getDebugBus(): DebugHartBus = plugins.collectFirst {case p : PrivilegedPlugin => p.logic.harts(0).debug.bus}.get
 }

@@ -3,9 +3,11 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.{CheckSocketPort, DoCmd}
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
+import spinal.lib.com.jtag.sim.{JtagRemote, JtagTcp}
 import spinal.lib.misc.Elf
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
@@ -14,7 +16,7 @@ import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
 import vexiiriscv._
 import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
-import vexiiriscv.misc.PrivilegedPlugin
+import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.test.konata.Backend
 import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
@@ -117,6 +119,8 @@ class TestOptions{
   var dbusReadyFactor = 1.01f
   var dbusBaseLatency = 0
   var seed = 2
+  var jtagRemote = false
+  var spawnProcess = Option.empty[String]
 
   def getTestName() = testName.getOrElse("test")
 
@@ -149,6 +153,7 @@ class TestOptions{
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
     opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
+    opt[Unit]("jtag-remote") unbounded() action { (v, c) => jtagRemote = true }
 
     opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
     opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
@@ -157,6 +162,8 @@ class TestOptions{
     opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSuccess()) }
     opt[Int]("seed") action { (v, c) => seed = v }
     opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
+
+    opt[String]("spawn-process") unbounded() action { (v, c) => spawnProcess = Some(v) }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
@@ -471,6 +478,38 @@ class TestOptions{
       }
     })
 
+    if(jtagRemote) dut.host.services.foreach{
+      case p : EmbeddedRiscvJtag => {
+        p.debugCd.resetSim #= true
+        delayed(20){
+          p.debugCd.resetSim #= false
+        }
+        CheckSocketPort.reserve(JtagRemote.defaultPort)
+        onSimEnd(CheckSocketPort.release(JtagRemote.defaultPort))
+        while(!CheckSocketPort(JtagRemote.defaultPort)){
+          Thread.sleep(100)
+        }
+        JtagRemote(p.logic.jtag, 10*4)
+        probe.checkLiveness = false
+      }
+      case _ =>
+    }
+
+    spawnProcess.foreach{ v =>
+      delayed(10000){
+        val p = DoCmd.startCmd(v)
+        onSimEnd(if(p.isAlive())p.destroy())
+        periodicaly(10*1000) {
+          if (!p.isAlive()) {
+            p.exitValue() match {
+              case 0 => simSuccess()
+              case _ => simFailure()
+            }
+          }
+        }
+      }
+    }
+
     if(printStats) onSimEnd{
       println(probe.getStats())
     }
@@ -523,6 +562,7 @@ object TestBench extends App{
       case p: FetchL1Plugin => p.regions.load(regions)
       case p: LsuPlugin => p.ioRegions.load(regions)
       case p: LsuL1Plugin => p.regions.load(regions)
+      case p: EmbeddedRiscvJtag => p.debugCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
       case _ =>
     }
 

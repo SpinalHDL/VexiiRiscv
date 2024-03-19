@@ -270,6 +270,7 @@ class CsrAccessPlugin(layer : LaneLayer,
           csrValue := 0
         }
 
+        bus.read.data := csrValue
         bus.read.toWriteBits := csrValue
         for ((csrFilter, elements) <- grouped) {
           val onReadToWrite = elements.collect { case e: CsrOnReadToWrite => e }

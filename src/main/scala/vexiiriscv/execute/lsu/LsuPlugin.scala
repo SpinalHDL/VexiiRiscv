@@ -13,7 +13,7 @@ import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.UOP
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
-import vexiiriscv.misc.{AddressToMask, TrapArg, TrapReason, TrapService}
+import vexiiriscv.misc.{AddressToMask, LsuTriggerService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
@@ -33,11 +33,18 @@ case class LsuL1Cmd() extends Bundle {
   val fromStoreBuffer = Bool()
 }
 
+case class StoreBufferOp() extends Bundle {
+  val address = Global.PHYSICAL_ADDRESS()
+  val data = LsuL1.WRITE_DATA()
+  val size = LsuL1.SIZE()
+}
+
 class LsuPlugin(var layer : LaneLayer,
                 var withRva : Boolean,
                 var translationStorageParameter: Any,
                 var translationPortParameter: Any,
                 var addressAt: Int = 0,
+                var triggerAt : Int = 1,
                 var ctrlAt: Int = 2,
                 var wbAt : Int = 2,
                 var storeRs2At : Int = 0,
@@ -48,6 +55,20 @@ class LsuPlugin(var layer : LaneLayer,
   override def accessWake: Bits = B(0)
 
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
+
+
+  val tagWidth = 6
+  val SB_PTR = Payload(UInt(log2Up(storeBufferOps) + 1 bits))
+  case class StoreBufferPush() extends Bundle {
+    val slotOh = Bits(storeBufferSlots bits)
+    val tag = Bits(tagWidth bits)
+    val op = StoreBufferOp()
+  }
+
+  case class StoreBufferPop() extends Bundle {
+    val ptr = SB_PTR()
+    val op = StoreBufferOp()
+  }
 
   val logic = during setup new Area{
     assert(!(storeBufferSlots != 0 ^ storeBufferOps != 0))
@@ -168,30 +189,15 @@ class LsuPlugin(var layer : LaneLayer,
         waiter := waiter & l1.WRITEBACK_BUSY
         when(!waiter.orR){
           arbiter.io.output.ready := True
+          goto(IDLE)
         }
       }
     }
 
-    case class StoreBufferOp() extends Bundle {
-      val address =  Global.PHYSICAL_ADDRESS()
-      val data = LsuL1.WRITE_DATA()
-      val size = LsuL1.SIZE()
-    }
 
-    val tagWidth = 6
+
     def p2t(that : UInt) = B(that(tagWidth, log2Up(LsuL1.LINE_BYTES) bits))
-    case class StoreBufferPush() extends Bundle {
-      val slotOh = Bits(storeBufferSlots bits)
-      val tag = Bits(tagWidth bits)
-      val op = StoreBufferOp()
-    }
 
-
-    val SB_PTR = Payload(UInt(log2Up(storeBufferOps) + 1 bits))
-    case class StoreBufferPop() extends Bundle {
-      val ptr = SB_PTR()
-      val op = StoreBufferOp()
-    }
 
     val storeBuffer = withStoreBuffer generate new Area {
       assert(isPow2(storeBufferOps))
@@ -254,6 +260,18 @@ class LsuPlugin(var layer : LaneLayer,
       val empty = slots.map(!_.valid).andR
     }
 
+
+    val onTrigger = new elp.Execute(triggerAt){
+      val bus = host[LsuTriggerService].getLsuTriggerBus
+      bus.hartId  := Global.HART_ID
+      bus.load    := l1.LOAD
+      bus.store   := l1.STORE
+      bus.virtual := l1.MIXED_ADDRESS
+      bus.size    := l1.SIZE
+
+      val HITS = insert(bus.hits)
+      val HIT = insert(bus.hits.orR)
+    }
 
     val onAddress0 = new elp.Execute(addressAt){
       FORCE_PHYSICAL := FROM_ACCESS || FROM_WB
@@ -353,7 +371,6 @@ class LsuPlugin(var layer : LaneLayer,
     val onAddress1 = new elp.Execute(addressAt+1) {
       l1.PHYSICAL_ADDRESS := tpk.TRANSLATED
     }
-
 
     for(eid <- addressAt + 1 to ctrlAt) {
       val e = elp.execute(eid)
@@ -551,6 +568,13 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(preCtrl.MISS_ALIGNED).resized
       }
 
+      val triggerId = B(OHToUInt(onTrigger.HITS))
+      when(onTrigger.HIT) {
+        lsuTrap := True
+        trapPort.exception := False
+        trapPort.code := TrapReason.DEBUG_TRIGGER
+        trapPort.tval(triggerId.bitsRange) := B(OHToUInt(onTrigger.HITS))
+      }
 
       if(withStoreBuffer) {
         storeBuffer.push.valid := False
@@ -579,7 +603,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || preCtrl.MISS_ALIGNED || pmaFault || withStoreBuffer.mux(wb.loadHazard, False))
-      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False)
+      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT
 
       if(withStoreBuffer) l1.ABORD setWhen(FROM_WB && wb.selfHazard)
 

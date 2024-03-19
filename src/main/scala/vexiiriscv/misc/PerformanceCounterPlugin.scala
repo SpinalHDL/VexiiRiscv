@@ -15,7 +15,7 @@ import scala.collection.mutable.ArrayBuffer
  * Only 7 bits registers are used for each counters, which are flushed into a CSR ram when their MSB is set
  */
 class PerformanceCounterPlugin(var additionalCounterCount : Int,
-                               var bufferWidth : Int = 7) extends FiberPlugin with PerformanceCounterService{
+                               var bufferWidth : Int = 8) extends FiberPlugin with PerformanceCounterService{
   def counterCount = 2 + additionalCounterCount
 
   case class Spec(id : Int, event : Bool)

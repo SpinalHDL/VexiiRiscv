@@ -14,29 +14,51 @@ object IntegrationSynthBench extends App{
   val sc = SpinalConfig()
   val rtls = ArrayBuffer[Rtl]()
 
-  def add(param : ParamSimple, name : String) = {
+  def add(paramGen : => ParamSimple, name : String) = {
     rtls += Rtl(sc.generateVerilog {
+      val param = paramGen
       Rtl.ffIo(VexiiRiscv(ParamSimple.setPma(param.plugins())).setDefinitionName(if(name.isEmpty) param.getName() else name.replace(" ", "_")))
     })
   }
 
   def add(postfix: String)(body : ParamSimple => Unit) : Unit = {
-    val p = new ParamSimple()
-    body(p)
-    add(p, postfix)
+
+    add({
+      val p = new ParamSimple()
+      body(p)
+      p
+    }, postfix)
   }
 
   add("nothing") { p =>
 
   }
-  add ("fmax") { p =>
-    import p._
-    fetchCachelessForkAt = 1
-    lsuPmaAt = 1
-    lsuForkAt = 1
-    relaxedBranch = true
-    xlen = 32
+
+  add("debug") { p =>
+    p.privParam.withDebug = true
   }
+  add("debug instr") { p =>
+    p.privParam.withDebug = true
+    p.embeddedJtagInstruction = true
+    p.embeddedJtagCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
+    p.embeddedJtagNoTapCd = ClockDomain.external("jtag", withReset = false)
+  }
+
+  add("debug jtag") { p =>
+    p.privParam.withDebug = true
+    p.embeddedJtagTap = true
+    p.embeddedJtagCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
+  }
+
+
+  //  add ("fmax") { p =>
+//    import p._
+//    fetchCachelessForkAt = 1
+//    lsuPmaAt = 1
+//    lsuForkAt = 1
+//    relaxedBranch = true
+//    xlen = 32
+//  }
 
 //  add("fmax with counters") { p =>
 //    import p._
@@ -47,24 +69,24 @@ object IntegrationSynthBench extends App{
 //    xlen = 32
 //    withPerformanceCounters = true
 //  }
-  add("fetch lsu l1 4k") { p =>
-    p.fetchL1Enable = true
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 1
-//    p.allowBypassFrom = 0
-    p.relaxedBranch = true
-  }
-  add("fetch lsu l1 4k sb") { p =>
-    p.fetchL1Enable = true
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 1
-//    p.allowBypassFrom = 0
-    p.relaxedBranch = true
-    p.lsuStoreBufferSlots = 2
-    p.lsuStoreBufferOps = 32
-  }
+//  add("fetch lsu l1 4k") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 1
+////    p.allowBypassFrom = 0
+//    p.relaxedBranch = true
+//  }
+//  add("fetch lsu l1 4k sb") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 1
+////    p.allowBypassFrom = 0
+//    p.relaxedBranch = true
+//    p.lsuStoreBufferSlots = 2
+//    p.lsuStoreBufferOps = 32
+//  }
 
 
 
@@ -524,7 +546,7 @@ object IntegrationSynthBench extends App{
 //    })
 
   val targets = ArrayBuffer[Target]()
-  targets ++=  XilinxStdTargets(withFMax = true, withArea = false)
+  targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
 //  targets ++= AlteraStdTargets()
 //  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
 
@@ -954,4 +976,18 @@ fetch_lsu_l1_4k ->
 Artix 7 -> 236 Mhz 1501 LUT 1431 FF
 fetch_lsu_l1_4k_sb ->
 Artix 7 -> 225 Mhz 1611 LUT 1571 FF
+
+nothing ->
+Artix 7 -> 90 Mhz 1102 LUT 1031 FF
+Artix 7 -> 203 Mhz 1223 LUT 1031 FF
+debug ->
+Artix 7 -> 90 Mhz 1206 LUT 1129 FF
+Artix 7 -> 200 Mhz 1351 LUT 1129 FF
+debug_instr ->
+Artix 7 -> 90 Mhz 1443 LUT 1575 FF
+Artix 7 -> 195 Mhz 1573 LUT 1575 FF
+debug_jtag ->
+Artix 7 -> 90 Mhz 1427 LUT 1608 FF
+Artix 7 -> 193 Mhz 1579 LUT 1608 FF
+
  */

@@ -32,7 +32,15 @@ withBuffer => A Fetch.WORD sized buffer will be added to allow unaligned instruc
  */
 class AlignerPlugin(fetchAt : Int,
                     lanes : Int,
-                    withBuffer : Boolean) extends FiberPlugin with AlignerService{
+                    withBuffer : Boolean) extends FiberPlugin with AlignerService with InjectorService{
+
+
+  val api = during build new Area{
+    assert(Global.HART_COUNT.get == 1)
+    val singleFetch = False
+    val downMoving = Bool()
+    val haltIt = False
+  }
 
   val logic = during setup new Area{
     val fpp = host[FetchPipelinePlugin]
@@ -47,6 +55,7 @@ class AlignerPlugin(fetchAt : Int,
     assert(isPow2(Decode.LANES.get))
 
     elaborationLock.await()
+
     val withBtb = host.get[FetchWordPrediction].nonEmpty
     val scannerSlices = Fetch.SLICE_COUNT * (1+withBuffer.toInt)
     val FETCH_MASK, FETCH_LAST = Payload(Bits(Fetch.SLICE_COUNT bits)) //You can assume that if a given bit of FETCH_LAST is set, you can assume it is valid data
@@ -140,6 +149,7 @@ class AlignerPlugin(fetchAt : Int,
     usedMask(0) := 0
     val extractors = for (eid <- 0 until Decode.LANES) yield new Area {
       val usableSliceRange = if(withBuffer) eid until scannerSlices else eid to eid //Can be tweek to generate smaller designs
+      val first = if(withBuffer) Bool(eid == 0) else slices.mask.takeLow(usableSliceRange.low) === 0
       val usableMask = usableSliceRange.map(sid => scanners(sid).valid && !usedMask(eid)(sid)).asBits
       val slicesOh = OHMasking.firstV2(usableMask)
       val redo = MuxOH.or(slicesOh, usableSliceRange.map(sid => scanners(sid).redo), true)
@@ -149,6 +159,12 @@ class AlignerPlugin(fetchAt : Int,
 
       val valid = slicesOh.orR
       val ctx = slices.readCtx(usableSliceRange, slicesOh, usageMask)
+
+      when(api.haltIt || api.singleFetch && !first) {
+        valid := False
+        redo := False
+        usageMask := 0
+      }
     }
 
     val feeder = new Area{
@@ -226,7 +242,7 @@ class AlignerPlugin(fetchAt : Int,
 
       val downFire = downNode.isReady || downNode.isCancel
 
-      val haltUp = (mask & ~ usedMask.last.dropHigh(Fetch.SLICE_COUNT).andMask(downFire)).orR
+      val haltUp = (mask & ~ usedMask.last.dropHigh(Fetch.SLICE_COUNT).andMask(downFire)).orR || api.haltIt
       up.ready := !haltUp
 
       when(downFire){
@@ -267,13 +283,24 @@ class AlignerPlugin(fetchAt : Int,
     val nobuffer = !withBuffer generate new Area {
       assert(!Riscv.RVC)
       assert(Decode.INSTRUCTION_WIDTH.get*Decode.LANES == Fetch.WORD_WIDTH.get)
+      val mask = Reg(FETCH_MASK) init ((1 << Decode.LANES)-1)
+
+      val remaningMask = mask & ~usedMask.last
+      when(downNode.isValid && downNode.isReady) {
+        mask := remaningMask
+      }
+
+      val age = Ages.DECODE - Ages.STAGE
+      val flushIt = host[ReschedulePlugin].isFlushedAt(age, U(0), U(0)).getOrElse(False)
+      when(flushIt || !up.isValid || up.isReady) {
+        mask := (1 << Decode.LANES)-1
+      }
 
       slices.data.assignFromBits(up(Fetch.WORD))
-      slices.mask := up(FETCH_MASK).andMask(up.valid)
+      slices.mask := up(FETCH_MASK).andMask(up.valid) & (Decode.LANES.get > 1).mux(mask, mask.getAllTrue)
       slices.last := 0
 
-      up.ready := downNode.isReady
-
+      up.ready := downNode.isReady && !api.haltIt && remaningMask === 0
 
       val readers = for ((spec, sid) <- slices.readCtxs.zipWithIndex) yield new Area {
         assert(spec.first.size == 1 && spec.first.head.sid == sid)
@@ -286,6 +313,22 @@ class AlignerPlugin(fetchAt : Int,
       }
     }
 
+    injectRetainer.await()
+    val injectLogic = for (port <- injectPorts) yield new Area {
+      val ext = extractors.last
+      val rvc = port.payload(1 downto 0) =/= 3
+      when(port.valid) {
+        ext.valid := True
+        ext.redo := False
+        ext.ctx.trap := False
+        ext.ctx.instruction := port.payload
+        if (withBtb) {
+          ext.ctx.hm(Prediction.WORD_JUMPED) := False
+        }
+      }
+    }
+
+    api.downMoving := downNode.isMoving
     buildBefore.release()
   }
 }

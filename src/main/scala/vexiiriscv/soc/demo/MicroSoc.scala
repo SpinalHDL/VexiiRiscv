@@ -11,6 +11,8 @@ import spinal.lib.bus.tilelink._
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
+import spinal.lib.cpu.riscv.RiscvHart
+import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.eda.bench.Rtl
 import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
@@ -24,26 +26,51 @@ import vexiiriscv.test.VexiiRiscvProbe
 import java.io.File
 import scala.collection.mutable.ArrayBuffer
 
-class MicroSoc() extends Component {
+class MicroSocParam {
+  var withJtagTap = true
+  var withJtagInstruction = false
+
+  def withDebug = withJtagTap ||  withJtagInstruction
+}
+
+class DebugModuleSocFiber(withJtagInstruction : Boolean) extends Area{
+  val tck = withJtagInstruction generate in(Bool())
+  val dm = new DebugModuleFiber()
+  val tap = (!withJtagInstruction) generate dm.withJtagTap()
+  val instruction = (withJtagInstruction) generate ClockDomain(tck)(dm.withJtagInstruction())
+
+  def bindHart(cpu: RiscvHart) = {
+    dm.bindHart(cpu)
+  }
+}
+
+class MicroSoc(p : MicroSocParam) extends Component {
   val asyncReset = in Bool()
   val cd100 = ClockDomain.external("cd100", withReset = false, frequency = FixedFrequency(100 MHz))
 
-  val debugResetCtrl = cd100 on new ResetCtrlFiber().addAsyncReset(asyncReset, HIGH)
-  val mainResetCtrl = cd100 on new ResetCtrlFiber().addReset(debugResetCtrl)
+  val debugResetCtrl = cd100(new ResetCtrlFiber().addAsyncReset(asyncReset, HIGH))
+  val mainResetCtrl  = cd100(new ResetCtrlFiber().addAsyncReset(debugResetCtrl))
+
+  val debug = p.withDebug generate debugResetCtrl.cd(new DebugModuleSocFiber(p.withJtagInstruction){
+    mainResetCtrl.addSyncRelaxedReset(dm.ndmreset, HIGH)
+  })
+
 
   val main = mainResetCtrl.cd on new Area {
     val sharedBus = tilelink.fabric.Node()
 
     val param = new ParamSimple()
-    param.fetchCachelessForkAt = 1
+    param.fetchForkAt = 1
     param.lsuPmaAt = 1
     param.lsuForkAt = 1
     param.relaxedBranch = true
+    param.privParam.withDebug = p.withDebug
     
     val plugins = param.plugins()
     val cpu = new TilelinkVexiiRiscvFiber(plugins)
     sharedBus << cpu.buses
     cpu.dBus.setDownConnection(a = StreamPipe.S2M)
+    if(p.withDebug) debug.bindHart(cpu)
 
     val ram = new tilelink.fabric.RamFiber(16 KiB)
     ram.up at 0x80000000l of sharedBus
@@ -67,14 +94,17 @@ class MicroSoc() extends Component {
       uart.node at 0x10001000 of bus32
       plic.mapUpInterrupt(1, uart.interrupt)
 
-      val cpuClint = cpu.bind(clint)
       val cpuPlic = cpu.bind(plic)
+      val cpuClint = cpu.bind(clint)
     }
   }
 }
 
 object MicroSocGen extends App{
-  val report = SpinalVerilog(new MicroSoc())
+  val report = SpinalVerilog{
+    val p = new MicroSocParam()
+    new MicroSoc(p)
+  }
 
   val h = report.toplevel.main.cpu.logic.core.host
   val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
@@ -84,10 +114,13 @@ object MicroSocGen extends App{
 object MicroSocSynt extends App{
   import spinal.lib.eda.bench._
   val rtls = ArrayBuffer[Rtl]()
-  rtls += Rtl(SpinalVerilog(new MicroSoc(){
-    cd100.readClockWire.setName("clk")
-    setDefinitionName("MicroSoc")
-  }))
+  rtls += Rtl(SpinalVerilog{
+    val p = new MicroSocParam()
+    new MicroSoc(p) {
+      cd100.readClockWire.setName("clk")
+      setDefinitionName("MicroSoc")
+    }
+  })
 
   val targets = ArrayBuffer[Target]()
   //  targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
@@ -97,13 +130,18 @@ object MicroSocSynt extends App{
   Bench(rtls, targets)
 }
 
+/**
+ * To connect with openocd jtag :
+ * - src/openocd -f $VEXIIRISCV/src/main/tcl/openocd/vexiiriscv_sim.tcl
 
+ */
 object MicroSocSim extends App{
   var traceKonata = false
   var withRvlsCheck = false
   var elf: Elf = null
   val sim = SimConfig
   sim.withTimeSpec(1 ns, 1 ps)
+  val p = new MicroSocParam()
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
@@ -114,7 +152,7 @@ object MicroSocSim extends App{
   }.parse(args, Unit).nonEmpty)
 
 
-  sim.compile(new MicroSoc()).doSimUntilVoid("test", seed = 42){dut =>
+  sim.compile(new MicroSoc(p)).doSimUntilVoid("test", seed = 42){dut =>
     dut.cd100.forkStimulus()
     dut.asyncReset #= true
     delayed(100 ns)(dut.asyncReset #= false)
@@ -141,9 +179,16 @@ object MicroSocSim extends App{
 
     probe.autoRegions()
 
+    if(p.withJtagTap) {
+      probe.checkLiveness = false
+      spinal.lib.com.jtag.sim.JtagRemote(dut.debug.tap.jtag, hzToLong(dut.cd100.frequency.getValue)*4)
+    }
+
+
     if(elf != null) {
       elf.load(dut.main.ram.thread.logic.mem, 0x80000000l)
       probe.backends.foreach(_.loadElf(0, elf.f))
     }
   }
 }
+

@@ -80,6 +80,7 @@ object TrapReason{
   val SFENCE_VMA = 5
   val MMU_REFILL = 6
   val WFI = 7
+  val DEBUG_TRIGGER = 8
 }
 
 object TrapArg{
@@ -92,6 +93,17 @@ object TrapArg{
 //TODO ensure that CSR stored in ram are properly masked on read (mtval ... )
 class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
   override def trapHandelingAt: Int = trapAt
+
+  def askWake(hartId : Int) = api.harts(hartId).askWake := True
+
+  val api = during build new Area{
+    val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
+      val redo = False
+      val askWake = False
+      val rvTrap = False
+      val fsmBusy = Bool()
+    }
+  }
 
   val logic = during setup new Area{
     val priv = host[PrivilegedPlugin]
@@ -186,17 +198,12 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
         }
 
         if (priv.p.withDebug) {
-          ???
-//          when(debug.dcsr.step && debug.dcsr.stepie && !setup.debugMode) {
-//            valid := False
-//          }
-//
-//          when(debug.doHalt) {
-//            valid := True
-//          }
+          valid clearWhen (csr.debug.dcsr.step && !csr.debug.dcsr.stepie)
+          valid setWhen (csr.debug.doHalt)
         }
 
-        val pendingInterrupt = RegNext(valid) init (False)
+        val validBuffer = RegNext(valid) init(False)
+        val pendingInterrupt = validBuffer && priv.api.harts(hartId).allowInterrupts
         csr.int.pending setWhen(pendingInterrupt)
       }
 
@@ -284,10 +291,12 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val JUMP = new State()
           val LSU_FLUSH = lsul1p.nonEmpty generate new State()
           val FETCH_FLUSH = fl1p.nonEmpty generate new State()
+          val ENTER_DEBUG, DPC_READ, RESUME = (priv.p.withDebug) generate new State()
 
           val inflightTrap = trapPendings.map(_(hartId)).orR
           val holdPort = pcs.newHoldPort(hartId)
           holdPort := inflightTrap || !isActive(RUNNING)
+          api.harts(hartId).fsmBusy := !isActive(RUNNING)
 
           val wfi = False //Whitebox
 
@@ -337,6 +346,9 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
               buffer.sampleIt := True
               goto(PROCESS)
             }
+            if (priv.p.withDebug) when(!csr.debug.running && csr.debug.doResume) {
+              goto(DPC_READ)
+            }
           }
 
           val jumpTarget = Reg(PC)
@@ -353,10 +365,29 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
 
           if (fl1p.nonEmpty) fetchL1Invalidate(hartId).cmd.valid := False
           if (lsul1p.nonEmpty) lsuL1Invalidate(hartId).cmd.valid := False
+          val trapEnterDebug = RegInit(False)
           PROCESS.whenIsActive{
+            trapEnterDebug := False
             if(hp.nonEmpty) historyPort.valid := True
             when(pending.state.exception || buffer.trap.interrupt) {
               goto(TRAP_TVAL)
+              if(priv.p.withDebug){
+                when(!csr.debug.debugMode) {
+                  val doIt = False
+                  when(pending.state.exception && exception.code === CSR.MCAUSE_ENUM.BREAKPOINT) {
+                    doIt setWhen(csr.privilege === 3 && csr.debug.dcsr.ebreakm)
+                    if (priv.p.withUser) doIt setWhen (csr.privilege === 0 && csr.debug.dcsr.ebreaku)
+                    if (priv.p.withSupervisor) doIt setWhen (csr.privilege === 1 && csr.debug.dcsr.ebreaks)
+                  }
+                  doIt setWhen(buffer.trap.interrupt && csr.debug.doHalt)
+                  when(doIt){
+                    trapEnterDebug := True
+                    goto(TRAP_EPC)
+                  }
+                } otherwise {
+                  goto(ENTER_DEBUG)
+                }
+              }
             } otherwise {
               switch(pending.state.code) {
                 is(TrapReason.INTERRUPT) { //Got a sporadic interrupt => resume
@@ -378,6 +409,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   }
                 }
                 is(TrapReason.REDO) {
+                  api.harts(hartId).redo := True
                   goto(JUMP)
                 }
                 is(TrapReason.NEXT) {
@@ -385,7 +417,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                 }
                 is(TrapReason.WFI) {
                   wfi := True
-                  when(interrupt.valid) {
+                  when(interrupt.valid || api.harts(hartId).askWake) {
                     goto(JUMP)
                   }
                 }
@@ -404,6 +436,13 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   when(atsPorts.refill.cmd.ready){
                     goto(ATS_RSP)
                   }
+                }
+                if(priv.p.debugTriggers > 0 ) is(TrapReason.DEBUG_TRIGGER) {
+                  csr.debug.trigger.slots.onSel(U(pending.state.tval).resized){slot =>
+                    slot.tdata1.hit := True
+                  }
+                  trapEnterDebug := True
+                  goto(TRAP_EPC)
                 }
                 default {
                   assert(False, "Unexpected trap reason")
@@ -466,9 +505,13 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
               csr.m.epc.getAddress(),
               csr.s.epc.getAddress()
             )
+            if (priv.p.withDebug) when(trapEnterDebug) {  crsPorts.write.address := csr.debug.dpc.getAddress() }
             crsPorts.write.data := Global.expendPc(pending.pc, XLEN).asBits
             when(crsPorts.write.ready) {
               goto(TRAP_TVEC)
+              if (priv.p.withDebug) when(trapEnterDebug) {
+                goto(ENTER_DEBUG)
+              }
             }
           }
 
@@ -485,6 +528,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           }
 
           TRAP_APPLY.whenIsActive{
+            api.harts(hartId).rvTrap := True
             pcPort.valid := True
             pcPort.pc := U(readed).resized //PC RESIZED
 
@@ -513,6 +557,43 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             whitebox.code :=  buffer.trap.code
 
             goto(RUNNING)
+          }
+
+          if(priv.p.withDebug) {
+            csr.debug.bus.exception := False
+            csr.debug.bus.ebreak := False
+            ENTER_DEBUG.whenIsActive{
+              csr.debug.running := False
+              when(!csr.debug.debugMode) {
+                csr.debug.dcsr.cause := 0
+                when(csr.debug.dcsr.step){ csr.debug.dcsr.cause := 4 }
+                when(csr.debug.bus.haltReq) { csr.debug.dcsr.cause := 3 }
+                when(pending.state.exception && exception.code === CSR.MCAUSE_ENUM.BREAKPOINT) { csr.debug.dcsr.cause := 1 }
+                when(!pending.state.exception && exception.code === TrapReason.DEBUG_TRIGGER) { csr.debug.dcsr.cause := 2 }
+                csr.debug.dcsr.prv := csr.privilege
+              } otherwise {
+                csr.debug.bus.exception := pending.state.exception && exception.code =/= CSR.MCAUSE_ENUM.BREAKPOINT
+                csr.debug.bus.ebreak    := pending.state.exception && exception.code === CSR.MCAUSE_ENUM.BREAKPOINT
+              }
+              csr.privilege := 3
+              goto(RUNNING)
+            }
+
+            DPC_READ.whenIsActive {
+              crsPorts.read.valid := True
+              crsPorts.read.address := csr.debug.dpc.getAddress
+              when(crsPorts.read.ready) {
+                goto(RESUME)
+              }
+            }
+            RESUME.whenIsActive {
+              pcPort.valid := True
+              pcPort.pc := U(readed).resized //PC RESIZED
+              csr.privilege := csr.debug.dcsr.prv
+              csr.debug.running := True
+              csr.debug.bus.resume.rsp.valid := True
+              goto(RUNNING)
+            }
           }
 
           val xretPrivilege = U(pending.state.arg(1 downto 0))
@@ -564,56 +645,3 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
   }
 }
 
-
-
-//          COMPLETION.whenIsActive {
-//            when(pending.state.exception || pending.state.code === TrapReason.INTERRUPT && buffer.i.valid) {
-//              pcPort.valid := True
-//              pcPort.pc := csrs(hartId).m.tvec
-//
-//              csr.m.epc := pending.pc
-//              csr.m.tval := pending.state.tval.andMask(pending.state.exception)
-//              csr.m.status.mie := False
-//              csr.m.status.mpie := csr.m.status.mie
-//              csr.m.status.mpp := csr.privilege
-//              csr.m.cause.code := trapCode
-//              csr.m.cause.interrupt := !pending.state.exception
-//              csr.privilege := exception.targetPrivilege ???
-//
-//              whitebox.trap := True
-//              whitebox.interrupt := !pending.state.exception
-//              whitebox.code := trapCode
-//            } otherwise {
-//              switch(pending.state.code) {
-//                is(TrapReason.INTERRUPT) {
-//                  assert(!buffer.i.valid)
-//                  pcPort.valid := True
-//                  pcPort.pc := pending.pc
-//                }
-//                is(TrapReason.PRIV_RET){
-//                  pcPort.valid := True
-//                  pcPort.pc := csr.m.epc
-//
-//                  csr.privilege := pending.xret.targetPrivilege
-//                  csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege < 3)
-//                  switch(pending.state.tval(1 downto 0)) {
-//                    is(3) {
-//                      csr.m.status.mpp := 0
-//                      csr.m.status.mie := csr.m.status.mpie
-//                      csr.m.status.mpie := True
-//                    }
-//                    p.withSupervisor generate is(1) {
-//                      ???
-////                      s.sstatus.spp := U"0"
-////                      s.sstatus.sie := supervisor.sstatus.spie
-////                      s.sstatus.spie := True
-//                    }
-//                  }
-//                }
-//                default {
-//                  assert(False, "Unexpected trap reason")
-//                }
-//              }
-//            }
-//            goto(RUNNING)
-//          }
