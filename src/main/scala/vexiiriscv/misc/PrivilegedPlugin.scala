@@ -625,6 +625,18 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         for ((id, enable) <- m.edeleg.mapping) spec.exception += ExceptionSpec(id, List(Delegator(enable, 3)))
       }
+
+      if (p.withRdTime) {
+        XLEN.get match {
+          case 32 => {
+            api.read(rdtime(31 downto 0), CSR.UTIME)
+            api.read(rdtime(63 downto 32), CSR.UTIMEH)
+          }
+          case 64 => {
+            api.read(rdtime, CSR.UTIME)
+          }
+        }
+      }
     }
 
     val defaultTrap = new Area {
