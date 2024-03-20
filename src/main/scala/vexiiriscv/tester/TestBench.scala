@@ -489,7 +489,7 @@ class TestOptions{
         while(!CheckSocketPort(JtagRemote.defaultPort)){
           Thread.sleep(100)
         }
-        JtagRemote(p.logic.jtag, 10*4)
+        JtagRemote(p.logic.jtag, 20)
         probe.checkLiveness = false
       }
       case _ =>
