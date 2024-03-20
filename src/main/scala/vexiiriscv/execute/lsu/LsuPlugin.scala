@@ -131,7 +131,7 @@ class LsuPlugin(var layer : LaneLayer,
       dataWidth = Riscv.LSLEN,
       hartIdWidth = Global.HART_ID_WIDTH,
       uopIdWidth = Decode.UOP_ID_WIDTH,
-      withAmo = withRva,
+      withAmo = false, //TODO
       pendingMax = 1
     )
     val bus = master(LsuCachelessBus(busParam)).simPublic()
@@ -417,10 +417,10 @@ class LsuPlugin(var layer : LaneLayer,
         bus.cmd.fromHart := True
         bus.cmd.hartId := Global.HART_ID
         bus.cmd.uopId := Decode.UOP_ID
-        if (withRva) {
-          bus.cmd.amoEnable := l1.ATOMIC
-          bus.cmd.amoOp := UOP(31 downto 27)
-        }
+//        if (withRva) {
+//          bus.cmd.amoEnable := l1.ATOMIC
+//          bus.cmd.amoOp := UOP(31 downto 27)
+//        }
 
         val rsp = bus.rsp.toStream.halfPipe()
         rsp.ready := !elp.isFreezed()
@@ -446,7 +446,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       val READ_SHIFTED = insert(rspShifted)
-      val SC_MISS = insert(withRva.mux(io.doIt.mux[Bool](io.rsp.scMiss, scMiss), False))
+      val SC_MISS = insert(scMiss)//insert(withRva.mux(io.doIt.mux[Bool](io.rsp.scMiss, scMiss), False))
 
 
       if (!Riscv.RVA.get) {
@@ -518,7 +518,7 @@ class LsuPlugin(var layer : LaneLayer,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      when((!pmaIo.rsp.fault).mux[Bool](io.rsp.valid && io.rsp.error, l1.FAULT)) {
+      when((pmaL1.rsp.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT)) {
         lsuTrap := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
