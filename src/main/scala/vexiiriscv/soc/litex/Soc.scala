@@ -46,16 +46,10 @@ class SocConfig(){
   def withL2 = l2Bytes > 0
 }
 
-class Soc(c : SocConfig) extends Component{
+class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
   import c._
 
-  val socClk = in Bool()
-  val asyncReset = in Bool()
-
-  val socClkCd = ClockDomain(socClk)
-  val socResetCtrl = socClkCd on new ResetCtrlFiber().addAsyncReset(asyncReset, HIGH)
-
-  val system = socResetCtrl.cd on new AreaRoot {
+  val system = systemCd on new AreaRoot {
     val mainDataWidth = vexiiParam.memDataWidth
 
     val withCoherency = false
@@ -205,10 +199,6 @@ class Soc(c : SocConfig) extends Component{
     val mBus = withMem generate (Fiber build master(toAxi4.down.pipelined()))
     val pBus = Fiber build master(peripheral.toAxiLite4.down.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.HALF, b = StreamPipe.HALF, r = StreamPipe.HALF))
 
-    val debug = c.withDebug generate new DebugModuleSocFiber(withJtagInstruction){
-      out(dm.ndmreset)
-      vexiis.foreach(bindHart)
-    }
 //    val debug = c.withDebug generate new Area {
 //      val cd = ClockDomain.current.copy(reset = in Bool())
 //      val cdi = c.withJtagInstruction generate ClockDomain.external("jtag_instruction", withReset = false)
@@ -259,6 +249,12 @@ class Soc(c : SocConfig) extends Component{
 //      }
     }
   }
+
+  val debugReset = c.withDebug generate in.Bool()
+  val debug = c.withDebug generate ClockDomain(systemCd.clock, debugReset)(new DebugModuleSocFiber(withJtagInstruction) {
+    out(dm.ndmreset)
+    system.vexiis.foreach(bindHart)
+  })
 }
 
 
@@ -300,7 +296,7 @@ object SocGen extends App{
 
   spinalConfig.generateVerilog {
 
-    new Soc(socConfig).setDefinitionName(netlistName)
+    new Soc(socConfig, ClockDomain.external("system")).setDefinitionName(netlistName)
   }
 }
 
