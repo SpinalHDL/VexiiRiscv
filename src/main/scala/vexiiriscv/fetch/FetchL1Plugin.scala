@@ -305,17 +305,19 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val tpk = translationPort.keys
 
     val cmd = new pp.Fetch(readAt) {
+      val ra1 = pp.fetch(readAt + 1).up
+      val doIt = ra1.ready || !ra1.valid // Better timings than up.isReady, ra1.cancel not necessary as cancel do not collapse bubbles
       for ((bank, bankId) <- banks.zipWithIndex) {
-        bank.read.cmd.valid := up.isReady
+        bank.read.cmd.valid := doIt
         bank.read.cmd.payload := WORD_PC(lineRange.high downto log2Up(bankWidth / 8))
       }
 
       for((way, wayId) <- ways.zipWithIndex) {
-        way.read.cmd.valid := up.isReady
+        way.read.cmd.valid := doIt
         way.read.cmd.payload := WORD_PC(lineRange)
       }
 
-      plru.read.cmd.valid := up.isReady
+      plru.read.cmd.valid := doIt
       plru.read.cmd.payload := WORD_PC(lineRange)
 
       val PLRU_BYPASS_VALID = insert(plru.write.valid && plru.write.address === plru.read.cmd.payload)
