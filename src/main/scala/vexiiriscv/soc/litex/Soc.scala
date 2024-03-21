@@ -268,6 +268,7 @@ object SocGen extends App{
 
   vexiiParam.fetchL1Enable = true
   vexiiParam.lsuL1Enable = true
+  vexiiParam.privParam.withRdTime = true
 
   assert(new scopt.OptionParser[Unit]("NaxRiscv") {
     help("help").text("prints this usage text")
@@ -366,6 +367,14 @@ litex_sim --cpu-type=vexiiriscv  --with-sdram --sdram-data-width=64 --bus-standa
 /media/data2/proj/upstream/openocd_riscv_up/src/openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl -c "load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/rootfs.cpio 0x40000000" -c exit
 (* MARK_DEBUG = "TRUE" *)
 
+// Minimal linux
+python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --with-rva --with-supervisor --performance-counters 0" --with-jtag-tap  --load
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/Image 0x40000000
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/rv32.dtb 0x40ef0000
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/rootfs.cpio 0x41000000
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/opensbi.bin 0x40f00000
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/opensbi/build/platform/litex/vexriscv/firmware/fw_jump.bin 0x40f00000
+resume
 
 
 
@@ -374,5 +383,8 @@ openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--debug-privileged" --with-jtag-instruction --build --load
 openocd -f digilent_nexys_video.tcl -f vexiiriscv_jtag_tunneled.tcl
+
+
+python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4  --with-btb --with-ras --with-gshare" --with-jtag-tap  --load
 
  */

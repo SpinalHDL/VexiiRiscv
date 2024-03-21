@@ -25,7 +25,7 @@ object PrivilegedParam{
     withSupervisor = false,
     withUser       = false,
     withUserTrap   = false,
-    withRdTime     = true,
+    withRdTime     = false,
     withDebug      = false,
     vendorId       = 0,
     archId         = 5, //As spike
