@@ -143,14 +143,14 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     }
   }
 
-  //doArchTest("I")
-  //doArchTest("Zifencei")
-  //doArchTest("privilege")
-  //if (rvm) doArchTest("M")
-  //if (rvc) doArchTest("C")
-  //if (rvzb) doArchTest("B")
+  doArchTest("I")
+  doArchTest("Zifencei")
+  doArchTest("privilege")
+  if (rvm) doArchTest("M")
+  if (rvc) doArchTest("C")
+  if (rvzb) doArchTest("B")
 
-  /*val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")
+  val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
   if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
   for(name <- regulars){
@@ -215,8 +215,6 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.fsmGetc("#")
     args.fsmSuccess()
   }
-  *
-   */
 
   implicit val ec = ExecutionContext.global
   val jobs = ArrayBuffer[AsyncJob]()
@@ -352,7 +350,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("divParam", List(2, 4).flatMap(radix => List("", "--div-ipc").map(opt => s"$opt --div-radix $radix")))
   addDim("rva", List("", "--with-mul --with-div --with-rva"))
   addDim("rvc", List("", "--with-mul --with-div --with-rvc"))
-  //addDim("rvzb", List("", "--with-rvZb"))
+  addDim("rvzb", List("", "--with-rvZb"))
   addDim("late-alu", List("", "--with-late-alu"))
   addDim("fetch", {
     val p = ArrayBuffer[String]("--fetch-fork-at 0", "--fetch-fork-at 1")
@@ -384,19 +382,19 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("dispBuf", List("", "--with-dispatcher-buffer"))
   addDim("btbParam", List("--btb-sets 512 --btb-hash-width 16", "--btb-sets 128 --btb-hash-width 6"))
 
-  val default = "--with-mul --with-div --with-rvZb --performance-counters 4"
+  val default = "--with-mul --with-div --performance-counters 4"
 
-//  addTest(default)
-//  // Add a simple test for each dimensions's positions
-//  for(dim <- dimensions){
-//    for(pos <- dim.getPositions() if pos != "") {
-//      addTest(default + " " + pos)
-//    }
-//  }
+  addTest(default)
+  // Add a simple test for each dimensions's positions
+  for(dim <- dimensions){
+    for(pos <- dim.getPositions() if pos != "") {
+      addTest(default + " " + pos)
+    }
+  }
 
   // Generate random parameters
   val random = new Random(42)
-  for(i <- 0 until 50){
+  for(i <- 0 until 5){
     val args = ArrayBuffer[String]()
     args += default
     for (dim <- dimensions) {

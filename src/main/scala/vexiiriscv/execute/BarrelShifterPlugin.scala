@@ -14,9 +14,11 @@ object BarrelShifterPlugin extends AreaObject {
   val LEFT = Payload(Bool())
   val IS_W = Payload(Bool())
   val IS_W_RIGHT = Payload(Bool())
+  val IS_UW = Payload(Bool())
 }
 
 class BarrelShifterPlugin(val layer : LaneLayer,
+                          var with_slli_uw: Boolean = false,
                           var shiftAt : Int = 0,
                           var formatAt : Int = 0) extends ExecutionUnitElementSimple(layer)  {
   import BarrelShifterPlugin._
@@ -38,6 +40,8 @@ class BarrelShifterPlugin(val layer : LaneLayer,
     if (Riscv.XLEN.get == 64) {
       for (op <- List(Rvi.SLL, Rvi.SRL, Rvi.SRA, Rvi.SLLI, Rvi.SRLI, Rvi.SRAI)) {
         layer(op).addDecoding(IS_W -> False, IS_W_RIGHT -> False)
+        if (with_slli_uw)
+          layer(op).addDecoding(IS_UW -> False)
       }
       add(Rvi.SLLW ).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> True , SIGNED -> False, IS_W -> True, IS_W_RIGHT -> False )
       add(Rvi.SRLW ).srcs(SRC1.RF, SRC2.RF).decode(LEFT -> False, SIGNED -> False, IS_W -> True, IS_W_RIGHT -> True )
@@ -47,6 +51,11 @@ class BarrelShifterPlugin(val layer : LaneLayer,
       add(Rvi.SRAIW).srcs(SRC1.RF, SRC2.I ).decode(LEFT -> False, SIGNED -> True , IS_W -> True, IS_W_RIGHT -> True )
       for (op <- List(Rvi.SLLW, Rvi.SRLW, Rvi.SRAW, Rvi.SLLIW, Rvi.SRLIW, Rvi.SRAIW)) {
         ifp.signExtend(wb, layer(op), 32)
+        if (with_slli_uw)
+          layer(op).addDecoding(IS_UW -> False)
+      }
+      if(with_slli_uw) {
+        add(RvZbx.SLLI_UW).srcs(SRC1.RF, SRC2.I ).decode(LEFT -> True , SIGNED -> False, IS_W -> False, IS_W_RIGHT -> False, IS_UW -> True)
       }
     }
 
@@ -65,6 +74,12 @@ class BarrelShifterPlugin(val layer : LaneLayer,
         }
         when(IS_W) {
           amplitude(5) := False
+        }
+        if(with_slli_uw) {
+          when(IS_UW) {
+            // remove lower bits since we are post-shift
+            reversed(31 downto 0) := 0
+          }
         }
       }
 
