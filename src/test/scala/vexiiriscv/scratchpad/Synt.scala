@@ -991,4 +991,11 @@ debug_jtag ->
 Artix 7 -> 90 Mhz 1427 LUT 1608 FF
 Artix 7 -> 193 Mhz 1579 LUT 1608 FF
 
+
+fullPerf ->
+Artix 7 -> 87 Mhz 4354 LUT 3050 FF
+Artix 7 -> 127 Mhz 4663 LUT 3061 FF
+fullPerf2 ->
+Artix 7 -> 90 Mhz 4308 LUT 3419 FF
+Artix 7 -> 156 Mhz 4813 LUT 3593 FF
  */
