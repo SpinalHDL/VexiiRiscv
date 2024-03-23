@@ -30,7 +30,7 @@ object ParamSimple{
         isExecutable = true,
         transfers = M2sTransfers(
           get = SizeRange.all,
-          putFull = SizeRange.all,
+          putFull = SizeRange.all
         )
       ),
       new PmaRegionImpl(
@@ -39,7 +39,7 @@ object ParamSimple{
         isExecutable = true,
         transfers = M2sTransfers(
           get = SizeRange.all,
-          putFull = SizeRange.all,
+          putFull = SizeRange.all
         )
       )
     )
