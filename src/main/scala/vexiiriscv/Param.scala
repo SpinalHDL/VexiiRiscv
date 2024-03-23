@@ -464,7 +464,7 @@ class ParamSimple(){
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    if(withRvZb) plugins += new ZbPlugin(early0, formatAt=0)
+    if(withRvZb) plugins ++= ZbPlugin.make(early0, formatAt=0)
     if(!lsuL1Enable) plugins += new LsuCachelessPlugin(
       layer     = early0,
       withAmo   = withRva,
