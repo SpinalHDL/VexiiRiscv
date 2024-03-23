@@ -349,8 +349,8 @@ class ParamSimple(){
       plugins += new prediction.HistoryPlugin()
     }
     def shifter(layer: LaneLayer, shiftAt: Int = 0, formatAt: Int = 0) = withIterativeShift match {
-      case false => new BarrelShifterPlugin(layer, shiftAt, formatAt)
-      case true => new IterativeShifterPlugin(layer, shiftAt, formatAt)
+      case false => new BarrelShifterPlugin(layer, with_slli_uw=withRvZb, shiftAt=shiftAt, formatAt=formatAt)
+      case true => new IterativeShifterPlugin(layer, with_slli_uw=withRvZb, shiftAt=shiftAt, formatAt=formatAt)
     }
 
 
