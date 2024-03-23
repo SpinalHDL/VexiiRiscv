@@ -423,7 +423,7 @@ class ParamSimple(){
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    if(withRvZb) plugins += new ZbPlugin(early0, formatAt=0)
+    if(withRvZb) plugins ++= ZbPlugin.make(early0, formatAt=0)
     if(!lsuL1Enable) plugins += new LsuCachelessPlugin(
       layer     = early0,
       withAmo   = withRva,
@@ -538,7 +538,7 @@ class ParamSimple(){
       plugins += new IntAluPlugin(late0, aluAt = 2, formatAt = 2)
       plugins += shifter(late0, shiftAt = 2, formatAt = 2)
       plugins += new BranchPlugin(late0, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
-      if(withRvZb) plugins += new ZbPlugin(late0, executeAt = 2, formatAt = 2)
+      if(withRvZb) plugins ++= ZbPlugin.make(late0, executeAt = 2, formatAt = 2)
     }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
@@ -561,7 +561,7 @@ class ParamSimple(){
         plugins += new IntAluPlugin(late1, aluAt = 2, formatAt = 2)
         plugins += shifter(late1, shiftAt = 2, formatAt = 2)
         plugins += new BranchPlugin(late1, aluAt = 2, jumpAt = 2/*+relaxedBranch.toInt*/, wbAt = 2, withJalr = false)
-        if(withRvZb) plugins += new ZbPlugin(late1, formatAt = 2)
+        if(withRvZb) plugins ++= ZbPlugin.make(late1, executeAt = 2, formatAt = 2)
       }
 //      if (withMul) {
 //        plugins += new MulPlugin(early1)

@@ -15,7 +15,7 @@ object ZbPlugin {
            executeAt: Int = 0,
            formatAt: Int = 0) = {
     Seq(
-        /*new ZbaPlugin(layer, executeAt, formatAt),
+        new ZbaPlugin(layer, executeAt, formatAt),
         new ZbbLogicPlugin(layer, executeAt, formatAt),
         new ZbbCountPlugin(layer, executeAt, formatAt),
         new ZbbMinMaxPlugin(layer, executeAt, formatAt),
@@ -23,7 +23,7 @@ object ZbPlugin {
         new ZbbOrPlugin(layer, executeAt, formatAt),
         new ZbbByteReversePlugin(layer, formatAt),
         new ZbbExtendPlugin(layer, formatAt),
-        new ZbcPlugin(layer, executeAt, formatAt),*/
+        new ZbcPlugin(layer, executeAt, formatAt),
         new ZbsPlugin(layer, executeAt, executeAt, formatAt)
       )
     }
