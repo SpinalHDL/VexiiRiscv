@@ -37,12 +37,16 @@ case class LsuL1InvalidationCmd() extends Bundle //Empty for now
 case class LsuL1InvalidationBus() extends Bundle {
   val cmd = Stream(LsuL1InvalidationCmd())
 }
-trait LsuL1Service{
+trait LsuService{
   val invalidationRetainer = Retainer()
   val invalidationPorts = ArrayBuffer[LsuL1InvalidationBus]()
   def newInvalidationPort() = invalidationPorts.addRet(LsuL1InvalidationBus())
 }
 
+trait LsuL1Service{
+  def withCoherency : Boolean
+  val regions = Handle[ArrayBuffer[PmaRegion]]()
+}
 
 
 

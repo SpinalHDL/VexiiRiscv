@@ -13,7 +13,7 @@ import vexiiriscv.Global
 import vexiiriscv.misc.Reservation
 import vexiiriscv.riscv.{AtomicAlu, Riscv}
 import vexiiriscv.execute._
-import vexiiriscv.fetch.{InitService, LsuL1Service}
+import vexiiriscv.fetch.{InitService, LsuL1Service, LsuService}
 import vexiiriscv.riscv.Riscv.{RVA, RVC}
 
 import scala.collection.mutable.ArrayBuffer
@@ -70,6 +70,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var bankMuxesAt: Int = 1,
                   var bankMuxAt: Int = 2,
                   var ctrlAt: Int = 2,
+                  var coherentReadAt: Int = 0,
+                  var coherentHitsAt: Int = 1,
+                  var coherentHitAt: Int = 1,
+                  var coherentCtrlAt: Int = 2,
+                  var coherentRspAt: Int = 3,
 //                  var hazardCheckWidth : Int = 12,
                   var hitsWithTranslationWays: Boolean = false,
                   var reducedBankWidth: Boolean = false,
@@ -77,10 +82,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var withCoherency: Boolean = false,
                   var withBypass: Boolean = false,
                   var probeIdWidth: Int = -1,
-                  var ackIdWidth: Int = -1) extends FiberPlugin with InitService{
+                  var ackIdWidth: Int = -1) extends FiberPlugin with InitService with LsuL1Service{
 
   override def initHold(): Bool = !logic.initializer.done
-  val regions = Handle[ArrayBuffer[PmaRegion]]()
 
   def memParameter = LsuL1BusParameter(
     addressWidth = Global.PHYSICAL_WIDTH,
@@ -93,6 +97,20 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     withReducedBandwidth = false,
     withCoherency = withCoherency
   )
+
+  case class CoherencyWb() extends Bundle {
+    val release = Bool()
+    val dirty = Bool()
+    val fromUnique = Bool()
+    val toShared, toUnique = Bool()
+    val probeId = UInt(probeIdWidth bits)
+  }
+
+  class Read[T <: Data](mem : Mem[T]) extends Area {
+    val cmd = Flow(mem.addressType)
+    val rsp = if (tagsReadAsync) mem.readAsync(cmd.payload) else mem.readSync(cmd.payload, cmd.valid)
+    KeepAttribute(rsp) //Ensure that it will not use 2 cycle latency ram block
+  }
 
   val logic = during setup new Area{
     import LsuL1._
@@ -211,11 +229,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val ways = for (id <- 0 until wayCount) yield new Area {
       val mem = Mem.fill(linePerWay)(Tag())
       mem.write(waysWrite.address, waysWrite.tag, waysWrite.mask(id))
-      val lsuRead = new Area {
-        val cmd = Flow(mem.addressType)
-        val rsp = if (tagsReadAsync) mem.readAsync(cmd.payload) else mem.readSync(cmd.payload, cmd.valid)
-        KeepAttribute(rsp) //Ensure that it will not use 2 cycle latency ram block
-      }
+      val lsuRead = new Read(mem)
+      val cRead = withCoherency generate new Read(mem)
     }
 
     case class Shared() extends Bundle {
@@ -227,11 +242,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val shared = new Area {
       val mem = Mem.fill(linePerWay)(Shared())
       val write = mem.writePort
-      val read = new Area {
-        val cmd = Flow(mem.addressType)
-        val rsp = if (tagsReadAsync) mem.readAsync(cmd.payload) else mem.readSync(cmd.payload, cmd.valid)
-        KeepAttribute(rsp) //Ensure that it will not use 2 cycle latency ram block
-      }
+      val lsuRead = new Read(mem)
+      val cRead = withCoherency generate new Read(mem)
     }
 
     val initializer = new Area {
@@ -466,13 +478,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val readRspDone = Reg(Bool())
         val writeCmdDone = Reg(Bool())
 
-        val coherency = withCoherency generate new Area {
-          val release = Reg(Bool())
-          val dirty = Reg(Bool())
-          val fromUnique = Reg(Bool())
-          val toShared = Reg(Bool())
-          val probeId = Reg(UInt(probeIdWidth bits))
-        }
+        val coherency = withCoherency generate Reg(CoherencyWb())
 
         //Ensure that valid stay high at least as long as the pipeline latency to ensure visibility
         val timer = new Area {
@@ -502,11 +508,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val way = UInt(log2Up(wayCount) bits)
 
         //TtoB TtoN BtoN
-        val dirty = withCoherency generate Bool()
-        val fromUnique = withCoherency generate Bool()
-        val toShared = withCoherency generate Bool()
-        val release = withCoherency generate Bool()
-        val probeId = withCoherency generate UInt(probeIdWidth bits)
+        val c = withCoherency generate CoherencyWb()
       }).setIdle()
 
       for (slot <- slots) when(push.valid) {
@@ -520,14 +522,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           slot.writeCmdDone := False
           slot.priority.setAll()
           if (withCoherency) {
-            slot.coherency.release := push.release
-            slot.coherency.dirty := push.dirty
-            slot.coherency.fromUnique := push.fromUnique
-            slot.coherency.toShared := push.toShared
-            slot.coherency.probeId := push.probeId
-            slot.readCmdDone := !push.dirty
-            slot.readRspDone := !push.dirty
-            slot.victimBufferReady := !push.dirty
+            slot.coherency := push.c
+            slot.readCmdDone := !push.c.dirty
+            slot.readRspDone := !push.c.dirty
+            slot.victimBufferReady := !push.c.dirty
           } else {
             slot.readCmdDone := False
             slot.readRspDone := False
@@ -622,13 +620,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           val id = UInt(log2Up(writebackCount) bits)
           val address = UInt(postTranslationWidth bits)
           val last = Bool()
-          val coherency = withCoherency generate new Bundle {
-            val release = Bool()
-            val dirty = Bool()
-            val fromUnique = Bool()
-            val toShared = Bool()
-            val probeId = UInt(probeIdWidth bits)
-          }
+          val coherency = withCoherency generate CoherencyWb()
         })
         bufferRead.valid := arbiter.hit
         bufferRead.id := arbiter.sel
@@ -636,11 +628,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         bufferRead.address := slots.map(_.address).read(arbiter.sel)
         val c = withCoherency generate new Area {
           last setWhen (!bufferRead.coherency.dirty)
-          bufferRead.coherency.release := slots.map(_.coherency.release).read(arbiter.sel)
-          bufferRead.coherency.dirty := slots.map(_.coherency.dirty).read(arbiter.sel)
-          bufferRead.coherency.fromUnique := slots.map(_.coherency.fromUnique).read(arbiter.sel)
-          bufferRead.coherency.toShared := slots.map(_.coherency.toShared).read(arbiter.sel)
-          bufferRead.coherency.probeId := slots.map(_.coherency.probeId).read(arbiter.sel)
+          bufferRead.coherency := slots.map(_.coherency).read(arbiter.sel)
         }
         wordIndex := wordIndex + U(bufferRead.fire && withCoherency.mux(bufferRead.coherency.dirty, True))
         when(bufferRead.fire && last) {
@@ -660,6 +648,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           bus.write.cmd.coherent.dirty := cmd.coherency.dirty
           bus.write.cmd.coherent.fromUnique := cmd.coherency.fromUnique
           bus.write.cmd.coherent.toShared := cmd.coherency.toShared
+          bus.write.cmd.coherent.toUnique := cmd.coherency.toUnique
           bus.write.cmd.coherent.probeId := cmd.coherency.probeId
           when(cmd.fire && cmd.last && !cmd.coherency.release) {
             slots.onSel(cmd.id) { s =>
@@ -729,8 +718,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       val rt0 = new lane.Execute(wayReadAt){
-        shared.read.cmd.valid := !lane.isFreezed()
-        shared.read.cmd.payload := MIXED_ADDRESS(lineRange)
+        shared.lsuRead.cmd.valid := !lane.isFreezed()
+        shared.lsuRead.cmd.payload := MIXED_ADDRESS(lineRange)
         val SHARED_BYPASS_VALID = insert(shared.write.valid && shared.write.address === MIXED_ADDRESS(lineRange))
         val SHARED_BYPASS_VALUE = insert(shared.write.data)
 
@@ -741,7 +730,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       val rt1 = new lane.Execute(wayReadAt + 1 - tagsReadAsync.toInt){
-        up(SHARED) := shared.read.rsp
+        up(SHARED) := shared.lsuRead.rsp
         for (wayId <- ways.indices) {
           WAYS_TAGS(wayId) := ways(wayId).lsuRead.rsp
         }
@@ -892,13 +881,20 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           waysWrite.tag.loaded := True
           waysWrite.tag.address := tag
           waysWrite.tag.fault := reader(_.fault)
-          if (withCoherency) ??? //also warning with writebackHazard
 
           writeback.push.valid := allowSideEffects
           writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low
           writeback.push.way := needFlushSel
+
           if (withCoherency) {
-            ???
+            val wasUnique = reader(_.unique)
+            waysWrite.tag.unique := wasUnique
+            writeback.push.c.fromUnique := wasUnique
+            writeback.push.c.toUnique :=  wasUnique
+            writeback.push.c.toShared := !wasUnique
+            writeback.push.c.release := True
+            writeback.push.c.dirty := SHARED.dirty(needFlushSel)
+//            status.write.data.onSel(needFlushSel)(_.dirty := False)
           }
         }
 
@@ -915,10 +911,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           writeback.push.address := (WAYS_TAGS(targetWay).address @@ MIXED_ADDRESS(lineRange)) << lineRange.low
           writeback.push.way := targetWay
           if (withCoherency) {
-            writeback.push.dirty := wasDirty
-            writeback.push.fromUnique := WAYS_TAGS(targetWay).unique
-            writeback.push.toShared := False
-            writeback.push.release := True
+            writeback.push.c.dirty := wasDirty
+            writeback.push.c.fromUnique := WAYS_TAGS(targetWay).unique
+            writeback.push.c.toShared := False
+            writeback.push.c.toUnique := False
+            writeback.push.c.release := True
           }
 
           shared.write.valid := allowSideEffects
@@ -947,6 +944,136 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         READ_DATA := BYPASSED_DATA
       }
     }
+
+
+    val c = withCoherency generate new Area{
+      val pip = new StageCtrlPipeline()
+      val onInsert = new pip.InsertArea{
+        import bus.probe.cmd
+        arbitrateFrom(cmd)
+        PHYSICAL_ADDRESS := cmd.address
+        PROBE_ID := cmd.id
+        ALLOW_UNIQUE := cmd.allowUnique
+        ALLOW_SHARED := cmd.allowShared
+        ALLOW_PROBE_DATA := cmd.getDirtyData
+      }
+
+
+      val rt0 = new pip.Ctrl(coherentReadAt) {
+        shared.lsuRead.cmd.valid := !lane.isFreezed()
+        shared.lsuRead.cmd.payload := PHYSICAL_ADDRESS(lineRange)
+        val SHARED_BYPASS_VALID = insert(shared.write.valid && shared.write.address === PHYSICAL_ADDRESS(lineRange))
+        val SHARED_BYPASS_VALUE = insert(shared.write.data)
+
+        for (way <- ways) {
+          way.lsuRead.cmd.valid := !lane.isFreezed()
+          way.lsuRead.cmd.payload := PHYSICAL_ADDRESS(lineRange)
+        }
+      }
+
+      val rt1 = new pip.Ctrl(coherentReadAt + 1 - tagsReadAsync.toInt) {
+        up(SHARED) := shared.lsuRead.rsp
+        for (wayId <- ways.indices) {
+          WAYS_TAGS(wayId) := ways(wayId).lsuRead.rsp
+        }
+        val plruBypass = !tagsReadAsync generate new Area {
+          when(rt0.SHARED_BYPASS_VALID) {
+            up(SHARED) := rt0.SHARED_BYPASS_VALUE
+          }
+        }
+      }
+
+      val sharedBypassers = for (eid <- (coherentReadAt + 1 - tagsReadAsync.toInt) until coherentCtrlAt) yield new Area {
+        val dst = pip.ctrl(eid)
+        val hit = shared.write.valid && shared.write.address === dst(PHYSICAL_ADDRESS)(lineRange)
+        dst.bypass(SHARED) := hit.mux(shared.write.data, dst.up(SHARED))
+      }
+
+      val hs = new pip.Ctrl(hitsAt) {
+        for (wayId <- ways.indices) {
+          WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === PHYSICAL_ADDRESS(tagRange)
+        }
+      }
+      val h = new pip.Ctrl(hitAt) {
+        WAYS_HIT := B(WAYS_HITS).orR
+      }
+
+      val onCtrl = new pip.Ctrl(coherentCtrlAt){
+        val askSomething = PROBE && WAYS_HIT
+        val askWriteback = !wasClean && !ALLOW_UNIQUE && ALLOW_PROBE_DATA
+        val askTagUpdate = (!ALLOW_SHARED || !ALLOW_UNIQUE && hitUnique)
+        val canUpdateTag = !(askSomething && askTagUpdate && !reservation.win)
+        val canWriteback = !(askSomething && askWriteback && (!reservation.win || writeback.full))
+        val alreadyInWb = writeback.slots.map(slot => slot.valid && slot.address(refillRange) === ADDRESS_POST_TRANSLATION(refillRange)).orR
+        val isUnique = (WAYS_TAGS.map(_.unique).asBits() & WAYS_HITS).orR
+        val locked = io.lock.valid && io.lock.address(refillRange) === PHYSICAL_ADDRESS(refillRange) && isUnique
+        val success = !waysHitHazard && canUpdateTag && canWriteback && !alreadyInWb && !locked
+
+        val didTagUpdate = RegNext(False) init (False)
+        io.writebackBusy setWhen (didTagUpdate)
+
+        //Disable side-effects of the regular store pipeline
+        when(PROBE) {
+          askRefill := False
+          askUpgrade := False
+        }
+
+        when(isValid && askSomething) {
+          when(askWriteback || askTagUpdate) {
+            reservation.takeIt()
+          }
+
+          when(success) {
+            when(askWriteback || askTagUpdate) {
+              reservation.takeIt()
+
+              waysWrite.mask(wayId) := True
+              waysWrite.address := ADDRESS_POST_TRANSLATION(lineRange)
+              waysWrite.tag.loaded := ALLOW_SHARED || ALLOW_UNIQUE
+              waysWrite.tag.fault := hitFault
+              waysWrite.tag.unique := hitUnique && ALLOW_UNIQUE
+              waysWrite.tag.address := ADDRESS_POST_TRANSLATION(tagRange)
+
+              didTagUpdate := True
+            }
+
+            when(askWriteback) {
+              writeback.push.valid := True
+              writeback.push.address := ADDRESS_POST_TRANSLATION
+              writeback.push.way := wayId
+              writeback.push.dirty := (STATUS.map(_.dirty).asBits() & WAYS_HITS).orR
+              writeback.push.fromUnique := isUnique
+              writeback.push.toShared := ALLOW_SHARED
+              writeback.push.release := False
+              writeback.push.probeId := PROBE_ID
+
+              status.write.valid := True
+              status.write.address := ADDRESS_POST_TRANSLATION(lineRange)
+              status.write.data := STATUS
+              whenMasked(status.write.data, WAYS_HITS)(_.dirty := False)
+            }
+          }
+        }
+
+        bus.probe.rsp.valid := isValid && PROBE
+        bus.probe.rsp.toShared := WAYS_HIT && ALLOW_SHARED && !(ALLOW_UNIQUE && hitUnique)
+        bus.probe.rsp.toUnique := WAYS_HIT && ALLOW_UNIQUE && hitUnique
+        bus.probe.rsp.fromUnique := WAYS_HIT && WAYS_TAGS(refillWay).unique
+        bus.probe.rsp.fromShared := WAYS_HIT && !WAYS_TAGS(refillWay).unique
+        bus.probe.rsp.address := PHYSICAL_ADDRESS
+        bus.probe.rsp.id := PROBE_ID
+        bus.probe.rsp.redo := !success
+        bus.probe.rsp.allowUnique := ALLOW_UNIQUE
+        bus.probe.rsp.allowShared := ALLOW_SHARED
+        bus.probe.rsp.getDirtyData := ALLOW_PROBE_DATA
+        bus.probe.rsp.writeback := askWriteback
+      }
+
+      val onRsp = new pip.Ctrl(coherentRspAt){
+        down.arbitrateTo(bus.probe.rsp)
+      }
+    }
+//    bus.probe.rsp.setIdle() //TODO
 
     tagsWriteArbiter.build()
     bankWriteArbiter.build()

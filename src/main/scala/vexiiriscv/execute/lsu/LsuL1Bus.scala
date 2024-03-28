@@ -156,6 +156,7 @@ case class LsuL1WriteCmd(p : LsuL1BusParameter) extends Bundle {
     val release = Bool() //else from probe
     val dirty = Bool() //Meaning with data
     val fromUnique = Bool()
+    val toUnique = Bool()
     val toShared = Bool()
     val probeId = UInt(p.probeIdWidth bits)
   }
@@ -389,7 +390,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
         sourceWidth  = m2s.sourceWidth,
         sinkWidth    = p.ackIdWidth,
         withBCE      = p.withCoherency,
-        withDataA    = true,
+        withDataA    = !p.withCoherency,
         withDataB    = false,
         withDataD    = true,
         withDataC    = true,
@@ -506,7 +507,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
         i0.param := Param.report(
           write.cmd.coherent.fromUnique,
           !write.cmd.coherent.fromUnique,
-          False,
+          write.cmd.coherent.toUnique,
           write.cmd.coherent.toShared
         )
         i0.source := write.cmd.coherent.release.mux(

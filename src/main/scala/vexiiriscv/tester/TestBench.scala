@@ -523,7 +523,7 @@ object TestBench extends App{
     val ret = param.plugins()
     ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
       p.ackIdWidth = 8
-      p.probeIdWidth = 4
+      p.probeIdWidth = log2Up(p.writebackCount)
       ret  += new LsuL1TlPlugin
     }
     val regions = ArrayBuffer(

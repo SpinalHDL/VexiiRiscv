@@ -20,7 +20,7 @@ import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
 import vexiiriscv.{Global, riscv}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu.AguPlugin._
-import vexiiriscv.fetch.LsuL1Service
+import vexiiriscv.fetch.{LsuL1Service, LsuService}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -49,13 +49,12 @@ class LsuPlugin(var layer : LaneLayer,
                 var wbAt : Int = 2,
                 var storeRs2At : Int = 0,
                 var storeBufferSlots : Int = 0,
-                var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuL1Service{
+                var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuService{
 
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
 
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
-
 
   val tagWidth = 6
   val SB_PTR = Payload(UInt(log2Up(storeBufferOps) + 1 bits))
@@ -668,7 +667,7 @@ class LsuPlugin(var layer : LaneLayer,
   val ioRegions = Handle[ArrayBuffer[PmaRegion]]()
   val pmaBuilder = during build new Area{
     val l1Regions = ArrayBuffer[PmaRegion]()
-    for(r <- host[LsuL1Plugin].regions if r.isMain){
+    for(r <- host[LsuL1Service].regions if r.isMain){
       r.transfers match {
         case t: M2sTransfers if t.get.contains(LsuL1.LINE_BYTES) && (t.putFull.contains(LsuL1.LINE_BYTES) || t.putFull.none) =>
           l1Regions += r
