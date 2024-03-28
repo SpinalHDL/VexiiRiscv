@@ -25,7 +25,7 @@ object PrivilegedParam{
     withSupervisor = false,
     withUser       = false,
     withUserTrap   = false,
-    withRdTime     = true,
+    withRdTime     = false,
     withDebug      = false,
     vendorId       = 0,
     archId         = 5, //As spike
@@ -624,6 +624,18 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = 1, delegators = List(Delegator(m.ideleg.se, 3)))
 
         for ((id, enable) <- m.edeleg.mapping) spec.exception += ExceptionSpec(id, List(Delegator(enable, 3)))
+      }
+
+      if (p.withRdTime) {
+        XLEN.get match {
+          case 32 => {
+            api.read(rdtime(31 downto 0), CSR.UTIME)
+            api.read(rdtime(63 downto 32), CSR.UTIMEH)
+          }
+          case 64 => {
+            api.read(rdtime, CSR.UTIME)
+          }
+        }
       }
     }
 

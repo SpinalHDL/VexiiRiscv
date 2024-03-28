@@ -30,25 +30,25 @@ object IntegrationSynthBench extends App{
     }, postfix)
   }
 
-  add("nothing") { p =>
+//  add("nothing") { p =>
+//
+//  }
 
-  }
-
-  add("debug") { p =>
-    p.privParam.withDebug = true
-  }
-  add("debug instr") { p =>
-    p.privParam.withDebug = true
-    p.embeddedJtagInstruction = true
-    p.embeddedJtagCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
-    p.embeddedJtagNoTapCd = ClockDomain.external("jtag", withReset = false)
-  }
-
-  add("debug jtag") { p =>
-    p.privParam.withDebug = true
-    p.embeddedJtagTap = true
-    p.embeddedJtagCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
-  }
+//  add("debug") { p =>
+//    p.privParam.withDebug = true
+//  }
+//  add("debug instr") { p =>
+//    p.privParam.withDebug = true
+//    p.embeddedJtagInstruction = true
+//    p.embeddedJtagCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
+//    p.embeddedJtagNoTapCd = ClockDomain.external("jtag", withReset = false)
+//  }
+//
+//  add("debug jtag") { p =>
+//    p.privParam.withDebug = true
+//    p.embeddedJtagTap = true
+//    p.embeddedJtagCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
+//  }
 
 
   //  add ("fmax") { p =>
@@ -241,61 +241,62 @@ object IntegrationSynthBench extends App{
 //    p.withLateAlu = true
 //  }
 
-//  add("fullPerf") { p =>
-//    p.allowBypassFrom = 0
-//    p.decoders = 2
-//    p.lanes = 2
+  add("fullPerf") { p =>
+    p.regFileSync = false
+    p.allowBypassFrom = 0
+    p.decoders = 2
+    p.lanes = 2
 //    p.withDispatcherBuffer = true
-//
-//    p.withMul = true
-//    p.withDiv = true
-//
-//    p.withBtb = true
-//    p.withGShare = true
-//    p.withRas = true
-//    p.relaxedBranch = true
-//    p.relaxedBtb = true
-//
-////    p.privParam.withSupervisor = true;
-////    p.privParam.withUser = true;
-////    p.withMmu = true
-//
-//    p.lsuL1Enable = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 4
-//
-//    p.fetchL1Enable = true
-//    p.fetchL1Sets = 64
-//    p.fetchL1Ways = 4
-//  }
 
-//    add("fullPerf2") { p =>
-//      p.allowBypassFrom = 0
-//      p.decoders = 2
-//      p.lanes = 2
-//      p.withDispatcherBuffer = true
-//
-//      p.withMul = true
-//      p.withDiv = true
-//
-//      p.withBtb = true
-//      p.withGShare = true
-//      p.withRas = true
-//      p.relaxedBranch = true
-//      p.relaxedBtb = true
-//
+    p.withMul = true
+    p.withDiv = true
+
+    p.withBtb = true
+    p.withGShare = true
+    p.withRas = true
+    p.relaxedBranch = true
+    p.relaxedBtb = true
+
+//    p.privParam.withSupervisor = true;
+//    p.privParam.withUser = true;
+//    p.withMmu = true
+
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 4
+
+    p.fetchL1Enable = true
+    p.fetchL1Sets = 64
+    p.fetchL1Ways = 4
+  }
+
+    add("fullPerf2") { p =>
+      p.allowBypassFrom = 0
+      p.decoders = 2
+      p.lanes = 2
+      p.withDispatcherBuffer = true
+
+      p.withMul = true
+      p.withDiv = true
+
+      p.withBtb = true
+      p.withGShare = true
+      p.withRas = true
+      p.relaxedBranch = true
+      p.relaxedBtb = true
+
 //      p.privParam.withSupervisor = true;
 //      p.privParam.withUser = true;
 //      p.withMmu = true
-//
-//      p.lsuL1Enable = true
-//      p.lsuL1Sets = 64
-//      p.lsuL1Ways = 4
-//
-//      p.fetchL1Enable = true
-//      p.fetchL1Sets = 64
-//      p.fetchL1Ways = 4
-//    }
+
+      p.lsuL1Enable = true
+      p.lsuL1Sets = 64
+      p.lsuL1Ways = 4
+
+      p.fetchL1Enable = true
+      p.fetchL1Sets = 64
+      p.fetchL1Ways = 4
+    }
 
 
   //  def cachedPerf(p : ParamSimple): ParamSimple = {
@@ -990,4 +991,11 @@ debug_jtag ->
 Artix 7 -> 90 Mhz 1427 LUT 1608 FF
 Artix 7 -> 193 Mhz 1579 LUT 1608 FF
 
+
+fullPerf ->
+Artix 7 -> 87 Mhz 4354 LUT 3050 FF
+Artix 7 -> 127 Mhz 4663 LUT 3061 FF
+fullPerf2 ->
+Artix 7 -> 90 Mhz 4308 LUT 3419 FF
+Artix 7 -> 156 Mhz 4813 LUT 3593 FF
  */

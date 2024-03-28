@@ -489,7 +489,7 @@ class TestOptions{
         while(!CheckSocketPort(JtagRemote.defaultPort)){
           Thread.sleep(100)
         }
-        JtagRemote(p.logic.jtag, 10*4)
+        JtagRemote(p.logic.jtag, 20)
         probe.checkLiveness = false
       }
       case _ =>
@@ -531,7 +531,7 @@ object TestBench extends App{
         override def mapping: AddressMapping = SizeMapping(0x80000000l, 0x80000000l)
         override def transfers: MemoryTransfers = M2sTransfers(
           get = SizeRange.all,
-          putFull = SizeRange.all,
+          putFull = SizeRange.all
         )
         override def isMain: Boolean = true
         override def isExecutable: Boolean = true
@@ -540,7 +540,7 @@ object TestBench extends App{
         override def mapping: AddressMapping = SizeMapping(0x10000000l, 0x10000000l)
         override def transfers: MemoryTransfers = M2sTransfers(
           get = SizeRange.all,
-          putFull = SizeRange.all,
+          putFull = SizeRange.all
         )
         override def isMain: Boolean = false
         override def isExecutable: Boolean = true
@@ -549,7 +549,7 @@ object TestBench extends App{
         override def mapping: AddressMapping = SizeMapping(0x1000, 0x1000)
         override def transfers: MemoryTransfers = M2sTransfers(
           get = SizeRange.all,
-          putFull = SizeRange.all,
+          putFull = SizeRange.all
         )
         override def isMain: Boolean = true
         override def isExecutable: Boolean = true

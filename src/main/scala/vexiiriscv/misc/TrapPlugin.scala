@@ -205,6 +205,10 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
         val validBuffer = RegNext(valid) init(False)
         val pendingInterrupt = validBuffer && priv.api.harts(hartId).allowInterrupts
         csr.int.pending setWhen(pendingInterrupt)
+
+        when(csr.spec.interrupt.map(_.cond).orR){
+          askWake(hartId)
+        }
       }
 
 
@@ -417,7 +421,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                 }
                 is(TrapReason.WFI) {
                   wfi := True
-                  when(interrupt.valid || api.harts(hartId).askWake) {
+                  when(api.harts(hartId).askWake) {
                     goto(JUMP)
                   }
                 }

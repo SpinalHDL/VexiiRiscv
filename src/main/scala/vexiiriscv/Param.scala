@@ -30,7 +30,7 @@ object ParamSimple{
         isExecutable = true,
         transfers = M2sTransfers(
           get = SizeRange.all,
-          putFull = SizeRange.all,
+          putFull = SizeRange.all
         )
       ),
       new PmaRegionImpl(
@@ -39,7 +39,7 @@ object ParamSimple{
         isExecutable = true,
         transfers = M2sTransfers(
           get = SizeRange.all,
-          putFull = SizeRange.all,
+          putFull = SizeRange.all
         )
       )
     )
@@ -90,14 +90,15 @@ class ParamSimple(){
   var fetchL1Sets = 64
   var fetchL1Ways = 1
   var fetchL1ReducedBank = false
-  var fetchL1MemDataWidthMin = 32
+  var fetchMemDataWidthMin = 32
   var lsuStoreBufferSlots = 0
   var lsuStoreBufferOps = 0
   var lsuL1Enable = false
   var lsuL1Sets = 64
   var lsuL1Ways = 1
-  var LsuL1RefillCount = 1
+  var lsuL1RefillCount = 1
   var lsuL1WritebackCount = 1
+  var lsuMemDataWidthMin = 32
   var withLsuBypass = false
   var withIterativeShift = false
   var divRadix = 2
@@ -111,6 +112,10 @@ class ParamSimple(){
   var embeddedJtagCd: ClockDomain = null
   var embeddedJtagNoTapCd: ClockDomain = null
 
+  def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
+  def lsuMemDataWidth = xlen max lsuMemDataWidthMin
+  def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
+
   //  Debug modifiers
   val debugParam = sys.env.getOrElse("VEXIIRISCV_DEBUG_PARAM", "0").toInt.toBoolean
   if(debugParam) {
@@ -119,41 +124,41 @@ class ParamSimple(){
     regFileSync = false
     allowBypassFrom = 0
 
-//    withGShare = true
-//    withBtb = true
-//    withRas = true
-//    relaxedBranch = true  // !!
-//    relaxedBtb = true     // !!
-//    fetchL1Enable = true
-//    fetchL1Sets = 64
-//    fetchL1Ways = 4
-    //fetchL1ReducedBank = true
-    //fetchL1MemDataWidthMin = 256
-//    lsuL1Enable = true
-//    lsuL1Sets = 64
-//    lsuL1Ways = 4
-//    LsuL1RefillCount = 2
-//    lsuL1WritebackCount = 2
-//    lsuStoreBufferSlots = 2
-//    lsuStoreBufferOps = 32
-//    withLsuBypass = true
+    withGShare = true
+    withBtb = true
+    withRas = true
+    relaxedBranch = true  // !!
+    relaxedBtb = true     // !!
+    fetchL1Enable = true
+    fetchL1Sets = 64
+    fetchL1Ways = 4
+    fetchL1ReducedBank = true
+    fetchMemDataWidthMin = 256
+    lsuL1Enable = true
+    lsuL1Sets = 64
+    lsuL1Ways = 4
+    lsuL1RefillCount = 2
+    lsuL1WritebackCount = 2
+    lsuStoreBufferSlots = 2
+    lsuStoreBufferOps = 32
+    withLsuBypass = true
 
 //    lsuForkAt = 1
     divArea = false
-//    divRadix = 4
-//    decoders = 2
-//    lanes = 2
+    divRadix = 4
+    decoders = 2
+    lanes = 2
     withLateAlu = true
     withMul = true
     withDiv = true
-//    withDispatcherBuffer = true
-//    withAlignerBuffer = true
-//    withRvc = true
+    withDispatcherBuffer = true
+    withAlignerBuffer = true
+    withRvc = true
     withRva = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-    xlen = 64
+//    xlen = 64
 
 
     privParam.withDebug = true
@@ -211,8 +216,8 @@ class ParamSimple(){
     r += s"l${lanes}"
     r += s"disAt${dispatcherAt}"
     r += regFileSync.mux("rfs","rfa") + regFileDualPortRam.mux("Dp","Mem")
-    if (fetchL1Enable) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}Dwm$fetchL1MemDataWidthMin${fetchL1ReducedBank.mux("Rb", "")}" else r += s"fclF${fetchForkAt}"
-    if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}Sb${lsuStoreBufferSlots}w${lsuStoreBufferOps}" else r += s"lsuP${lsuPmaAt}F$lsuForkAt"
+    if (fetchL1Enable) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}Dwm$fetchMemDataWidth${fetchL1ReducedBank.mux("Rb", "")}" else r += s"fclF${fetchForkAt}dw${fetchMemDataWidth}"
+    if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}Sb${lsuStoreBufferSlots}w${lsuStoreBufferOps}dw${lsuMemDataWidth}rc${lsuL1RefillCount}wc${lsuL1WritebackCount}" else r += s"lsuP${lsuPmaAt}F${lsuForkAt}dw$lsuMemDataWidth"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += s"btbS${btbSets}H${btbHashWidth}${if(relaxedBtb)"R" else ""}"
     if (withRas) r += "ras"
@@ -239,6 +244,7 @@ class ParamSimple(){
     opt[Int]("lanes") action { (v, c) => lanes = v }
     opt[Int]("decoder-at") action { (v, c) => decoderAt = v }
     opt[Int]("dispatcher-at") action { (v, c) => dispatcherAt = v }
+    opt[Long]("reset-vector") unbounded() action { (v, c) => resetVector = v }
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
@@ -269,14 +275,19 @@ class ParamSimple(){
     opt[Int]("performance-counters") action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
     opt[Unit]("with-fetch-l1") action { (v, c) => fetchL1Enable = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
+    opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
+    opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Int]("fetch-l1-sets") action { (v, c) => fetchL1Sets = v }
     opt[Int]("fetch-l1-ways") action { (v, c) => fetchL1Ways = v }
-    opt[Int]("fetch-l1-mem-data-width-min") action { (v, c) => fetchL1MemDataWidthMin = v }
+    opt[Int]("fetch-l1-mem-data-width-min") action { (v, c) => fetchMemDataWidthMin = v }
     opt[Unit]("fetch-reduced-bank") action { (v, c) => fetchL1ReducedBank = true }
     opt[Int]("lsu-l1-sets") action { (v, c) => lsuL1Sets = v }
     opt[Int]("lsu-l1-ways") action { (v, c) => lsuL1Ways = v }
     opt[Int]("lsu-l1-store-buffer-slots") action { (v, c) => lsuStoreBufferSlots = v }
     opt[Int]("lsu-l1-store-buffer-ops") action { (v, c) => lsuStoreBufferOps = v }
+    opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
+    opt[Int]("lsu-l1-writeback-count") action { (v, c) => lsuL1WritebackCount = v }
+    opt[Int]("lsu-l1-mem-data-width-min") action { (v, c) => lsuMemDataWidthMin = v }
     opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
     opt[Unit]("with-iterative-shift") action { (v, c) => withIterativeShift = true }
     opt[Int]("div-radix") action { (v, c) => divRadix = v }
@@ -289,12 +300,10 @@ class ParamSimple(){
     opt[Int] ("debug-triggers") action { (v, c) => privParam.debugTriggers = v }
     opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
     opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true }
-
-
   }
 
-  def plugins() = pluginsArea.plugins
-  def pluginsArea() = new Area {
+  def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
+  def pluginsArea(hartId : Int = 0) = new Area {
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
@@ -347,7 +356,7 @@ class ParamSimple(){
     if(!fetchL1Enable) plugins += new fetch.FetchCachelessPlugin(
       forkAt = fetchForkAt,
       joinAt = fetchForkAt+1, //You can for instance allow the external memory to have more latency by changing this
-      wordWidth = 32*decoders,
+      wordWidth = fetchMemDataWidth,
       translationStorageParameter = MmuStorageParameter(
         levels = List(
           MmuStorageLevel(
@@ -378,7 +387,7 @@ class ParamSimple(){
       setCount = fetchL1Sets,
       wayCount = fetchL1Ways,
       fetchDataWidth = 32*decoders,
-      memDataWidth = 32*decoders max fetchL1MemDataWidthMin,
+      memDataWidth = fetchMemDataWidth,
       reducedBankWidth = fetchL1ReducedBank,
       hitsWithTranslationWays = true,
       tagsReadAsync = false,
@@ -491,7 +500,7 @@ class ParamSimple(){
         layer = early0,
         withRva = withRva,
         storeRs2At = withLateAlu.mux(2, 0),
-        storeBufferSlots =lsuStoreBufferSlots,
+        storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
         translationStorageParameter = MmuStorageParameter(
           levels = List(
@@ -520,9 +529,9 @@ class ParamSimple(){
       )
       plugins += new LsuL1Plugin(
         lane           = lane0,
-        memDataWidth   = xlen,
+        memDataWidth   = lsuMemDataWidth,
         cpuDataWidth   = xlen,
-        refillCount    = LsuL1RefillCount,
+        refillCount    = lsuL1RefillCount,
         writebackCount = lsuL1WritebackCount,
         setCount       = lsuL1Sets,
         wayCount       = lsuL1Ways,
@@ -558,7 +567,7 @@ class ParamSimple(){
     plugins += new CsrRamPlugin()
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(privParam, 0 until hartCount)
+    plugins += new PrivilegedPlugin(privParam, hartId until hartId+hartCount)
     plugins += new TrapPlugin(trapAt = 2)
     plugins += new EnvPlugin(early0, executeAt = 0)
     if(embeddedJtagTap || embeddedJtagInstruction) plugins += new EmbeddedRiscvJtag(
@@ -712,4 +721,15 @@ lane micro op spec
   - mayFlushUpTo
   - dontFlushFrom
  */
+
+
+
+object OptionToPython extends App{
+  new scopt.OptionParser[Unit]("lol"){
+    new ParamSimple().addOptions(this)
+    for(o <- options){
+      println(o.name)
+    }
+  }
+}
 

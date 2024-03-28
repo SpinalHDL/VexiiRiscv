@@ -77,6 +77,7 @@ class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
 
 /*
 src/openocd -f $VEXIIRISCV/src/main/tcl/openocd/vexiiriscv_sim.tcl
+openocd -f src/main/tcl/openocd/vexiiriscv_sim.tcl
 
 src/openocd -f $VEXIIRISCV/src/main/tcl/openocd/vexiiriscv_sim.tcl "sleep 5000" -c "reg pc 0x80000000" -c "exit" -d3
 

@@ -204,7 +204,7 @@ class DispatchPlugin(var dispatchAt : Int,
               decodeSpec += Masked(uop.uop.key) -> (v.from >= hazardUntilMax).mux(Masked.one, Masked.zero)
             }
           }
-          val skip = Symplify(c.ctx.uop, decodeSpec, 1).as(Bool()) //TODO verify with LsuPlugin store usage at execute id 2
+          val skip = Symplify(c.ctx.uop, decodeSpec, 1).as(Bool())
 
           for (spec <- bypassedSpecs.values) yield new Area {
             for (l <- spec.el.getLayers(); uop <- l.uops.values) {

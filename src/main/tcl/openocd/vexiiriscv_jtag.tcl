@@ -5,12 +5,9 @@
 set _CHIPNAME riscv
 set _TARGETNAME $_CHIPNAME.cpu
 set cpu_count 1
-if [info exists env(NAX_COUNT)]  {
-    set cpu_count $::env(NAX_COUNT)
+if [info exists env(HART_COUNT)]  {
+    set cpu_count $::env(HART_COUNT)
 }
-
-
-adapter speed 500
 
 jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0x10002FFF
 
