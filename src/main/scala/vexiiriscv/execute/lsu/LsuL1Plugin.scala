@@ -126,6 +126,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     awaitBuild()
 
+    assert(coherentCtrlAt <= ctrlAt) //To ensure that slots valids timings vs pipeline
+
     SETS.set(setCount)
     WAYS.set(wayCount)
     LINE_BYTES.set(lineSize)
@@ -185,7 +187,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val TAGS_HAZARD = Payload(Bits(wayCount bits))
     val NEED_UNIQUE = Payload(Bool())
 //    val DIRTY_BYPASS = Payload(Bits(wayCount bits))
-    val PROBE = Payload(Bool())
     val ALLOW_UNIQUE = Payload(Bool())
     val ALLOW_SHARED = Payload(Bool())
     val ALLOW_PROBE_DATA = Payload(Bool())
@@ -923,7 +924,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           writeback.push.address := (WAYS_TAGS(targetWay).address @@ MIXED_ADDRESS(lineRange)) << lineRange.low
           writeback.push.way := targetWay
           if (withCoherency) {
-            writeback.push.c.dirty := wasDirty
+            writeback.push.c.dirty := refillWayWasDirty
             writeback.push.c.fromUnique := WAYS_TAGS(targetWay).unique
             writeback.push.c.toShared := False
             writeback.push.c.toUnique := False
@@ -973,23 +974,23 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
       val SET_HAZARD = Payload(Bool())
       val rt0 = new pip.Ctrl(coherentReadAt) {
-        shared.lsuRead.cmd.valid := !lane.isFreezed()
-        shared.lsuRead.cmd.payload := PHYSICAL_ADDRESS(lineRange)
+        shared.cRead.cmd.valid := !lane.isFreezed()
+        shared.cRead.cmd.payload := PHYSICAL_ADDRESS(lineRange)
         val SHARED_BYPASS_VALID = insert(shared.write.valid && shared.write.address === PHYSICAL_ADDRESS(lineRange))
         val SHARED_BYPASS_VALUE = insert(shared.write.data)
 
         for (way <- ways) {
-          way.lsuRead.cmd.valid := down.isFiring
-          way.lsuRead.cmd.payload := PHYSICAL_ADDRESS(lineRange)
+          way.cRead.cmd.valid := down.isFiring
+          way.cRead.cmd.payload := PHYSICAL_ADDRESS(lineRange)
         }
 
-        SET_HAZARD := waysWrite.valid && waysWrite.address === shared.lsuRead.cmd.payload
+        SET_HAZARD := waysWrite.valid && waysWrite.address === shared.cRead.cmd.payload
       }
 
       val rt1 = new pip.Ctrl(coherentReadAt + 1 - tagsReadAsync.toInt) {
-        up(SHARED) := shared.lsuRead.rsp
+        up(SHARED) := shared.cRead.rsp
         for (wayId <- ways.indices) {
-          WAYS_TAGS(wayId) := ways(wayId).lsuRead.rsp
+          WAYS_TAGS(wayId) := ways(wayId).cRead.rsp
         }
         val plruBypass = !tagsReadAsync generate new Area {
           when(rt0.SHARED_BYPASS_VALID) {
@@ -1006,46 +1007,46 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         dst.bypass(SET_HAZARD) := dst.up(SET_HAZARD) || setHit
       }
 
-      val hs = new pip.Ctrl(hitsAt) {
+      val hs = new pip.Ctrl(coherentHitsAt) {
         for (wayId <- ways.indices) {
           WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === PHYSICAL_ADDRESS(tagRange)
         }
       }
-      val h = new pip.Ctrl(hitAt) {
+      val h = new pip.Ctrl(coherentHitAt) {
         WAYS_HIT := B(WAYS_HITS).orR
       }
 
       val onCtrl = new pip.Ctrl(coherentCtrlAt){
         val reservation = tagsWriteArbiter.create(1)
         val cHazardRange = 20 downto hazardCheckRange.low
-        val wbHazard = writeback.slots.map(s => s.valid && s.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)).orR
-        HAZARD := wbHazard || SET_HAZARD
-
-        ls.ctrl.coherencyHazard setWhen(isValid && WAYS_HIT && !HAZARD)
-
-
-        val waysReader =  this(WAYS_TAGS).reader(WAYS_HITS)
+        val waysReader = this (WAYS_TAGS).reader(WAYS_HITS)
         val hitUnique = waysReader(_.unique)
         val hitFault = waysReader(_.fault)
         val hitDirty = (SHARED.dirty & WAYS_HITS).orR
 
-        val askSomething = WAYS_HIT
-        val askWriteback = hitDirty && !ALLOW_UNIQUE && ALLOW_PROBE_DATA
-        val askTagUpdate = (!ALLOW_SHARED || !ALLOW_UNIQUE && hitUnique)
-        val canUpdateTag = !(askSomething && askTagUpdate && !reservation.win)
-        val canWriteback = !(askSomething && askWriteback && (!reservation.win || writeback.full))
-        val isUnique = (WAYS_TAGS.map(_.unique).asBits() & WAYS_HITS).orR
-        val locked = lockPort.valid && lockPort.address(refillRange) === PHYSICAL_ADDRESS(refillRange) && isUnique
-        val success = !HAZARD && canUpdateTag && canWriteback && !locked
+        val wbHazard = writeback.slots.map(s => s.valid && s.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)).orR
+        val locked = lockPort.valid && lockPort.address(refillRange) === PHYSICAL_ADDRESS(refillRange) && hitUnique
+        HAZARD := wbHazard || SET_HAZARD || locked
+
+        val askData = hitDirty && !ALLOW_UNIQUE && ALLOW_PROBE_DATA
+        val canData = reservation.win && !writeback.full
+        val askTagUpdate = !ALLOW_SHARED || (!ALLOW_UNIQUE && hitUnique)
+        val canTagUpdate = reservation.win
         val wayId = OHToUInt(WAYS_HITS)
 
 //        val didTagUpdate = RegNext(False) init (False)
 //        io.writebackBusy setWhen (didTagUpdate)
 
-        when(isValid && askSomething) {
-          when(askWriteback || askTagUpdate) {
+        val redo = False
+        when(isValid) {
+          when(HAZARD){
+            redo := True
+          } elsewhen(WAYS_HIT && (askData || askTagUpdate)){
+            ls.ctrl.coherencyHazard := True
             // reservation.takeIt() Not necessary as we ls.ctrl.coherencyHazard anyway
-            when(reservation.win){
+            when(askData && !canData || askTagUpdate && !canTagUpdate) {
+              redo := True
+            } otherwise {
               waysWrite.address := PHYSICAL_ADDRESS(lineRange)
               waysWrite.tag.loaded := ALLOW_SHARED || ALLOW_UNIQUE
               waysWrite.tag.fault := hitFault
@@ -1055,7 +1056,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
               writeback.push.address := PHYSICAL_ADDRESS
               writeback.push.way := wayId
               writeback.push.c.dirty := hitDirty
-              writeback.push.c.fromUnique := isUnique
+              writeback.push.c.fromUnique := hitUnique
               writeback.push.c.toShared := ALLOW_SHARED
               writeback.push.c.release := False
               writeback.push.c.probeId := PROBE_ID
@@ -1065,34 +1066,33 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
               shared.write.data.plru := SHARED.plru
               shared.write.data.dirty := SHARED.dirty & ~WAYS_HITS
 
-              when(success) {
 //                didTagUpdate := True
-                waysWrite.mask := WAYS_HITS
-                when(askWriteback) {
-                  writeback.push.valid := True
-                }
+              waysWrite.mask := WAYS_HITS
+              when(askData) {
+                writeback.push.valid := True
               }
             }
           }
         }
 
         import bus.probe.rsp
-        rsp.valid        := isValid && PROBE
+        rsp.valid        := isValid
         rsp.toShared     := WAYS_HIT && ALLOW_SHARED && !(ALLOW_UNIQUE && hitUnique)
         rsp.toUnique     := WAYS_HIT && ALLOW_UNIQUE && hitUnique
         rsp.fromUnique   := WAYS_HIT && hitUnique
         rsp.fromShared   := WAYS_HIT && !hitUnique
         rsp.address      := PHYSICAL_ADDRESS
         rsp.id           := PROBE_ID
-        rsp.redo         := !success
+        rsp.redo         := redo
         rsp.allowUnique  := ALLOW_UNIQUE
         rsp.allowShared  := ALLOW_SHARED
         rsp.getDirtyData := ALLOW_PROBE_DATA
-        rsp.writeback    := askWriteback
+        rsp.writeback    := askData
       }
     }
 
 
+    if(withCoherency) c.pip.build()
     tagsWriteArbiter.build()
     bankWriteArbiter.build()
 //    bankReadArbiter.build()

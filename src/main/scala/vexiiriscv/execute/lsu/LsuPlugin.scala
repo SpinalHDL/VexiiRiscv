@@ -480,7 +480,8 @@ class LsuPlugin(var layer : LaneLayer,
           scMiss := !reserved
         }
 
-        l1.lockPort.valid := False
+        l1.lockPort.valid := isValid && ATOMIC && !IO //TODO some persistence for LRSC ?
+        l1.lockPort.address := l1.PHYSICAL_ADDRESS
       }
 
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map { size =>

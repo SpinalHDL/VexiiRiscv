@@ -486,7 +486,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
 
         val rspStream = rsp.takeWhen(!rsp.redo).toStream
         assert(!rspStream.isStall)
-        val rspFifo = StreamFifo(rsp.payloadType, 16, latency = 1)
+        val rspFifo = StreamFifo(rsp.payloadType, 16, latency = 1) //TODO too big
         val rspFifoAlmostFull = RegNext(rspFifo.io.occupancy(log2Up(rspFifo.depth/2))) init(False)
         when(rspFifoAlmostFull){
           probe.cmd.valid := False
