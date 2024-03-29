@@ -479,6 +479,8 @@ class LsuPlugin(var layer : LaneLayer,
           }
           scMiss := !reserved
         }
+
+        l1.lockPort.valid := False
       }
 
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map { size =>
