@@ -1,0 +1,218 @@
+package vexiiriscv.tester
+
+
+
+
+import rvls.spinal.RvlsBackend
+import spinal.core._
+import spinal.core.sim._
+import spinal.core.fiber._
+import spinal.lib.{ResetCtrlFiber, StreamPipe}
+import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.tilelink
+import spinal.lib.bus.tilelink._
+import spinal.lib.bus.tilelink.fabric.{Node, SlaveBus}
+import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent}
+import spinal.lib.com.uart.TilelinkUartFiber
+import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
+import spinal.lib.cpu.riscv.RiscvHart
+import spinal.lib.cpu.riscv.debug.DebugModuleFiber
+import spinal.lib.eda.bench.Rtl
+import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
+import spinal.lib.misc.plic.TilelinkPlicFiber
+import spinal.lib.sim.SparseMemory
+import spinal.lib.system.tag.PMA
+import vexiiriscv.ParamSimple
+import vexiiriscv.execute.SrcPlugin
+import vexiiriscv.misc.TrapPlugin
+import vexiiriscv.soc.TilelinkVexiiRiscvFiber
+import vexiiriscv.soc.demo.DebugModuleSocFiber
+import vexiiriscv.soc.demo.MicroSocSim.args
+import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
+
+import java.io.File
+import scala.collection.mutable.ArrayBuffer
+
+class TlTbParam {
+  var withJtagTap = false
+  var withJtagInstruction = false
+  var vexiiParam = new ParamSimple()
+  var vexiiCount = 1
+
+  def withDebug = withJtagTap ||  withJtagInstruction
+}
+
+class TlTbTop(p : TlTbParam) extends Component {
+  import p._
+  val asyncReset = in Bool()
+  val cd100 = ClockDomain.external("cd100", withReset = false, frequency = FixedFrequency(100 MHz))
+
+  val debugResetCtrl = cd100(new ResetCtrlFiber().addAsyncReset(asyncReset, HIGH))
+  val mainResetCtrl  = cd100(new ResetCtrlFiber().addAsyncReset(debugResetCtrl))
+
+  val debug = p.withDebug generate debugResetCtrl.cd(new DebugModuleSocFiber(p.withJtagInstruction){
+    mainResetCtrl.addSyncRelaxedReset(dm.ndmreset, HIGH)
+  })
+
+
+  val main = mainResetCtrl.cd on new Area {
+    val vexiis = for (hartId <- 0 until vexiiCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
+
+    val perfBus, ioBus = fabric.Node()
+    for (vexii <- vexiis) {
+      perfBus << List(vexii.iBus, vexiiParam.fetchL1Enable.mux(vexii.lsuL1Bus, vexii.dBus))
+      if (vexiiParam.fetchL1Enable) ioBus << List(vexii.dBus)
+      if (p.withDebug) debug.bindHart(vexii)
+    }
+
+    val mBus = new SlaveBus(
+      M2sSupport(
+        transfers = M2sTransfers.all,
+        dataWidth = 512,
+        addressWidth = 32
+      ),
+      S2mParameters(
+        List.tabulate(vexiiParam.lsuL1Coherency.mux(4, 0))(i =>
+          S2mAgent(
+            name = null,
+            sinkId = SizeMapping(i * 8, 8),
+            emits = S2mTransfers(probe = SizeRange(0x40))
+          )
+        )
+      )
+    )
+    mBus.node at SizeMapping(0x80000000l, 0x80000000l) of perfBus
+    mBus.node.addTags(PMA.MAIN, PMA.EXECUTABLE)
+
+    // Handle all the IO / Peripheral things
+    val peripheral = new Area {
+      val busXlen = Node().forceDataWidth(vexiiParam.xlen)
+      busXlen << ioBus
+      busXlen.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
+
+      val bus32 = Node().forceDataWidth(32)
+      bus32 << busXlen
+
+      val clint = new TilelinkClintFiber()
+      clint.node at 0x10010000 of busXlen
+
+      val plic = new TilelinkPlicFiber()
+      plic.node at 0x10C00000 of bus32
+
+      val uart = new TilelinkUartFiber()
+      uart.node at 0x10001000 of bus32
+      plic.mapUpInterrupt(1, uart.interrupt)
+      uart.config.initConfig.baudrate = 1000000
+
+      val eBus = new SlaveBus(
+        M2sSupport(
+          transfers = M2sTransfers.allGetPut,
+          dataWidth = 32,
+          addressWidth = 12
+        ),
+        S2mParameters(Nil)
+      )
+      eBus.node at SizeMapping(0x10000000l, 0x1000) of ioBus
+
+      val vexiiBindings = vexiis.map( vexii => new Area {
+        val onPlic = vexii.bind(plic)
+        val onClint = vexii.bind(clint)
+      })
+    }
+  }
+}
+
+//object MicroSocGen extends App{
+//  val report = SpinalVerilog{
+//    val p = new TlTbParam()
+//    new MicroSoc(p)
+//  }
+//
+//  val h = report.toplevel.main.cpu.logic.core.host
+//  val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
+//  println(path.report)
+//}
+
+object TlTbSim extends App{
+  var traceKonata = false
+  var traceSpike = false
+  var withRvlsCheck = true
+  var elf: Elf = null
+  val bins = ArrayBuffer[(Long, File)]()
+  val sim = SimConfig
+  sim.withTimeSpec(1 ns, 1 ps)
+  val p = new TlTbParam()
+
+  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+    help("help").text("prints this usage text")
+    opt[String]("load-elf") action { (v, c) => elf = new Elf(new File(v), 32) }
+    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
+    opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
+    opt[Unit]("trace-spike") action { (v, c) => traceSpike = true }
+    opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true }
+    opt[Unit]("trace-all") action { (v, c) => traceKonata = true; sim.withFstWave; traceSpike = true }
+    sim.addOptions(this)
+    p.vexiiParam.addOptions(this)
+  }.parse(args, Unit).nonEmpty)
+
+
+  sim.compile(new TlTbTop(p)).doSimUntilVoid("test", seed = 42){dut =>
+    dut.cd100.forkStimulus()
+    dut.asyncReset #= true
+    delayed(100 ns)(dut.asyncReset #= false)
+
+    val uartBaudPeriod = hzToLong(1000000 Hz)
+    val uartTx = UartDecoder(
+      uartPin = dut.main.peripheral.uart.logic.uart.txd,
+      baudPeriod = uartBaudPeriod
+    )
+    val uartRx = UartEncoder(
+      uartPin = dut.main.peripheral.uart.logic.uart.rxd,
+      baudPeriod = uartBaudPeriod
+    )
+
+    val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath)).spinalSimFlusher(hzToLong(1000 Hz))
+    if(withRvlsCheck && traceSpike) rvls.debug()
+
+    val onVexiis = for((vexii, hartId) <- dut.main.vexiis.zipWithIndex) yield new Area{
+      val konata = traceKonata.option(
+        new vexiiriscv.test.konata.Backend(new File(currentTestPath, s"konata$hartId.log")).spinalSimFlusher(hzToLong(1000 Hz))
+      )
+      val probe = new VexiiRiscvProbe(
+        cpu = vexii.logic.core,
+        kb = konata
+      )
+      if (withRvlsCheck) probe.add(rvls)
+
+      probe.autoRegions()
+      if (p.withJtagTap) probe.checkLiveness = false
+    }
+
+    if(p.withJtagTap) {
+      spinal.lib.com.jtag.sim.JtagRemote(dut.debug.tap.jtag, hzToLong(dut.cd100.frequency.getValue)*4)
+    }
+
+
+    val mem = SparseMemory(seed = 0, randOffset = 0x80000000l)
+    val ma = new MemoryAgent(dut.main.mBus.node.bus, dut.mainResetCtrl.cd , seed = 0, randomProberFactor = 0.2f, memArg = Some(mem))(null)
+    ma.driver.driver.setFactor(0.2f)
+    val checker = if (ma.monitor.bus.p.withBCE) Checker(ma.monitor)
+
+    if(elf != null) {
+      elf.load(mem, 0x80000000l)
+      onVexiis.foreach(_.probe.backends.foreach(_.loadElf(0, elf.f)))
+    }
+
+    for ((offset, file) <- bins) {
+      mem.loadBin(offset-0x80000000l, file)
+      if (withRvlsCheck) rvls.loadBin(offset, file)
+//      tracerFile.foreach(_.loadBin(offset, file))
+    }
+
+    val peripheral = new PeripheralEmulator(0, null, null, null, null, cd = dut.mainResetCtrl.cd) {
+      override def getClintTime(): Long = 0
+      val onBus = bind(dut.main.peripheral.eBus.node.bus, dut.main.peripheral.eBus.node.clockDomain)
+    }
+  }
+}
+

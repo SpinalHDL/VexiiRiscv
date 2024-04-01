@@ -68,6 +68,20 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
           }
         }
       }
+      case p: LsuPlugin => p.ioRegions.foreach { region =>
+        backends.foreach { b =>
+          region.mapping match {
+            case SizeMapping(base, size) => b.addRegion(0, region.isIo.toInt, base.toLong, size.toLong)
+          }
+        }
+      }
+      case p: LsuL1Plugin => p.regions.foreach { region =>
+        backends.foreach { b =>
+          region.mapping match {
+            case SizeMapping(base, size) => b.addRegion(0, region.isIo.toInt, base.toLong, size.toLong)
+          }
+        }
+      }
       case _ =>
     }
   }
