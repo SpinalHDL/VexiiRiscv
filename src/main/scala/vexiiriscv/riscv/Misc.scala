@@ -8,5 +8,5 @@ object Riscv extends AreaObject {
   val XLEN = blocking[Int]
   val FLEN = blocking[Int]
   val LSLEN = blocking[Int]
-  val RVC, RVM, RVD, RVF, RVA = blocking[Boolean]
+  val RVC, RVM, RVD, RVF, RVA, RVZba, RVZbb, RVZbc, RVZbs = blocking[Boolean]
 }
