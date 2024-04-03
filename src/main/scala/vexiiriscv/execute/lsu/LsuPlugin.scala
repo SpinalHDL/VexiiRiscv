@@ -475,7 +475,7 @@ class LsuPlugin(var layer : LaneLayer,
           val capture = False
           val reserved = RegInit(False) setWhen(capture) //TODO punish on double reserve !
           val address = RegNextWhen(apply(l1.PHYSICAL_ADDRESS), capture)
-          when(!elp.isFreezed() && l1.SEL && !l1.ABORD && !IO) {
+          when(!elp.isFreezed() && l1.SEL && !l1.ABORD && !IO) { //TODO this is probably missing some case
             when(l1.STORE){
               reserved := False
             } elsewhen(apply(l1.ATOMIC)){

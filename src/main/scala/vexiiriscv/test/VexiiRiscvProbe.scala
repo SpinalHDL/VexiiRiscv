@@ -527,8 +527,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
   def checkCommits(): Unit = {
     val wfi = proxies.wfi.toInt
-    for(hart <- harts) {
-      if(((wfi >> hart.hartId) & 1) != 0){
+    for((hart, localHartId) <- harts.zipWithIndex) {
+      if(((wfi >> localHartId) & 1) != 0){
         hart.lastCommitAt = cycle
       }
       if (checkLiveness && hart.lastCommitAt + 4000l < cycle) {
