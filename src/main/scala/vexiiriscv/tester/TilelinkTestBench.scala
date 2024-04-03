@@ -207,7 +207,7 @@ object TlTbSim extends App{
 
 
     val mem = SparseMemory(seed = 0, randOffset = 0x80000000l)
-    val ma = new MemoryAgent(dut.main.mBus.node.bus, dut.mainResetCtrl.cd , seed = 0, randomProberFactor = 0.99f, memArg = Some(mem))(null)
+    val ma = new MemoryAgent(dut.main.mBus.node.bus, dut.mainResetCtrl.cd , seed = 0, randomProberFactor = 0.2f, memArg = Some(mem))(null)
     ma.driver.driver.setFactor(0.2f)
     val checker = if (ma.monitor.bus.p.withBCE) Checker(ma.monitor)
 
@@ -228,7 +228,7 @@ object TlTbSim extends App{
       val onBus = bind(dut.main.peripheral.eBus.node.bus, dut.main.peripheral.eBus.node.clockDomain)
     }
 
-    onVexiis.foreach(_.probe.autoRegions())
+    delayed(1)(onVexiis.foreach(_.probe.autoRegions()))
 
     onTrace {
       if (traceWave) enableSimWave()

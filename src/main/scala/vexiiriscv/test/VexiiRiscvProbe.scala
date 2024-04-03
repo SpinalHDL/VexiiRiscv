@@ -26,7 +26,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
 
-  val hartsIds = List(0)
+  val hartsIds = cpu.host.get[PrivilegedPlugin].get.hartIds
 
   def get[T](e : Element[T]) = cpu.database(e)
   val xlen = get(Riscv.XLEN)
@@ -64,25 +64,25 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       case p: LsuCachelessPlugin => p.regions.foreach { region =>
         backends.foreach { b =>
           region.mapping match {
-            case SizeMapping(base, size) => b.addRegion(0, region.isIo.toInt, base.toLong, size.toLong)
+            case SizeMapping(base, size) => for(hartId <- hartsIds) b.addRegion(hartId, region.isIo.toInt, base.toLong, size.toLong)
           }
         }
       }
       case p: LsuPlugin => p.ioRegions.foreach { region =>
         backends.foreach { b =>
           region.mapping match {
-            case SizeMapping(base, size) => b.addRegion(0, region.isIo.toInt, base.toLong, size.toLong)
+            case SizeMapping(base, size) => for(hartId <- hartsIds) b.addRegion(hartId, region.isIo.toInt, base.toLong, size.toLong)
           }
         }
       }
       case p: LsuL1Plugin => p.regions.foreach { region =>
         backends.foreach { b =>
           region.mapping match {
-            case SizeMapping(base, size) => b.addRegion(0, region.isIo.toInt, base.toLong, size.toLong)
+            case SizeMapping(base, size) => for(hartId <- hartsIds) b.addRegion(hartId, region.isIo.toInt, base.toLong, size.toLong)
           }
         }
       }
-      case _ =>
+      case p =>
     }
   }
 
@@ -391,7 +391,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       uop.loadValid = true
       uop.loadData = loadExecute.data.toLong
       uop.loadLqId = uopId & 0xF
-      backends.foreach(_.loadExecute(hartId, uop.loadLqId, address, bytes, uop.loadData))
+      backends.foreach(_.loadExecute(hart.hartId, uop.loadLqId, address, bytes, uop.loadData))
     }
 
     if (storeCommit.fire.toBoolean) {
@@ -456,7 +456,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         trace.size = 1 << trace.sizel2
         trace.io = bus.cmd.io.toBoolean
         trace.fromHart = bus.cmd.fromHart.toBoolean
-        trace.hartId = bus.cmd.hartId.toInt
+        trace.hartId = hartsIds(bus.cmd.hartId.toInt)
         val offset = trace.address.toInt & (trace.size - 1)
         trace.data = bus.cmd.data.toLong
         pendingIo += trace
