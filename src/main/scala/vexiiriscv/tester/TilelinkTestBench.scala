@@ -3,7 +3,8 @@ package vexiiriscv.tester
 
 
 
-import rvls.spinal.RvlsBackend
+import rvls.spinal.{FileBackend, RvlsBackend}
+import spinal.core
 import spinal.core._
 import spinal.core.sim._
 import spinal.core.fiber._
@@ -20,6 +21,7 @@ import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.eda.bench.Rtl
 import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
+import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.SparseMemory
 import spinal.lib.system.tag.PMA
 import vexiiriscv.ParamSimple
@@ -32,6 +34,7 @@ import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 
 import java.io.File
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Random
 
 class TlTbParam {
   var withJtagTap = false
@@ -136,8 +139,11 @@ class TlTbTop(p : TlTbParam) extends Component {
 object TlTbSim extends App{
   var traceKonata = false
   var traceSpike = false
+  var traceRvls = false
   var withRvlsCheck = true
-  var elf: Elf = null
+  var traceWave = false
+  var dualSim = false
+  var elf: File = null
   val bins = ArrayBuffer[(Long, File)]()
   val sim = SimConfig
   sim.withTimeSpec(1 ns, 1 ps)
@@ -145,21 +151,29 @@ object TlTbSim extends App{
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
-    opt[String]("load-elf") action { (v, c) => elf = new Elf(new File(v), 32) }
+    opt[String]("load-elf") action { (v, c) => elf = new File(v)}
     opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
     opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("trace-spike") action { (v, c) => traceSpike = true }
     opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true }
-    opt[Unit]("trace-all") action { (v, c) => traceKonata = true; sim.withFstWave; traceSpike = true }
-    sim.addOptions(this)
+    opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
+    opt[Unit]("trace-all") action { (v, c) => traceKonata = true; sim.withFstWave; traceSpike = true; traceRvls = true; traceWave = true }
+    opt[Int]("vexii-count") action {(v, c) => p.vexiiCount = v }
     p.vexiiParam.addOptions(this)
   }.parse(args, Unit).nonEmpty)
 
+  sim.withConfig(SpinalConfig(dontCareGenAsZero = true))
 
-  sim.compile(new TlTbTop(p)).doSimUntilVoid("test", seed = 42){dut =>
+  val compiled = sim.withFstWave.compile(new TlTbTop(p))
+
+
+  DualSimTracer.withCb(compiled, window = 4000000 * 10000l, seed = 42, dualSimEnable = dualSim){ (dut, onTrace) =>
+    val fr = getForbiddenRandom()
+    val fri = fr.get()
     dut.cd100.forkStimulus()
     dut.asyncReset #= true
     delayed(100 ns)(dut.asyncReset #= false)
+//    dut.cd100.onSamplings(assert(fri == fr.get()))
 
     val uartBaudPeriod = hzToLong(1000000 Hz)
     val uartTx = UartDecoder(
@@ -171,8 +185,8 @@ object TlTbSim extends App{
       baudPeriod = uartBaudPeriod
     )
 
+    val tracerFile = traceRvls.option(new FileBackend(new File(currentTestPath(), "tracer.log")))
     val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath)).spinalSimFlusher(hzToLong(1000 Hz))
-    if(withRvlsCheck && traceSpike) rvls.debug()
 
     val onVexiis = for((vexii, hartId) <- dut.main.vexiis.zipWithIndex) yield new Area{
       val konata = traceKonata.option(
@@ -182,9 +196,8 @@ object TlTbSim extends App{
         cpu = vexii.logic.core,
         kb = konata
       )
+      probe.trace = false
       if (withRvlsCheck) probe.add(rvls)
-
-      probe.autoRegions()
       if (p.withJtagTap) probe.checkLiveness = false
     }
 
@@ -194,25 +207,50 @@ object TlTbSim extends App{
 
 
     val mem = SparseMemory(seed = 0, randOffset = 0x80000000l)
-    val ma = new MemoryAgent(dut.main.mBus.node.bus, dut.mainResetCtrl.cd , seed = 0, randomProberFactor = 0.2f, memArg = Some(mem))(null)
+    val ma = new MemoryAgent(dut.main.mBus.node.bus, dut.mainResetCtrl.cd , seed = 0, randomProberFactor = 0.99f, memArg = Some(mem))(null)
     ma.driver.driver.setFactor(0.2f)
     val checker = if (ma.monitor.bus.p.withBCE) Checker(ma.monitor)
 
     if(elf != null) {
-      elf.load(mem, 0x80000000l)
-      onVexiis.foreach(_.probe.backends.foreach(_.loadElf(0, elf.f)))
+      val ef = new Elf(elf, 32)
+      ef.load(mem, 0x80000000l)
+      onVexiis.foreach(_.probe.backends.foreach(_.loadElf(0, elf)))
     }
 
     for ((offset, file) <- bins) {
       mem.loadBin(offset-0x80000000l, file)
       if (withRvlsCheck) rvls.loadBin(offset, file)
-//      tracerFile.foreach(_.loadBin(offset, file))
+      tracerFile.foreach(_.loadBin(offset, file))
     }
 
     val peripheral = new PeripheralEmulator(0, null, null, null, null, cd = dut.mainResetCtrl.cd) {
       override def getClintTime(): Long = 0
       val onBus = bind(dut.main.peripheral.eBus.node.bus, dut.main.peripheral.eBus.node.clockDomain)
     }
+
+    onVexiis.foreach(_.probe.autoRegions())
+
+    onTrace {
+      if (traceWave) enableSimWave()
+      if (withRvlsCheck && traceSpike) rvls.debug()
+      if (traceKonata) onVexiis.foreach(_.probe.trace = true)
+
+      tracerFile.foreach { f =>
+        f.spinalSimFlusher(1000 * 1000000)
+        f.spinalSimTime(1000 * 1000000)
+        onVexiis.foreach(_.probe.add(f))
+      }
+
+//      val r = probe.backends.reverse
+//      probe.backends.clear()
+//      probe.backends ++= r
+    }
   }
 }
 
+/*
+//TODO coherency
+- Check D$ coherent ack delay
+- punish double LR
+
+ */

@@ -67,10 +67,10 @@ class PmaLogic(port : PmaPort, regions : Seq[PmaRegion]) extends Area{
         val mask = opMask(opId, sizeId)
         val ok = op match {
           case PmaLoad => transfer match {
-            case t : M2sTransfers => t.get.contains(size)
+            case t: M2sTransfers => t.get.contains(size) || t.acquireB.contains(size)
           }
           case PmaStore => transfer match {
-            case t: M2sTransfers => t.putFull.contains(size)
+            case t: M2sTransfers => t.putFull.contains(size) || t.acquireT.contains(size)
           }
         }
         if(ok) argsOk += mask else argsKo += mask

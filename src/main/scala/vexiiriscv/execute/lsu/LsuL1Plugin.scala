@@ -1,7 +1,7 @@
 package vexiiriscv.execute.lsu
 
 import spinal.core._
-import spinal.core.fiber.Handle
+import spinal.core.fiber.{Handle, Retainer}
 import spinal.core.sim.SimDataPimper
 import spinal.lib._
 import spinal.lib.misc.Plru
@@ -121,6 +121,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     KeepAttribute(rsp) //Ensure that it will not use 2 cycle latency ram block
   }
 
+  val elaborationRetainer = Retainer()
+
   val logic = during setup new Area{
     import LsuL1._
 
@@ -132,6 +134,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     WAYS.set(wayCount)
     LINE_BYTES.set(lineSize)
     lockPort.set(LockPort())
+
+    elaborationRetainer.await()
 
     val postTranslationWidth = Global.PHYSICAL_WIDTH
 
@@ -197,6 +201,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val EVENT_WRITE_DATA = Payload(WRITE_DATA)
     val EVENT_WRITE_MASK = Payload(MASK)
     val BANKS_MUXES = Payload(Vec.fill(bankCount)(Bits(cpuWordWidth bits)))
+    val HAZARD_FORCED = Payload(Bool())
 
     val tagsWriteArbiter = new Reservation()
     val bankWriteArbiter = new Reservation()
@@ -805,12 +810,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val storeHazard = STORE && !bankWriteReservation.win
         val flushHazard = FLUSH && !reservation.win
         val coherencyHazard = False
+        if(!withCoherency) HAZARD_FORCED := False
 
         // A few explanation : Some things have to be accurate, while some other can be deflected / ignored, especially
         // when is need some shared ressources.
         // For instance, a load miss may not trigger a refill, a flush may hit but may not trigger a flush
         val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False)
-        HAZARD := hazardReg || loadHazard || refillHazard || storeHazard || flushHazard || coherencyHazard
+        HAZARD := hazardReg || loadHazard || refillHazard || storeHazard || flushHazard || coherencyHazard || HAZARD_FORCED
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
@@ -856,7 +862,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         WAIT_REFILL := refillHazards | refill.free.orMask(refill.full).andMask(!HAZARD && (askRefill || askUpgrade))
         WAIT_WRITEBACK := 0 // TODO  // writebackHazards | writeback.free.andMask(askRefill && refillWayNeedWriteback)
 
-        assert(!doUpgrade)
         assert(CountOne(Cat(askRefill, doUpgrade, doFlush)) < 2)
 
         when(SEL) {
@@ -961,20 +966,22 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     val c = withCoherency generate new Area{
       val pip = new StageCtrlPipeline()
+      val FORCE_HAZARD = Payload(Bool())
       val onInsert = new pip.InsertArea{
         import bus.probe.cmd
-        arbitrateFrom(cmd)
         PHYSICAL_ADDRESS := cmd.address
         PROBE_ID := cmd.id
         ALLOW_UNIQUE := cmd.allowUnique
         ALLOW_SHARED := cmd.allowShared
         ALLOW_PROBE_DATA := cmd.getDirtyData
+        FORCE_HAZARD := !initializer.done
+        arbitrateFrom(cmd)
       }
 
 
       val SET_HAZARD = Payload(Bool())
       val rt0 = new pip.Ctrl(coherentReadAt) {
-        shared.cRead.cmd.valid := !lane.isFreezed()
+        shared.cRead.cmd.valid   := down.isFiring
         shared.cRead.cmd.payload := PHYSICAL_ADDRESS(lineRange)
         val SHARED_BYPASS_VALID = insert(shared.write.valid && shared.write.address === PHYSICAL_ADDRESS(lineRange))
         val SHARED_BYPASS_VALUE = insert(shared.write.data)
@@ -1026,7 +1033,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val wbHazard = writeback.slots.map(s => s.valid && s.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)).orR
         val locked = lockPort.valid && lockPort.address(refillRange) === PHYSICAL_ADDRESS(refillRange) && hitUnique
-        HAZARD := wbHazard || SET_HAZARD || locked
+        HAZARD := wbHazard || SET_HAZARD || locked || FORCE_HAZARD
 
         val askData = hitDirty && !ALLOW_UNIQUE && ALLOW_PROBE_DATA
         val canData = reservation.win && !writeback.full
@@ -1037,16 +1044,21 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 //        val didTagUpdate = RegNext(False) init (False)
 //        io.writebackBusy setWhen (didTagUpdate)
 
+        val sideEffect = False
         val redo = False
         when(isValid) {
           when(HAZARD){
             redo := True
           } elsewhen(WAYS_HIT && (askData || askTagUpdate)){
+//            when(ls.ctrl(MIXED_ADDRESS)(lineRange) === PHYSICAL_ADDRESS(lineRange)) {
             ls.ctrl.coherencyHazard := True
+//            }
             // reservation.takeIt() Not necessary as we ls.ctrl.coherencyHazard anyway
             when(askData && !canData || askTagUpdate && !canTagUpdate) {
               redo := True
             } otherwise {
+              sideEffect := True
+
               waysWrite.address := PHYSICAL_ADDRESS(lineRange)
               waysWrite.tag.loaded := ALLOW_SHARED || ALLOW_UNIQUE
               waysWrite.tag.fault := hitFault
@@ -1088,6 +1100,16 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         rsp.allowShared  := ALLOW_SHARED
         rsp.getDirtyData := ALLOW_PROBE_DATA
         rsp.writeback    := askData
+
+        val lsuHazarder = for(eid <- wayReadAt to ctrlAt-1) yield new Area{
+          val dst = lane.execute(eid)
+          if(eid == wayReadAt) dst.up(HAZARD_FORCED) := False
+          val hit = sideEffect && dst(MIXED_ADDRESS)(lineRange) === PHYSICAL_ADDRESS(lineRange)
+          val persistance = (eid != wayReadAt).mux(RegInit(False) setWhen(hit) clearWhen(!lane.isFreezed()), False)
+          when(hit || persistance) {
+            dst.bypass(HAZARD_FORCED) := True
+          }
+        }
       }
     }
 

@@ -472,16 +472,20 @@ class LsuPlugin(var layer : LaneLayer,
 
         assert(Global.HART_COUNT.get == 1)
         val nc = new Area {
-          val reserved = RegInit(False)
-          when(!elp.isFreezed() && l1.SEL && !l1.ABORD) {
-            reserved setWhen (l1.ATOMIC && !l1.STORE)
-            reserved clearWhen (l1.STORE)
+          val capture = False
+          val reserved = RegInit(False) setWhen(capture) //TODO punish on double reserve !
+          val address = RegNextWhen(apply(l1.PHYSICAL_ADDRESS), capture)
+          when(!elp.isFreezed() && l1.SEL && !l1.ABORD && !IO) {
+            when(l1.STORE){
+              reserved := False
+            } elsewhen(apply(l1.ATOMIC)){
+              capture := True
+            }
           }
           scMiss := !reserved
+          l1.lockPort.valid := reserved
+          l1.lockPort.address := address
         }
-
-        l1.lockPort.valid := isValid && ATOMIC && !IO //TODO some persistence for LRSC ?
-        l1.lockPort.address := l1.PHYSICAL_ADDRESS
       }
 
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map { size =>
@@ -674,6 +678,12 @@ class LsuPlugin(var layer : LaneLayer,
       r.transfers match {
         case t: M2sTransfers if t.get.contains(LsuL1.LINE_BYTES) && (t.putFull.contains(LsuL1.LINE_BYTES) || t.putFull.none) =>
           l1Regions += r
+        case t: M2sTransfers if t.withBCE =>
+          l1Regions += r
+        case t: M2sTransfers => {
+          println(t)
+          ???
+        }
       }
     }
     val l1 = new PmaLogic(logic.onCtrl.pmaL1, l1Regions)
