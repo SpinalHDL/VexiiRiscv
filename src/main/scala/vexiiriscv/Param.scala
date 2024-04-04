@@ -140,7 +140,7 @@ class ParamSimple(){
     lsuL1Ways = 4
     lsuL1RefillCount = 2
     lsuL1WritebackCount = 2
-    lsuL1Coherency = true
+    lsuL1Coherency = false
     lsuStoreBufferSlots = 2
     lsuStoreBufferOps = 32
     withLsuBypass = true
@@ -148,13 +148,13 @@ class ParamSimple(){
 //    lsuForkAt = 1
     divArea = false
     divRadix = 4
-//    decoders = 2
-//    lanes = 2
-//    withLateAlu = true
+    decoders = 2
+    lanes = 2
+    withLateAlu = true
     withMul = true
     withDiv = true
-//    withDispatcherBuffer = true
-//    withAlignerBuffer = true
+    withDispatcherBuffer = true
+    withAlignerBuffer = true
 //    withRvc = true
     withRva = true
     withMmu = true

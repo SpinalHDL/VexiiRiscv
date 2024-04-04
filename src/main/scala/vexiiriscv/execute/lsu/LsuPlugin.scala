@@ -473,7 +473,7 @@ class LsuPlugin(var layer : LaneLayer,
         assert(Global.HART_COUNT.get == 1)
         val nc = new Area {
           val capture = False
-          val reserved = RegInit(False) setWhen(capture) //TODO punish on double reserve !
+          val reserved = RegInit(False) setWhen(capture) //TODO punish on double reserve ! Also, need to make the reservation die of age
           val address = RegNextWhen(apply(l1.PHYSICAL_ADDRESS), capture)
           when(!elp.isFreezed() && l1.SEL && !l1.ABORD && !IO) { //TODO this is probably missing some case
             when(l1.STORE){
@@ -524,7 +524,8 @@ class LsuPlugin(var layer : LaneLayer,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      when((pmaL1.rsp.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT)) {
+      val accessFault = (pmaL1.rsp.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT)
+      when(accessFault) {
         lsuTrap := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT

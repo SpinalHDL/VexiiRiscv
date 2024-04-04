@@ -231,7 +231,7 @@ object TlTbSim extends App{
     delayed(1)(onVexiis.foreach(_.probe.autoRegions()))
 
     onTrace {
-      if (traceWave) enableSimWave()
+      if (!traceWave) disableSimWave()
       if (withRvlsCheck && traceSpike) rvls.debug()
       if (traceKonata) onVexiis.foreach(_.probe.trace = true)
 
