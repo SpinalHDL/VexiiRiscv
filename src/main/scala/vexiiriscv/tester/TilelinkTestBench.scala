@@ -155,7 +155,8 @@ object TlTbSim extends App{
     opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
     opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("trace-spike") action { (v, c) => traceSpike = true }
-    opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true }
+    opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true}
+    opt[Unit]("trace-wave") action { (v, c) => traceWave = true }
     opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
     opt[Unit]("trace-all") action { (v, c) => traceKonata = true; sim.withFstWave; traceSpike = true; traceRvls = true; traceWave = true }
     opt[Int]("vexii-count") action {(v, c) => p.vexiiCount = v }
@@ -239,6 +240,15 @@ object TlTbSim extends App{
 //      sleep(window)
 //      simSuccess()
 //    }
+
+    fork{
+      while(true) {
+        enableSimWave()
+        sleep(1000 * 10000)
+        disableSimWave()
+        sleep(100000 * 10000)
+      }
+    }
 
     onTrace {
       if (!traceWave) disableSimWave()

@@ -306,8 +306,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           val data = Reg(Bool())
           val ackId = Reg(UInt(ackIdWidth bits))
           val ackValid = RegInit(False)
-          val ackTimer = Reg(UInt(2 bits))
-          val ackTimerFull = ackTimer === 3
+          val ackTimer = Reg(UInt(3 bits))
+          val ackTimerFull = ackTimer === 6
           val ackRequest = ackValid && ackTimerFull
           when(ackValid && !ackTimerFull) {
             ackTimer := ackTimer + U(!lane.isFreezed || ackUnlock)
@@ -1058,12 +1058,15 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             redo := True
           } elsewhen(WAYS_HIT && (askData || askTagUpdate)){
 //            when(ls.ctrl(MIXED_ADDRESS)(lineRange) === PHYSICAL_ADDRESS(lineRange)) {
-            ls.ctrl.coherencyHazard := True
 //            }
             // reservation.takeIt() Not necessary as we ls.ctrl.coherencyHazard anyway
             when(askData && !canData || askTagUpdate && !canTagUpdate) {
               redo := True
             } otherwise {
+//              when(ls.ctrl(MIXED_ADDRESS)(lineRange) === PHYSICAL_ADDRESS(lineRange)) {
+                ls.ctrl.coherencyHazard := True //Could be more pessimistic
+//              }
+
               sideEffect := True
 
               waysWrite.address := PHYSICAL_ADDRESS(lineRange)
