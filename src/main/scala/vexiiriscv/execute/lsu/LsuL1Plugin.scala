@@ -42,6 +42,7 @@ object LsuL1 extends AreaObject{
   val WRITEBACK_BUSY = blocking[Bits]
   val REFILL_BUSY = blocking[Bits]
   val lockPort = blocking[LockPort]
+  val ackUnlock = blocking[Bool]
 }
 
 //allows to lock a physical address into unique state
@@ -134,6 +135,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     WAYS.set(wayCount)
     LINE_BYTES.set(lineSize)
     lockPort.set(LockPort())
+    ackUnlock.set(False)
 
     elaborationRetainer.await()
 
@@ -304,11 +306,14 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           val data = Reg(Bool())
           val ackId = Reg(UInt(ackIdWidth bits))
           val ackValid = RegInit(False)
-          val ackTimer = Reg(UInt(2 bits)) init (0)
+          val ackTimer = Reg(UInt(2 bits))
           val ackTimerFull = ackTimer === 3
           val ackRequest = ackValid && ackTimerFull
           when(ackValid && !ackTimerFull) {
-            ackTimer := ackTimer + 1
+            ackTimer := ackTimer + U(!lane.isFreezed || ackUnlock)
+          }
+          when(!ackValid){
+            ackTimer := 0
           }
         }
 
@@ -321,10 +326,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val loadedDone = loadedCounter === loadedCounterMax
         loadedCounter := loadedCounter + U(loaded && !loadedDone && !lane.isFreezed()).resized
 
-        val fire = !lane.isFreezed() && loadedDone && withCoherency.mux(!c.ackValid, True)
+        val fire = !lane.isFreezed() && loadedDone
         valid clearWhen (fire)
 
-        val free = !valid
+        val free = !valid && withCoherency.mux(!c.ackValid, True)
 
         val victim = Reg(Bits(writebackCount bits))
         val writebackHazards = Reg(Bits(writebackCount bits)) //TODO Check it

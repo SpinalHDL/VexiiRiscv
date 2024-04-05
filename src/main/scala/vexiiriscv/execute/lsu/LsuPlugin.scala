@@ -431,6 +431,8 @@ class LsuPlugin(var layer : LaneLayer,
 
         val freezeIt = doIt && (tooEarly || !rsp.valid && allowIt)
         elp.freezeWhen(freezeIt)
+
+        l1.ackUnlock setWhen (cmdSent) //Ensure we don't create external lockup
       }
 
 
@@ -492,10 +494,10 @@ class LsuPlugin(var layer : LaneLayer,
           l1.lockPort.address := address
 
           val age = Reg(UInt(6 bits)) //Will make the reservation die after 2**(bits-1) cycles
-          when(age.msb){
+          when(age.msb || io.cmdSent){ // io.cmdSent ensure we do not create external deadlock
             reserved := False
           } otherwise {
-            age := age + 1
+            age := age + U(!elp.isFreezed())
           }
           when(capture){
             reserved  := !reserved //Toggling the reservation is a way to ensure that if the code is pulling value in a loop using lr => it doesn't always keep the reservation
