@@ -72,9 +72,10 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
     }
   }
 
-  def setCompletion(executeCtrlId: Int): Unit = {
+  def setCompletion(executeCtrlId: Int): this.type = {
     assert(completion.isEmpty)
     completion = Some(executeCtrlId + el.executeAt)
+    this
   }
 
   def mayFlushUpTo(executeCtrlId: Int): Unit = {

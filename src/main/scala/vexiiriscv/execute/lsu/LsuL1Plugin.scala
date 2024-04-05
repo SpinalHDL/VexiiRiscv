@@ -33,7 +33,7 @@ object LsuL1 extends AreaObject{
 
   // L1 ->
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
-  val HAZARD, MISS, MISS_UNIQUE, FAULT = Payload(Bool())
+  val HAZARD, MISS, MISS_UNIQUE, FAULT = Payload(Bool()) //Note that MISS, MISS_UNIQUE are doing forward progress
   val FLUSH_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
 
   val SETS = blocking[Int]
@@ -299,10 +299,18 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val way = Reg(UInt(log2Up(wayCount) bits))
         val cmdSent = Reg(Bool())
         val priority = Reg(Bits(refillCount - 1 bits)) //TODO Check it
-        val unique = withCoherency generate Reg(Bool())
-        val data = withCoherency generate Reg(Bool())
-        val ackId = withCoherency generate Reg(UInt(ackIdWidth bits))
-        val ackValid = withCoherency generate RegInit(False)
+        val c = withCoherency generate new Area {
+          val unique = Reg(Bool())
+          val data = Reg(Bool())
+          val ackId = Reg(UInt(ackIdWidth bits))
+          val ackValid = RegInit(False)
+          val ackTimer = Reg(UInt(2 bits)) init (0)
+          val ackTimerFull = ackTimer === 3
+          val ackRequest = ackValid && ackTimerFull
+          when(ackValid && !ackTimerFull) {
+            ackTimer := ackTimer + 1
+          }
+        }
 
         // This counter ensure that load/store which started before the end of the refill memory transfer but ended after the end
         // of the memory transfer do see that there was a refill ongoing and that they need to retry
@@ -313,7 +321,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val loadedDone = loadedCounter === loadedCounterMax
         loadedCounter := loadedCounter + U(loaded && !loadedDone && !lane.isFreezed()).resized
 
-        val fire = !lane.isFreezed() && loadedDone && withCoherency.mux(!ackValid, True)
+        val fire = !lane.isFreezed() && loadedDone && withCoherency.mux(!c.ackValid, True)
         valid clearWhen (fire)
 
         val free = !valid
@@ -354,8 +362,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           slot.dirty := push.dirty
           slot.writebackHazards := 0
           if (withCoherency) {
-            slot.unique := push.unique
-            slot.data := push.data
+            slot.c.unique := push.unique
+            slot.c.data := push.data
           }
         } otherwise {
           val freeFiltred = free.asBools.patch(slot.id, Nil, 1)
@@ -377,8 +385,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         bus.read.cmd.id := arbiter.sel
         bus.read.cmd.address := cmdAddress
         if (withCoherency) {
-          bus.read.cmd.unique := slots.map(_.unique).read(arbiter.sel)
-          bus.read.cmd.data := slots.map(_.data).read(arbiter.sel)
+          bus.read.cmd.unique := slots.map(_.c.unique).read(arbiter.sel)
+          bus.read.cmd.data := slots.map(_.c.data).read(arbiter.sel)
         }
         slots.onMask(arbiter.oh) { slot =>
           slot.writebackHazards := writebackHazards
@@ -390,7 +398,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val way = slots.map(_.way).read(bus.read.rsp.id)
         val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
         val rspWithData = withCoherency.mux(bus.read.rsp.withData, True)
-        if (withCoherency) assert(!(bus.read.rsp.valid && !rspWithData && slots.map(_.data).read(bus.read.rsp.id)), "Data cache asked for data but didn't recieved any :(")
+        if (withCoherency) assert(!(bus.read.rsp.valid && !rspWithData && slots.map(_.c.data).read(bus.read.rsp.id)), "Data cache asked for data but didn't recieved any :(")
 
         val bankWriteNotif = Bits(bankCount bits)
         val writeReservation = bankWriteArbiter.create(0)
@@ -450,8 +458,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             slots.onSel(bus.read.rsp.id) { s =>
               s.loadedSet := True
               if (withCoherency) {
-                s.ackValid := True
-                s.ackId := bus.read.rsp.ackId
+                s.c.ackValid := True
+                s.c.ackId := bus.read.rsp.ackId
               }
             }
           }
@@ -460,21 +468,15 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
       val ackSender = withCoherency generate new Area {
         val ack = cloneOf(bus.read.ack)
-        val requests = slots.map(_.ackValid)
+        val requests = slots.map(_.c.ackRequest)
         val oh = OHMasking.first(requests)
         ack.valid := requests.orR
-        ack.ackId := OhMux.or(oh, slots.map(_.ackId))
+        ack.ackId := OhMux.or(oh, slots.map(_.c.ackId))
         when(ack.ready) {
           refillCompletions.asBools.onMask(oh)(_ := True)
-          slots.onMask(oh)(_.ackValid := False)
+          slots.onMask(oh)(_.c.ackValid := False)
         }
-
-        val buffer = ack.m2sPipe()
-        val counter = Reg(UInt(2 bits)) init (0)
-        when(buffer.valid) {
-          counter := counter + 1
-        }
-        bus.read.ack << buffer.haltWhen(counter =/= 3) //Give some time for the CPU to do forward progress
+        bus.read.ack << ack.m2sPipe()
       }
 
 

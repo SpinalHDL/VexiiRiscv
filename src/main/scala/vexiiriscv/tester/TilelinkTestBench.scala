@@ -102,10 +102,10 @@ class TlTbTop(p : TlTbParam) extends Component {
       val plic = new TilelinkPlicFiber()
       plic.node at 0x10C00000 of bus32
 
-      val uart = new TilelinkUartFiber()
-      uart.node at 0x10001000 of bus32
-      plic.mapUpInterrupt(1, uart.interrupt)
-      uart.config.initConfig.baudrate = 1000000
+//      val uart = new TilelinkUartFiber()
+//      uart.node at 0x10001000 of bus32
+//      plic.mapUpInterrupt(1, uart.interrupt)
+//      uart.config.initConfig.baudrate = 1000000
 
       val eBus = new SlaveBus(
         M2sSupport(
@@ -167,7 +167,7 @@ object TlTbSim extends App{
   val compiled = sim.withFstWave.compile(new TlTbTop(p))
 
 
-  DualSimTracer.withCb(compiled, window = 4000000 * 10000l, seed = 42, dualSimEnable = dualSim){ (dut, onTrace) =>
+  DualSimTracer.withCb(compiled, window = 200000 * 10000l, seed = 42, dualSimEnable = dualSim){ (dut, onTrace) =>
     val fr = getForbiddenRandom()
     val fri = fr.get()
     dut.cd100.forkStimulus()
@@ -176,14 +176,14 @@ object TlTbSim extends App{
 //    dut.cd100.onSamplings(assert(fri == fr.get()))
 
     val uartBaudPeriod = hzToLong(1000000 Hz)
-    val uartTx = UartDecoder(
-      uartPin = dut.main.peripheral.uart.logic.uart.txd,
-      baudPeriod = uartBaudPeriod
-    )
-    val uartRx = UartEncoder(
-      uartPin = dut.main.peripheral.uart.logic.uart.rxd,
-      baudPeriod = uartBaudPeriod
-    )
+//    val uartTx = UartDecoder(
+//      uartPin = dut.main.peripheral.uart.logic.uart.txd,
+//      baudPeriod = uartBaudPeriod
+//    )
+//    val uartRx = UartEncoder(
+//      uartPin = dut.main.peripheral.uart.logic.uart.rxd,
+//      baudPeriod = uartBaudPeriod
+//    )
 
     val tracerFile = traceRvls.option(new FileBackend(new File(currentTestPath(), "tracer.log")))
     val rvls = withRvlsCheck generate new RvlsBackend(new File(currentTestPath)).spinalSimFlusher(hzToLong(1000 Hz))
@@ -208,7 +208,7 @@ object TlTbSim extends App{
 
     val mem = SparseMemory(seed = 0, randOffset = 0x80000000l)
     val ma = new MemoryAgent(dut.main.mBus.node.bus, dut.mainResetCtrl.cd , seed = 0, randomProberFactor = 0.2f, memArg = Some(mem))(null)
-    ma.driver.driver.setFactor(0.2f)
+    ma.driver.driver.setFactor(0.8f)
     val checker = if (ma.monitor.bus.p.withBCE) Checker(ma.monitor)
 
     if(elf != null) {
@@ -229,6 +229,16 @@ object TlTbSim extends App{
     }
 
     delayed(1)(onVexiis.foreach(_.probe.autoRegions()))
+
+
+//    dut.cd100.forkSimSpeedPrinter(10)
+//    fork{
+//      val window = 15l*100000*10000
+//      sleep(253002270000l-window)
+//      enableSimWave()
+//      sleep(window)
+//      simSuccess()
+//    }
 
     onTrace {
       if (!traceWave) disableSimWave()

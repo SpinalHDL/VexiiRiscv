@@ -113,8 +113,11 @@ class LsuPlugin(var layer : LaneLayer,
       op.addRsSpec(RS2, storeRs2At)
     }
 
-    layer.add(Rvi.FENCE) //TODO
-    layer(Rvi.FENCE).setCompletion(ctrlAt)
+    val FENCE = Payload(Bool())
+    frontend.uopList.foreach(layer(_).addDecoding(FENCE -> False))
+    layer.add(Rvi.FENCE).setCompletion(ctrlAt).addDecoding(SEL -> True, LOAD -> False, STORE -> False, ATOMIC -> False, FLOAT -> False, FENCE -> True)
+    elp.setDecodingDefault(FENCE, False)
+
 
     for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(ctrlAt)
 
@@ -361,6 +364,7 @@ class LsuPlugin(var layer : LaneLayer,
       FROM_LSU := !(arbiter.io.output.fromFlush || arbiter.io.output.fromAccess || arbiter.io.output.fromStoreBuffer)
       if(withStoreBuffer) SB_PTR := storeBuffer.pop.ptr
       val SB_DATA = withStoreBuffer generate insert(storeBuffer.pop.op.data)
+      val STORE_BUFFER_EMPTY = withStoreBuffer generate insert(storeBuffer.empty)
     }
 
     val tpk = onAddress0.translationPort.keys
@@ -395,7 +399,8 @@ class LsuPlugin(var layer : LaneLayer,
       pmaIo.cmd.size := l1.SIZE.asBits
       pmaIo.cmd.op(0) := l1.STORE
 
-      val IO = insert(pmaL1.rsp.fault && !pmaIo.rsp.fault)
+      val withAddress = !FENCE
+      val IO = insert(pmaL1.rsp.fault && !pmaIo.rsp.fault && withAddress)
 
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
       val scMiss = Bool()
@@ -473,9 +478,9 @@ class LsuPlugin(var layer : LaneLayer,
         assert(Global.HART_COUNT.get == 1)
         val nc = new Area {
           val capture = False
-          val reserved = RegInit(False) setWhen(capture) //TODO punish on double reserve ! Also, need to make the reservation die of age
-          val address = RegNextWhen(apply(l1.PHYSICAL_ADDRESS), capture)
-          when(!elp.isFreezed() && l1.SEL && !l1.ABORD && !IO) { //TODO this is probably missing some case
+          val reserved = RegInit(False)
+          val address = Reg(l1.PHYSICAL_ADDRESS)
+          when(!elp.isFreezed() && isValid && FROM_LSU && l1.SEL && !lsuTrap && !IO) {
             when(l1.STORE){
               reserved := False
             } elsewhen(apply(l1.ATOMIC)){
@@ -485,6 +490,18 @@ class LsuPlugin(var layer : LaneLayer,
           scMiss := !reserved
           l1.lockPort.valid := reserved
           l1.lockPort.address := address
+
+          val age = Reg(UInt(6 bits)) //Will make the reservation die after 2**(bits-1) cycles
+          when(age.msb){
+            reserved := False
+          } otherwise {
+            age := age + 1
+          }
+          when(capture){
+            reserved  := !reserved //Toggling the reservation is a way to ensure that if the code is pulling value in a loop using lr => it doesn't always keep the reservation
+            address :=  l1.PHYSICAL_ADDRESS
+            age := 0
+          }
         }
       }
 
@@ -592,6 +609,19 @@ class LsuPlugin(var layer : LaneLayer,
         storeBuffer.push.op.size := LsuL1.SIZE
       }
 
+      when(!withAddress){
+        lsuTrap := False
+      }
+
+      val fenceTrap = withStoreBuffer generate new Area{
+        val valid = (ATOMIC || FENCE) && (!storeBuffer.empty || !onAddress0.STORE_BUFFER_EMPTY)
+        when(valid) {
+          lsuTrap := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.REDO
+        }
+      }
+
       when(isValid && SEL) {
         val t = when(lsuTrap) {
           trapPort.valid := True
@@ -609,10 +639,20 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || preCtrl.MISS_ALIGNED || pmaFault || withStoreBuffer.mux(wb.loadHazard, False))
+//      val fromLsuAbord = FROM_LSU && (!isValid || isCancel || mmuFailure)
+//      val generalAbord = l1.HAZARD || l1.FAULT || !l1.FLUSH && pmaL1.rsp.fault || preCtrl.MISS_ALIGNED || withStoreBuffer.mux(wb.loadHazard, False)
+//      l1.ABORD := generalAbord || fromLsuAbord
+////      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || preCtrl.MISS_ALIGNED || pmaFault || withStoreBuffer.mux(wb.loadHazard, False))
+//
+//      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT
+
+
+      val mmuFailure = mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO
+      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuFailure || preCtrl.MISS_ALIGNED || pmaL1.rsp.fault || withStoreBuffer.mux(wb.loadHazard || fenceTrap.valid, False))
       l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT
 
-      if(withStoreBuffer) l1.ABORD setWhen(FROM_WB && wb.selfHazard)
+      if (withStoreBuffer) l1.ABORD setWhen (FROM_WB && wb.selfHazard)
+
 
       when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){
         flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
