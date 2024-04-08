@@ -54,7 +54,7 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
     val withCoherency = vexiiParam.lsuL1Coherency
     val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
     for (vexii <- vexiis) {
-      vexii.dBus.setDownConnection(a = StreamPipe.NONE, d = StreamPipe.M2S, b = StreamPipe.NONE, c = StreamPipe.NONE, e = StreamPipe.NONE)
+      vexii.dBus.setDownConnection(a = StreamPipe.NONE, d = StreamPipe.M2S, b = StreamPipe.NONE, c = StreamPipe.FULL, e = StreamPipe.NONE)
 //      nax.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S, b = StreamPipe.HALF, c = StreamPipe.FULL, e = StreamPipe.HALF)
 //      nax.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
 //      nax.pBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
