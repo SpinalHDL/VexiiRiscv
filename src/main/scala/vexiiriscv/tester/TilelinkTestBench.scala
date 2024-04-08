@@ -12,6 +12,7 @@ import spinal.lib.{ResetCtrlFiber, StreamPipe}
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink._
+import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber}
 import spinal.lib.bus.tilelink.fabric.{Node, SlaveBus}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent}
 import spinal.lib.com.uart.TilelinkUartFiber
@@ -41,6 +42,10 @@ class TlTbParam {
   var withJtagInstruction = false
   var vexiiParam = new ParamSimple()
   var vexiiCount = 1
+  var l2Bytes = 128*1024
+  var l2Ways = 4
+  var l2Enable = false
+  var hubEnable = false
 
   def withDebug = withJtagTap ||  withJtagInstruction
 }
@@ -59,14 +64,40 @@ class TlTbTop(p : TlTbParam) extends Component {
 
 
   val main = mainResetCtrl.cd on new Area {
+    val withCoherency = vexiiParam.lsuL1Coherency
+    val mainDataWidth = vexiiParam.memDataWidth
+
     val vexiis = for (hartId <- 0 until vexiiCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
 
-    val perfBus, ioBus = fabric.Node()
+    val cBus, ioBus = fabric.Node()
     for (vexii <- vexiis) {
-      perfBus << List(vexii.iBus, vexiiParam.fetchL1Enable.mux(vexii.lsuL1Bus, vexii.dBus))
+      cBus << List(vexii.iBus, vexiiParam.fetchL1Enable.mux(vexii.lsuL1Bus, vexii.dBus))
       if (vexiiParam.fetchL1Enable) ioBus << List(vexii.dBus)
       if (p.withDebug) debug.bindHart(vexii)
     }
+
+    var perfBus: Node = null
+    val l2 = (perfBus == null && l2Enable) generate new Area {
+      val cache = new CacheFiber()
+      cache.parameter.cacheWays = l2Ways
+      cache.parameter.cacheBytes = l2Bytes
+      cache.up << cBus
+      cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
+      cache.down.setDownConnection(d = StreamPipe.S2M)
+      cache.down.forceDataWidth(mainDataWidth)
+      perfBus = cache.down
+    }
+
+    val hub = (perfBus == null && hubEnable) generate new Area {
+      val hub = new HubFiber()
+      hub.up << cBus
+      hub.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL)
+      hub.down.forceDataWidth(mainDataWidth)
+      perfBus = hub.down
+    }
+
+    val mBusCoherent = perfBus == null
+    if(mBusCoherent) perfBus = cBus
 
     val mBus = new SlaveBus(
       M2sSupport(
@@ -75,7 +106,7 @@ class TlTbTop(p : TlTbParam) extends Component {
         addressWidth = 32
       ),
       S2mParameters(
-        List.tabulate(vexiiParam.lsuL1Coherency.mux(4, 0))(i =>
+        List.tabulate(mBusCoherent.mux(4, 0))(i =>
           S2mAgent(
             name = null,
             sinkId = SizeMapping(i * 8, 8),
@@ -160,6 +191,11 @@ object TlTbSim extends App{
     opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
     opt[Unit]("trace-all") action { (v, c) => traceKonata = true; sim.withFstWave; traceSpike = true; traceRvls = true; traceWave = true }
     opt[Int]("vexii-count") action {(v, c) => p.vexiiCount = v }
+    opt[Int]("l2-bytes") action {(v, c) => p.l2Bytes = v }
+    opt[Int]("l2-ways") action {(v, c) => p.l2Ways = v }
+    opt[Unit]("l2-enable") action { (v, c) => p.l2Enable = true }
+    opt[Unit]("hub-enable") action { (v, c) => p.hubEnable = true }
+
     p.vexiiParam.addOptions(this)
   }.parse(args, Unit).nonEmpty)
 

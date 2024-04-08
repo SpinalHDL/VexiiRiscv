@@ -1,7 +1,7 @@
 package vexiiriscv.execute.lsu
 
 import spinal.core._
-import spinal.core.fiber.{Handle, Retainer}
+import spinal.core.fiber.{Handle, Retainer, soon}
 import spinal.core.sim.SimDataPimper
 import spinal.lib._
 import spinal.lib.misc.Plru
@@ -136,6 +136,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     LINE_BYTES.set(lineSize)
     lockPort.set(LockPort())
     ackUnlock.set(False)
+    WRITEBACK_BUSY.soon()
 
     elaborationRetainer.await()
 

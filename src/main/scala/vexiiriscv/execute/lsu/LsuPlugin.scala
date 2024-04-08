@@ -56,6 +56,15 @@ class LsuPlugin(var layer : LaneLayer,
 
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
 
+  def busParam = LsuCachelessBusParam(
+    addressWidth = Global.PHYSICAL_WIDTH,
+    dataWidth = Riscv.LSLEN,
+    hartIdWidth = Global.HART_ID_WIDTH,
+    uopIdWidth = Decode.UOP_ID_WIDTH,
+    withAmo = false, //TODO
+    pendingMax = 1
+  )
+
   val tagWidth = 6
   val SB_PTR = Payload(UInt(log2Up(storeBufferOps) + 1 bits))
   case class StoreBufferPush() extends Bundle {
@@ -128,14 +137,6 @@ class LsuPlugin(var layer : LaneLayer,
       SIZE := Decode.UOP(13 downto 12).asUInt
     }
 
-    val busParam = LsuCachelessBusParam(
-      addressWidth = Global.PHYSICAL_WIDTH,
-      dataWidth = Riscv.LSLEN,
-      hartIdWidth = Global.HART_ID_WIDTH,
-      uopIdWidth = Decode.UOP_ID_WIDTH,
-      withAmo = false, //TODO
-      pendingMax = 1
-    )
     val bus = master(LsuCachelessBus(busParam)).simPublic()
 
     accessRetainer.await()
