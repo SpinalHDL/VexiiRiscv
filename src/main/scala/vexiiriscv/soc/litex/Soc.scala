@@ -66,33 +66,36 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
       if(vexiiParam.fetchL1Enable) ioBus << List(vexii.dBus)
     }
 
-//    val dma = c.withDma generate new Area {
-//      val bus = slave(
-//        Axi4(
-//          Axi4Config(
-//            addressWidth = 32,
-//            dataWidth = mainDataWidth,
-//            idWidth = 4
-//          )
-//        )
-//      )
-//
-//      val bridge = new Axi4ToTilelinkFiber(64, 4)
-//      bridge.up load bus.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.FULL, b = StreamPipe.HALF, r = StreamPipe.FULL)
-//      bridge.down.setDownConnection(a = StreamPipe.FULL)
-//      memFilter.up << bridge.down
-//
-//      //As litex reset will release before our one, we need to ensure that we don't eat a transaction
-//      Fiber build {
-//        bridge.read.get
-//        bridge.write.get
-//        when(ClockDomain.current.isResetActive){
-//          bus.ar.ready := False
-//          bus.aw.ready := False
-//          bus.w.ready := False
-//        }
-//      }
-//    }
+    val dma = c.withDma generate new Area {
+      val bus = slave(
+        Axi4(
+          Axi4Config(
+            addressWidth = 32,
+            dataWidth = mainDataWidth,
+            idWidth = 4
+          )
+        )
+      )
+
+      val bridge = new Axi4ToTilelinkFiber(64, 4)
+      bridge.up load bus.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.FULL, b = StreamPipe.HALF, r = StreamPipe.FULL)
+      bridge.down.setDownConnection(a = StreamPipe.FULL)
+
+      val filter = new fabric.TransferFilter()
+      filter.up << bridge.down
+      cBus << filter.down
+
+      //As litex reset will release before our one, we need to ensure that we don't eat a transaction
+      Fiber build {
+        bridge.read.get
+        bridge.write.get
+        when(ClockDomain.current.isResetActive){
+          bus.ar.ready := False
+          bus.aw.ready := False
+          bus.w.ready := False
+        }
+      }
+    }
 
     assert(!(!withCoherency && withL2))
 
@@ -209,10 +212,9 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 //    }
 
     val patcher = Fiber build new Area {
-//      if (c.withDma) {
-//        Axi4SpecRenamer(dma.bus)
-//        dma.bridge.down.bus
-//      }
+      if (c.withDma) {
+        Axi4SpecRenamer(dma.bus)
+      }
       if (withMem) Axi4SpecRenamer(mBus.get)
       AxiLite4SpecRenamer(pBus.get)
 
@@ -321,6 +323,7 @@ object PythonArgsGen extends App{
          |VexiiRiscv.xlen = $xlen
          |VexiiRiscv.with_rvc = ${withRvc.toInt}
          |VexiiRiscv.with_rvm = ${(withMul && withDiv).toInt}
+         |VexiiRiscv.internal_bus_width = ${memDataWidth}
          |""".stripMargin)
     close()
   }
@@ -403,7 +406,9 @@ make O=build/full  BR2_EXTERNAL=../config litex_vexriscv_full_defconfig
 (cd build/full/ && make -j20)
 
 litex_sim --cpu-type=vexiiriscv  --with-sdram --sdram-data-width=64 --bus-standard axi-lite --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2  --with-jtag-tap --sdram-init /media/data2/proj/vexii/litex/buildroot/rv32ima/images/boot.json
-python3 -m litex_boards.targets.digilent_nexys_video  --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-spi-sdcard --with-ethernet  --build --load
+python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-spi-sdcard --with-ethernet  --build --load
+python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --build
+
 --lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32
 
 export HART_COUNT=2
