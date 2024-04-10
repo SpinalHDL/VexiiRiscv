@@ -415,7 +415,7 @@ python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_n
 --lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32
 
 export HART_COUNT=2
-/media/data2/proj/upstream/openocd_riscv_up/src/openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl
+/media/data2/proj/upstream/openocd_riscv_up/src/openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl -f dev.tcl
 
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/Image 0x40000000
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/linux_2c.dtb 0x40ef0000

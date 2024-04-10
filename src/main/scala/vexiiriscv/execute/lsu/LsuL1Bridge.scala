@@ -9,7 +9,7 @@ import vexiiriscv.execute.LsuL1Bus
 
 
 
-class LsuL1TileLinkPlugin(node : bus.tilelink.fabric.Node) extends FiberPlugin {
+class LsuL1TileLinkPlugin(node : bus.tilelink.fabric.Node, probeInflightMax : Int = 2) extends FiberPlugin {
   val logic = during setup new Area{
     val lsucp = host[LsuL1Plugin]
     val l1Lock = lsucp.elaborationRetainer()
@@ -29,7 +29,7 @@ class LsuL1TileLinkPlugin(node : bus.tilelink.fabric.Node) extends FiberPlugin {
     l1Lock.release()
 
     lsucp.logic.bus.setAsDirectionLess()
-    val down = master(lsucp.logic.bus.toTilelink())
+    val down = master(lsucp.logic.bus.toTilelink(probeInflightMax))
     node.bus.component.rework(node.bus << down)
   }
 }
