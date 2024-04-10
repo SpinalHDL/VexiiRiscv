@@ -161,8 +161,11 @@ class BtbPlugin(var sets : Int,
     val readCmd = new fpp.Fetch(readAt){
       readPort.cmd.valid := isReady
       readPort.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
-      val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
+//      val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
 //      haltWhen(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload) //That create a too long combinatorial path
+
+      val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
+      haltWhen(onLearn.port.valid) //Omit readPort.cmd.payload to avoid creating long path. Also, this is inline with a single port RW BTB memory.
     }
 
 
@@ -177,8 +180,8 @@ class BtbPlugin(var sets : Int,
       }
       val hitCalc = new fpp.Fetch(hitAt) {
         val HIT = insert(readRsp.ENTRY.hash === getHash(WORD_PC) && getSlice(chunkId, readRsp.ENTRY.sliceLow) >= WORD_PC(SLICE_RANGE.get))
-        HIT clearWhen(readCmd.HAZARDS(chunkId))
-//        assert(!(isValid && readCmd.HAZARDS(chunkId)))
+//        HIT clearWhen(readCmd.HAZARDS(chunkId))
+        assert(!(isValid && readCmd.HAZARDS(chunkId)))
       }
       val predict = new fpp.Fetch(jumpAt) {
         def pred = withCondPrediction.mux(
