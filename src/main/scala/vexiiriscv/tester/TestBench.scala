@@ -478,19 +478,19 @@ class TestOptions{
       }
     })
 
-    if(jtagRemote) dut.host.services.foreach{
+    dut.host.services.foreach{
       case p : EmbeddedRiscvJtag => {
         p.debugCd.resetSim #= true
-        delayed(20){
-          p.debugCd.resetSim #= false
+        delayed(20) (p.debugCd.resetSim #= false)
+        if (jtagRemote) {
+          CheckSocketPort.reserve(JtagRemote.defaultPort)
+          onSimEnd(CheckSocketPort.release(JtagRemote.defaultPort))
+          while (!CheckSocketPort(JtagRemote.defaultPort)) {
+            Thread.sleep(100)
+          }
+          JtagRemote(p.logic.jtag, 20)
+          probe.checkLiveness = false
         }
-        CheckSocketPort.reserve(JtagRemote.defaultPort)
-        onSimEnd(CheckSocketPort.release(JtagRemote.defaultPort))
-        while(!CheckSocketPort(JtagRemote.defaultPort)){
-          Thread.sleep(100)
-        }
-        JtagRemote(p.logic.jtag, 20)
-        probe.checkLiveness = false
       }
       case _ =>
     }
