@@ -25,6 +25,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   var checkLiveness = true
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
+  val autoStoreBroadcast = cpu.host.get[LsuCachelessPlugin].nonEmpty
 
   val hartsIds = cpu.host.get[PrivilegedPlugin].get.hartIds
 
@@ -177,7 +178,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         if (get(Riscv.RVF)) isa += "F"
         if (get(Riscv.RVD)) isa += "D"
         if (get(Riscv.RVC)) isa += "C"
-        tracer.newCpuMemoryView(hartId, 16, 16)
+        tracer.newCpuMemoryView(hartId, 16, 1 << Decode.STORE_ID_WIDTH)
         tracer.newCpu(hartId, isa, csrp, 63, hartId)
         val pc = if(xlen == 32) 0x80000000l else 0x80000000l
         tracer.setPc(hartId, pc)
@@ -403,7 +404,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       val bytes = 1 << storeCommit.size.toInt
       uop.storeValid = true
       uop.storeData = storeCommit.data.toLong
-      uop.storeSqId = uopId & 0xF
+      uop.storeSqId = storeCommit.storeId.toInt
       uop.lsuAddress = address
       uop.lsuLen = bytes
     }
@@ -572,8 +573,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
               if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
             }
             if(uop.commit) backends.foreach(_.commit(hartId, decode.pc))
-            if (uop.storeValid) {
-              backends.foreach(_.storeBroadcast(hartId, uopId & 0xF))
+            if (autoStoreBroadcast && uop.storeValid) {
+              backends.foreach(_.storeBroadcast(hartId, uop.storeSqId))
             }
             if(!uop.trap) commitsCallbacks.foreach(_(hartId, decode.pc))
           }
@@ -581,6 +582,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         }
         hart.microOpRetirePtr = (hart.microOpRetirePtr + 1) & microOpIdMask
       }
+    }
+  }
+
+  def checkBroadcasts(): Unit = {
+    import proxies.storeBroadcast
+    if (storeBroadcast.fire.toBoolean) {
+      val hartId = storeBroadcast.hartId.toInt
+      val hart = harts(hartId)
+      val sqId = storeBroadcast.storeId.toInt
+      backends.foreach(_.storeBroadcast(hart.hartId, sqId))
     }
   }
 
@@ -595,6 +606,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     if(enabled) {
       checkPipelines()
       checkCommits()
+      if(!autoStoreBroadcast) checkBroadcasts()
       checkTraps()
     }
     cycle += 1l

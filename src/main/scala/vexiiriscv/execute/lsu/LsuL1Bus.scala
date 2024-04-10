@@ -459,7 +459,6 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
       }
 
       val onB = new Area{
-        assert(!(bus.b.valid && bus.b.opcode === Opcode.B.PROBE_PERM))
         val haltIt = False
         probe.cmd.valid        := bus.b.valid
         probe.cmd.address      := bus.b.address

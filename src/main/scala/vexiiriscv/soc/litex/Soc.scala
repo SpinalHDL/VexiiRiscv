@@ -80,11 +80,13 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 
       val bridge = new Axi4ToTilelinkFiber(64, 4)
       bridge.up load bus.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.FULL, b = StreamPipe.HALF, r = StreamPipe.FULL)
-      bridge.down.setDownConnection(a = StreamPipe.FULL)
 
       val filter = new fabric.TransferFilter()
       filter.up << bridge.down
       cBus << filter.down
+      filter.down.setDownConnection(a = StreamPipe.FULL)
+
+
 
       //As litex reset will release before our one, we need to ensure that we don't eat a transaction
       Fiber build {

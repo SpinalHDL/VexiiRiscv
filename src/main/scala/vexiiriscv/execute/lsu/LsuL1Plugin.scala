@@ -28,8 +28,8 @@ object LsuL1 extends AreaObject{
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
   val MASK = Payload(Bits(Riscv.LSLEN / 8 bits)) //Also needed for loads
   val SIZE = Payload(UInt(log2Up(log2Up(Riscv.LSLEN / 8+1)) bits)) //Also needed for loads
-  val WAIT_WRITEBACK = Payload(WRITEBACK_BUSY.get) //Also needed for loads
-  val WAIT_REFILL = Payload(REFILL_BUSY.get) //Also needed for loads
+  val WAIT_WRITEBACK = Payload(cloneOf(WRITEBACK_BUSY.get)) //Also needed for loads
+  val WAIT_REFILL = Payload(cloneOf(REFILL_BUSY.get)) //Also needed for loads
 
   // L1 ->
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
@@ -43,6 +43,7 @@ object LsuL1 extends AreaObject{
   val REFILL_BUSY = blocking[Bits]
   val lockPort = blocking[LockPort]
   val ackUnlock = blocking[Bool]
+  val coherency = blocking[Boolean]
 }
 
 //allows to lock a physical address into unique state
@@ -137,6 +138,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     lockPort.set(LockPort())
     ackUnlock.set(False)
     WRITEBACK_BUSY.soon()
+    LsuL1.coherency.set(withCoherency)
 
     elaborationRetainer.await()
 
@@ -916,7 +918,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             val wasUnique = reader(_.unique)
             waysWrite.tag.unique := wasUnique
             writeback.push.c.fromUnique := wasUnique
-            writeback.push.c.toUnique :=  wasUnique
+            writeback.push.c.toUnique :=  False
             writeback.push.c.toShared := !wasUnique
             writeback.push.c.release := True
             writeback.push.c.dirty := SHARED.dirty(needFlushSel)
@@ -1080,7 +1082,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
               writeback.push.way := wayId
               writeback.push.c.dirty := hitDirty
               writeback.push.c.fromUnique := hitUnique
-              writeback.push.c.toShared := ALLOW_SHARED
+              writeback.push.c.toUnique := ALLOW_UNIQUE && hitUnique
+              writeback.push.c.toShared := ALLOW_SHARED && !(ALLOW_UNIQUE && hitUnique)
               writeback.push.c.release := False
               writeback.push.c.probeId := PROBE_ID
 

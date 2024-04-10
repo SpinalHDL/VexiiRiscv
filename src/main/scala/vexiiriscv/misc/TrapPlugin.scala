@@ -405,7 +405,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   goto(XRET_EPC)
                 }
                 is(TrapReason.FENCE_I) {
-                  (lsul1.nonEmpty && !lsul1.get.withCoherency) match {
+                  (lsul1.nonEmpty) match {
                     case true => goto(LSU_FLUSH)
                     case false => fl1p.nonEmpty match {
                       case true => goto(FETCH_FLUSH)
