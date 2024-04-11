@@ -21,7 +21,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
-case class TrapSpec(bus : Flow[Trap], age : Int)
+case class TrapSpec(bus : Flow[Trap], age : Int, subAge : Int)
 case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
   val exception = Bool()
   val tval = TVAL()
@@ -57,8 +57,12 @@ trait CauseUser{
 trait TrapService extends Area{
   val trapLock = Retainer()
   val traps = ArrayBuffer[TrapSpec]()
-  def newTrap(age: Int, laneAgeWidth: Int): Flow[Trap] = {
-    traps.addRet(TrapSpec(Flow(Trap(laneAgeWidth, true)), age)).bus
+
+  //age => main priority, bigger win, meaning it a stage futher down the pipeline
+  //laneAge => On the same pipeline stage, specify at run time local age (in the stage over multiple lanes). smaller => win
+  //subAge => Static priority between trap ports with same age and same laneAge, bigger win
+  def newTrap(age: Int, laneAgeWidth: Int, subAge : Int = 0): Flow[Trap] = {
+    traps.addRet(TrapSpec(Flow(Trap(laneAgeWidth, true)), age, subAge)).bus
   }
 
   def trapHandelingAt : Int
@@ -216,7 +220,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
 
       val trap = new Area {
         val pending = new Area {
-          val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.bus.laneAge))
+          val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.bus.laneAge, e.subAge))
           val arbiter = new AgedArbiter(requests)
           val state = arbiter.down.toReg
           val pc = Reg(PC)

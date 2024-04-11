@@ -329,12 +329,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val pcBreakTrapAt = 1
 
           val pcBreaks = for(laneId <- 0 until Decode.LANES) yield new dpp.LaneArea(pcBreakTrapAt, laneId) {
-            val doIt = isValid && PC_TRIGGER_HITS.orR
+            val doIt = isValid && PC_TRIGGER_HITS.orR && !(0 until laneId).map(dpp.ctrl(pcBreakTrapAt).lane).map(lane => lane.isValid && lane.up(TRAP)).orR
             when(doIt) {
               bypass(Global.TRAP) := True
             }
 
-            val trapPort = tp.newTrap(dpp.getAge(pcBreakTrapAt)+1, Decode.LANES)
+            val trapPort = tp.newTrap(dpp.getAge(pcBreakTrapAt), Decode.LANES, subAge = 1)
             trapPort.valid     := doIt
             trapPort.exception := False
             trapPort.tval      := B(OHToUInt(PC_TRIGGER_HITS)).resized
@@ -349,8 +349,6 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             flushPort.uopId   := Decode.UOP_ID
             flushPort.laneAge := laneId
             flushPort.self    := False
-
-
           }
 
           val slots = for (slotId <- 0 until p.debugTriggers) yield new Area {

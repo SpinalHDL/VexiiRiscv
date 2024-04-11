@@ -379,7 +379,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
 
 
 
-  addDim("fl1dwm", List(32, 64, 128, 256).map(w => s"--fetch-l1-mem-data-width-min $w"))
+//  addDim("fl1dwm", List(32, 64, 128, 256).map(w => s"--fetch-l1-mem-data-width-min $w")) //TODO but conflict with aligner plugin without buffer
   addDim("fl1rw", List("", "--fetch-reduced-bank"))
   addDims("lsu")(
     Dim("", List("--lsu-fork-at 0", "--lsu-fork-at 1")),

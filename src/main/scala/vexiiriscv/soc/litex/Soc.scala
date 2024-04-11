@@ -55,9 +55,8 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
     val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
     for (vexii <- vexiis) {
       vexii.lsuL1Bus.setDownConnection(a = StreamPipe.HALF, b = StreamPipe.HALF, c = StreamPipe.FULL, d = StreamPipe.M2S, e = StreamPipe.HALF)
-//      nax.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S, b = StreamPipe.HALF, c = StreamPipe.FULL, e = StreamPipe.HALF)
+      vexii.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
       vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
-//      nax.pBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
     }
 
     val cBus, ioBus = fabric.Node()
