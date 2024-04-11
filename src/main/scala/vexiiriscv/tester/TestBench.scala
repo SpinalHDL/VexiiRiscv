@@ -278,6 +278,8 @@ class TestOptions{
     peripheral.withStdIn = withStdIn
 
 
+    var forceProbe = Option.empty[Long => Unit]
+
     val fclp = dut.host.get[fetch.FetchCachelessPlugin].map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
@@ -312,8 +314,18 @@ class TestOptions{
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { pay =>
         val address = pay.address.toLong
-        for(i <- 0 until p.logic.memWordPerLine){
-          pending += Rsp(mem.readBytes(address + i*p.logic.bytePerMemWord, p.memDataWidth/8), address < 0x10000000)
+        def doIt() = {
+          for (i <- 0 until p.logic.memWordPerLine) {
+            pending += Rsp(mem.readBytes(address + i * p.logic.bytePerMemWord, p.memDataWidth / 8), address < 0x10000000)
+          }
+        }
+
+        forceProbe match {
+          case Some(probe) => fork{
+            probe(address)
+            doIt()
+          }
+          case None => doIt()
         }
       }
       val rspDriver = StreamDriver(bus.rsp, cd) { p =>
@@ -475,22 +487,33 @@ class TestOptions{
           if(dbusBaseLatency != 0) cd.waitSampling(dbusBaseLatency)
           if(dbusReadyFactor < 1.0) super.delayOnA(a)
         }
+        forceProbe = Some { address =>
+          this.reserve(address)
+          this.handleCoherency(
+            address = address,
+            isAquire = false,
+            sourceAgent = null,
+            cap = 2,
+            allowProbePerm = false
+          )
+          this.release(address)
+        }
       }
     })
 
-    if(jtagRemote) dut.host.services.foreach{
+    dut.host.services.foreach{
       case p : EmbeddedRiscvJtag => {
         p.debugCd.resetSim #= true
-        delayed(20){
-          p.debugCd.resetSim #= false
+        delayed(20) (p.debugCd.resetSim #= false)
+        if (jtagRemote) {
+          CheckSocketPort.reserve(JtagRemote.defaultPort)
+          onSimEnd(CheckSocketPort.release(JtagRemote.defaultPort))
+          while (!CheckSocketPort(JtagRemote.defaultPort)) {
+            Thread.sleep(100)
+          }
+          JtagRemote(p.logic.jtag, 20)
+          probe.checkLiveness = false
         }
-        CheckSocketPort.reserve(JtagRemote.defaultPort)
-        onSimEnd(CheckSocketPort.release(JtagRemote.defaultPort))
-        while(!CheckSocketPort(JtagRemote.defaultPort)){
-          Thread.sleep(100)
-        }
-        JtagRemote(p.logic.jtag, 20)
-        probe.checkLiveness = false
       }
       case _ =>
     }
@@ -523,7 +546,7 @@ object TestBench extends App{
     val ret = param.plugins()
     ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
       p.ackIdWidth = 8
-      p.probeIdWidth = 4
+      p.probeIdWidth = log2Up(p.writebackCount)
       ret  += new LsuL1TlPlugin
     }
     val regions = ArrayBuffer(
@@ -573,7 +596,7 @@ object TestBench extends App{
     val testOpt = new TestOptions()
 
     val genConfig = SpinalConfig()
-    genConfig.includeSimulation
+//    genConfig.includeSimulation
 
     val simConfig = SpinalSimConfig()
     simConfig.withFstWave
@@ -606,6 +629,7 @@ object TestBenchServer extends App{
   val simConfig = SpinalSimConfig()
   simConfig.withFstWave
   simConfig.withTestFolder
+  simConfig.withConfig(SpinalConfig(dontCareGenAsZero = true)) //TODO dontCareGenAsZero = true required as verilator isn't deterministic on that :())
 
   val param = new ParamSimple()
   val compiled = simConfig.compile(VexiiRiscv(TestBench.paramToPlugins(param)))

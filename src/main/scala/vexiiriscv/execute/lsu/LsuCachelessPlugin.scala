@@ -39,6 +39,16 @@ class LsuCachelessPlugin(var layer : LaneLayer,
   override def accessWake: Bits = B(0)
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
 
+  def bufferSize = joinAt - forkAt + 1
+  def busParam = LsuCachelessBusParam(
+    addressWidth = Global.PHYSICAL_WIDTH,
+    dataWidth = Riscv.LSLEN,
+    hartIdWidth = Global.HART_ID_WIDTH,
+    uopIdWidth = Decode.UOP_ID_WIDTH,
+    withAmo = withAmo,
+    pendingMax = bufferSize
+  )
+
   val logic = during setup new Area{
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
     val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
@@ -102,16 +112,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val forkCtrl = elp.execute(forkAt)
     val joinCtrl = elp.execute(joinAt)
     val wbCtrl = elp.execute(wbAt)
-    val bufferSize = joinAt-forkAt+1
 
-    val busParam = LsuCachelessBusParam(
-      addressWidth = Global.PHYSICAL_WIDTH,
-      dataWidth = Riscv.LSLEN,
-      hartIdWidth = Global.HART_ID_WIDTH,
-      uopIdWidth = Decode.UOP_ID_WIDTH,
-      withAmo = withAmo,
-      pendingMax = bufferSize
-    )
     val bus = master(LsuCachelessBus(busParam)).simPublic()
 
     accessRetainer.await()

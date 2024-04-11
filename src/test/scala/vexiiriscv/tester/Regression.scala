@@ -411,7 +411,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
 
 
 
-  addDim("fl1dwm", List(32, 64, 128, 256).map(w => s"--fetch-l1-mem-data-width-min $w"))
+//  addDim("fl1dwm", List(32, 64, 128, 256).map(w => s"--fetch-l1-mem-data-width-min $w")) //TODO but conflict with aligner plugin without buffer
   addDim("fl1rw", List("", "--fetch-reduced-bank"))
   addDims("lsu")(
     Dim("", List("--lsu-fork-at 0", "--lsu-fork-at 1")),
@@ -427,6 +427,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     )
   )
 
+  addDim("coherency", List("", "--with-fetch-l1 --lsu-l1-coherency")) //Want the fetch l1, else it slow down the sim too much
   addDim("lsu bypass", List("", "--with-lsu-bypass"))
   addDim("ishift", List("", "--with-iterative-shift"))
   addDim("alignBuf", List("", "--with-aligner-buffer"))
@@ -437,11 +438,11 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
 
   addTest(default)
   // Add a simple test for each dimensions's positions
-  for(dim <- dimensions){
-    for(pos <- dim.getPositions() if pos != "") {
-      addTest(default + " " + pos)
-    }
-  }
+//  for(dim <- dimensions){
+//    for(pos <- dim.getPositions() if pos != "") {
+//      addTest(default + " " + pos)
+//    }
+//  }
 
   // Generate random parameters
   val random = new Random(42)

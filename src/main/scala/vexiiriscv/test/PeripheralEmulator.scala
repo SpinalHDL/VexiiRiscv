@@ -2,6 +2,7 @@ package vexiiriscv.test
 
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.bus.tilelink
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -107,6 +108,31 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
       }
     }
     false
+  }
+
+
+  def bind(bus : tilelink.Bus, cd : ClockDomain) = new tilelink.sim.MonitorSubscriber{
+    val monitor = new tilelink.sim.Monitor(bus, cd).add(this)
+    val driver = new tilelink.sim.SlaveDriver(bus, cd)
+
+    import tilelink.sim._
+    import tilelink._
+    override def onA(a: TransactionA) = {
+      val d = TransactionD(a)
+      a.opcode match {
+        case Opcode.A.PUT_FULL_DATA => {
+          d.opcode = Opcode.D.ACCESS_ACK
+          d.denied = access(true, a.address.toInt, a.data)
+        }
+        case Opcode.A.GET => {
+          d.opcode = Opcode.D.ACCESS_ACK_DATA
+          d.data = Array.fill(a.bytes)(0)
+          d.denied = access(false, a.address.toInt, d.data)
+        }
+      }
+
+      driver.scheduleD(d)
+    }
   }
 
 }

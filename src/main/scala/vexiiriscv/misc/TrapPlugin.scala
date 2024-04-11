@@ -12,7 +12,7 @@ import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
-import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, LsuL1Service, PcService}
+import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, LsuL1Service, LsuService, PcService}
 import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.prediction.{HistoryPlugin, Prediction}
 import vexiiriscv.schedule.Ages
@@ -21,7 +21,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
-case class TrapSpec(bus : Flow[Trap], age : Int)
+case class TrapSpec(bus : Flow[Trap], age : Int, subAge : Int)
 case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
   val exception = Bool()
   val tval = TVAL()
@@ -57,8 +57,12 @@ trait CauseUser{
 trait TrapService extends Area{
   val trapLock = Retainer()
   val traps = ArrayBuffer[TrapSpec]()
-  def newTrap(age: Int, laneAgeWidth: Int): Flow[Trap] = {
-    traps.addRet(TrapSpec(Flow(Trap(laneAgeWidth, true)), age)).bus
+
+  //age => main priority, bigger win, meaning it a stage futher down the pipeline
+  //laneAge => On the same pipeline stage, specify at run time local age (in the stage over multiple lanes). smaller => win
+  //subAge => Static priority between trap ports with same age and same laneAge, bigger win
+  def newTrap(age: Int, laneAgeWidth: Int, subAge : Int = 0): Flow[Trap] = {
+    traps.addRet(TrapSpec(Flow(Trap(laneAgeWidth, true)), age, subAge)).bus
   }
 
   def trapHandelingAt : Int
@@ -110,19 +114,20 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
     val cap = host[CsrAccessPlugin]
     val pp = host[PipelineBuilderPlugin]
     val fl1p = host.get[FetchL1Service]
-    val lsul1p = host.get[LsuL1Service]
+    val lsu = host.get[LsuService]
+    val lsul1 = host.get[LsuL1Service]
     val pcs = host[PcService]
     val hp = host.get[HistoryPlugin]
     val ats = host[AddressTranslationService]
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
-    val invalidationLocks = retains(fl1p.map(_.invalidationRetainer).toList ++ lsul1p.map(_.invalidationRetainer))
+    val invalidationLocks = retains(fl1p.map(_.invalidationRetainer).toList ++ lsu.map(_.invalidationRetainer))
     val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock) ++ hp.map(_.elaborationLock))
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
 
     val fetchL1Invalidate = fl1p.nonEmpty generate (0 until HART_COUNT).map(hartId => fl1p.get.newInvalidationPort())
-    val lsuL1Invalidate = lsul1p.nonEmpty generate (0 until HART_COUNT).map(hartId => lsul1p.get.newInvalidationPort())
+    val lsuL1Invalidate = lsu.nonEmpty generate (0 until HART_COUNT).map(hartId => lsu.get.newInvalidationPort())
 
     invalidationLocks.release()
 
@@ -215,7 +220,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
 
       val trap = new Area {
         val pending = new Area {
-          val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.bus.laneAge))
+          val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.bus.laneAge, e.subAge))
           val arbiter = new AgedArbiter(requests)
           val state = arbiter.down.toReg
           val pc = Reg(PC)
@@ -293,7 +298,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           val XRET_EPC, XRET_APPLY = new State()
           val ATS_RSP = ats.mayNeedRedo generate new State()
           val JUMP = new State()
-          val LSU_FLUSH = lsul1p.nonEmpty generate new State()
+          val LSU_FLUSH = lsu.nonEmpty generate new State()
           val FETCH_FLUSH = fl1p.nonEmpty generate new State()
           val ENTER_DEBUG, DPC_READ, RESUME = (priv.p.withDebug) generate new State()
 
@@ -368,7 +373,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
           )
 
           if (fl1p.nonEmpty) fetchL1Invalidate(hartId).cmd.valid := False
-          if (lsul1p.nonEmpty) lsuL1Invalidate(hartId).cmd.valid := False
+          if (lsu.nonEmpty) lsuL1Invalidate(hartId).cmd.valid := False
           val trapEnterDebug = RegInit(False)
           PROCESS.whenIsActive{
             trapEnterDebug := False
@@ -404,7 +409,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
                   goto(XRET_EPC)
                 }
                 is(TrapReason.FENCE_I) {
-                  lsul1p.nonEmpty match {
+                  (lsul1.nonEmpty) match {
                     case true => goto(LSU_FLUSH)
                     case false => fl1p.nonEmpty match {
                       case true => goto(FETCH_FLUSH)
@@ -455,7 +460,7 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
             }
           }
 
-          if(lsul1p.nonEmpty) LSU_FLUSH.whenIsActive{
+          if(lsu.nonEmpty) LSU_FLUSH.whenIsActive{
             lsuL1Invalidate(hartId).cmd.valid := True
             when(lsuL1Invalidate(hartId).cmd.ready) {
               fl1p.nonEmpty match {

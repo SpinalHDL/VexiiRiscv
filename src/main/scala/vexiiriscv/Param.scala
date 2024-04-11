@@ -99,6 +99,7 @@ class ParamSimple(){
   var lsuL1Ways = 1
   var lsuL1RefillCount = 1
   var lsuL1WritebackCount = 1
+  var lsuL1Coherency = false
   var lsuMemDataWidthMin = 32
   var withLsuBypass = false
   var withIterativeShift = false
@@ -128,8 +129,8 @@ class ParamSimple(){
     withGShare = true
     withBtb = true
     withRas = true
-    relaxedBranch = true  // !!
-    relaxedBtb = true     // !!
+//    relaxedBranch = true  // !!
+//    relaxedBtb = true     // !!
     fetchL1Enable = true
     fetchL1Sets = 64
     fetchL1Ways = 4
@@ -140,6 +141,7 @@ class ParamSimple(){
     lsuL1Ways = 4
     lsuL1RefillCount = 2
     lsuL1WritebackCount = 2
+    lsuL1Coherency = false
     lsuStoreBufferSlots = 2
     lsuStoreBufferOps = 32
     withLsuBypass = true
@@ -154,7 +156,7 @@ class ParamSimple(){
     withDiv = true
     withDispatcherBuffer = true
     withAlignerBuffer = true
-    withRvc = true
+//    withRvc = true
     withRva = true
     withMmu = true
     privParam.withSupervisor = true
@@ -219,7 +221,7 @@ class ParamSimple(){
     r += s"disAt${dispatcherAt}"
     r += regFileSync.mux("rfs","rfa") + regFileDualPortRam.mux("Dp","Mem")
     if (fetchL1Enable) r += s"fl1xW${lsuL1Ways}xS${lsuL1Sets}Dwm$fetchMemDataWidth${fetchL1ReducedBank.mux("Rb", "")}" else r += s"fclF${fetchForkAt}dw${fetchMemDataWidth}"
-    if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}Sb${lsuStoreBufferSlots}w${lsuStoreBufferOps}dw${lsuMemDataWidth}rc${lsuL1RefillCount}wc${lsuL1WritebackCount}" else r += s"lsuP${lsuPmaAt}F${lsuForkAt}dw$lsuMemDataWidth"
+    if (lsuL1Enable) r += s"lsul1xW${lsuL1Ways}xS${lsuL1Sets}${withLsuBypass.mux("xBp","")}Sb${lsuStoreBufferSlots}w${lsuStoreBufferOps}dw${lsuMemDataWidth}rc${lsuL1RefillCount}wc${lsuL1WritebackCount}${lsuL1Coherency.mux("Co", "")}" else r += s"lsuP${lsuPmaAt}F${lsuForkAt}dw$lsuMemDataWidth"
     if(allowBypassFrom < 100) r += s"bp$allowBypassFrom"
     if (withBtb) r += s"btbS${btbSets}H${btbHashWidth}${if(relaxedBtb)"R" else ""}"
     if (withRas) r += "ras"
@@ -256,7 +258,7 @@ class ParamSimple(){
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
-    opt[Unit]("with-aligner-buffer") action { (v, c) => withAlignerBuffer = true }
+    opt[Unit]("with-aligner-buffer") unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
     opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
@@ -276,7 +278,7 @@ class ParamSimple(){
     opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
-    opt[Unit]("with-fetch-l1") action { (v, c) => fetchL1Enable = true }
+    opt[Unit]("with-fetch-l1") unbounded() action { (v, c) => fetchL1Enable = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
     opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
@@ -291,6 +293,7 @@ class ParamSimple(){
     opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
     opt[Int]("lsu-l1-writeback-count") action { (v, c) => lsuL1WritebackCount = v }
     opt[Int]("lsu-l1-mem-data-width-min") action { (v, c) => lsuMemDataWidthMin = v }
+    opt[Unit]("lsu-l1-coherency") action { (v, c) => lsuL1Coherency = true}
     opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
     opt[Unit]("with-iterative-shift") action { (v, c) => withIterativeShift = true }
     opt[Int]("div-radix") action { (v, c) => divRadix = v }
@@ -539,7 +542,8 @@ class ParamSimple(){
         writebackCount = lsuL1WritebackCount,
         setCount       = lsuL1Sets,
         wayCount       = lsuL1Ways,
-        withBypass     = withLsuBypass
+        withBypass     = withLsuBypass,
+        withCoherency  = lsuL1Coherency
       )
     }
 

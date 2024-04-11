@@ -51,75 +51,79 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 
   val system = systemCd on new AreaRoot {
     val mainDataWidth = vexiiParam.memDataWidth
-
-    val withCoherency = false
-    val vexiis = for (hartId <- 0 to 0) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
+    val withCoherency = vexiiParam.lsuL1Coherency
+    val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
     for (vexii <- vexiis) {
-//      nax.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S, b = StreamPipe.HALF, c = StreamPipe.FULL, e = StreamPipe.HALF)
-//      nax.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
-//      nax.pBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
+      vexii.lsuL1Bus.setDownConnection(a = StreamPipe.HALF, b = StreamPipe.HALF, c = StreamPipe.FULL, d = StreamPipe.M2S, e = StreamPipe.HALF)
+      vexii.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
+      vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
     }
 
-    val perfBus, ioBus = fabric.Node()
+    val cBus, ioBus = fabric.Node()
+    ioBus.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.NONE)
     for (vexii <- vexiis) {
-      perfBus << List(vexii.iBus, vexiiParam.fetchL1Enable.mux(vexii.lsuL1Bus, vexii.dBus))
+      cBus << List(vexii.iBus, vexiiParam.fetchL1Enable.mux(vexii.lsuL1Bus, vexii.dBus))
       if(vexiiParam.fetchL1Enable) ioBus << List(vexii.dBus)
     }
 
-//    val dma = c.withDma generate new Area {
-//      val bus = slave(
-//        Axi4(
-//          Axi4Config(
-//            addressWidth = 32,
-//            dataWidth = mainDataWidth,
-//            idWidth = 4
-//          )
-//        )
-//      )
-//
-//      val bridge = new Axi4ToTilelinkFiber(64, 4)
-//      bridge.up load bus.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.FULL, b = StreamPipe.HALF, r = StreamPipe.FULL)
-//      bridge.down.setDownConnection(a = StreamPipe.FULL)
-//      memFilter.up << bridge.down
-//
-//      //As litex reset will release before our one, we need to ensure that we don't eat a transaction
-//      Fiber build {
-//        bridge.read.get
-//        bridge.write.get
-//        when(ClockDomain.current.isResetActive){
-//          bus.ar.ready := False
-//          bus.aw.ready := False
-//          bus.w.ready := False
-//        }
-//      }
-//    }
+    val dma = c.withDma generate new Area {
+      val bus = slave(
+        Axi4(
+          Axi4Config(
+            addressWidth = 32,
+            dataWidth = mainDataWidth,
+            idWidth = 4
+          )
+        )
+      )
+
+      val bridge = new Axi4ToTilelinkFiber(64, 4)
+      bridge.up load bus.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.FULL, b = StreamPipe.HALF, r = StreamPipe.FULL)
+
+      val filter = new fabric.TransferFilter()
+      filter.up << bridge.down
+      cBus << filter.down
+      filter.down.setDownConnection(a = StreamPipe.FULL)
+
+
+
+      //As litex reset will release before our one, we need to ensure that we don't eat a transaction
+      Fiber build {
+        bridge.read.get
+        bridge.write.get
+        when(ClockDomain.current.isResetActive){
+          bus.ar.ready := False
+          bus.aw.ready := False
+          bus.w.ready := False
+        }
+      }
+    }
 
     assert(!(!withCoherency && withL2))
 
-    var nonCoherent: Node = null
-
+    var perfBus: Node = null
     val direct = (!withCoherency) generate new Area{
-      nonCoherent = perfBus
+      perfBus = cBus
     }
 
-//    val hub = (withCoherency && !withL2) generate new Area {
-//      val hub = new HubFiber()
-//      hub.up << memFilter.down
-//      hub.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL)
-//      hub.down.forceDataWidth(mainDataWidth)
-//      nonCoherent = hub.down
-//    }
+    val hub = (withCoherency && !withL2) generate new Area {
+      val hub = new HubFiber()
+      hub.up << cBus
+      hub.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL)
+      hub.down.forceDataWidth(mainDataWidth)
+      perfBus = hub.down
+    }
 
-//    val l2 = (withCoherency && withL2)  generate new Area {
-//      val cache = new CacheFiber()
-//      cache.parameter.cacheWays = l2Ways
-//      cache.parameter.cacheBytes = l2Bytes
-//      cache.up << memFilter.down
-//      cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
-//      cache.down.setDownConnection(d = StreamPipe.S2M)
-//      cache.down.forceDataWidth(mainDataWidth)
-//      nonCoherent = cache.down
-//    }
+    val l2 = (withCoherency && withL2) generate new Area {
+      val cache = new CacheFiber()
+      cache.parameter.cacheWays = l2Ways
+      cache.parameter.cacheBytes = l2Bytes
+      cache.up << cBus
+      cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
+      cache.down.setDownConnection(d = StreamPipe.S2M)
+      cache.down.forceDataWidth(mainDataWidth)
+      perfBus = cache.down
+    }
 
     val memRegions = regions.filter(e => e.onMemory && e.isCachable)
     val axiLiteRegions = regions.filter(e => e.onPeripheral)
@@ -129,7 +133,7 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
     if (withMem) {
       toAxi4.up.forceDataWidth(litedramWidth)
       regions.filter(_.onMemory).foreach(r =>
-        toAxi4.up at r.mapping of nonCoherent
+        toAxi4.up at r.mapping of perfBus
       )
       toAxi4.down.addTag(PMA.MAIN)
       toAxi4.down.addTag(PMA.EXECUTABLE)
@@ -143,7 +147,7 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 
     val peripheral = new Area {
       val bus = Node()
-      bus << (nonCoherent, ioBus)
+      bus << (perfBus, ioBus)
       bus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
       bus.forceDataWidth(32)
 
@@ -210,10 +214,9 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 //    }
 
     val patcher = Fiber build new Area {
-//      if (c.withDma) {
-//        Axi4SpecRenamer(dma.bus)
-//        dma.bridge.down.bus
-//      }
+      if (c.withDma) {
+        Axi4SpecRenamer(dma.bus)
+      }
       if (withMem) Axi4SpecRenamer(mBus.get)
       AxiLite4SpecRenamer(pBus.get)
 
@@ -247,6 +250,9 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 //          case None =>
 //        }
 //      }
+
+//      vexiis.foreach(_.logic.core.addAttribute("keep_hierarchy", "yes"))
+//      component.definition.addAttribute("keep_hierarchy", "yes")
     }
   }
 
@@ -270,7 +276,7 @@ object SocGen extends App{
   vexiiParam.lsuL1Enable = true
   vexiiParam.privParam.withRdTime = true
 
-  assert(new scopt.OptionParser[Unit]("NaxRiscv") {
+  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
     vexiiParam.addOptions(this)
     opt[String]("netlist-directory") action { (v, c) => netlistDirectory = v }
@@ -289,6 +295,8 @@ object SocGen extends App{
       assert(!(r.onMemory && !r.isCachable), s"Region $r isn't supported by VexiiRiscv, data cache will always cache memory")
     }
   }.parse(args, Unit).nonEmpty)
+
+  vexiiParam.lsuL1Coherency = cpuCount > 1 || withDma
 
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
@@ -320,6 +328,7 @@ object PythonArgsGen extends App{
          |VexiiRiscv.xlen = $xlen
          |VexiiRiscv.with_rvc = ${withRvc.toInt}
          |VexiiRiscv.with_rvm = ${(withMul && withDiv).toInt}
+         |VexiiRiscv.internal_bus_width = ${memDataWidth}
          |""".stripMargin)
     close()
   }
@@ -383,7 +392,9 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --ve
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass --decoders=2 --lanes=2" --with-jtag-tap  --build --load
 
 
+
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--debug-privileged" --with-jtag-tap --build --load
+export HART_COUNT=2
 /media/data2/proj/upstream/openocd_riscv_up/src/openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--debug-privileged" --with-jtag-instruction --build --load
@@ -391,5 +402,38 @@ openocd -f digilent_nexys_video.tcl -f vexiiriscv_jtag_tunneled.tcl
 
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4  --with-btb --with-ras --with-gshare" --with-jtag-tap  --load
+
+
+
+
+//linux ++ dual core
+make O=build/full  BR2_EXTERNAL=../config litex_vexriscv_full_defconfig
+(cd build/full/ && make -j20)
+
+litex_sim --cpu-type=vexiiriscv  --with-sdram --sdram-data-width=64 --bus-standard axi-lite --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2  --with-jtag-tap --sdram-init /media/data2/proj/vexii/litex/buildroot/rv32ima/images/boot.json
+python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-spi-sdcard --with-ethernet  --build --load
+python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-bytes=131072 --load
+--lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32
+
+export HART_COUNT=2
+/media/data2/proj/upstream/openocd_riscv_up/src/openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl -f dev.tcl
+
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/Image 0x40000000
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/linux_2c.dtb 0x40ef0000
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/rootfs.cpio 0x41000000
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/opensbi/build/platform/litex/vexriscv/firmware/fw_jump.bin 0x40f00000
+targets riscv.cpu.1; resume
+targets riscv.cpu.0; resume
+
+boot 0x40f00000
+
+udhcpc
+cat >> /etc/X11/xorg.conf << EOF
+> Section "Module"
+>   Load "fb"
+>   Load "shadow"
+>   Load "fbdevhw"
+> EndSection
+> EOF
 
  */

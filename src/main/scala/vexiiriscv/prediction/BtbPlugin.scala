@@ -161,8 +161,11 @@ class BtbPlugin(var sets : Int,
     val readCmd = new fpp.Fetch(readAt){
       readPort.cmd.valid := isReady
       readPort.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
+//      val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
+//      haltWhen(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload) //That create a too long combinatorial path
+
       val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
-      haltWhen(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload)
+      haltWhen(onLearn.port.valid) //Omit readPort.cmd.payload to avoid creating long path. Also, this is inline with a single port RW BTB memory.
     }
 
 

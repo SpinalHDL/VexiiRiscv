@@ -25,8 +25,9 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   var checkLiveness = true
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
+  val autoStoreBroadcast = cpu.host.get[LsuCachelessPlugin].nonEmpty
 
-  val hartsIds = List(0)
+  val hartsIds = cpu.host.get[PrivilegedPlugin].get.hartIds
 
   def get[T](e : Element[T]) = cpu.database(e)
   val xlen = get(Riscv.XLEN)
@@ -64,11 +65,25 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       case p: LsuCachelessPlugin => p.regions.foreach { region =>
         backends.foreach { b =>
           region.mapping match {
-            case SizeMapping(base, size) => b.addRegion(0, region.isIo.toInt, base.toLong, size.toLong)
+            case SizeMapping(base, size) => for(hartId <- hartsIds) b.addRegion(hartId, region.isIo.toInt, base.toLong, size.toLong)
           }
         }
       }
-      case _ =>
+      case p: LsuPlugin => p.ioRegions.foreach { region =>
+        backends.foreach { b =>
+          region.mapping match {
+            case SizeMapping(base, size) => for(hartId <- hartsIds) b.addRegion(hartId, region.isIo.toInt, base.toLong, size.toLong)
+          }
+        }
+      }
+      case p: LsuL1Plugin => p.regions.foreach { region =>
+        backends.foreach { b =>
+          region.mapping match {
+            case SizeMapping(base, size) => for(hartId <- hartsIds) b.addRegion(hartId, region.isIo.toInt, base.toLong, size.toLong)
+          }
+        }
+      }
+      case p =>
     }
   }
 
@@ -167,7 +182,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         if (get(Riscv.RVZbb)) isa += "_zbb"
         if (get(Riscv.RVZbc)) isa += "_zbc"
         if (get(Riscv.RVZbs)) isa += "_zbs"
-        tracer.newCpuMemoryView(hartId, 16, 16)
+        tracer.newCpuMemoryView(hartId, 16, 1 << Decode.STORE_ID_WIDTH)
         tracer.newCpu(hartId, isa, csrp, 63, hartId)
         val pc = if(xlen == 32) 0x80000000l else 0x80000000l
         tracer.setPc(hartId, pc)
@@ -380,7 +395,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       uop.loadValid = true
       uop.loadData = loadExecute.data.toLong
       uop.loadLqId = uopId & 0xF
-      backends.foreach(_.loadExecute(hartId, uop.loadLqId, address, bytes, uop.loadData))
+      backends.foreach(_.loadExecute(hart.hartId, uop.loadLqId, address, bytes, uop.loadData))
     }
 
     if (storeCommit.fire.toBoolean) {
@@ -392,7 +407,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       val bytes = 1 << storeCommit.size.toInt
       uop.storeValid = true
       uop.storeData = storeCommit.data.toLong
-      uop.storeSqId = uopId & 0xF
+      uop.storeSqId = storeCommit.storeId.toInt
       uop.lsuAddress = address
       uop.lsuLen = bytes
     }
@@ -445,7 +460,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         trace.size = 1 << trace.sizel2
         trace.io = bus.cmd.io.toBoolean
         trace.fromHart = bus.cmd.fromHart.toBoolean
-        trace.hartId = bus.cmd.hartId.toInt
+        trace.hartId = hartsIds(bus.cmd.hartId.toInt)
         val offset = trace.address.toInt & (trace.size - 1)
         trace.data = bus.cmd.data.toLong
         pendingIo += trace
@@ -516,11 +531,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
   def checkCommits(): Unit = {
     val wfi = proxies.wfi.toInt
-    for(hart <- harts) {
-      if(((wfi >> hart.hartId) & 1) != 0){
+    for((hart, localHartId) <- harts.zipWithIndex) {
+      if(((wfi >> localHartId) & 1) != 0){
         hart.lastCommitAt = cycle
       }
-      if (checkLiveness && hart.lastCommitAt + 4000l < cycle) {
+      if (checkLiveness && hart.lastCommitAt + 16000l < cycle) {
         val status = if (hart.microOpAllocPtr != hart.microOpRetirePtr) f"waiting on uop 0x${hart.microOpRetirePtr}%X" else f"last uop id 0x${hart.lastUopId}%X"
         simFailure(f"Vexii hasn't commited anything for too long, $status")
       }
@@ -561,8 +576,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
               if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
             }
             if(uop.commit) backends.foreach(_.commit(hartId, decode.pc))
-            if (uop.storeValid) {
-              backends.foreach(_.storeBroadcast(hartId, uopId & 0xF))
+            if (autoStoreBroadcast && uop.storeValid) {
+              backends.foreach(_.storeBroadcast(hartId, uop.storeSqId))
             }
             if(!uop.trap) commitsCallbacks.foreach(_(hartId, decode.pc))
           }
@@ -573,9 +588,19 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     }
   }
 
+  def checkBroadcasts(): Unit = {
+    import proxies.storeBroadcast
+    if (storeBroadcast.fire.toBoolean) {
+      val hartId = storeBroadcast.hartId.toInt
+      val hart = harts(hartId)
+      val sqId = storeBroadcast.storeId.toInt
+      backends.foreach(_.storeBroadcast(hart.hartId, sqId))
+    }
+  }
+
   def checkTraps(): Unit = {
     for(trap <- proxies.trap) if(trap.fire.toBoolean){
-      backends.foreach(_.trap(trap.hartId, trap.interrupt.toBoolean, trap.cause.toInt))
+      backends.foreach(_.trap(hartsIds(trap.hartId), trap.interrupt.toBoolean, trap.cause.toInt))
     }
   }
 
@@ -584,6 +609,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     if(enabled) {
       checkPipelines()
       checkCommits()
+      if(!autoStoreBroadcast) checkBroadcasts()
       checkTraps()
     }
     cycle += 1l

@@ -158,10 +158,11 @@ class WhiteboxerPlugin extends FiberPlugin{
       val fire = Bool()
       val hartId = Global.HART_ID()
       val uopId = Decode.UOP_ID()
+      val storeId = Decode.STORE_ID()
       val size = UInt(2 bits)
       val address = Global.PHYSICAL_ADDRESS()
       val data = Bits(Riscv.LSLEN bits)
-      SimPublic(fire, hartId, uopId, size, address, data)
+      SimPublic(fire, hartId, uopId, storeId, size, address, data)
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.forkCtrl
@@ -172,16 +173,18 @@ class WhiteboxerPlugin extends FiberPlugin{
         size := bus.cmd.size.resized
         address := bus.cmd.address
         data := bus.cmd.data
+        storeId := c(Decode.UOP_ID).resized
       })
 
       val lp = host.get[LsuPlugin] map (p => new Area {
         val c = p.logic.onWb
-        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.STORE) && !c(p.logic.onCtrl.IO)
+        fire := c.storeFire
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE)
         address := c(p.logic.tpk.TRANSLATED)
         data := c(LsuL1.WRITE_DATA)
+        storeId := c(Decode.STORE_ID)
       })
     }
 
@@ -212,20 +215,19 @@ class WhiteboxerPlugin extends FiberPlugin{
     val storeBroadcast = new Area {
       val fire = Bool()
       val hartId = Global.HART_ID()
-      val uopId = Decode.UOP_ID()
-      SimPublic(fire, hartId, uopId)
+      val storeId = Decode.STORE_ID()
+      SimPublic(fire, hartId, storeId)
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
-        val c = p.logic.joinCtrl
-        fire := c.down.isFiring && c(AguPlugin.SEL) && !c(AguPlugin.LOAD)
-        hartId := c(Global.HART_ID)
-        uopId := c(Decode.UOP_ID)
+        fire    := storeCommit.fire
+        hartId  := storeCommit.hartId
+        storeId := storeCommit.storeId
       })
       val lp = host.get[LsuPlugin] map (p => new Area {
         val c = p.logic.onWb
-        fire := c.down.isFiring && c(AguPlugin.SEL) && !c(AguPlugin.LOAD)
+        fire := c.storeBroadcast
         hartId := c(Global.HART_ID)
-        uopId := c(Decode.UOP_ID)
+        storeId := c(Decode.STORE_ID)
       })
     }
 
@@ -404,6 +406,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val fire = storeCommit.fire.simProxy()
       val hartId = storeCommit.hartId.simProxy()
       val uopId = storeCommit.uopId.simProxy()
+      val storeId = storeCommit.storeId.simProxy()
       val size = storeCommit.size.simProxy()
       val address = storeCommit.address.simProxy()
       val data = storeCommit.data.simProxy()
@@ -419,7 +422,7 @@ class WhiteboxerPlugin extends FiberPlugin{
     class StoreBroadcastProxy {
       val fire = storeBroadcast.fire.simProxy()
       val hartId = storeBroadcast.hartId.simProxy()
-      val uopId = storeBroadcast.uopId.simProxy()
+      val storeId = storeBroadcast.storeId.simProxy()
     }
 
     class LearnProxy(port: Flow[LearnCmd]) {

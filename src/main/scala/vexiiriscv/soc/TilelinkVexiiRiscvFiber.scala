@@ -17,7 +17,7 @@ import spinal.lib.system.tag.{MemoryConnection, PMA, PmaRegion}
 import spinal.sim.{Signal, SimManagerContext}
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuCachelessTileLinkPlugin, LsuL1Plugin, LsuL1TileLinkPlugin, LsuPlugin, LsuTileLinkPlugin}
-import vexiiriscv.fetch.{FetchCachelessPlugin, FetchCachelessTileLinkPlugin, FetchFetchL1TileLinkPlugin, FetchL1Plugin}
+import vexiiriscv.fetch.{FetchCachelessPlugin, FetchCachelessTileLinkPlugin, FetchL1TileLinkPlugin, FetchL1Plugin}
 import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.Riscv
@@ -67,7 +67,7 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area with
   // Add the plugins to bridge the CPU toward Tilelink
   plugins.foreach {
     case p: FetchCachelessPlugin => plugins += new FetchCachelessTileLinkPlugin(iBus)
-    case p: FetchL1Plugin => plugins += new FetchFetchL1TileLinkPlugin(iBus)
+    case p: FetchL1Plugin => plugins += new FetchL1TileLinkPlugin(iBus)
     case p: LsuCachelessPlugin => plugins += new LsuCachelessTileLinkPlugin(dBus)
     case p: LsuPlugin => plugins += new LsuTileLinkPlugin(dBus)
     case p: LsuL1Plugin => plugins += new LsuL1TileLinkPlugin(lsuL1Bus)
@@ -78,7 +78,6 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area with
   val logic = Fiber setup new Area{
     val core = VexiiRiscv(plugins)
     Fiber.awaitBuild()
-
     def getRegion(node : Node) = MemoryConnection.getMemoryTransfers(node).asInstanceOf[ArrayBuffer[PmaRegion]]
     plugins.foreach {
       case p: FetchCachelessPlugin => p.regions.load(getRegion(iBus))

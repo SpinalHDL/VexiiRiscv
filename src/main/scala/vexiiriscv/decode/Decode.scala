@@ -27,6 +27,9 @@ object Decode extends AreaObject {
   val LEGAL = Payload(Bool())
   val DOP_ID = Payload(UInt(DOP_ID_WIDTH bits))
   val UOP_ID = Payload(UInt(UOP_ID_WIDTH bits))
+
+  val STORE_ID_WIDTH = 12 //Assume it is enough to let the store buffer drain
+  val STORE_ID = Payload(UInt(STORE_ID_WIDTH bits))
   def laneIds = 0 until LANES
 
   def INSTRUCTION_SLICE_COUNT_MAX = INSTRUCTION_WIDTH / Fetch.SLICE_WIDTH

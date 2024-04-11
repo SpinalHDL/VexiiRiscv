@@ -156,6 +156,7 @@ case class LsuL1WriteCmd(p : LsuL1BusParameter) extends Bundle {
     val release = Bool() //else from probe
     val dirty = Bool() //Meaning with data
     val fromUnique = Bool()
+    val toUnique = Bool()
     val toShared = Bool()
     val probeId = UInt(p.probeIdWidth bits)
   }
@@ -376,11 +377,8 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
 
 
 
-  def toTilelink(): tilelink.Bus = new Composite(this, "toTilelink"){
+  def toTilelink(probeInflightMax : Int = 2): tilelink.Bus = new Composite(this, "toTilelink"){
     val m2s = p.toTileLinkM2sParameters(null)
-    val s2m = new S2mParameters(List(
-//      new S2mAgent() //Dummy
-    ))
     val bus = tilelink.Bus(
       BusParameter(
         addressWidth = m2s.addressWidth,
@@ -389,7 +387,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
         sourceWidth  = m2s.sourceWidth,
         sinkWidth    = p.ackIdWidth,
         withBCE      = p.withCoherency,
-        withDataA    = true,
+        withDataA    = !p.withCoherency,
         withDataB    = false,
         withDataD    = true,
         withDataC    = true,
@@ -461,7 +459,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
       }
 
       val onB = new Area{
-        assert(!(bus.b.valid && bus.b.opcode === Opcode.B.PROBE_PERM))
+        val haltIt = False
         probe.cmd.valid        := bus.b.valid
         probe.cmd.address      := bus.b.address
         probe.cmd.id           := bus.b.source
@@ -472,26 +470,29 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
       }
 
       val onC = new Area{
-        val rsp = probe.rsp.throwWhen(!probe.rsp.redo && probe.rsp.writeback)
-        when(rsp.valid && rsp.redo){
-          probe.cmd.valid       := True
-          probe.cmd.address     := probe.rsp.address
-          probe.cmd.id          := probe.rsp.id
+        val rspFifo = StreamFifo(probe.rsp.payloadType, probeInflightMax, latency = 1)
+        val inflight = Reg(UInt(log2Up(probeInflightMax+1) bits)) init(0)
+        inflight := inflight + U(bus.b.fire) - U(rspFifo.io.pop.fire) - U(probe.rsp.fire && probe.rsp.writeback && !probe.rsp.redo)
+        val full = inflight === probeInflightMax
+        val rspFlow = probe.rsp.throwWhen(!probe.rsp.redo && probe.rsp.writeback)
+        val rspStream = rspFlow.takeWhen(!rspFlow.redo).toStream
+        assert(!rspStream.isStall)
+        when(full){
+          probe.cmd.valid := False
+          bus.b.ready := False
+        }
+        rspFifo.io.push << rspStream
+
+        //TODO NAX FIX
+        when(rspFlow.valid && rspFlow.redo) {
+          probe.cmd.valid := True
+          probe.cmd.address := probe.rsp.address
+          probe.cmd.id := probe.rsp.id
           probe.cmd.allowUnique := probe.rsp.allowUnique
           probe.cmd.allowShared := probe.rsp.allowShared
           probe.cmd.getDirtyData := probe.rsp.getDirtyData
           bus.b.ready := False
         }
-
-        val rspStream = rsp.takeWhen(!rsp.redo).toStream
-        assert(!rspStream.isStall)
-        val rspFifo = StreamFifo(rsp.payloadType, 16, latency = 1)
-        val rspFifoAlmostFull = RegNext(rspFifo.io.occupancy(log2Up(rspFifo.depth/2))) init(False)
-        when(rspFifoAlmostFull){
-          probe.cmd.valid := False
-          bus.b.ready := False
-        }
-        rspFifo.io.push << rspStream
 
         val arbiter = StreamArbiterFactory().lambdaLock[ChannelC](_.isLast()).roundRobin.build(bus.c.payloadType, 2)
         val i0 = arbiter.io.inputs(0)
@@ -506,7 +507,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
         i0.param := Param.report(
           write.cmd.coherent.fromUnique,
           !write.cmd.coherent.fromUnique,
-          False,
+          write.cmd.coherent.toUnique,
           write.cmd.coherent.toShared
         )
         i0.source := write.cmd.coherent.release.mux(
