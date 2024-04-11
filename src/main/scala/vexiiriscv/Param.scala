@@ -76,6 +76,7 @@ class ParamSimple(){
   var withMul = false
   var withDiv = false
   var withRva = false
+  var withRvZb = false
   var privParam = PrivilegedParam.base
   var lsuForkAt = 0
   var lsuPmaAt = 0
@@ -210,6 +211,7 @@ class ParamSimple(){
     if (withMul) isa += s"m"
     if (withRva) isa += "a"
     if (withRvc) isa += "c"
+    if (withRvZb) isa += "ZbaZbbZbcZbs"
     if (privParam.withSupervisor) isa += "s"
     if (privParam.withUser) isa += "u"
     val r = new ArrayBuffer[String]()
@@ -255,6 +257,7 @@ class ParamSimple(){
     opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
+    opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
     opt[Unit]("with-aligner-buffer") unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
@@ -349,8 +352,8 @@ class ParamSimple(){
       plugins += new prediction.HistoryPlugin()
     }
     def shifter(layer: LaneLayer, shiftAt: Int = 0, formatAt: Int = 0) = withIterativeShift match {
-      case false => new BarrelShifterPlugin(layer, shiftAt, formatAt)
-      case true => new IterativeShifterPlugin(layer, shiftAt, formatAt)
+      case false => new BarrelShifterPlugin(layer, with_slli_uw=withRvZb, shiftAt=shiftAt, formatAt=formatAt)
+      case true => new IterativeShifterPlugin(layer, with_slli_uw=withRvZb, shiftAt=shiftAt, formatAt=formatAt)
     }
 
 
@@ -464,6 +467,7 @@ class ParamSimple(){
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin("lane0")
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
+    if(withRvZb) plugins ++= ZbPlugin.make(early0, formatAt=0)
     if(!lsuL1Enable) plugins += new LsuCachelessPlugin(
       layer     = early0,
       withAmo   = withRva,
@@ -593,6 +597,7 @@ class ParamSimple(){
       plugins += new IntAluPlugin(late0, aluAt = lateAluAt, formatAt = lateAluAt)
       plugins += shifter(late0, shiftAt = lateAluAt, formatAt = lateAluAt)
       plugins += new BranchPlugin(late0, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
+      if(withRvZb) plugins ++= ZbPlugin.make(late0, executeAt = lateAluAt, formatAt = lateAluAt)
     }
 
     plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, 2), allowBypassFrom = allowBypassFrom)
@@ -607,6 +612,7 @@ class ParamSimple(){
       plugins += shifter(early1, formatAt = relaxedShift.toInt)
       plugins += new IntFormatPlugin("lane1")
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
+      if(withRvZb) plugins ++= ZbPlugin.make(early1, formatAt=0)
 
       if(withLateAlu) {
         val late1 = new LaneLayer("late1", lane1, priority = -3)
@@ -614,6 +620,7 @@ class ParamSimple(){
         plugins += new IntAluPlugin(late1, aluAt = lateAluAt, formatAt = lateAluAt)
         plugins += shifter(late1, shiftAt = lateAluAt, formatAt = lateAluAt)
         plugins += new BranchPlugin(late1, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
+        if(withRvZb) plugins ++= ZbPlugin.make(late1, executeAt = lateAluAt, formatAt = lateAluAt)
       }
 //      if (withMul) {
 //        plugins += new MulPlugin(early1)
