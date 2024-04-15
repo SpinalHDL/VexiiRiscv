@@ -7,7 +7,7 @@ package vexiiriscv.execute
 import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
-import vexiiriscv.riscv.{CSR, Const, IMM, RD, Riscv, Rvi}
+import vexiiriscv.riscv.{CSR, Const, IMM, IntRegFile, RD, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
@@ -86,7 +86,7 @@ class BranchPlugin(val layer : LaneLayer,
   }
 
   val logic = during setup new Logic{
-    val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
+    val wbp = host.find[WriteBackPlugin](p => p.laneName == layer.el.laneName && p.rf == IntRegFile)
     val sp = host[ReschedulePlugin]
     val pcp = host[PcPlugin]
     val hp = host.get[HistoryPlugin]

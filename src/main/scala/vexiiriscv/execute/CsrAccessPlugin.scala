@@ -21,7 +21,7 @@ object CsrFsm{
   val CSR_VALUE = Payload(Bits(XLEN bits))
 }
 
-class CsrAccessPlugin(layer : LaneLayer,
+class CsrAccessPlugin(val layer : LaneLayer,
                       writeBackKey : Any,
                       integrated : Boolean = true,
                       injectAt : Int = 0) extends FiberPlugin with CsrService with CompletionService {

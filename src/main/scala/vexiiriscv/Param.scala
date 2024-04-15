@@ -15,7 +15,7 @@ import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin}
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
-import vexiiriscv.riscv.IntRegFile
+import vexiiriscv.riscv.{FloatRegFile, IntRegFile}
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
@@ -76,6 +76,8 @@ class ParamSimple(){
   var withMul = false
   var withDiv = false
   var withRva = false
+  var withRvf = false
+  var withRvd = false
   var withRvZb = false
   var privParam = PrivilegedParam.base
   var lsuForkAt = 0
@@ -149,15 +151,17 @@ class ParamSimple(){
 //    lsuForkAt = 1
     divArea = false
     divRadix = 4
-    decoders = 2
-    lanes = 2
-    withLateAlu = true
+//    decoders = 2
+//    lanes = 2
+//    withLateAlu = true
     withMul = true
     withDiv = true
-    withDispatcherBuffer = true
-    withAlignerBuffer = true
+//    withDispatcherBuffer = true
+//    withAlignerBuffer = true
 //    withRvc = true
     withRva = true
+    withRvf = true
+//    withRvd = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
@@ -210,6 +214,8 @@ class ParamSimple(){
     var isa = s"rv${xlen}i"
     if (withMul) isa += s"m"
     if (withRva) isa += "a"
+    if (withRvf) isa += "f"
+    if (withRvd) isa += "d"
     if (withRvc) isa += "c"
     if (withRvZb) isa += "ZbaZbbZbcZbs"
     if (privParam.withSupervisor) isa += "s"
@@ -256,6 +262,8 @@ class ParamSimple(){
     opt[Unit]("with-mul") unbounded() action { (v, c) => withMul = true }
     opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
+    opt[Unit]("with-rvf") action { (v, c) => withRvf = true }
+    opt[Unit]("with-rvd") action { (v, c) => withRvd = true; withRvf = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
     opt[Unit]("with-aligner-buffer") unbounded() action { (v, c) => withAlignerBuffer = true }
@@ -313,7 +321,7 @@ class ParamSimple(){
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvc = withRvc)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32)
       case true => plugins += new memory.MmuPlugin(
@@ -631,6 +639,20 @@ class ParamSimple(){
     plugins.foreach {
       case p: DispatchPlugin => p.trapLayer = early0
       case _ =>
+    }
+
+    if (withRvf || withRvd) {
+      plugins += new regfile.RegFilePlugin(
+        spec = riscv.FloatRegFile,
+        physicalDepth = 32,
+        preferedWritePortForInit = "lane0",
+        syncRead = regFileSync,
+        dualPortRam = regFileDualPortRam,
+        maskReadDuringWrite = false
+      )
+
+      plugins += new execute.fpu.FpuIntegration(early0)
+      plugins += new WriteBackPlugin("lane0", FloatRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
     }
 
     plugins += new WhiteboxerPlugin()

@@ -152,7 +152,7 @@ class DispatchPlugin(var dispatchAt : Int,
 
     val rdKeys = Decode.rfaKeys.get(RD)
     assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
-    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
+//    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
 
     val slotsCount = if(withBuffer) Decode.LANES-1 else 0
     val slots = for(slotId <- 0 until slotsCount) yield new Area {
@@ -219,7 +219,7 @@ class DispatchPlugin(var dispatchAt : Int,
             val hazardRange = hazardFrom until hazardUntil
             for(id <- hazardRange) {
               val node = writeEu.ctrl(id-hazardFrom+1)
-              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && !node(getBypassed(writeEu, id))
+              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && node(rdKeys.RFID) === c.ctx.hm(rs.RFID) && !node(getBypassed(writeEu, id))
             }
           }
           val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR && !skip

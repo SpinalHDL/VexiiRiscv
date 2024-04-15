@@ -95,12 +95,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       val allowInterrupts      = True
       val allowException       = True
       val allowEbreakException = True
+      val fpuEnable = False
     }
   }
 
   def inhibateInterrupts(hartId : Int): Unit = api.harts(hartId).allowInterrupts := False
   def inhibateException(hartId : Int): Unit = api.harts(hartId).allowException := False
   def inhibateEbreakException(hartId : Int): Unit = api.harts(hartId).allowEbreakException := False
+  def fpuEnable(hartId : Int) = api.harts(hartId).fpuEnable
 
   val logic = during setup new Area {
     val cap = host[CsrAccessPlugin]
@@ -499,7 +501,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val mpp = p.withUser.mux(RegInit(U"00"), U"11")
           val fs = withFs generate RegInit(U"00")
           val sd = False
-          if (RVF) ??? //setup.isFpuEnabled setWhen (fs =/= 0)
+          if (RVF) fpuEnable(hartId) setWhen (fs =/= 0)
           if (withFs) sd setWhen (fs === 3)
 
           readWrite(7 -> mpie, 3 -> mie)
