@@ -7,7 +7,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.{CompletionPayload, CompletionService, CsrAccessPlugin, CsrService, LaneLayer}
-import vexiiriscv.regfile.RegfileService
+import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
 import vexiiriscv.riscv.{CSR, Const, FloatRegFile, IntRegFile, MicroOp, RD, RS1, RS2, RS3, RfRead, RfResource, RfWrite, Riscv, Rvfd}
 
 import scala.collection.mutable.ArrayBuffer
@@ -15,10 +15,11 @@ import scala.collection.mutable.ArrayBuffer
 
 class FpuExecute(val layer : LaneLayer,
                  val forkAt : Int,
-                 val slotsCount: Int = 4) extends FiberPlugin with CompletionService{
+                 val slotsCount: Int = 4) extends FiberPlugin with CompletionService with RegFileWriterService{
 
 
   override def getCompletions(): Seq[Flow[CompletionPayload]] = List(api.floatCompletion)
+  override def getRegFileWriters(): Seq[Flow[RegFileWriter]] = List(logic.onFloatWb.fpWriter)
 
   val api = during build new Area{
     val rm = Reg(Bits(3 bits)) init (0)
@@ -209,7 +210,7 @@ class FpuExecute(val layer : LaneLayer,
         val uopId = Reg(Decode.UOP_ID)
       })
       val valids = B(entries.map(_.valid))
-      val full = valids.orR
+      val full = valids.andR
       val freeId = OHToUInt(OHMasking.firstV2(valids))
     }
 
@@ -219,7 +220,8 @@ class FpuExecute(val layer : LaneLayer,
       val format = (if (Riscv.RVD) this(FORMAT) else FpuFormat.FLOAT())
 
       val forked = RegInit(False) setWhen (floatCmd.fire || intCmd.fire) clearWhen (!layer.el.isFreezed())
-      layer.el.freezeWhen(floatCmd.isStall || intCmd.isStall || slots.full)
+      val freezeIt = !forked && isValid && SEL && (!FLOAT.mux(floatCmd.ready, intCmd.ready) || slots.full)
+      layer.el.freezeWhen(freezeIt)
 
       when(isValid && SEL && !layer.el.isFreezed()) {
         slots.entries.onSel(slots.freeId) { e =>
@@ -260,11 +262,16 @@ class FpuExecute(val layer : LaneLayer,
       fpWb.data := floatWriteback.value
       fpWb.address := access(_.phys)
 
+      val fpWriter = Flow(RegFileWriter(FloatRegFile))
+      fpWriter.valid := fpWb.valid
+      fpWriter.data := fpWb.data
+      fpWriter.uopId := access(_.uopId)
+
       api.floatCompletion.valid := floatWriteback.fire
       api.floatCompletion.hartId := 0; assert(Global.HART_COUNT.get == 1)
       api.floatCompletion.uopId := access(_.uopId)
       api.floatCompletion.trap := False
-      api.floatCompletion.commit := False
+      api.floatCompletion.commit := True
     }
 
 

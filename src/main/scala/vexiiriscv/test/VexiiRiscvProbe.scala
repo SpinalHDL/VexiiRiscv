@@ -412,6 +412,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       uop.storeSqId = storeCommit.storeId.toInt
       uop.lsuAddress = address
       uop.lsuLen = bytes
+      backends.foreach(_.storeExecute(hart.hartId, uop.storeSqId, address, bytes, uop.storeData))
     }
 
     if (storeConditional.fire.toBoolean) {
@@ -572,7 +573,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
               backends.foreach(_.storeConditional(hartId, uop.scFailure))
             }
             if (uop.storeValid) {
-              backends.foreach(_.storeCommit(hartId, uop.storeSqId, uop.lsuAddress, uop.lsuLen, uop.storeData))
+              backends.foreach(_.storeCommit(hartId, uop.storeSqId))
             }
             if (uop.integerWriteValid) {
               backends.foreach(_.writeRf(hartId, 0, 32, uop.integerWriteData))

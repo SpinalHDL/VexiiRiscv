@@ -43,7 +43,7 @@ class AguFrontend(
   if (RVF) writeRfFloat ++= List(Rvfd.FLW)
   if (RVD) writeRfFloat ++= List(Rvfd.FLD)
   writingRf ++= writeRfFloat
-  for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LOAD -> True, STORE -> False, ATOMIC -> False, FLOAT -> Bool(writingRf.contains(op)))
+  for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LOAD -> True, STORE -> False, ATOMIC -> False, FLOAT -> Bool(writeRfFloat.contains(op)))
 
   // Store stuff
   val storeOps = List(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.S)
