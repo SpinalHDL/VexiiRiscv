@@ -651,8 +651,9 @@ class ParamSimple(){
         maskReadDuringWrite = false
       )
 
-      plugins += new execute.fpu.FpuIntegration(early0)
+      plugins += new execute.fpu.FpuExecute(early0, 0)
       plugins += new WriteBackPlugin("lane0", FloatRegFile, writeAt = 2, allowBypassFrom = allowBypassFrom)
+      plugins += new execute.fpu.FpuEmbedded()
     }
 
     plugins += new WhiteboxerPlugin()

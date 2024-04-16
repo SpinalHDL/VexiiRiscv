@@ -1,7 +1,7 @@
 package vexiiriscv.decode
 
 import spinal.core._
-import spinal.lib.{logic, _}
+import spinal.lib._
 import spinal.lib.misc.pipeline.{CtrlLink, Link, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.execute.{CompletionPayload, CompletionService, ExecuteLaneService}
@@ -11,7 +11,7 @@ import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.core
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
-import vexiiriscv.execute.fpu.FpuIntegration
+import vexiiriscv.execute.fpu.FpuExecute
 import vexiiriscv.prediction.{FetchWordPrediction, ForgetCmd, ForgetSource, Prediction}
 import vexiiriscv.riscv.Riscv.RVC
 import vexiiriscv.riscv._
@@ -166,7 +166,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       LEGAL := Symplify(Decode.INSTRUCTION, encodings.all) && !Decode.DECOMPRESSION_FAULT
       val fp = Riscv.RVF.get generate new Area {
-        val csrRm = host[FpuIntegration].api.rm
+        val csrRm = host[FpuExecute].api.rm
         val instRm = Decode.UOP(Const.funct3Range)
         val rm = U((instRm === 7) ? csrRm | instRm)
         val enabled = host[PrivilegedPlugin].fpuEnable(0); assert(Global.HART_COUNT.get == 1)
