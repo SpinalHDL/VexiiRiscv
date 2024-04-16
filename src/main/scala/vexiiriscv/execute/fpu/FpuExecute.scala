@@ -63,7 +63,7 @@ class FpuExecute(val layer : LaneLayer,
       spec.dontFlushFrom(forkAt) //This avoid having a reorder buffer on FPU responses
       uop.resources.foreach{
         case RfResource(_, rs: RfRead ) => spec.addRsSpec(rs, forkAt)
-        case RfResource(_, rd: RfWrite) => spec.rdOutOfPip = true//spec.setRdSpec(forkAt+1, forkAt+1) //TODO
+        case RfResource(_, rd: RfWrite) => spec.rdForkAt = Some(forkAt)//spec.setRdSpec(forkAt+1, forkAt+1) //TODO
         case _ =>
       }
     }

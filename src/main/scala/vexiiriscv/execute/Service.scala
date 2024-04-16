@@ -40,7 +40,7 @@ class LaneLayer(val name : String, val el : ExecuteLaneService, var priority : I
 }
 
 class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLaneService) {
-  var rdOutOfPip = false
+  var rdForkAt = Option.empty[Int]
   var rd = Option.empty[RdSpec]
   var rs = mutable.LinkedHashMap[RfRead, RsSpec]()
   var completion = Option.empty[Int]
@@ -51,7 +51,7 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   def doCheck(): Unit = {
     uop.resources.foreach{
       case RfResource(_, rfRead: RfRead) => assert(rs.contains(rfRead), s"$elImpl $uop doesn't has the $rfRead specification set")
-      case RfResource(_, rfWrite: RfWrite) => assert(rdOutOfPip || rd.nonEmpty, s"$elImpl $uop doesn't has the rd specification set")
+      case RfResource(_, rfWrite: RfWrite) => assert(rdForkAt.nonEmpty || rd.nonEmpty, s"$elImpl $uop doesn't has the rd specification set")
       case _ =>
     }
   }

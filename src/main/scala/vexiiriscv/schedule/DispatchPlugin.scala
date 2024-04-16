@@ -33,13 +33,15 @@ Schedule euristic :
 
 class DispatchPlugin(var dispatchAt : Int,
                      var trapLayer : LaneLayer,
-                     var withBuffer : Boolean) extends FiberPlugin{
+                     var withBuffer : Boolean,
+                     var oopSlots : Int) extends FiberPlugin{
   val elaborationLock = Retainer()
 
   val MAY_FLUSH = Payload(Bool())
   val DONT_FLUSH = Payload(Bool())
   val DONT_FLUSH_FROM_LANES = Payload(Bool())
   val FENCE_OLDER = Payload(Bool())
+  val OUT_OF_PIPE = Payload(Bool())
 
 
   val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
@@ -89,24 +91,28 @@ class DispatchPlugin(var dispatchAt : Int,
     hmKeys.add(DONT_FLUSH)
     hmKeys.add(DONT_FLUSH_FROM_LANES)
     hmKeys.add(Decode.INSTRUCTION_SLICE_COUNT)
+    hmKeys.add(OUT_OF_PIPE)
     dp.addMicroOpDecodingDefault(MAY_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH, False)
     dp.addMicroOpDecodingDefault(DONT_FLUSH_FROM_LANES, False)
     dp.addMicroOpDecodingDefault(FENCE_OLDER, False)
+    dp.addMicroOpDecodingDefault(OUT_OF_PIPE, False)
     val mayFlushUpToMax = eus.flatMap(_.getUopLayerSpec().map(_.mayFlushUpTo.getOrElse(-1))).max
-    val mayFlushUops, dontFlushUops, dontFlushFromLanesUops = mutable.LinkedHashSet[MicroOp]()
+    val mayFlushUops, dontFlushUops, dontFlushFromLanesUops, outOfPipeUops = mutable.LinkedHashSet[MicroOp]()
     for (eu <- eus; spec <- eu.getUopLayerSpec()) {
       spec.mayFlushUpTo foreach( x => mayFlushUops += spec.uop )
       spec.dontFlushFrom foreach { x =>
         if (x <= mayFlushUpToMax) dontFlushFromLanesUops += spec.uop
         if (x < mayFlushUpToMax) dontFlushUops += spec.uop
       }
+      if(spec.rdForkAt.nonEmpty) outOfPipeUops += spec.uop
     }
 
     for (uop <- mayFlushUops) dp.addMicroOpDecoding(uop, MAY_FLUSH, True)
     for (uop <- dontFlushUops) dp.addMicroOpDecoding(uop, DONT_FLUSH, True)
     for (uop <- dontFlushFromLanesUops) dp.addMicroOpDecoding(uop, DONT_FLUSH_FROM_LANES, True)
     for (uop <- fenceOlderOps) dp.addMicroOpDecoding(uop, FENCE_OLDER, True)
+    for (uop <- outOfPipeUops) dp.addMicroOpDecoding(uop, OUT_OF_PIPE, True)
 
     // Generate upstream up dontFlush precise decoding
     case class DontFlushSpec(at: Int, value: Payload[Bool])
@@ -163,11 +169,25 @@ class DispatchPlugin(var dispatchAt : Int,
       trapPendings(hartId) := slots.map(s => s.ctx.valid && s.ctx.hm(TRAP)).orR
     }
 
+    val oopSlots = new Area{
+      val entries = List.fill(slotsCount)(new Area {
+        val valid = Reg(Bool()) init (False)
+        val rfId = Reg(rdKeys.RFID)
+        val phys = Reg(rdKeys.PHYS)
+        val uopId = Reg(Decode.UOP_ID)
+      })
+      val valids = B(entries.map(_.valid))
+      val full = valids.andR
+      val freeId = OHToUInt(OHMasking.firstV2(valids))
+    }
+
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
       val cancel = Bool()
 
+      val oopAllocHazard = Bool()
+      val oopHazard = Bool()
       val rsHazards = Bits(lanesLayers.size bits)
       val flushHazards = Bool() //Pessimistic, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
       val fenceOlderHazards = Bool()
@@ -177,6 +197,32 @@ class DispatchPlugin(var dispatchAt : Int,
 
     for((c,i) <- candidates.zipWithIndex){
       c.age := CountOne(candidates.take(i).map(o => o.ctx.valid && o.ctx.hartId === c.ctx.hartId)).resize(Execute.LANE_AGE_WIDTH)
+    }
+
+
+    val oopCheckers = for(c <- candidates) yield new Area {
+      c.oopAllocHazard := c.ctx.hm(OUT_OF_PIPE) && candidates.takeWhile(_ != c).map(o => o.ctx.valid && o.ctx.hm(OUT_OF_PIPE)).orR
+      val onRfa = for(rfa <- Decode.rfaKeys.get.map(_._2)) yield {
+        c.ctx.hm(rfa.ENABLE) && oopSlots.entries.map(s => s.valid && s.phys === c.ctx.hm(rfa.PHYS) && s.rfId === c.ctx.hm(rfa.RFID)).orR
+      }
+      val rdRfa =  Decode.rfaKeys.get(RD)
+      val forkFrom = lanesLayers.flatMap(_.uops.values).flatMap(_.rdForkAt).fold(Integer.MAX_VALUE)(_ min _) //pessimistic
+      val onLane = for (lane <- eus) yield new Area{
+        val ctrlMax = lane.getUopLayerSpec().flatMap(_.rd).map(o => o.rfReadableFrom).max //Pessimitic
+        val hits = (1 to ctrlMax-forkFrom).map(lane.ctrl).map(ctrl => ctrl.isValid && ctrl(rdRfa.PHYS) === c.ctx.hm(rdRfa.PHYS) && ctrl(rdRfa.RFID) === c.ctx.hm(rdRfa.RFID))
+        val hit = c.ctx.hm(rdRfa.ENABLE) && hits.orR
+      }
+      val inPipeRdHazard = c.ctx.hm(OUT_OF_PIPE) && c.ctx.hm(rdRfa.ENABLE) && onLane.map(_.hit).orR
+      c.oopHazard := onRfa.orR || inPipeRdHazard
+
+      when(isValid && SEL && !layer.el.isFreezed()) {
+        slots.entries.onSel(slots.freeId) { e =>
+          e.valid := True
+          e.float := FLOAT
+          e.phys := rfa.PHYS
+          e.uopId := Decode.UOP_ID
+        }
+      }
     }
 
     case class BypassedSpec(el: ExecuteLaneService, at: Int, value : Payload[Bool])
@@ -345,7 +391,7 @@ class DispatchPlugin(var dispatchAt : Int,
         val layersHits = c.ctx.laneLayerHits & ~c.rsHazards & eusToLayers(eusFree(id))
         val layerOh = OHMasking.firstV2(layersHits)
         val eusOh = layersToEus(layerOh)
-        val doIt = c.ctx.valid && !c.flushHazards && !c.fenceOlderHazards && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
+        val doIt = c.ctx.valid && !c.flushHazards && !c.fenceOlderHazards && !c.oopAllocHazard && !c.oopHazard && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
         eusFree(id + 1) := eusFree(id) & (~eusOh).orMask(!doIt)
         hartFree(id + 1) := hartFree(id) & (~UIntToOh(c.ctx.hartId)).orMask(!c.ctx.valid || doIt)
         c.fire := doIt && !eupp.isFreezed() && !api.haltDispatch
