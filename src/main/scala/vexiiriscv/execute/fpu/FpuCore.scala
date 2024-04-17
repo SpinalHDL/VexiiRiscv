@@ -8,6 +8,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.pipeline.Connection.{DIRECT, M2S}
 import spinal.lib.pipeline._
+import vexiiriscv.riscv.Riscv
 
 import scala.collection.mutable.ArrayBuffer
 

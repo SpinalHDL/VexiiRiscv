@@ -12,11 +12,14 @@ object FloatMode extends SpinalEnum{
   val ZERO, INF, NAN, NORMAL = newElement()
 }
 
+case class FloatUnpackedParam(exponentMax   : Int,
+                              exponentMin   : Int,
+                              mantissaWidth : Int)
 
-
-case class FloatUnpacked(exponentMax : Int,
-                         exponentMin : Int,
-                         mantissaWidth: Int) extends Bundle{
+case class FloatUnpacked(p : FloatUnpackedParam) extends Bundle{
+  def exponentMax = p.exponentMax
+  def exponentMin = p.exponentMin
+  def mantissaWidth = p.mantissaWidth
   val mode = FloatMode()
   val quiet = Bool() // if mode is NAN
   val sign = Bool()
