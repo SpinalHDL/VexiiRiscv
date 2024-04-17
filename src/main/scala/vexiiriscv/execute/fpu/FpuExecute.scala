@@ -203,15 +203,11 @@ class FpuExecute(val layer : LaneLayer,
 
     val rfa = Decode.rfaKeys.get(RD)
 
-    val slots = new Area {
-      val entries = List.fill(slotsCount)(new Area{
-        val valid = Reg(Bool()) init(False)
-        val data = Reg(Bits(Math.max()))
-      })
-      val valids = B(entries.map(_.valid))
-      val full = valids.andR
-      val freeId = OHToUInt(OHMasking.firstV2(valids))
-    }
+    val forkPtr, joinPtr = Counter(slotsCount)
+    val slots = List.fill(slotsCount)(new Area{
+      val forked, joined = Reg(Bool()) init(False)
+      val data = Reg(Bits(Math.max(Riscv.XLEN, Riscv.FLEN) bits))
+    })
 
     val onFork = new layer.el.Execute(forkAt){
       val instrRounding = Decode.UOP(Const.funct3Range)
@@ -240,7 +236,7 @@ class FpuExecute(val layer : LaneLayer,
       floatCmd.format := format
 
       floatCmd.roundMode.assignFromBits(roundMode)
-      floatCmd.robId := slots.freeId
+      floatCmd.robId := forkPtr
 
       intCmd.valid := isValid && SEL && !FLOAT && !forked
       intCmd.opcode := OPCODE
@@ -248,7 +244,7 @@ class FpuExecute(val layer : LaneLayer,
       intCmd.rs1 := layer.el(IntRegFile, RS1)
       intCmd.format := format
       intCmd.roundMode.assignFromBits(roundMode)
-      intCmd.robId := slots.freeId
+      intCmd.robId := forkPtr
     }
 
     val onFloatWb = new Area{
