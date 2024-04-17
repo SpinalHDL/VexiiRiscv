@@ -14,8 +14,8 @@ import scala.collection.mutable.ArrayBuffer
 
 
 class FpuExecute(val layer : LaneLayer,
-                 val forkAt : Int,
-                 val slotsCount: Int = 4) extends FiberPlugin with CompletionService with RegFileWriterService{
+                 val forkAt: Int,
+                 val wbAt: Int) extends FiberPlugin with CompletionService with RegFileWriterService{
 
 
   override def getCompletions(): Seq[Flow[CompletionPayload]] = List(api.floatCompletion)
@@ -35,6 +35,7 @@ class FpuExecute(val layer : LaneLayer,
 
     val fpWb = rfp.newWrite(false) //TODO port sharing
 
+    val slotsCount = wbAt - forkAt
     val robIdWidth = log2Up(slotsCount)
     val floatCmd = master(Stream(FpuFloatCmd(Riscv.RVD, robIdWidth)))
     val intCmd = master(Stream(FpuIntCmd(Riscv.XLEN.get == 64, robIdWidth)))
@@ -205,9 +206,7 @@ class FpuExecute(val layer : LaneLayer,
     val slots = new Area {
       val entries = List.fill(slotsCount)(new Area{
         val valid = Reg(Bool()) init(False)
-        val float = Reg(Bool())
-        val phys = Reg(UInt(5 bits))
-        val uopId = Reg(Decode.UOP_ID)
+        val data = Reg(Bits(Math.max()))
       })
       val valids = B(entries.map(_.valid))
       val full = valids.andR
