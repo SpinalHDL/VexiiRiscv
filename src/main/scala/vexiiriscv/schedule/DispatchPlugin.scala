@@ -250,11 +250,12 @@ class DispatchPlugin(var dispatchAt : Int,
 
     val reservationChecker = for (c <- candidates) yield new Area {
       val onLl = for ((ll, llId) <- lanesLayers.zipWithIndex) yield new Area {
-        val res = for (resSpec <- reservationSpecs.values; (selfAt, selfSel) <- resSpec.sels(ll)) yield new Area {
+        val res = for (resSpec <- reservationSpecs.values; if resSpec.sels.contains(ll); (selfAt, selfSel) <- resSpec.sels(ll)) yield new Area {
           val checks = for ((otherLl, otherAts) <- resSpec.sels;
                             (otherAt, otherSel) <- otherAts;
                             delta = otherAt - selfAt; if delta > 0) yield new Area { //So currently we aren't trying to catch multi issue reservation being dispacthed at the same cycle (limitation)
-            val hit = c.ctx.hm(selfSel) && otherLl.el.ctrl(delta)(otherSel)
+            val otherCtrl = otherLl.el.ctrl(delta)
+            val hit = c.ctx.hm(selfSel) && otherCtrl.isValid && otherCtrl(otherSel)
           }
         }
         val hit = res.flatMap(_.checks).map(_.hit).orR
