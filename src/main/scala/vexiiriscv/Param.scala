@@ -131,8 +131,8 @@ class ParamSimple(){
     withGShare = true
     withBtb = true
     withRas = true
-//    relaxedBranch = true  // !!
-//    relaxedBtb = true     // !!
+    //    relaxedBranch = true  // !!
+    //    relaxedBtb = true     // !!
     fetchL1Enable = true
     fetchL1Sets = 64
     fetchL1Ways = 4
@@ -148,7 +148,7 @@ class ParamSimple(){
     lsuStoreBufferOps = 32
     withLsuBypass = true
 
-//    lsuForkAt = 1
+    //    lsuForkAt = 1
     divArea = false
     divRadix = 4
 //    decoders = 2
@@ -165,7 +165,7 @@ class ParamSimple(){
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-//    xlen = 64
+    //    xlen = 64
 
 
     privParam.withDebug = true

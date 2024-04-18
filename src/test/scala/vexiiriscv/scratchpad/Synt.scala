@@ -51,6 +51,25 @@ object IntegrationSynthBench extends App{
 //  }
 
 
+    add("no fpu") { p =>
+      p.fetchL1Enable = true
+      p.lsuL1Enable = true
+      p.lsuL1Sets = 64
+      p.lsuL1Ways = 1
+      p.relaxedBranch = true
+      p.withMul = true
+    }
+
+  add("with fpu") { p =>
+    p.fetchL1Enable = true
+    p.lsuL1Enable = true
+    p.lsuL1Sets = 64
+    p.lsuL1Ways = 1
+    p.relaxedBranch = true
+    p.withRvf = true
+    p.withMul = true
+  }
+
   //  add ("fmax") { p =>
 //    import p._
 //    fetchCachelessForkAt = 1
@@ -241,62 +260,62 @@ object IntegrationSynthBench extends App{
 //    p.withLateAlu = true
 //  }
 
-  add("fullPerf") { p =>
-    p.regFileSync = false
-    p.allowBypassFrom = 0
-    p.decoders = 2
-    p.lanes = 2
-//    p.withDispatcherBuffer = true
+//  add("fullPerf") { p =>
+//    p.regFileSync = false
+//    p.allowBypassFrom = 0
+//    p.decoders = 2
+//    p.lanes = 2
+////    p.withDispatcherBuffer = true
+//
+//    p.withMul = true
+//    p.withDiv = true
+//
+//    p.withBtb = true
+//    p.withGShare = true
+//    p.withRas = true
+//    p.relaxedBranch = true
+//    p.relaxedBtb = true
+//
+////    p.privParam.withSupervisor = true;
+////    p.privParam.withUser = true;
+////    p.withMmu = true
+//
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 4
+//
+//    p.fetchL1Enable = true
+//    p.fetchL1Sets = 64
+//    p.fetchL1Ways = 4
+//  }
 
-    p.withMul = true
-    p.withDiv = true
-
-    p.withBtb = true
-    p.withGShare = true
-    p.withRas = true
-    p.relaxedBranch = true
-    p.relaxedBtb = true
-
-//    p.privParam.withSupervisor = true;
-//    p.privParam.withUser = true;
-//    p.withMmu = true
-
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 4
-
-    p.fetchL1Enable = true
-    p.fetchL1Sets = 64
-    p.fetchL1Ways = 4
-  }
-
-    add("fullPerf2") { p =>
-      p.allowBypassFrom = 0
-      p.decoders = 2
-      p.lanes = 2
-      p.withDispatcherBuffer = true
-
-      p.withMul = true
-      p.withDiv = true
-
-      p.withBtb = true
-      p.withGShare = true
-      p.withRas = true
-      p.relaxedBranch = true
-      p.relaxedBtb = true
-
-//      p.privParam.withSupervisor = true;
-//      p.privParam.withUser = true;
-//      p.withMmu = true
-
-      p.lsuL1Enable = true
-      p.lsuL1Sets = 64
-      p.lsuL1Ways = 4
-
-      p.fetchL1Enable = true
-      p.fetchL1Sets = 64
-      p.fetchL1Ways = 4
-    }
+//    add("fullPerf2") { p =>
+//      p.allowBypassFrom = 0
+//      p.decoders = 2
+//      p.lanes = 2
+//      p.withDispatcherBuffer = true
+//
+//      p.withMul = true
+//      p.withDiv = true
+//
+//      p.withBtb = true
+//      p.withGShare = true
+//      p.withRas = true
+//      p.relaxedBranch = true
+//      p.relaxedBtb = true
+//
+////      p.privParam.withSupervisor = true;
+////      p.privParam.withUser = true;
+////      p.withMmu = true
+//
+//      p.lsuL1Enable = true
+//      p.lsuL1Sets = 64
+//      p.lsuL1Ways = 4
+//
+//      p.fetchL1Enable = true
+//      p.fetchL1Sets = 64
+//      p.fetchL1Ways = 4
+//    }
 
 
   //  def cachedPerf(p : ParamSimple): ParamSimple = {

@@ -28,6 +28,11 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
     logic.onUnpack.rs.toList(logic.rsList.toList.indexOf(rs)).RS
   }
 
+  def unpackingDone(at : Int) : Bool = at match {
+    case unpackAt => !logic.onUnpack.rs.map(_.normalizer.freezeIt).toList.orR
+    case _ => True
+  }
+
   val logic = during setup new Area{
     val buildBefore = retains(layer.el.pipelineLock)
     val uopLock = retains(layer.el.uopLock)
@@ -177,7 +182,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
             fsmCmd.valid := True
             fsmCmd.data := RS_PRE_NORM.mantissa.raw << widthOf(fsmCmd.data) - widthOf(RS_PRE_NORM.mantissa.raw)
           }
-          when(served) {
+          when(asked) {
             RS.exponent := exponent
             RS.mantissa := mantissa
           }
