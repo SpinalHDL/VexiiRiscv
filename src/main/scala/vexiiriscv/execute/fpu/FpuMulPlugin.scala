@@ -14,7 +14,7 @@ import vexiiriscv.riscv._
 class FpuMulPlugin(val layer : LaneLayer,
                    var expAt : Int = 0,
                    var normAt: Int = 3,
-                   var packAt : Int = 4) extends FiberPlugin{
+                   var packAt : Int = 3) extends FiberPlugin{
   val p = FpuUtils
 
   val SEL = Payload(Bool())

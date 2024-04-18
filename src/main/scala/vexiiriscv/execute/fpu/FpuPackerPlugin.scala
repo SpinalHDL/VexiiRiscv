@@ -47,6 +47,7 @@ class FpuPackerPlugin(lane: ExecuteLanePlugin,
   val logic = during setup new Area{
     val wbp = host.find[WriteBackPlugin](p => p.laneName == lane.laneName && p.rf == FloatRegFile)
     val buildBefore = retains(lane.pipelineLock, wbp.elaborationLock)
+    val uopLock = retains(lane.uopLock)
     awaitBuild()
     val latency = wbAt
 
@@ -61,8 +62,11 @@ class FpuPackerPlugin(lane: ExecuteLanePlugin,
       wbPorts(at) = port
       for(e <- l; uop <- e.uops) {
         wbp.addMicroOp(port, uop)
+        uop.reserve(FpuPackerPlugin.this, at)
       }
     }
+
+    uopLock.release()
 
     val backend = new Area {
       val pip = new StagePipeline()

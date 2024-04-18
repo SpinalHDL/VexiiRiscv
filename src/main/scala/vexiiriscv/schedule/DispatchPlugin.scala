@@ -84,6 +84,13 @@ class DispatchPlugin(var dispatchAt : Int,
       }
     }
 
+
+    class ReservationSpec(what: Any) extends Area {
+      val sels = mutable.LinkedHashMap[LaneLayer,mutable.LinkedHashMap[Int, Payload[Bool]]]()
+    }
+    val reservationSpecs = mutable.LinkedHashMap[Any, ReservationSpec]()
+
+
     hmKeys.add(FENCE_OLDER)
     hmKeys.add(MAY_FLUSH)
     hmKeys.add(DONT_FLUSH)
@@ -100,6 +107,17 @@ class DispatchPlugin(var dispatchAt : Int,
       spec.dontFlushFrom foreach { x =>
         if (x <= mayFlushUpToMax) dontFlushFromLanesUops += spec.uop
         if (x < mayFlushUpToMax) dontFlushUops += spec.uop
+      }
+      for((what, ats) <- spec.reservations; at <- ats){
+        val resSpec = reservationSpecs.getOrElseUpdate(what, new ReservationSpec(what))
+        val onLayer = resSpec.sels.getOrElseUpdate(spec.elImpl, new mutable.LinkedHashMap[Int, Payload[Bool]]())
+        val sel = onLayer.getOrElseUpdate(at, {
+          val p = Payload(Bool()).setCompositeName(what, s"RESERVED_ON_${spec.elImpl.name}_AT_$at")
+          dp.addMicroOpDecodingDefault(p, False)
+          hmKeys.add(p)
+          p
+        })
+        dp.addMicroOpDecoding(spec.uop, sel, True)
       }
     }
 
@@ -169,6 +187,7 @@ class DispatchPlugin(var dispatchAt : Int,
       val cancel = Bool()
 
       val rsHazards = Bits(lanesLayers.size bits)
+      val reservationHazards = Bits(lanesLayers.size bits)
       val flushHazards = Bool() //Pessimistic, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
       val fenceOlderHazards = Bool()
       val age = Execute.LANE_AGE()
@@ -225,6 +244,21 @@ class DispatchPlugin(var dispatchAt : Int,
           val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR && !skip
         }
         c.rsHazards(llId) := onRs.map(_.hazard).orR
+      }
+    }
+
+
+    val reservationChecker = for (c <- candidates) yield new Area {
+      val onLl = for ((ll, llId) <- lanesLayers.zipWithIndex) yield new Area {
+        val res = for (resSpec <- reservationSpecs.values; (selfAt, selfSel) <- resSpec.sels(ll)) yield new Area {
+          val checks = for ((otherLl, otherAts) <- resSpec.sels;
+                            (otherAt, otherSel) <- otherAts;
+                            delta = otherAt - selfAt; if delta > 0) yield new Area { //So currently we aren't trying to catch multi issue reservation being dispacthed at the same cycle (limitation)
+            val hit = c.ctx.hm(selfSel) && otherLl.el.ctrl(delta)(otherSel)
+          }
+        }
+        val hit = res.flatMap(_.checks).map(_.hit).orR
+        c.reservationHazards(llId) := hit
       }
     }
 
@@ -342,7 +376,7 @@ class DispatchPlugin(var dispatchAt : Int,
           val hit = doWrite && rfas.orR
         }
         val candHazard = candHazards.map(_.hit).orR
-        val layersHits = c.ctx.laneLayerHits & ~c.rsHazards & eusToLayers(eusFree(id))
+        val layersHits = c.ctx.laneLayerHits & ~c.rsHazards & ~c.reservationHazards & eusToLayers(eusFree(id))
         val layerOh = OHMasking.firstV2(layersHits)
         val eusOh = layersToEus(layerOh)
         val doIt = c.ctx.valid && !c.flushHazards && !c.fenceOlderHazards && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard

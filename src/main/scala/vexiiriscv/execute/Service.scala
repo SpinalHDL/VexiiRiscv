@@ -48,6 +48,12 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   var mayFlushUpTo = Option.empty[Int]
   var dontFlushFrom = Option.empty[Int]
   val decodings = mutable.LinkedHashMap[Payload[_ <: BaseType], Masked]()
+  val reservations = mutable.LinkedHashMap[Nameable, mutable.LinkedHashSet[Int]]()
+
+  def reserve(what : Nameable, at : Int) = {
+    val spec = reservations.getOrElseUpdate(what, mutable.LinkedHashSet[Int]())
+    spec += at+el.executeAt
+  }
 
   def doCheck(): Unit = {
     uop.resources.foreach{
