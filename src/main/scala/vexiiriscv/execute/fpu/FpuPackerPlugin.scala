@@ -5,7 +5,10 @@ import spinal.lib._
 import spinal.core.fiber.Retainer
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
+import vexiiriscv.Global
+import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
+import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService}
 import vexiiriscv.riscv._
 
 import scala.collection.mutable
@@ -17,47 +20,74 @@ case class FpuPackerCmd(p : FloatUnpackedParam) extends Bundle{
   val value = FloatUnpacked(p)
   val format = FpuFormat()
   val roundMode = FpuRoundMode()
+  val hartId = Global.HART_ID()
+  val uopId = Decode.UOP_ID()
 }
 
-case class FpuPackerPort(cmd : FpuPackerCmd, at : Int){
+class FpuPackerPort(_cmd : FpuPackerCmd, val at : Int) extends Area{
   val uops = ArrayBuffer[UopLayerSpec]()
+  val cmd = _cmd
 }
 
-class FpuPackerPlugin(lane: ExecuteLanePlugin) extends FiberPlugin{
+class FpuPackerPlugin(lane: ExecuteLanePlugin,
+                      wbAt : Int = 3) extends FiberPlugin with CompletionService with RegFileWriterService {
   val p = FpuUtils
+
+
+  override def getCompletions(): Seq[Flow[CompletionPayload]] = List(logic.completion)
+  override def getRegFileWriters(): Seq[Flow[RegFileWriter]] = List(logic.backend.s3.fpWriter)
 
   val elaborationLock = Retainer()
 
   val ports = ArrayBuffer[FpuPackerPort]()
   def createPort(at : Int, p : FloatUnpackedParam): FpuPackerPort = {
-    ports.addRet(FpuPackerPort(FpuPackerCmd(p), at))
+    ports.addRet(new FpuPackerPort(FpuPackerCmd(p), at))
   }
 
   val logic = during setup new Area{
-    val wbp = host.find[WriteBackPlugin](_.laneName == lane.laneName)
+    val wbp = host.find[WriteBackPlugin](p => p.laneName == lane.laneName && p.rf == FloatRegFile)
     val buildBefore = retains(lane.pipelineLock, wbp.elaborationLock)
     awaitBuild()
-    val latency = ???
+    val latency = wbAt
 
     elaborationLock.await()
+
+    val completion = Flow(CompletionPayload())
 
     val wbPorts = mutable.LinkedHashMap[Int, Flow[Bits]]()
     val atGroups = ports.groupBy(_.at)
     for((at, l) <- atGroups) {
-      val port = wbp.createPort(at+latency)
+      val port = wbp.createPort(at+latency).setName("FpuPackerPlugin_wb_at_" + at)
       wbPorts(at) = port
-      for(e <- l; uop <- e.uops) wbp.addMicroOp(port, uop)
+      for(e <- l; uop <- e.uops) {
+        wbp.addMicroOp(port, uop)
+      }
     }
 
     val backend = new Area {
       val pip = new StagePipeline()
       val s0 = new pip.Area(0) {
+        val exponentMin = ports.map(_.cmd.value.exponentMin).min
+        val exponentMax = ports.map(_.cmd.value.exponentMax).max
+        val remapped = ports.map { e =>
+          val v = FloatUnpacked(
+            exponentMax = exponentMax,
+            exponentMin = exponentMin,
+            mantissaWidth = p.mantissaWidth + 2
+          )
+          v := e.cmd.value
+          v
+        }
+
         val reader = ports.map(_.cmd).reader(ports.map(_.cmd.valid))
-        val VALUE = insert(reader(_.value))
+        val VALUE = insert(OhMux.or(reader.oh.asBits, remapped.toSeq))
         val FORMAT = insert(reader(_.format))
         val ROUNDMODE = insert(reader(_.roundMode))
+        Global.HART_ID := reader(_.hartId)
+        Decode.UOP_ID := reader(_.uopId)
         valid := ports.map(_.cmd.valid).orR
-
+        val GROUP_OH = insert(B(atGroups.map(_._2.map(_.cmd.valid).orR).toList))
+        assert(CountOne(GROUP_OH) <= 1)
 
         val EXP_SUBNORMAL = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023)(-127)))
         val EXP_DIF = insert(EXP_SUBNORMAL - VALUE.exponent)
@@ -100,7 +130,7 @@ class FpuPackerPlugin(lane: ExecuteLanePlugin) extends FiberPlugin{
       }
       import s2._
 
-      val s3 = new pip.Area(3) {
+      val s3 = new pip.Area(wbAt) {
         val SUBNORMAL_FINAL = insert((EXP_SUBNORMAL - EXP_INCR).isPositive())
         val EXP = insert(!SUBNORMAL_FINAL ? (EXP_INCR - EXP_SUBNORMAL) | AFix(0))
 
@@ -186,20 +216,42 @@ class FpuPackerPlugin(lane: ExecuteLanePlugin) extends FiberPlugin{
           }
         }
 
-        val fwb = io.ports(0).floatWriteback
-        fwb.valid := isFireing
-        fwb.robId := merge.ROBID
+        val fwb = new Area {
+          val flags = FpuFlags()
+          val value = Bits(Riscv.FLEN bits)
+        }
 
-        fwb.flags.NX := nx
-        fwb.flags.UF := uf
-        fwb.flags.OF := of
-        fwb.flags.DZ := DZ
-        fwb.flags.NV := NV
+
+        for((port, i) <- wbPorts.values.zipWithIndex){
+          port.valid := GROUP_OH(i)
+          port.payload := fwb.value
+        }
+        completion.valid  := valid && GROUP_OH.orR
+        completion.hartId := Global.HART_ID
+        completion.uopId  := Decode.UOP_ID
+        completion.trap   := False
+        completion.commit := True
+
+        val fpWriter = Flow(RegFileWriter(FloatRegFile))
+        fpWriter.valid := completion.valid
+        fpWriter.data := fwb.value
+        fpWriter.uopId := Decode.UOP_ID
+
+        val csr = host[FpuCsr]
+//        csr.api.flags.NX setWhen(nx) //TODO FPU FLAG
+//        csr.api.flags.UF setWhen(uf)
+//        csr.api.flags.OF setWhen(of)
+//        fwb.flags.NX := nx
+//        fwb.flags.UF := uf
+//        fwb.flags.OF := of
+//        fwb.flags.DZ := DZ
+//        fwb.flags.NV := NV
+
 
         p.whenDouble(FORMAT) {
-          fwb.value := merge.VALUE.sign ## EXP.raw.resize(11 bits) ## MAN_RESULT
+          fwb.value := VALUE.sign ## EXP.raw.resize(11 bits) ## MAN_RESULT
         } {
-          fwb.value(31 downto 0) := merge.VALUE.sign ## EXP.raw.takeLow(8) ## MAN_RESULT.takeHigh(23)
+          fwb.value(31 downto 0) := VALUE.sign ## EXP.raw.takeLow(8) ## MAN_RESULT.takeHigh(23)
           if (p.rvd) fwb.value(63 downto 32).setAll()
         }
 
@@ -228,17 +280,15 @@ class FpuPackerPlugin(lane: ExecuteLanePlugin) extends FiberPlugin{
         when(positive) {
           p.whenDouble(FORMAT)(wb(63) := False)(wb(31) := False)
         }
-        when(RAW_ENABLE) {
-          wb := RAW
-          fwb.flags.clear()
-        }
         if (p.rvd) when(FORMAT === FpuFormat.FLOAT) {
           wb(63 downto 32).setAll()
         }
+
+        ready := !lane.isFreezed()
       }
     }
 
-    backend.pip.build()
+    backend.pip.build(withoutCollapse = true)
     buildBefore.release()
   }
 }

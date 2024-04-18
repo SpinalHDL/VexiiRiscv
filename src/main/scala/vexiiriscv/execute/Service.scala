@@ -37,6 +37,7 @@ class LaneLayer(val name : String, val el : ExecuteLaneService, var priority : I
   def doChecks(): Unit = {
     for(uop <- uops.values) uop.doCheck()
   }
+  class Execute(id: Int) extends CtrlLaneMirror(el.execute(id))
 }
 
 class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLaneService) {

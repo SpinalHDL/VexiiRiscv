@@ -29,6 +29,7 @@ class WriteBackPlugin(val laneName : String,
   def createPort(at : Int): Flow[Bits] = {
     val port = Flow(Bits(rf.width bits))
     portToSpec(port) = Spec(port, at)
+    assert(at <= writeAt, "WriteBackPlugin.createPort target is behond writeback range")
     port
   }
   def addMicroOp(port: Flow[Bits], layer : LaneLayer, uop: Seq[MicroOp]): Unit = addMicroOp(port, uop.map(layer.apply))

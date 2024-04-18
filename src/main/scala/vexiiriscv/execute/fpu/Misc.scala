@@ -1,6 +1,7 @@
 package vexiiriscv.execute.fpu
 
 import spinal.core._
+import spinal.lib.misc.pipeline.Payload
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.riscv.Riscv.XLEN
 
@@ -8,12 +9,14 @@ object FpuUtils {
   def rsFloatWidth = 32 + Riscv.RVD.get.toInt*32
   def rsIntWidth = Riscv.XLEN.get
   def exponentWidth = if(Riscv.RVD) 11 else 8
-  def mantissaWidth = if(Riscv.RVF) 52 else 23
+  def mantissaWidth = if(Riscv.RVD) 52 else 23
   def rvd = Riscv.RVD.get
   def rvf = Riscv.RVF.get
   def rv64 = XLEN.get == 64
   val exponentF32One = 127
   val exponentF64One = 1023
+  val FORMAT = Payload(FpuFormat())
+  val ROUNDING = Payload(FpuRoundMode())
 
   def whenDouble(format : FpuFormat.C)(yes : => Unit)(no : => Unit): Unit ={
     if(rvd) when(format === FpuFormat.DOUBLE) { yes } otherwise{ no }
@@ -32,4 +35,10 @@ object FpuUtils {
     if(rv64) ((format) ? { yes } | { no })
     else no
   }
+
+  def unpackedConfig = FloatUnpacked(
+    exponentMax = (1 << exponentWidth - 1) - 1,
+    exponentMin = -(1 << exponentWidth - 1) + 1 - Riscv.fpuMantissaWidth,
+    mantissaWidth = Riscv.fpuMantissaWidth
+  )
 }

@@ -24,10 +24,11 @@ case class FpuSqrt(val mantissaWidth : Int) extends Component {
   val io = new Bundle{
     val input = slave Stream(FpuSqrtCmd(mantissaWidth))
     val output = master Stream(FpuSqrtRsp(mantissaWidth))
+    val flush = in Bool()
   }
 
   val iterations = mantissaWidth+2
-  val counter = Reg(UInt(log2Up(iterations ) bits))
+  val counter = Reg(UInt(log2Up(iterations) bits))
   val busy = RegInit(False) clearWhen(io.output.fire)
   val done = RegInit(False) setWhen(busy && counter === iterations-1) clearWhen(io.output.fire)
 
@@ -61,6 +62,11 @@ case class FpuSqrt(val mantissaWidth : Int) extends Component {
     when(io.input.valid){
       busy := True
     }
+  }
+
+  when(io.flush) {
+    done := False
+    busy := False
   }
 }
 

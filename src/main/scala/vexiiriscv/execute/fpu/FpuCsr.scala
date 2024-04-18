@@ -11,9 +11,7 @@ import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
 import vexiiriscv.riscv._
 
 
-class FpuCsr() extends FiberPlugin{
-
-
+class FpuCsr(lanes : Seq[ExecuteLaneService]) extends FiberPlugin{
   val api = during build new Area{
     val rm = Reg(Bits(3 bits)) init (0)
     val flags = Reg(FpuFlags())
@@ -21,7 +19,7 @@ class FpuCsr() extends FiberPlugin{
 
   val logic = during setup new Area{
     val cp = host[CsrService]
-    val buildBefore = retains(cp.csrLock)
+    val buildBefore = retains(lanes.map(_.pipelineLock) :+ cp.csrLock)
     awaitBuild()
 
     assert(Global.HART_COUNT.get == 1)
@@ -35,6 +33,11 @@ class FpuCsr() extends FiberPlugin{
     cp.readWrite(CSR.FCSR, 0 -> api.flags)
     cp.readWrite(CSR.FRM, 0 -> api.rm)
     cp.readWrite(CSR.FFLAGS, 0 -> api.flags)
+
+    for(lane <- lanes) new lane.Execute(0){
+      val instrRounding = Decode.UOP(Const.funct3Range)
+      FpuUtils.ROUNDING.assignFromBits((instrRounding === B"111").mux(api.rm, instrRounding))
+    }
 
     buildBefore.release()
   }

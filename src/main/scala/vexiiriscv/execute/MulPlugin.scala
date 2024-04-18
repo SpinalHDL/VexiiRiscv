@@ -16,8 +16,15 @@ object MulPlugin extends AreaObject {
   val RESULT_IS_SIGNED = Payload(Bool())
 }
 
+trait MulReuse{
+  def cmdAt : Int
+  def inject(a : Bits, b : Bits) : Unit
+  def rspAt : Int
+  def rsp : Bits
+}
+
 class MulPlugin(val layer : LaneLayer,
-                var srcAt : Int = 0,
+                var cmdAt : Int = 0,
                 var mulAt: Int = 0,
                 var sumAt: Int = 1,
                 var sumsSpec: List[(Int, Int)] = List((44, 8), (1000, 1000)),
@@ -26,8 +33,17 @@ class MulPlugin(val layer : LaneLayer,
                 var splitWidthA : Int = 17,
                 var splitWidthB : Int = 17,
                 var useRsUnsignedPlugin : Boolean = false,
-                var bufferedHigh : Option[Boolean] = None) extends ExecutionUnitElementSimple(layer){
+                var bufferedHigh : Option[Boolean] = None) extends ExecutionUnitElementSimple(layer) with MulReuse {
   import MulPlugin._
+
+
+  override def inject(src1: Bits, src2: Bits): Unit = {
+    logic.src(logic.keys.MUL_SRC1) := src1
+    logic.src(logic.keys.MUL_SRC2) := src2
+  }
+
+  override def rspAt: Int = writebackAt
+  override def rsp: Bits = logic.writeback.result.asBits
 
   val logic = during setup new Logic {
     if(Riscv.RVM.isEmpty) Riscv.RVM.set(true)
@@ -48,8 +64,8 @@ class MulPlugin(val layer : LaneLayer,
 
     if(!useRsUnsignedPlugin){
       for(uop <- List(Rvi.MUL,Rvi.MULH, Rvi.MULHSU, Rvi.MULHU); spec = layer(uop)){
-        spec.addRsSpec(RS1, srcAt)
-        spec.addRsSpec(RS2, srcAt)
+        spec.addRsSpec(RS1, cmdAt)
+        spec.addRsSpec(RS2, cmdAt)
       }
     }
 
@@ -58,8 +74,8 @@ class MulPlugin(val layer : LaneLayer,
       for (op <- List(Rvi.MULW); spec = layer(op)) {
         ifp.signExtend(formatBus, layer(op), 32)
         if (!useRsUnsignedPlugin) {
-          spec.addRsSpec(RS1, srcAt)
-          spec.addRsSpec(RS2, srcAt)
+          spec.addRsSpec(RS1, cmdAt)
+          spec.addRsSpec(RS2, cmdAt)
         }
       }
     }
@@ -73,7 +89,7 @@ class MulPlugin(val layer : LaneLayer,
     }
     import keys._
 
-    val src = new el.Execute(srcAt) {
+    val src = new el.Execute(cmdAt) {
       val rs1 = up(el(IntRegFile, RS1))
       val rs2 = up(el(IntRegFile, RS2))
       useRsUnsignedPlugin match {

@@ -16,6 +16,12 @@ case class FloatUnpackedParam(exponentMax   : Int,
                               exponentMin   : Int,
                               mantissaWidth : Int)
 
+object FloatUnpacked{
+  def apply(exponentMax: Int,
+            exponentMin: Int,
+            mantissaWidth: Int) : FloatUnpacked = FloatUnpacked(FloatUnpackedParam(exponentMax, exponentMin, mantissaWidth))
+}
+
 case class FloatUnpacked(p : FloatUnpackedParam) extends Bundle{
   def exponentMax = p.exponentMax
   def exponentMin = p.exponentMin
