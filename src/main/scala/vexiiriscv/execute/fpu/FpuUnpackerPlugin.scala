@@ -119,7 +119,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
           mantissaWidth = Riscv.fpuMantissaWidth
         ))
 
-        val unpackerSel = isValid && rfa.ENABLE && rfa.is(FloatRegFile, rfa.RFID) //A bit pessimistic, as not all float instruction will need unpacking
+        val unpackerSel = isValid && up(rfa.ENABLE) && rfa.is(FloatRegFile, rfa.RFID) //A bit pessimistic, as not all float instruction will need unpacking
 
         val f32 = new Area {
           val mantissa = input(0, 23 bits).asUInt

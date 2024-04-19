@@ -151,7 +151,7 @@ class ExecuteLanePlugin(override val laneName : String,
         val bypassEnables = Bits(bypassSorted.size + 1 bits)
         for ((b, id) <- bypassSorted.zipWithIndex) {
           val node = b.eu.ctrl(b.nodeId)
-          bypassEnables(id) := node.isValid && node(rfaRd.ENABLE) && node(rfaRd.PHYS) === dataCtrl(rfa.PHYS) && node(rfaRd.RFID) === dataCtrl(rfa.RFID)
+          bypassEnables(id) := node.isValid && node.up(rfaRd.ENABLE) && node(rfaRd.PHYS) === dataCtrl(rfa.PHYS) && node(rfaRd.RFID) === dataCtrl(rfa.RFID)
         }
         bypassEnables.msb := True
         val sel = OHMasking.firstV2(bypassEnables)
@@ -189,10 +189,10 @@ class ExecuteLanePlugin(override val laneName : String,
             val filtred = updateSpecs.filter(_.nodeId > ctrlId).toSeq
             val checks = filtred.map{ f => new Area {
               val node = f.eu.ctrl(f.nodeId)
-              val selfHit = node.isValid && node(rfaRd.ENABLE) && node(rfaRd.PHYS) === on(rfa.PHYS) && node(rfaRd.RFID) === on(rfa.RFID)
+              val selfHit = node.isValid && node.up(rfaRd.ENABLE) && node(rfaRd.PHYS) === on(rfa.PHYS) && node(rfaRd.RFID) === on(rfa.RFID)
               val youngerHits = for(youngerId <- ctrlId + 1 until f.nodeId; youngerEu <- eus) yield {
                 val yn = youngerEu.ctrl(youngerId)
-                yn.isValid && yn(rfaRd.ENABLE) && yn(rfaRd.PHYS) === on(rfa.PHYS) && yn(rfaRd.RFID) === on(rfa.RFID)
+                yn.isValid && yn.up(rfaRd.ENABLE) && yn(rfaRd.PHYS) === on(rfa.PHYS) && yn(rfaRd.RFID) === on(rfa.RFID)
               }
               val hit = selfHit && !youngerHits.orR
             }}

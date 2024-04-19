@@ -136,7 +136,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         val immZero = imm.z === 0
         val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
         val csrWrite = !(CSR_MASK && srcZero)
-        val csrRead = !(!CSR_MASK && !rd.ENABLE)
+        val csrRead = !(!CSR_MASK && !up(rd.ENABLE))
         val sels = grouped.map(e => e._1 -> Bool().setName("COMB_CSR_" + filterToName(e._1)))
         for ((filter, sel) <- sels) sel := (filter match {
           case filter: Int => csrAddress === filter
@@ -169,7 +169,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
           regs.doImm := CSR_IMM
           regs.doMask := CSR_MASK
           regs.doClear := CSR_CLEAR
-          regs.rdEnable := rd.ENABLE
+          regs.rdEnable := up(rd.ENABLE)
           regs.rdPhys := rd.PHYS
         }
 
