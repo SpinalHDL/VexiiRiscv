@@ -395,7 +395,7 @@ class DispatchPlugin(var dispatchAt : Int,
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.UOP := mux(_.ctx.uop)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
-      when(!CtrlLaneApi.LANE_SEL){
+      when(!CtrlLaneApi.LANE_SEL || mux(_.ctx.hm(TRAP))){
         //Allow to avoid having to check the valid down the pipeline
         rdKeys.ENABLE := False
         MAY_FLUSH := False

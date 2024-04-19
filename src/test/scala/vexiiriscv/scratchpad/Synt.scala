@@ -67,6 +67,7 @@ object IntegrationSynthBench extends App{
     p.lsuL1Ways = 1
     p.relaxedBranch = true
     p.withRvf = true
+    p.withRvf = true
     p.withMul = true
   }
 

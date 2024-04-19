@@ -12,6 +12,8 @@ import vexiiriscv.riscv._
 
 
 class FpuMulPlugin(val layer : LaneLayer,
+                   withFma : Boolean = true,
+                   fmaFullAccuracy : Boolean = true,
                    var expAt : Int = 0,
                    var normAt: Int = 3,
                    var packAt : Int = 3) extends FiberPlugin{
@@ -29,18 +31,20 @@ class FpuMulPlugin(val layer : LaneLayer,
     val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fpp.elaborationLock)
     awaitBuild()
 
-    val addParam = FloatUnpackedParam(
-      exponentMax   = p.unpackedConfig.exponentMax * 2 + 1,
-      exponentMin   = p.unpackedConfig.exponentMin * 2,
-      mantissaWidth = p.unpackedConfig.mantissaWidth * 2 + 1
-    )
     val packParam = FloatUnpackedParam(
       exponentMax   = p.unpackedConfig.exponentMax * 2 + 1,
       exponentMin   = p.unpackedConfig.exponentMin * 2,
       mantissaWidth = p.unpackedConfig.mantissaWidth + 2
     )
+
+    val addParam = FloatUnpackedParam(
+      exponentMax = p.unpackedConfig.exponentMax * 2 + 1,
+      exponentMin = p.unpackedConfig.exponentMin * 2,
+      mantissaWidth = fmaFullAccuracy.mux(p.unpackedConfig.mantissaWidth * 2 + 1, packParam.mantissaWidth)
+    )
+
     val packPort = fpp.createPort(List(packAt), packParam)
-    val addPort = fasp.createPort(List(packAt), addParam, FpuUtils.unpackedConfig)
+    val addPort = withFma generate fasp.createPort(List(packAt), addParam, FpuUtils.unpackedConfig)
 
 
     layer.el.setDecodingDefault(SEL, False)
@@ -71,10 +75,15 @@ class FpuMulPlugin(val layer : LaneLayer,
     val f32 = FORMAT -> FpuFormat.FLOAT
 
     mul(Rvfd.FMUL_S, f32)
-    fma(Rvfd.FMADD_S, f32)
     if(Riscv.RVD) {
       mul(Rvfd.FMUL_D, f64)
-      fma(Rvfd.FMADD_D, f64)
+    }
+
+    if(withFma){
+      fma(Rvfd.FMADD_S, f32)
+      if (Riscv.RVD) {
+        fma(Rvfd.FMADD_D, f64)
+      }
     }
 
 
@@ -140,17 +149,19 @@ class FpuMulPlugin(val layer : LaneLayer,
       packPort.cmd.hartId := Global.HART_ID
       packPort.cmd.uopId := Decode.UOP_ID
 
-      addPort.cmd.at(0) := isValid && SEL && FMA
-      addPort.cmd.rs1.sign := SIGN
-      addPort.cmd.rs1.exponent := EXP
-      addPort.cmd.rs1.mantissa := MAN
-      addPort.cmd.rs1.mode := mode
-      addPort.cmd.rs1.quiet := True
-      addPort.cmd.rs2 := fup(RS3)
-      addPort.cmd.format := FORMAT
-      addPort.cmd.roundMode := FpuUtils.ROUNDING
-      addPort.cmd.hartId := Global.HART_ID
-      addPort.cmd.uopId := Decode.UOP_ID
+      if(withFma) {
+        addPort.cmd.at(0) := isValid && SEL && FMA
+        addPort.cmd.rs1.sign := SIGN
+        addPort.cmd.rs1.exponent := EXP
+        addPort.cmd.rs1.mantissa := MAN.rounded(RoundType.SCRAP)
+        addPort.cmd.rs1.mode := mode
+        addPort.cmd.rs1.quiet := True
+        addPort.cmd.rs2 := fup(RS3)
+        addPort.cmd.format := FORMAT
+        addPort.cmd.roundMode := FpuUtils.ROUNDING
+        addPort.cmd.hartId := Global.HART_ID
+        addPort.cmd.uopId := Decode.UOP_ID
+      }
     }
 
     buildBefore.release()

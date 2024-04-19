@@ -61,7 +61,7 @@ class FpuSqrtPlugin(val layer : LaneLayer,
 
     val onExecute = new layer.Execute(exeAt) {
       val cmdSent = RegInit(False) setWhen (sqrt.io.input.fire) clearWhen (isReady)
-      sqrt.io.input.valid := isValid && SEL && fup.unpackingDone(exeAt )&& !cmdSent
+      sqrt.io.input.valid := isValid && SEL && fup.unpackingDone(exeAt)&& !cmdSent
       sqrt.io.input.a := U(RS1_FP.exponent.raw.lsb ? (B"1" ## RS1_FP.mantissa ## B"0") | (B"01" ## RS1_FP.mantissa))
       sqrt.io.flush := isReady
       sqrt.io.output.ready := False

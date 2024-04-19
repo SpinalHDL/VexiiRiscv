@@ -98,7 +98,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
       val fsmRsp = unpacker.results(fsmPortId)
       fsmCmd.setIdle()
 
-      val rsValues = rsList.map(rs => this(layer.el(FloatRegFile, rs)))
+      val rsValues = rsList.map(rs => this.up(layer.el(FloatRegFile, rs)))
 
       val fsmRequesters = Bits(rsList.size bits)
       val fsmServed = Bits(rsList.size bits)

@@ -77,6 +77,8 @@ class ParamSimple(){
   var withDiv = false
   var withRva = false
   var withRvf = false
+  var skipFma = false
+  var fpuFmaFullAccuracy = true
   var withRvd = false
   var withRvZb = false
   var privParam = PrivilegedParam.base
@@ -657,7 +659,7 @@ class ParamSimple(){
       plugins += new execute.fpu.FpuUnpackerPlugin(early0)
       plugins += new execute.fpu.FpuAddSharedPlugin(lane0)
       plugins += new execute.fpu.FpuAddPlugin(early0)
-      plugins += new execute.fpu.FpuMulPlugin(early0)
+      plugins += new execute.fpu.FpuMulPlugin(early0, withFma = !skipFma, fmaFullAccuracy = fpuFmaFullAccuracy)
       plugins += new execute.fpu.FpuSqrtPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0)
       //      plugins += new execute.fpu.FpuEmbedded()

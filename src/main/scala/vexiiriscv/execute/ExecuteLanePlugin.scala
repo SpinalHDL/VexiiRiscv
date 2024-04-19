@@ -112,6 +112,7 @@ class ExecuteLanePlugin(override val laneName : String,
       val readCtrl = ctrl(rfReadAt)
 
       val reads = for ((spec, payload) <- rfStageables) yield new Area {
+        setCompositeName(ExecuteLanePlugin.this, s"bypasser_${spec.rf.getName()}_${spec.access.getName()}", weak = false)
         // Implement the register file read
         val rfa = Decode.rfaKeys.get(spec.access)
         val rfPlugin = host.find[RegfileService](_.rfSpec == spec.rf)
@@ -248,6 +249,7 @@ class ExecuteLanePlugin(override val laneName : String,
 
     // Handle SEL initialisation and flushes
     val rp = host[ReschedulePlugin]
+    val rdRfa = Decode.rfaKeys.get(RD)
     for(ctrlId <- 0 to idToCtrl.keys.max){
       ctrl(ctrlId) //Ensure creation
       val c = idToCtrl(ctrlId)
@@ -261,6 +263,7 @@ class ExecuteLanePlugin(override val laneName : String,
           c.upIsCancel := cond
           when(cond) {
             c.bypass(c.LANE_SEL) := False
+            c.bypass(rdRfa.ENABLE) := False
           }
         case None => c.upIsCancel := False
       }
