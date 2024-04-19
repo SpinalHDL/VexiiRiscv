@@ -113,7 +113,7 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
     )
 
     val onPack = new pip.Area(packAt) {
-      packPort.cmd.at             := inserter.GROUP_OH
+      packPort.cmd.at             := inserter.GROUP_OH.andMask(isValid)
       packPort.cmd.value.mode     := adder.result.RESULT.mode
       packPort.cmd.value.quiet    := adder.result.RESULT.quiet
       packPort.cmd.value.sign     := adder.result.RESULT.sign

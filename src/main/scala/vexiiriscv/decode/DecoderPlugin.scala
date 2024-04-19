@@ -11,7 +11,7 @@ import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.core
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
-import vexiiriscv.execute.fpu.{FpuCsr, FpuExecute}
+import vexiiriscv.execute.fpu.{FpuCsr}
 import vexiiriscv.prediction.{FetchWordPrediction, ForgetCmd, ForgetSource, Prediction}
 import vexiiriscv.riscv.Riscv.RVC
 import vexiiriscv.riscv._
@@ -78,7 +78,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     val rfaKeys = mutable.LinkedHashMap[RfAccess, AccessKeys]()
     for(rfa <- rfAccesses){
       val physWidth = 5
-      val rfMapping = resources.collect{case r : RfResource if r.access == rfa => r.rf }.toList
+      val rfMapping = resources.collect{case r : RfResource /*if r.access == rfa*/ => r.rf }.toList //Commenting if r.access == rfa ensure all rfa mappings have the same RFID mapping
       val ak = AccessKeys(rfa, physWidth, rfMapping)
       ak.setPartialName(rfa)
       rfaKeys(rfa) = ak

@@ -18,21 +18,30 @@ class FpuMulPlugin(val layer : LaneLayer,
   val p = FpuUtils
 
   val SEL = Payload(Bool())
+  val FMA = Payload(Bool())
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
     val fpp = host[FpuPackerPlugin]
+    val fasp = host[FpuAddSharedPlugin]
     val mp  = host[MulReuse]
     val buildBefore = retains(layer.el.pipelineLock)
     val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fpp.elaborationLock)
     awaitBuild()
 
-    val packParam = FloatUnpackedParam(
-      exponentMax   = p.unpackedConfig.exponentMax*2+1,
-      exponentMin   = p.unpackedConfig.exponentMin*2,
-      mantissaWidth = p.unpackedConfig.mantissaWidth+2
+    val addParam = FloatUnpackedParam(
+      exponentMax   = p.unpackedConfig.exponentMax * 2 + 1,
+      exponentMin   = p.unpackedConfig.exponentMin * 2,
+      mantissaWidth = p.unpackedConfig.mantissaWidth * 2 + 1
     )
-    val wb = fpp.createPort(List(packAt), packParam)
+    val packParam = FloatUnpackedParam(
+      exponentMax   = p.unpackedConfig.exponentMax * 2 + 1,
+      exponentMin   = p.unpackedConfig.exponentMin * 2,
+      mantissaWidth = p.unpackedConfig.mantissaWidth + 2
+    )
+    val packPort = fpp.createPort(List(packAt), packParam)
+    val addPort = fasp.createPort(List(packAt), addParam, FpuUtils.unpackedConfig)
+
 
     layer.el.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
@@ -43,16 +52,31 @@ class FpuMulPlugin(val layer : LaneLayer,
         case RfResource(_, rs: RfRead) => fup.unpack(uop, rs)
         case _ =>
       }
-      wb.uopsAt += (spec -> packAt)
+      spec
+    }
+
+    def mul(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
+      val spec = add(uop, decodings: _*)
+      spec.addDecoding(FMA -> False)
+      packPort.uopsAt += (spec -> packAt)
+    }
+
+    def fma(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
+      val spec = add(uop, decodings: _*)
+      spec.addDecoding(FMA -> True)
+      addPort.uopsAt += (spec -> packAt)
     }
 
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
 
-    add(Rvfd.FMUL_S, f32)
+    mul(Rvfd.FMUL_S, f32)
+    fma(Rvfd.FMADD_S, f32)
     if(Riscv.RVD) {
-      add(Rvfd.FMUL_D, f64)
+      mul(Rvfd.FMUL_D, f64)
+      fma(Rvfd.FMADD_D, f64)
     }
+
 
     uopLock.release()
 
@@ -94,34 +118,40 @@ class FpuMulPlugin(val layer : LaneLayer,
     import norm._
 
     val onPack = new layer.el.Execute(packAt) {
-      val RESULT = Payload(FloatUnpacked(packParam))
-
-      RESULT.sign := SIGN
-      RESULT.exponent := EXP
-      RESULT.mantissa := MAN.rounded(RoundType.SCRAP)
-      RESULT.mode := FloatMode.NORMAL
-      RESULT.quiet := True
-
       val NV = insert(False)
-
+      val mode = FloatMode.NORMAL()
       when(FORCE_NAN) {
-        RESULT.setNanQuiet
+        mode := FloatMode.NAN
         NV setWhen (INFINITY_NAN || RS1_FP.isNanSignaling || RS2_FP.isNanSignaling)
       }.elsewhen(FORCE_OVERFLOW) {
-        RESULT.setInfinity
+        mode := FloatMode.INF
       }.elsewhen(FORCE_ZERO) {
-        RESULT.setZero
+        mode := FloatMode.ZERO
       }
 
-      wb.cmd.at(0) := isValid && SEL
-      wb.cmd.value := RESULT
-      wb.cmd.format := FORMAT
-      wb.cmd.roundMode := FpuUtils.ROUNDING
-      wb.cmd.hartId := Global.HART_ID
-      wb.cmd.uopId := Decode.UOP_ID
+      packPort.cmd.at(0) := isValid && SEL && !FMA
+      packPort.cmd.value.sign := SIGN
+      packPort.cmd.value.exponent := EXP
+      packPort.cmd.value.mantissa := MAN.rounded(RoundType.SCRAP)
+      packPort.cmd.value.mode := mode
+      packPort.cmd.value.quiet := True
+      packPort.cmd.format := FORMAT
+      packPort.cmd.roundMode := FpuUtils.ROUNDING
+      packPort.cmd.hartId := Global.HART_ID
+      packPort.cmd.uopId := Decode.UOP_ID
+
+      addPort.cmd.at(0) := isValid && SEL && FMA
+      addPort.cmd.rs1.sign := SIGN
+      addPort.cmd.rs1.exponent := EXP
+      addPort.cmd.rs1.mantissa := MAN
+      addPort.cmd.rs1.mode := mode
+      addPort.cmd.rs1.quiet := True
+      addPort.cmd.rs2 := fup(RS3)
+      addPort.cmd.format := FORMAT
+      addPort.cmd.roundMode := FpuUtils.ROUNDING
+      addPort.cmd.hartId := Global.HART_ID
+      addPort.cmd.uopId := Decode.UOP_ID
     }
-
-
 
     buildBefore.release()
   }
