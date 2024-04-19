@@ -14,7 +14,13 @@ object FloatMode extends SpinalEnum{
 
 case class FloatUnpackedParam(exponentMax   : Int,
                               exponentMin   : Int,
-                              mantissaWidth : Int)
+                              mantissaWidth : Int){
+  def union(other : FloatUnpackedParam) = FloatUnpackedParam(
+    exponentMax max other.exponentMax,
+    exponentMin min other.exponentMin,
+    mantissaWidth max other.mantissaWidth
+  )
+}
 
 object FloatUnpacked{
   def apply(exponentMax: Int,
@@ -49,6 +55,12 @@ case class FloatUnpacked(p : FloatUnpackedParam) extends Bundle{
     ret := this
     ret.sign.removeAssignments() := this.sign ^ enable
     ret
+  }
+
+  def to(p2 : FloatUnpackedParam): FloatUnpacked = {
+    val v = FloatUnpacked(p2)
+    v := this
+    v
   }
 }
 

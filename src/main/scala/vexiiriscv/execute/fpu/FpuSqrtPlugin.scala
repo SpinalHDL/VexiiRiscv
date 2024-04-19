@@ -30,7 +30,7 @@ class FpuSqrtPlugin(val layer : LaneLayer,
       exponentMin   = p.unpackedConfig.exponentMin/2,
       mantissaWidth = p.unpackedConfig.mantissaWidth+2
     )
-    val wb = fpp.createPort(exeAt, packParam)
+    val packPort = fpp.createPort(List(exeAt), packParam)
 
     layer.el.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
@@ -41,7 +41,7 @@ class FpuSqrtPlugin(val layer : LaneLayer,
         case RfResource(_, rs: RfRead) => fup.unpack(uop, rs)
         case _ =>
       }
-      wb.uops += spec
+      packPort.uopsAt += spec -> exeAt
     }
 
     val f64 = FORMAT -> FpuFormat.DOUBLE
@@ -73,33 +73,33 @@ class FpuSqrtPlugin(val layer : LaneLayer,
       val exp = (RS1_FP.exponent >>| 1)
       val scrap = sqrt.io.output.remain =/= 0
 
-      wb.cmd.valid := isValid && SEL
-      wb.cmd.format := FORMAT
-      wb.cmd.roundMode := FpuUtils.ROUNDING
-      wb.cmd.hartId := Global.HART_ID
-      wb.cmd.uopId := Decode.UOP_ID
+      packPort.cmd.at(0) := isValid && SEL
+      packPort.cmd.format := FORMAT
+      packPort.cmd.roundMode := FpuUtils.ROUNDING
+      packPort.cmd.hartId := Global.HART_ID
+      packPort.cmd.uopId := Decode.UOP_ID
 
-      wb.cmd.value.setNormal
-      wb.cmd.value.quiet := False
-      wb.cmd.value.sign := RS1_FP.sign
-      wb.cmd.value.exponent := exp
-      wb.cmd.value.mantissa.raw := sqrt.io.output.result ## scrap
+      packPort.cmd.value.setNormal
+      packPort.cmd.value.quiet := False
+      packPort.cmd.value.sign := RS1_FP.sign
+      packPort.cmd.value.exponent := exp
+      packPort.cmd.value.mantissa.raw := sqrt.io.output.result ## scrap
       val negative = !RS1_FP.isNan && !RS1_FP.isZero && RS1_FP.sign
       when(RS1_FP.isInfinity) {
-        wb.cmd.value.setInfinity
+        packPort.cmd.value.setInfinity
       }
 
       val NV = False //TODO FPU FLAG
       when(negative) {
-        wb.cmd.value.setNanQuiet
+        packPort.cmd.value.setNanQuiet
         NV := True
       }
       when(RS1_FP.isNan) {
-        wb.cmd.value.setNanQuiet
+        packPort.cmd.value.setNanQuiet
         NV := !RS1_FP.quiet
       }
       when(RS1_FP.isZero) {
-        wb.cmd.value.setZero
+        packPort.cmd.value.setZero
       }
     }
 

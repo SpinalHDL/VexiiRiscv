@@ -655,6 +655,8 @@ class ParamSimple(){
       plugins += new WriteBackPlugin("lane0", FloatRegFile, writeAt = 8, allowBypassFrom = allowBypassFrom)
       plugins += new execute.fpu.FpuCsr(List(lane0))
       plugins += new execute.fpu.FpuUnpackerPlugin(early0)
+      plugins += new execute.fpu.FpuAddSharedPlugin(lane0)
+      plugins += new execute.fpu.FpuAddPlugin(early0)
       plugins += new execute.fpu.FpuMulPlugin(early0)
       plugins += new execute.fpu.FpuSqrtPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0)

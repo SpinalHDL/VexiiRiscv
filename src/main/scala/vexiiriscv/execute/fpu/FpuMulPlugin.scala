@@ -32,7 +32,7 @@ class FpuMulPlugin(val layer : LaneLayer,
       exponentMin   = p.unpackedConfig.exponentMin*2,
       mantissaWidth = p.unpackedConfig.mantissaWidth+2
     )
-    val wb = fpp.createPort(packAt, packParam)
+    val wb = fpp.createPort(List(packAt), packParam)
 
     layer.el.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
@@ -43,7 +43,7 @@ class FpuMulPlugin(val layer : LaneLayer,
         case RfResource(_, rs: RfRead) => fup.unpack(uop, rs)
         case _ =>
       }
-      wb.uops += spec
+      wb.uopsAt += (spec -> packAt)
     }
 
     val f64 = FORMAT -> FpuFormat.DOUBLE
@@ -113,7 +113,7 @@ class FpuMulPlugin(val layer : LaneLayer,
         RESULT.setZero
       }
 
-      wb.cmd.valid := isValid && SEL
+      wb.cmd.at(0) := isValid && SEL
       wb.cmd.value := RESULT
       wb.cmd.format := FORMAT
       wb.cmd.roundMode := FpuUtils.ROUNDING

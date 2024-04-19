@@ -5,18 +5,17 @@
 package vexiiriscv.execute.fpu
 
 import spinal.core.{widthOf, _}
+import spinal.lib.misc.pipeline._
 import spinal.lib.{Shift, _}
-import spinal.lib.pipeline._
 
-class FpuAdd(pipeline : Pipeline,
-             rs1 : Stageable[FloatUnpacked],
-             rs2 : Stageable[FloatUnpacked],
-             roundDown : Stageable[Bool],
-             preShiftStage : Stage,
-             shifterStage : Stage,
-             mathStage : Stage,
-             normStage : Stage,
-             resultStage : Stage) extends Area{
+class FpuAdd(rs1 : Payload[FloatUnpacked],
+             rs2 : Payload[FloatUnpacked],
+             roundDown : Payload[Bool],
+             preShiftStage : NodeApi,
+             shifterStage : NodeApi,
+             mathStage : NodeApi,
+             normStage : NodeApi,
+             resultStage : NodeApi) extends Area{
 
   val preShift = new Area {
     import preShiftStage._
@@ -60,7 +59,7 @@ class FpuAdd(pipeline : Pipeline,
   val norm = new Area{
     import normStage._
     val shiftOh        = insert(OHMasking.firstV2(xyMantissa.raw.reversed)) //The OhMasking.first can be processed in parallel to the xyMantissa carry chaine
-    val shift          = insert(OHToUInt(shiftOh))
+    val shift          = insert(AFix(OHToUInt(shiftOh), widthOf(shiftOh)-1, 0 exp))
     val forceInfinity  = insert((rs1.isInfinity || rs2.isInfinity))
     val forceZero      = insert(xyMantissa.isZero() || (rs1.isZero && rs2.isZero))
     val infinityNan    = insert(rs1.isInfinity && rs2.isInfinity && (rs1.sign ^ rs2.sign))
@@ -72,10 +71,10 @@ class FpuAdd(pipeline : Pipeline,
   val result  = new Area{
     import resultStage._
 
-    val exponent = insert(xyExponent - AFix(shift) + AFix(1))
-    val mantissa = insert(xyMantissa |<< AFix(shift))
+    val exponent = insert(xyExponent - shift + AFix(1))
+    val mantissa = insert(xyMantissa |<< shift)
 
-    val RESULT = Stageable(FloatUnpacked(
+    val RESULT = Payload(FloatUnpacked(
       exponentMax = exponent.maxRaw.toInt,
       exponentMin = exponent.minRaw.toInt,
       mantissaWidth = mantissa.bitWidth

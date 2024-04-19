@@ -36,7 +36,7 @@ object FpuUtils {
     else no
   }
 
-  def unpackedConfig = FloatUnpacked(
+  def unpackedConfig = FloatUnpackedParam(
     exponentMax = (1 << exponentWidth - 1) - 1,
     exponentMin = -(1 << exponentWidth - 1) + 1 - Riscv.fpuMantissaWidth,
     mantissaWidth = Riscv.fpuMantissaWidth
