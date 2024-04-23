@@ -45,8 +45,9 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
   }
 
   val logic = during setup new Area{
+    val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == lane)
     val wbp = host.find[WriteBackPlugin](p => p.laneName == lane.laneName && p.rf == FloatRegFile)
-    val buildBefore = retains(lane.pipelineLock, wbp.elaborationLock)
+    val buildBefore = retains(lane.pipelineLock, wbp.elaborationLock, ffwbp.elaborationLock)
     val uopLock = retains(lane.uopLock)
     awaitBuild()
     val latency = wbAt
@@ -54,16 +55,17 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
     elaborationLock.await()
 
     val completion = Flow(CompletionPayload())
-
     val wbPorts = mutable.LinkedHashMap[Int, Flow[Bits]]()
     val uopsAt = mutable.LinkedHashMap[Int, ArrayBuffer[UopLayerSpec]]()
     for(port <- ports; (uop, at) <- port.uopsAt) uopsAt.getOrElseUpdate(at, ArrayBuffer[UopLayerSpec]()) += uop
+    val flagsWb = ffwbp.createPort(uopsAt.keys.toList)
     for((at, uops) <- uopsAt) {
       val port = wbp.createPort(at+latency).setName("FpuPackerPlugin_wb_at_" + at)
       wbPorts(at) = port
       for(uop <- uops) {
         wbp.addMicroOp(port, uop)
         uop.reserve(FpuPackerPlugin.this, at)
+        ffwbp.addUop(flagsWb, uop, at+latency)
       }
     }
 
@@ -244,15 +246,13 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       fpWriter.data := fwb.value
       fpWriter.uopId := Decode.UOP_ID
 
-      val csr = host[FpuCsr]
-//        csr.api.flags.NX setWhen(nx) //TODO FPU FLAG
-//        csr.api.flags.UF setWhen(uf)
-//        csr.api.flags.OF setWhen(of)
-//        fwb.flags.NX := nx
-//        fwb.flags.UF := uf
-//        fwb.flags.OF := of
-//        fwb.flags.DZ := DZ
-//        fwb.flags.NV := NV
+      val csr = host[FpuCsrPlugin]
+      flagsWb.ats := GROUP_OH.andMask(valid)
+      flagsWb.flags.NX := nx
+      flagsWb.flags.UF := uf
+      flagsWb.flags.OF := of
+      flagsWb.flags.DZ := False
+      flagsWb.flags.NV := False
 
 
       p.whenDouble(FORMAT) {

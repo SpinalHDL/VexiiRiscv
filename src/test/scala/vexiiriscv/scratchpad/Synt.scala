@@ -51,25 +51,60 @@ object IntegrationSynthBench extends App{
 //  }
 
 
-    add("no fpu") { p =>
-      p.fetchL1Enable = true
-      p.lsuL1Enable = true
-      p.lsuL1Sets = 64
-      p.lsuL1Ways = 1
-      p.relaxedBranch = true
-      p.withMul = true
-    }
+//    add("no fpu") { p =>
+//      p.fetchL1Enable = true
+//      p.lsuL1Enable = true
+//      p.lsuL1Sets = 64
+//      p.lsuL1Ways = 1
+//      p.relaxedBranch = true
+//      p.withMul = true
+//    }
+//
+//
+//  add("with fpu no fma") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 1
+//    p.relaxedBranch = true
+//    p.withRvf = true
+//    p.withRvf = true
+//    p.withMul = true
+//    p.skipFma = true
+//  }
+//
+//  add("with fpu inaccurate fma") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 1
+//    p.relaxedBranch = true
+//    p.withRvf = true
+//    p.withRvf = true
+//    p.withMul = true
+//    p.fpuFmaFullAccuracy = false
+//  }
+//  add("with fpu") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 1
+//    p.relaxedBranch = true
+//    p.withRvf = true
+//    p.withMul = true
+//  }
 
-  add("with fpu") { p =>
+  add("with fpu bypass") { p =>
     p.fetchL1Enable = true
     p.lsuL1Enable = true
     p.lsuL1Sets = 64
     p.lsuL1Ways = 1
     p.relaxedBranch = true
     p.withRvf = true
-    p.withRvf = true
     p.withMul = true
+    p.allowBypassFrom = 0
   }
+
 
   //  add ("fmax") { p =>
 //    import p._
@@ -1018,4 +1053,21 @@ Artix 7 -> 127 Mhz 4663 LUT 3061 FF
 fullPerf2 ->
 Artix 7 -> 90 Mhz 4308 LUT 3419 FF
 Artix 7 -> 156 Mhz 4813 LUT 3593 FF
+
+no_fpu ->
+Artix 7 -> 90 Mhz 1431 LUT 1577 FF
+Artix 7 -> 203 Mhz 1609 LUT 1588 FF
+with_fpu_no_fma ->
+Artix 7 -> 90 Mhz 2626 LUT 2633 FF
+Artix 7 -> 175 Mhz 2933 LUT 2653 FF
+with_fpu_inaccurate_fma ->
+Artix 7 -> 90 Mhz 2876 LUT 2753 FF
+Artix 7 -> 192 Mhz 3160 LUT 2771 FF
+with_fpu ->
+Artix 7 -> 90 Mhz 3086 LUT 2865 FF
+Artix 7 -> 186 Mhz 3430 LUT 2899 FF
+with_fpu_bypass ->
+Artix 7 -> 90 Mhz 3773 LUT 2996 FF
+Artix 7 -> 183 Mhz 4158 LUT 3029 FF
+
  */

@@ -17,5 +17,8 @@ trait PerformanceCounterService {
 
 trait CommitService {
   def getCommitMask(hartId: Int): Bits
+}
+
+trait InflightService {
   def hasInflight(hartId: Int): Bool
 }

@@ -7,11 +7,12 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
+import vexiiriscv.misc.InflightService
 import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
 import vexiiriscv.riscv._
 
 
-class FpuCsr(lanes : Seq[ExecuteLaneService]) extends FiberPlugin{
+class FpuCsrPlugin(lanes : Seq[ExecuteLaneService]) extends FiberPlugin{
   val api = during build new Area{
     val rm = Reg(Bits(3 bits)) init (0)
     val flags = Reg(FpuFlags())

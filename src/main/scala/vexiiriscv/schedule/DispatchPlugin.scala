@@ -10,7 +10,7 @@ import vexiiriscv.Global
 import vexiiriscv.Global.{HART_COUNT, TRAP}
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
 import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin, LaneLayer}
-import vexiiriscv.misc.{CommitService, PipelineBuilderPlugin, TrapService}
+import vexiiriscv.misc.{CommitService, InflightService, PipelineBuilderPlugin, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RfRead, RfResource}
 
@@ -305,7 +305,7 @@ class DispatchPlugin(var dispatchAt : Int,
     }
 
     val fenceChecker = new Area{
-      val olderInflights = B(for(hartId <- 0 until Global.HART_COUNT) yield host.list[CommitService].map(_.hasInflight(hartId)).orR)
+      val olderInflights = B(for(hartId <- 0 until Global.HART_COUNT) yield host.list[InflightService].map(_.hasInflight(hartId)).orR)
       for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
         val c = candidates(cId)
         val olderCandidate = candidates.take(cId).map(older => older.ctx.valid && older.ctx.hartId === c.ctx.hartId).orR

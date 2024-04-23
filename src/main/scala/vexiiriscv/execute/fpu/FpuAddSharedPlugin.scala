@@ -47,7 +47,8 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
 
   val logic = during setup new Area{
     val fpp = host.find[FpuPackerPlugin](p => p.lane == lane)
-    val buildBefore = retains(lane.pipelineLock, fpp.elaborationLock)
+    val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == lane)
+    val buildBefore = retains(lane.pipelineLock, fpp.elaborationLock, ffwbp.elaborationLock)
     val uopLock = retains(lane.uopLock)
     awaitBuild()
     val latency = packAt
@@ -67,6 +68,7 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
 
     val uopsAt = mutable.LinkedHashMap[Int, ArrayBuffer[UopLayerSpec]]()
     for (port <- ports; (uop, at) <- port.uopsAt) uopsAt.getOrElseUpdate(at, ArrayBuffer[UopLayerSpec]()) += uop
+    val flagsWb = ffwbp.createPort(uopsAt.keys.toList)
     val packAts = uopsAt.keys.map(_ + latency).toList
     val packPort = fpp.createPort(packAts, packParam)
     for ((at, uops) <- uopsAt) {
@@ -113,7 +115,13 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
     )
 
     val onPack = new pip.Area(packAt) {
-      packPort.cmd.at             := inserter.GROUP_OH.andMask(isValid)
+      val mask = inserter.GROUP_OH.andMask(isValid)
+
+      flagsWb.ats := mask
+      flagsWb.flags.clearAll()
+      flagsWb.flags.NV.setWhen(adder.result.NV)
+
+      packPort.cmd.at             := mask
       packPort.cmd.value.mode     := adder.result.RESULT.mode
       packPort.cmd.value.quiet    := adder.result.RESULT.quiet
       packPort.cmd.value.sign     := adder.result.RESULT.sign

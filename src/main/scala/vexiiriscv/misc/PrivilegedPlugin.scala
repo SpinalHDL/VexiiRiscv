@@ -63,7 +63,7 @@ case class PrivilegedParam(var withSupervisor : Boolean,
 }
 
 
-class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends FiberPlugin with CommitService with LsuTriggerService{
+class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends FiberPlugin with CommitService with LsuTriggerService with InflightService{
   def implementSupervisor = p.withSupervisor
   def implementUser = p.withUser
   def implementUserTrap = p.withUserTrap

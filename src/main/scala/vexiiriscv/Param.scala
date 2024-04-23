@@ -323,6 +323,8 @@ class ParamSimple(){
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
+    val intWritebackAt = 2
+
     plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32)
@@ -586,7 +588,7 @@ class ParamSimple(){
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(privParam, hartId until hartId+hartCount)
-    plugins += new TrapPlugin(trapAt = 2)
+    plugins += new TrapPlugin(trapAt = intWritebackAt)
     plugins += new EnvPlugin(early0, executeAt = 0)
     if(embeddedJtagTap || embeddedJtagInstruction) plugins += new EmbeddedRiscvJtag(
       p = DebugTransportModuleParameter(
@@ -599,7 +601,7 @@ class ParamSimple(){
       debugCd = embeddedJtagCd,
       noTapCd = embeddedJtagNoTapCd
     )
-    val lateAluAt = 2
+    val lateAluAt = intWritebackAt
     
     if(withLateAlu) {
       val late0 = new LaneLayer("late0", lane0, priority = -5)
@@ -610,7 +612,7 @@ class ParamSimple(){
       if(withRvZb) plugins ++= ZbPlugin.make(late0, executeAt = lateAluAt, formatAt = lateAluAt)
     }
 
-    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, 2), allowBypassFrom = allowBypassFrom)
+    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
 
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
@@ -635,7 +637,7 @@ class ParamSimple(){
 //      if (withMul) {
 //        plugins += new MulPlugin(early1)
 //      }
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, 2), allowBypassFrom = allowBypassFrom)
+      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
     }
 
     plugins.foreach {
@@ -655,7 +657,8 @@ class ParamSimple(){
 
 //      plugins += new execute.fpu.FpuExecute(early0, 0)
       plugins += new WriteBackPlugin("lane0", FloatRegFile, writeAt = 10, allowBypassFrom = allowBypassFrom)
-      plugins += new execute.fpu.FpuCsr(List(lane0))
+      plugins += new execute.fpu.FpuFlagsWritebackPlugin(lane0, pipTo = intWritebackAt)
+      plugins += new execute.fpu.FpuCsrPlugin(List(lane0))
       plugins += new execute.fpu.FpuUnpackerPlugin(early0)
       plugins += new execute.fpu.FpuAddSharedPlugin(lane0)
       plugins += new execute.fpu.FpuAddPlugin(early0)

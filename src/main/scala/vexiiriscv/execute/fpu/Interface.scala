@@ -129,6 +129,26 @@ case class FpuFlags() extends Bundle{
   def clear(): Unit ={
     List(NX,  UF,  OF,  DZ,  NV).foreach(_ := False)
   }
+
+  def |(that : FpuFlags) = {
+    val ret = FpuFlags()
+    ret.NX := this.NX | that.NX
+    ret.UF := this.UF | that.UF
+    ret.OF := this.OF | that.OF
+    ret.DZ := this.DZ | that.DZ
+    ret.NV := this.NV | that.NV
+    ret
+  }
+
+  def andMask(that : Bool) = {
+    val ret = FpuFlags()
+    ret.NX := this.NX && that
+    ret.UF := this.UF && that
+    ret.OF := this.OF && that
+    ret.DZ := this.DZ && that
+    ret.NV := this.NV && that
+    ret
+  }
 }
 
 case class FpuFloatWriteback(robIdWidth : Int, valueWidth : Int) extends Bundle{
