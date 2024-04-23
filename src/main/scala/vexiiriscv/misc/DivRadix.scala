@@ -9,6 +9,8 @@ import spinal.lib._
 
 case class DivCmd(width : Int) extends Bundle{
   val a,b = UInt(width bits)
+  val normalized = Bool()
+  val iterations = UInt(log2Up(width) bits)
 }
 
 case class DivRsp(width : Int) extends Bundle{
@@ -95,6 +97,11 @@ class DivRadix(width : Int, radix : Int) extends DivComp(width) {
         shifter := U(io.cmd.a.takeHigh(shift)).resized
         numerator := io.cmd.a |<< shift
       }
+    }
+    when(io.cmd.normalized){
+      counter := iterations-1-(io.cmd.iterations >> log2Up(radixBits))
+      shifter := io.cmd.a
+      numerator := 0
     }
   }
 

@@ -54,56 +54,66 @@ object IntegrationSynthBench extends App{
 //    add("no fpu") { p =>
 //      p.fetchL1Enable = true
 //      p.lsuL1Enable = true
-//      p.lsuL1Sets = 64
-//      p.lsuL1Ways = 1
 //      p.relaxedBranch = true
 //      p.withMul = true
+//      p.withDiv = true
+//      p.skipFma = true
+//      p.divArea = false
 //    }
-//
-//
+
+    add("no fpu with bypass") { p =>
+      p.fetchL1Enable = true
+      p.lsuL1Enable = true
+      p.relaxedBranch = true
+      p.withMul = true
+      p.withDiv = true
+      p.skipFma = true
+      p.divArea = false
+      p.allowBypassFrom = 0
+    }
+
+  //
 //  add("with fpu no fma") { p =>
 //    p.fetchL1Enable = true
 //    p.lsuL1Enable = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 1
 //    p.relaxedBranch = true
 //    p.withRvf = true
-//    p.withRvf = true
 //    p.withMul = true
+//    p.withDiv = true
 //    p.skipFma = true
+//    p.divArea = false
 //  }
 //
 //  add("with fpu inaccurate fma") { p =>
 //    p.fetchL1Enable = true
 //    p.lsuL1Enable = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 1
 //    p.relaxedBranch = true
 //    p.withRvf = true
-//    p.withRvf = true
 //    p.withMul = true
+//    p.withDiv = true
 //    p.fpuFmaFullAccuracy = false
+//    p.divArea = false
 //  }
 //  add("with fpu") { p =>
 //    p.fetchL1Enable = true
 //    p.lsuL1Enable = true
-//    p.lsuL1Sets = 64
-//    p.lsuL1Ways = 1
 //    p.relaxedBranch = true
 //    p.withRvf = true
 //    p.withMul = true
+//    p.withDiv = true
+//    p.divArea = false
 //  }
-
-  add("with fpu bypass") { p =>
-    p.fetchL1Enable = true
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 1
-    p.relaxedBranch = true
-    p.withRvf = true
-    p.withMul = true
-    p.allowBypassFrom = 0
-  }
+//
+//  add("with fpu bypass") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.relaxedBranch = true
+//    p.withRvf = true
+//    p.withMul = true
+//    p.withDiv = true
+//    p.allowBypassFrom = 0
+//    p.divArea = false
+//  }
 
 
   //  add ("fmax") { p =>
@@ -1069,5 +1079,21 @@ Artix 7 -> 186 Mhz 3430 LUT 2899 FF
 with_fpu_bypass ->
 Artix 7 -> 90 Mhz 3773 LUT 2996 FF
 Artix 7 -> 183 Mhz 4158 LUT 3029 FF
+
+no_fpu ->
+Artix 7 -> 90 Mhz 1725 LUT 1715 FF
+Artix 7 -> 206 Mhz 1950 LUT 1745 FF
+with_fpu_no_fma ->
+Artix 7 -> 90 Mhz 3048 LUT 2855 FF
+Artix 7 -> 181 Mhz 3478 LUT 2871 FF
+with_fpu_inaccurate_fma ->
+Artix 7 -> 90 Mhz 3317 LUT 2985 FF
+Artix 7 -> 180 Mhz 3689 LUT 3022 FF
+with_fpu ->
+Artix 7 -> 90 Mhz 3504 LUT 3097 FF
+Artix 7 -> 184 Mhz 3898 LUT 3149 FF
+with_fpu_bypass ->
+Artix 7 -> 90 Mhz 4217 LUT 3227 FF
+Artix 7 -> 185 Mhz 4634 LUT 3264 FF
 
  */

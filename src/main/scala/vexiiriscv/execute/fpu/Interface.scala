@@ -130,6 +130,15 @@ case class FpuFlags() extends Bundle{
     List(NX,  UF,  OF,  DZ,  NV).foreach(_ := False)
   }
 
+  def assign(NX : Bool = False,  UF : Bool = False,  OF : Bool = False,  DZ : Bool = False,  NV : Bool = False) = {
+    this.NX := NX
+    this.UF := UF
+    this.OF := OF
+    this.DZ := DZ
+    this.NV := NV
+    this
+  }
+
   def |(that : FpuFlags) = {
     val ret = FpuFlags()
     ret.NX := this.NX | that.NX

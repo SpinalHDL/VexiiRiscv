@@ -78,7 +78,6 @@ class FpuSqrtPlugin(val layer : LaneLayer,
       packPort.cmd.roundMode := FpuUtils.ROUNDING
       packPort.cmd.hartId := Global.HART_ID
       packPort.cmd.uopId := Decode.UOP_ID
-
       packPort.cmd.value.setNormal
       packPort.cmd.value.quiet := False
       packPort.cmd.value.sign := RS1_FP.sign
@@ -89,7 +88,7 @@ class FpuSqrtPlugin(val layer : LaneLayer,
         packPort.cmd.value.setInfinity
       }
 
-      val NV = False //TODO FPU FLAG
+      val NV = False
       when(negative) {
         packPort.cmd.value.setNanQuiet
         NV := True
@@ -101,6 +100,8 @@ class FpuSqrtPlugin(val layer : LaneLayer,
       when(RS1_FP.isZero) {
         packPort.cmd.value.setZero
       }
+
+      packPort.cmd.flags.assign(NV = NV)
     }
 
     buildBefore.release()

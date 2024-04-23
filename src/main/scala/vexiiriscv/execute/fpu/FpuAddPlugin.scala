@@ -60,6 +60,7 @@ class FpuAddPlugin(val layer : LaneLayer,
       addPort.cmd.roundMode := FpuUtils.ROUNDING
       addPort.cmd.hartId := Global.HART_ID
       addPort.cmd.uopId := Decode.UOP_ID
+      addPort.cmd.flags.clearAll()
     }
 
     buildBefore.release()

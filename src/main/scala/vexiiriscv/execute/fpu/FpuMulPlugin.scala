@@ -26,13 +26,10 @@ class FpuMulPlugin(val layer : LaneLayer,
     val fup = host[FpuUnpackerPlugin]
     val fpp = host[FpuPackerPlugin]
     val fasp = host[FpuAddSharedPlugin]
-    val ffwp = host[FpuFlagsWritebackPlugin]
     val mp  = host[MulReuse]
-    val buildBefore = retains(layer.el.pipelineLock, ffwp.elaborationLock)
+    val buildBefore = retains(layer.el.pipelineLock)
     val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fpp.elaborationLock)
     awaitBuild()
-
-    val flagsWb = ffwp.createPort(List(packAt))
 
     val packParam = FloatUnpackedParam(
       exponentMax   = p.unpackedConfig.exponentMax * 2 + 1,
@@ -130,13 +127,12 @@ class FpuMulPlugin(val layer : LaneLayer,
     import norm._
 
     val onPack = new layer.el.Execute(packAt) {
-      flagsWb.ats(0) := isValid && SEL
-      flagsWb.flags.clearAll()
+      val nv = False
 
       val mode = FloatMode.NORMAL()
       when(FORCE_NAN) {
         mode := FloatMode.NAN
-        flagsWb.flags.NV setWhen ((INFINITY_NAN || RS1_FP.isNanSignaling || RS2_FP.isNanSignaling))
+        nv setWhen ((INFINITY_NAN || RS1_FP.isNanSignaling || RS2_FP.isNanSignaling))
       }.elsewhen(FORCE_OVERFLOW) {
         mode := FloatMode.INF
       }.elsewhen(FORCE_ZERO) {
@@ -153,6 +149,7 @@ class FpuMulPlugin(val layer : LaneLayer,
       packPort.cmd.roundMode := FpuUtils.ROUNDING
       packPort.cmd.hartId := Global.HART_ID
       packPort.cmd.uopId := Decode.UOP_ID
+      packPort.cmd.flags.assign(NV = nv)
 
       if(withFma) {
         addPort.cmd.at(0) := isValid && SEL && FMA
@@ -166,6 +163,7 @@ class FpuMulPlugin(val layer : LaneLayer,
         addPort.cmd.roundMode := FpuUtils.ROUNDING
         addPort.cmd.hartId := Global.HART_ID
         addPort.cmd.uopId := Decode.UOP_ID
+        addPort.cmd.flags.assign(NV = nv)
       }
     }
 

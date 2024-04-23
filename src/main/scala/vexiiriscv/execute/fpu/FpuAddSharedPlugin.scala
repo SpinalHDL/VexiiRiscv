@@ -23,6 +23,7 @@ case class FpuAddSharedCmd(p1 : FloatUnpackedParam, p2 : FloatUnpackedParam, ats
   val roundMode = FpuRoundMode()
   val hartId = Global.HART_ID()
   val uopId = Decode.UOP_ID()
+  val flags = FpuFlags()
 }
 
 class FpuAddSharedPort(_cmd : FpuAddSharedCmd) extends Area{
@@ -47,8 +48,7 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
 
   val logic = during setup new Area{
     val fpp = host.find[FpuPackerPlugin](p => p.lane == lane)
-    val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == lane)
-    val buildBefore = retains(lane.pipelineLock, fpp.elaborationLock, ffwbp.elaborationLock)
+    val buildBefore = retains(lane.pipelineLock, fpp.elaborationLock)
     val uopLock = retains(lane.uopLock)
     awaitBuild()
     val latency = packAt
@@ -68,7 +68,6 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
 
     val uopsAt = mutable.LinkedHashMap[Int, ArrayBuffer[UopLayerSpec]]()
     for (port <- ports; (uop, at) <- port.uopsAt) uopsAt.getOrElseUpdate(at, ArrayBuffer[UopLayerSpec]()) += uop
-    val flagsWb = ffwbp.createPort(uopsAt.keys.toList)
     val packAts = uopsAt.keys.map(_ + latency).toList
     val packPort = fpp.createPort(packAts, packParam)
     for ((at, uops) <- uopsAt) {
@@ -93,6 +92,7 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
       val FORMAT = insert(reader(_.format))
       val ROUNDMODE = insert(reader(_.roundMode))
       val RDN = insert( ROUNDMODE === FpuRoundMode.RDN)
+      val FLAGS = insert(reader(_.flags))
       Global.HART_ID := reader(_.hartId)
       Decode.UOP_ID := reader(_.uopId)
       valid := reader.oh.orR
@@ -117,10 +117,6 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
     val onPack = new pip.Area(packAt) {
       val mask = inserter.GROUP_OH.andMask(isValid)
 
-      flagsWb.ats := mask
-      flagsWb.flags.clearAll()
-      flagsWb.flags.NV.setWhen(adder.result.NV)
-
       packPort.cmd.at             := mask
       packPort.cmd.value.mode     := adder.result.RESULT.mode
       packPort.cmd.value.quiet    := adder.result.RESULT.quiet
@@ -131,6 +127,8 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
       packPort.cmd.roundMode      := inserter.ROUNDMODE
       packPort.cmd.hartId         := Global.HART_ID
       packPort.cmd.uopId          := Decode.UOP_ID
+      packPort.cmd.flags          := inserter.FLAGS
+      packPort.cmd.flags.NV.setWhen(adder.result.NV)
 
       ready := !lane.isFreezed()
     }

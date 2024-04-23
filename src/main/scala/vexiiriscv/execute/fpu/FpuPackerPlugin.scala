@@ -22,6 +22,7 @@ case class FpuPackerCmd(p : FloatUnpackedParam, ats : Seq[Int]) extends Bundle{
   val roundMode = FpuRoundMode()
   val hartId = Global.HART_ID()
   val uopId = Decode.UOP_ID()
+  val flags = FpuFlags()
 }
 
 class FpuPackerPort(_cmd : FpuPackerCmd) extends Area{
@@ -58,7 +59,7 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
     val wbPorts = mutable.LinkedHashMap[Int, Flow[Bits]]()
     val uopsAt = mutable.LinkedHashMap[Int, ArrayBuffer[UopLayerSpec]]()
     for(port <- ports; (uop, at) <- port.uopsAt) uopsAt.getOrElseUpdate(at, ArrayBuffer[UopLayerSpec]()) += uop
-    val flagsWb = ffwbp.createPort(uopsAt.keys.toList)
+    val flagsWb = ffwbp.createPort(uopsAt.keys.map(_ + latency).toList)
     for((at, uops) <- uopsAt) {
       val port = wbp.createPort(at+latency).setName("FpuPackerPlugin_wb_at_" + at)
       wbPorts(at) = port
@@ -89,6 +90,7 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       val VALUE = insert(OhMux.or(reader.oh.asBits, remapped.toSeq))
       val FORMAT = insert(reader(_.format))
       val ROUNDMODE = insert(reader(_.roundMode))
+      val FLAGS = insert(reader(_.flags))
       Global.HART_ID := reader(_.hartId)
       Decode.UOP_ID := reader(_.uopId)
       valid := reader.oh.orR
@@ -248,11 +250,11 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
 
       val csr = host[FpuCsrPlugin]
       flagsWb.ats := GROUP_OH.andMask(valid)
-      flagsWb.flags.NX := nx
-      flagsWb.flags.UF := uf
-      flagsWb.flags.OF := of
-      flagsWb.flags.DZ := False
-      flagsWb.flags.NV := False
+      flagsWb.flags.NX := FLAGS.NX || nx
+      flagsWb.flags.UF := FLAGS.UF || uf
+      flagsWb.flags.OF := FLAGS.OF || of
+      flagsWb.flags.DZ := FLAGS.DZ
+      flagsWb.flags.NV := FLAGS.NV
 
 
       p.whenDouble(FORMAT) {
