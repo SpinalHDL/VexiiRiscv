@@ -666,6 +666,7 @@ class ParamSimple(){
       plugins += new execute.fpu.FpuSqrtPlugin(early0)
       plugins += new execute.fpu.FpuClassPlugin(early0)
       plugins += new execute.fpu.FpuCmpPlugin(early0)
+      plugins += new execute.fpu.FpuMvPlugin(early0)
       if(withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0)

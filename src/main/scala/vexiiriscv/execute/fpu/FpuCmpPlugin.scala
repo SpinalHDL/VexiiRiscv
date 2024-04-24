@@ -127,7 +127,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
     val onIntWb = new layer.Execute(intWbAt) {
       iwb.valid := SEL_INT
-      iwb.payload := onCmp.CMP_RESULT.asBits.resized //TODO NV !!
+      iwb.payload := onCmp.CMP_RESULT.asBits.resized
     }
 
     val onFloatWb = new layer.Execute(floatWbAt) {
