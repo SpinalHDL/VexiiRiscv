@@ -61,16 +61,16 @@ object IntegrationSynthBench extends App{
 //      p.divArea = false
 //    }
 
-    add("no fpu with bypass") { p =>
-      p.fetchL1Enable = true
-      p.lsuL1Enable = true
-      p.relaxedBranch = true
-      p.withMul = true
-      p.withDiv = true
-      p.skipFma = true
-      p.divArea = false
-      p.allowBypassFrom = 0
-    }
+//    add("no fpu with bypass") { p =>
+//      p.fetchL1Enable = true
+//      p.lsuL1Enable = true
+//      p.relaxedBranch = true
+//      p.withMul = true
+//      p.withDiv = true
+//      p.skipFma = true
+//      p.divArea = false
+//      p.allowBypassFrom = 0
+//    }
 
   //
 //  add("with fpu no fma") { p =>
@@ -84,16 +84,16 @@ object IntegrationSynthBench extends App{
 //    p.divArea = false
 //  }
 //
-//  add("with fpu inaccurate fma") { p =>
-//    p.fetchL1Enable = true
-//    p.lsuL1Enable = true
-//    p.relaxedBranch = true
-//    p.withRvf = true
-//    p.withMul = true
-//    p.withDiv = true
-//    p.fpuFmaFullAccuracy = false
-//    p.divArea = false
-//  }
+  add("with fpu inaccurate fma") { p =>
+    p.fetchL1Enable = true
+    p.lsuL1Enable = true
+    p.relaxedBranch = true
+    p.withRvf = true
+    p.withMul = true
+    p.withDiv = true
+    p.fpuFmaFullAccuracy = false
+    p.divArea = false
+  }
 //  add("with fpu") { p =>
 //    p.fetchL1Enable = true
 //    p.lsuL1Enable = true
@@ -1098,5 +1098,9 @@ Artix 7 -> 184 Mhz 3898 LUT 3149 FF
 with_fpu_bypass ->
 Artix 7 -> 90 Mhz 4217 LUT 3227 FF
 Artix 7 -> 185 Mhz 4634 LUT 3264 FF
+
+with_fpu_inaccurate_fma ->
+Artix 7 -> 90 Mhz 3468 LUT 3219 FF
+Artix 7 -> 181 Mhz 3874 LUT 3238 FF
 
  */

@@ -10,6 +10,10 @@ import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, muxDouble}
 import vexiiriscv.riscv._
 
 
+object FpuCmpFloatOp extends SpinalEnum{
+  val MIN_MAX, SGNJ = newElement()
+}
+
 class FpuCmpPlugin(val layer : LaneLayer,
                    var cmpAt : Int = 0,
                    var intWbAt: Int = 1,
@@ -20,6 +24,10 @@ class FpuCmpPlugin(val layer : LaneLayer,
   val SEL_INT = Payload(Bool())
   val LESS = Payload(Bool())
   val EQUAL = Payload(Bool())
+  val FLOAT_OP = Payload(FpuCmpFloatOp())
+  val INVERT = Payload(Bool())
+  val SGNJ_RS1 = Payload(Bool())
+
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
@@ -55,18 +63,24 @@ class FpuCmpPlugin(val layer : LaneLayer,
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
 
-    add(Rvfd.FMIN_S, f32, LESS -> True)
-    add(Rvfd.FMAX_S, f32, LESS -> False)
-    add(Rvfd.FLE_S , f32, EQUAL -> True , LESS -> True)
-    add(Rvfd.FEQ_S , f32, EQUAL -> True , LESS -> False)
-    add(Rvfd.FLT_S , f32, EQUAL -> False, LESS -> True)
+    add(Rvfd.FSGNJ_S , f32, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> False)
+    add(Rvfd.FSGNJN_S, f32, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> True , SGNJ_RS1 -> False)
+    add(Rvfd.FSGNJX_S, f32, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> True )
+    add(Rvfd.FMIN_S  , f32, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> True)
+    add(Rvfd.FMAX_S  , f32, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> False)
+    add(Rvfd.FLE_S   , f32, EQUAL -> True , LESS -> True)
+    add(Rvfd.FEQ_S   , f32, EQUAL -> True , LESS -> False)
+    add(Rvfd.FLT_S   , f32, EQUAL -> False, LESS -> True)
 
     if(Riscv.RVD) {
-      add(Rvfd.FMIN_D, f64, LESS -> True)
-      add(Rvfd.FMAX_D, f64, LESS -> False)
-      add(Rvfd.FLE_D , f64, EQUAL -> True , LESS -> True )
-      add(Rvfd.FEQ_D , f64, EQUAL -> True , LESS -> False)
-      add(Rvfd.FLT_D , f64, EQUAL -> False, LESS -> True )
+      add(Rvfd.FSGNJ_S , f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> False)
+      add(Rvfd.FSGNJN_S, f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> True , SGNJ_RS1 -> False)
+      add(Rvfd.FSGNJX_S, f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> True)
+      add(Rvfd.FMIN_D  , f64, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> True)
+      add(Rvfd.FMAX_D  , f64, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> False)
+      add(Rvfd.FLE_D   , f64, EQUAL -> True , LESS -> True )
+      add(Rvfd.FEQ_D   , f64, EQUAL -> True , LESS -> False)
+      add(Rvfd.FLT_D   , f64, EQUAL -> False, LESS -> True )
     }
 
     uopLock.release()
@@ -105,7 +119,9 @@ class FpuCmpPlugin(val layer : LaneLayer,
         CMP_RESULT := False
       }
 
-      ffwb.ats(0) := SEL_FLOAT || SEL_INT
+      val SGNJ_RESULT = insert((RS1_FP.sign && SGNJ_RS1) ^ RS2_FP.sign ^ INVERT)
+
+      ffwb.ats(0) := (SEL_FLOAT && FLOAT_OP === FpuCmpFloatOp.MIN_MAX || SEL_INT)
       ffwb.flags.assign(NV = NV)
     }
 
@@ -116,10 +132,10 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
     val onFloatWb = new layer.Execute(floatWbAt) {
       fwb.valid := SEL_FLOAT
-      fwb.payload := onCmp.MIN_MAX_RS2.mux(up(layer.el(FloatRegFile, RS2)), up(layer.el(FloatRegFile, RS1)))
-      val doNan = RS1_FP.isNan && RS2_FP.isNan
+      fwb.payload := (FLOAT_OP === FpuCmpFloatOp.MIN_MAX && onCmp.MIN_MAX_RS2).mux(up(layer.el(FloatRegFile, RS2)), up(layer.el(FloatRegFile, RS1)))
+      val doNan = RS1_FP.isNan && RS2_FP.isNan && FLOAT_OP === FpuCmpFloatOp.MIN_MAX
+      val wb = fwb.payload
       when(doNan){
-        val wb = fwb.payload
         p.whenDouble(FORMAT)(wb(52, 11 bits).setAll())(wb(23, 8 bits).setAll())
         p.whenDouble(FORMAT)(wb(0, 52 bits).clearAll())(wb(0, 23 bits).clearAll())
         p.whenDouble(FORMAT)(wb(51) := True)(wb(22) := True)
@@ -127,6 +143,9 @@ class FpuCmpPlugin(val layer : LaneLayer,
         if (p.rvd) when(FORMAT === FpuFormat.FLOAT) {
           wb(63 downto 32).setAll()
         }
+      }
+      when(FLOAT_OP === FpuCmpFloatOp.SGNJ){
+        p.whenDouble(FORMAT)(wb(63) := onCmp.SGNJ_RESULT)(wb(31) := onCmp.SGNJ_RESULT)
       }
     }
 

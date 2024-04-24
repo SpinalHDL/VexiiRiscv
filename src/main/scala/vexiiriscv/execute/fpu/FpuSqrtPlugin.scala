@@ -12,7 +12,7 @@ import vexiiriscv.riscv._
 
 
 class FpuSqrtPlugin(val layer : LaneLayer,
-                    var exeAt : Int = 1) extends FiberPlugin{
+                    var exeAt : Int = 0) extends FiberPlugin{
   val p = FpuUtils
 
   val SEL = Payload(Bool())
