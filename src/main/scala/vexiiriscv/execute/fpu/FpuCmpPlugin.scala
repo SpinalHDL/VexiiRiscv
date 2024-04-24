@@ -19,7 +19,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
   val SEL_FLOAT = Payload(Bool())
   val SEL_INT = Payload(Bool())
   val LESS = Payload(Bool())
-    val EQUAL = Payload(Bool())
+  val EQUAL = Payload(Bool())
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
@@ -54,8 +54,8 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
     add(Rvfd.FMIN_S, f32, LESS -> True)
     add(Rvfd.FMAX_S, f32, LESS -> False)
-    add(Rvfd.FLE_S , f32, EQUAL -> True, LESS -> True)
-    add(Rvfd.FEQ_S , f32, EQUAL -> True, LESS -> False)
+    add(Rvfd.FLE_S , f32, EQUAL -> True , LESS -> True)
+    add(Rvfd.FEQ_S , f32, EQUAL -> True , LESS -> False)
     add(Rvfd.FLT_S , f32, EQUAL -> False, LESS -> True)
 
     if(Riscv.RVD) {
@@ -106,7 +106,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
     val onIntWb = new layer.Execute(intWbAt) {
       iwb.valid := SEL_INT
-      iwb.payload := onCmp.CMP_RESULT.asBits.resized
+      iwb.payload := onCmp.CMP_RESULT.asBits.resized //TODO NV !!
     }
 
     val onFloatWb = new layer.Execute(floatWbAt) {
