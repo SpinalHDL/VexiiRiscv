@@ -61,7 +61,7 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
     for(port <- ports; (uop, at) <- port.uopsAt) uopsAt.getOrElseUpdate(at, ArrayBuffer[UopLayerSpec]()) += uop
     val flagsWb = ffwbp.createPort(uopsAt.keys.map(_ + latency).toList)
     for((at, uops) <- uopsAt) {
-      val port = wbp.createPort(at+latency).setName("FpuPackerPlugin_wb_at_" + at)
+      val port = wbp.createPort(at+latency).setName("FpuPackerPlugin_wb_at_" + (at+latency))
       wbPorts(at) = port
       for(uop <- uops) {
         wbp.addMicroOp(port, uop)

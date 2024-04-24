@@ -72,7 +72,7 @@ class WriteBackPlugin(val laneName : String,
     val rfa = rfaKeys.get(RD)
     val stages = for (group <- sorted; ctrlId = group.head.ctrlAt) yield new eu.Execute(ctrlId) {
       val hits = B(group.map(_.port.valid))
-      val muxed = OHMux.or(hits, group.map(_.port.payload), group == sorted.head && group.size == 1)
+      val muxed = OHMux.or(hits, group.map(_.port.payload))
       val merged = if(group == sorted.head) muxed else up(DATA) | muxed
       bypass(DATA) := merged
 

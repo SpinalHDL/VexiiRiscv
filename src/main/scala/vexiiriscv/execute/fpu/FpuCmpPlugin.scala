@@ -6,7 +6,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
-import vexiiriscv.execute.fpu.FpuUtils.FORMAT
+import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, muxDouble}
 import vexiiriscv.riscv._
 
 
@@ -23,13 +23,15 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
-    val fwbp = host.find[FpuPackerPlugin](p => p.lane == layer.el)
+    val fwbp = host.find[WriteBackPlugin](p => p.laneName == layer.el.laneName && p.rf == FloatRegFile)
     val iwbp = host.find[IntFormatPlugin](p => p.laneName == layer.laneName)
+    val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == layer.el)
     val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fwbp.elaborationLock, iwbp.elaborationLock)
+    val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fwbp.elaborationLock, iwbp.elaborationLock, ffwbp.elaborationLock)
     awaitBuild()
-    
-    val packPort = fwbp.createPort(List(floatWbAt), FpuUtils.unpackedConfig)
+
+    val ffwb = ffwbp.createPort(List(cmpAt))
+    val fwb = fwbp.createPort(floatWbAt)
     val iwb = iwbp.access(intWbAt)
 
     layer.el.setDecodingDefault(SEL_FLOAT, False)
@@ -41,7 +43,8 @@ class FpuCmpPlugin(val layer : LaneLayer,
         case RfResource(_, rs: RfRead) => fup.unpack(uop, rs)
         case RfResource(rf, rs: RfWrite) if rf == FloatRegFile =>
           spec.addDecoding(SEL_FLOAT -> True)
-          packPort.uopsAt += spec -> floatWbAt
+          spec.setCompletion(floatWbAt)
+          fwbp.addMicroOp(fwb, spec)
         case RfResource(rf, rs: RfWrite) if rf == IntRegFile =>
           spec.addDecoding(SEL_INT -> True)
           iwbp.addMicroOp(iwb, spec)
@@ -97,11 +100,13 @@ class FpuCmpPlugin(val layer : LaneLayer,
       )
 
       val MIN_MAX_RS2 = insert(!((rs1Smaller ^ !LESS) && !RS1_FP.isNan || RS2_FP.isNan))
-      val MIN_MAX_QUIET = insert(RS1_FP.isNan && RS2_FP.isNan)
       val CMP_RESULT = insert(rs1Smaller && !bothZero && LESS || (rs1Equal || bothZero) && EQUAL)
       when(RS1_FP.isNan || RS2_FP.isNan) {
         CMP_RESULT := False
       }
+
+      ffwb.ats(0) := SEL_FLOAT || SEL_INT
+      ffwb.flags.assign(NV = NV)
     }
 
     val onIntWb = new layer.Execute(intWbAt) {
@@ -110,15 +115,19 @@ class FpuCmpPlugin(val layer : LaneLayer,
     }
 
     val onFloatWb = new layer.Execute(floatWbAt) {
-      packPort.cmd.at(0) := isValid && SEL_FLOAT
-      packPort.cmd.value := onCmp.MIN_MAX_RS2.mux[FloatUnpacked](RS2_FP, RS1_FP)
-      when(!RS2_FP.quiet) { packPort.cmd.value.quiet := False }
-      when(onCmp.MIN_MAX_QUIET) { packPort.cmd.value.setNanQuiet }
-      packPort.cmd.format := FORMAT
-      packPort.cmd.roundMode := FpuUtils.ROUNDING
-      packPort.cmd.hartId := Global.HART_ID
-      packPort.cmd.uopId := Decode.UOP_ID
-      packPort.cmd.flags.assign(NV=onCmp.NV)
+      fwb.valid := SEL_FLOAT
+      fwb.payload := onCmp.MIN_MAX_RS2.mux(up(layer.el(FloatRegFile, RS2)), up(layer.el(FloatRegFile, RS1)))
+      val doNan = RS1_FP.isNan && RS2_FP.isNan
+      when(doNan){
+        val wb = fwb.payload
+        p.whenDouble(FORMAT)(wb(52, 11 bits).setAll())(wb(23, 8 bits).setAll())
+        p.whenDouble(FORMAT)(wb(0, 52 bits).clearAll())(wb(0, 23 bits).clearAll())
+        p.whenDouble(FORMAT)(wb(51) := True)(wb(22) := True)
+        p.whenDouble(FORMAT)(wb(63) := False)(wb(31) := False)
+        if (p.rvd) when(FORMAT === FpuFormat.FLOAT) {
+          wb(63 downto 32).setAll()
+        }
+      }
     }
 
     buildBefore.release()
