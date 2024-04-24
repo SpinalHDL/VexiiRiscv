@@ -28,6 +28,10 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
     logic.onUnpack.rs.toList(logic.rsList.toList.indexOf(rs)).RS
   }
 
+  def getSubnormal(rs : RfRead) : Payload[Bool] = {
+    logic.onUnpack.rs.toList(logic.rsList.toList.indexOf(rs)).IS_SUBNORMAL
+  }
+
   def unpackingDone(at : Int) : Bool = at match {
     case unpackAt => !logic.onUnpack.rs.map(_.normalizer.freezeIt).toList.orR
     case _ => True
@@ -135,7 +139,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
         val manZero = Bool()
         val expZero = Bool()
         val expOne = Bool()
-        val isSubnormal = expZero && !manZero
+        val IS_SUBNORMAL = insert(expZero && !manZero)
         val recodedExpOffset = UInt(p.exponentWidth bits)
         val recodedExpSub = SInt(p.exponentWidth + 1 bits)
         val expRaw = UInt(p.exponentWidth bits)
@@ -169,7 +173,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
         )
         apply(RS) := RS_PRE_NORM
         val normalizer = new Area {
-          val valid = unpackerSel && isSubnormal
+          val valid = unpackerSel && IS_SUBNORMAL
           val asked = RegInit(False) setWhen (fsmRequesters(inputId) && !fsmRequesters.dropLow(inputId + 1).orR) clearWhen (clear)
           val served = RegInit(False) setWhen (fsmRsp.valid && fsmServed.dropLow(inputId + 1).andR) clearWhen (clear)
           fsmRequesters(inputId) := valid && !asked
