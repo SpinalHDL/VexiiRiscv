@@ -1083,6 +1083,9 @@ Artix 7 -> 183 Mhz 4158 LUT 3029 FF
 no_fpu ->
 Artix 7 -> 90 Mhz 1725 LUT 1715 FF
 Artix 7 -> 206 Mhz 1950 LUT 1745 FF
+no_fpu_with_bypass ->
+Artix 7 -> 90 Mhz 1882 LUT 1716 FF
+Artix 7 -> 202 Mhz 2129 LUT 1728 FF 
 with_fpu_no_fma ->
 Artix 7 -> 90 Mhz 3048 LUT 2855 FF
 Artix 7 -> 181 Mhz 3478 LUT 2871 FF

@@ -664,6 +664,7 @@ class ParamSimple(){
       plugins += new execute.fpu.FpuAddPlugin(early0)
       plugins += new execute.fpu.FpuMulPlugin(early0, withFma = !skipFma, fmaFullAccuracy = fpuFmaFullAccuracy)
       plugins += new execute.fpu.FpuSqrtPlugin(early0)
+      plugins += new execute.fpu.FpuCmpPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0)
       //      plugins += new execute.fpu.FpuEmbedded()
