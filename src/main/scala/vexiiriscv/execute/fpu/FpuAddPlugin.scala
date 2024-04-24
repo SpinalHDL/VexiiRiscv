@@ -16,6 +16,7 @@ class FpuAddPlugin(val layer : LaneLayer,
   val p = FpuUtils
 
   val SEL = Payload(Bool())
+  val SUB = Payload(Bool())
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
@@ -41,9 +42,11 @@ class FpuAddPlugin(val layer : LaneLayer,
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
 
-    add(Rvfd.FADD_S, f32)
+    add(Rvfd.FADD_S, f32, SUB -> False)
+    add(Rvfd.FSUB_S, f32, SUB -> True )
     if(Riscv.RVD) {
-      add(Rvfd.FADD_D, f64)
+      add(Rvfd.FADD_D, f64, SUB -> False)
+      add(Rvfd.FSUB_D, f64, SUB -> True )
     }
 
     uopLock.release()
@@ -56,6 +59,7 @@ class FpuAddPlugin(val layer : LaneLayer,
       addPort.cmd.at(0) := isValid && SEL
       addPort.cmd.rs1 := fup(RS1)
       addPort.cmd.rs2 := fup(RS2)
+      addPort.cmd.rs2.sign.removeAssignments() := fup(RS2).sign ^ SUB
       addPort.cmd.format := FORMAT
       addPort.cmd.roundMode := FpuUtils.ROUNDING
       addPort.cmd.hartId := Global.HART_ID

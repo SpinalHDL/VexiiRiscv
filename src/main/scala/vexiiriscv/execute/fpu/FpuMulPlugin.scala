@@ -21,6 +21,8 @@ class FpuMulPlugin(val layer : LaneLayer,
 
   val SEL = Payload(Bool())
   val FMA = Payload(Bool())
+  val SUB1 = Payload(Bool())
+  val SUB2 = Payload(Bool())
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
@@ -80,9 +82,15 @@ class FpuMulPlugin(val layer : LaneLayer,
     }
 
     if(withFma){
-      fma(Rvfd.FMADD_S, f32)
+      fma(Rvfd.FMADD_S , f32, SUB1 -> False, SUB2 -> False)
+      fma(Rvfd.FMSUB_S , f32, SUB1 -> False, SUB2 -> True )
+      fma(Rvfd.FNMSUB_S, f32, SUB1 -> True , SUB2 -> False)
+      fma(Rvfd.FNMADD_S, f32, SUB1 -> True , SUB2 -> True)
       if (Riscv.RVD) {
-        fma(Rvfd.FMADD_D, f64)
+        fma(Rvfd.FMADD_D , f64, SUB1 -> False, SUB2 -> False)
+        fma(Rvfd.FMSUB_D , f64, SUB1 -> False, SUB2 -> True)
+        fma(Rvfd.FNMSUB_D, f64, SUB1 -> True , SUB2 -> False)
+        fma(Rvfd.FNMADD_D, f64, SUB1 -> True , SUB2 -> True)
       }
     }
 
@@ -153,12 +161,13 @@ class FpuMulPlugin(val layer : LaneLayer,
 
       if(withFma) {
         addPort.cmd.at(0) := isValid && SEL && FMA
-        addPort.cmd.rs1.sign := SIGN
+        addPort.cmd.rs1.sign := SIGN ^ SUB1
         addPort.cmd.rs1.exponent := EXP
         addPort.cmd.rs1.mantissa := MAN.rounded(RoundType.FLOOR)
         addPort.cmd.rs1.mode := mode
         addPort.cmd.rs1.quiet := True
         addPort.cmd.rs2 := fup(RS3)
+        addPort.cmd.rs2.sign.removeAssignments() := fup(RS3).sign ^ SUB2
         addPort.cmd.format := FORMAT
         addPort.cmd.roundMode := FpuUtils.ROUNDING
         addPort.cmd.hartId := Global.HART_ID
