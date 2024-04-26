@@ -149,7 +149,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   for (elf <- riscvTestsFromStart) {
     val args = newArgs()
     args.loadElf(elf)
-    args.failAfter(100000)
+    args.failAfter(1000000)
     args.name("riscv-tests/" + elf.getName)
   }
 

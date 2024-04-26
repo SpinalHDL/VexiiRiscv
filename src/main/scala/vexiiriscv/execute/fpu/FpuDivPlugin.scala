@@ -58,12 +58,13 @@ class FpuDivPlugin(val layer : LaneLayer,
     val iterationsWished = 1+internalMantissaSize+2+1
     val drift = iterationsWished % log2Up(dr.divRadix)
     val interations = iterationsWished + drift
+    val pickAt = 0
     
     val onExecute = new layer.Execute(exeAt) {
       when(isValid && SEL) {
         dr.divInject(layer, exeAt, U(B"1" ## RS1_FP.mantissa.raw), U(B"1" ## RS2_FP.mantissa.raw), interations-1)
       }
-      val DIVIDER_RSP = insert(dr.divRsp.result(drift+1, iterationsWished bits) | U(dr.divRsp.remain.orR || dr.divRsp.result(0, drift+1 bits).orR).resized)
+      val DIVIDER_RSP = insert(dr.divRsp.result(pickAt, iterationsWished bits) | U(dr.divRsp.remain.orR || dr.divRsp.result(0, pickAt bits).orR).resized)
     }
     import onExecute.DIVIDER_RSP
 

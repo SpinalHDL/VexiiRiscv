@@ -100,8 +100,8 @@ class DivRadix(width : Int, radix : Int) extends DivComp(width) {
     }
     when(io.cmd.normalized){
       counter := iterations-1-(io.cmd.iterations >> log2Up(radixBits))
-      shifter := io.cmd.a
-      numerator := 0
+      shifter := U(io.cmd.a.dropLow(radixBits)).resized
+      numerator := io.cmd.a |<< (width - radixBits)
     }
   }
 
