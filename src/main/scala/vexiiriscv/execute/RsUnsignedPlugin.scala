@@ -27,6 +27,11 @@ class RsUnsignedPlugin(val laneName : String, executeAt : Int = 0) extends Fiber
     uop.addRsSpec(RS2, executeAt)
   }
 
+  def addUop(uop: UopLayerSpec, rs1Signed: Boolean): Unit = {
+    uop.addDecoding(RS1_SIGNED -> Bool(rs1Signed))
+    uop.addRsSpec(RS1, executeAt)
+  }
+
   val logic = during setup new Area{
     val elp = host.find[ExecuteLanePlugin](_.laneName == laneName)
     val buildBefore = retains(elp.pipelineLock)

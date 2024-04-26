@@ -9,12 +9,12 @@ import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
 import vexiiriscv.riscv._
-
+import FpuUtils._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
-class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends FiberPlugin{
+class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int = 0) extends FiberPlugin{
   val p = FpuUtils
 
   val elaborationLock = Retainer()
@@ -33,16 +33,74 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
   }
 
   def unpackingDone(at : Int) : Bool = at match {
-    case unpackAt => !logic.onUnpack.rs.map(_.normalizer.freezeIt).toList.orR
+    case unpackAt => logic.unpackDone
     case _ => True
   }
 
+  val SEL_I2F = Payload(Bool())
+
   val logic = during setup new Area{
+    val fpp = host[FpuPackerPlugin]
+    val rsUnsignedPlugin = host[RsUnsignedPlugin]
     val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock)
+    val uopLock = retains(layer.el.uopLock, fpp.elaborationLock, rsUnsignedPlugin.elaborationLock)
     awaitBuild()
 
+    val packParam = FloatUnpackedParam(
+      exponentMax = p.rsIntWidth,
+      exponentMin = 0,
+      mantissaWidth = p.mantissaWidth + 2
+    )
+    val packPort = fpp.createPort(List(packAt), packParam)
+
     elaborationLock.await()
+
+    layer.el.setDecodingDefault(SEL_I2F, False)
+    def i2f(uop: MicroOp, size: Int, signed : Boolean, decodings: (Payload[_ <: BaseType], Any)*) = {
+      val spec = layer.add(uop)
+      spec.addDecoding(decodings)
+      spec.addDecoding(SEL_I2F -> True)
+      packPort.uopsAt += spec -> packAt
+      spec.addDecoding(size match {
+        case 32 => RsUnsignedPlugin.IS_W -> True
+        case 64 => RsUnsignedPlugin.IS_W -> False
+      })
+      rsUnsignedPlugin.addUop(spec, signed)
+    }
+
+    val f64 = FORMAT -> FpuFormat.DOUBLE
+    val f32 = FORMAT -> FpuFormat.FLOAT
+
+    i2f(Rvfd.FCVT_S_WU, 32, false, f32)
+    i2f(Rvfd.FCVT_S_W , 32, true , f32)
+    if (Riscv.XLEN.get == 64) {
+      i2f(Rvfd.FCVT_S_LU, 64, false, f32)
+      i2f(Rvfd.FCVT_S_L , 64, true , f32)
+    }
+    if (Riscv.RVD) {
+      i2f(Rvfd.FCVT_D_WU, 32, false, f64)
+      i2f(Rvfd.FCVT_D_W , 32, true , f64)
+      if (Riscv.XLEN.get == 64) {
+        i2f(Rvfd.FCVT_D_LU, 64, false, f64)
+        i2f(Rvfd.FCVT_D_L , 64, true , f64)
+      }
+    }
+
+//    f2i(Rvfd.FCVT_WU_S, f32, arg(0)))
+//    f2i(Rvfd.FCVT_W_S,  f32, arg(1)))
+//    if (Riscv.XLEN.get == 64) {
+//      f2i(Rvfd.FCVT_LU_S, f32, arg(2)))
+//      f2i(Rvfd.FCVT_L_S, f32, arg(3)))
+//    }
+//    if (Riscv.RVD) {
+//      f2i(Rvfd.FCVT_WU_D, f64, arg(0)))
+//      f2i(Rvfd.FCVT_W_D, f64, arg(1)))
+//      if (Riscv.XLEN.get == 64) {
+//        f2i(Rvfd.FCVT_LU_D, f64, arg(2)))
+//        f2i(Rvfd.FCVT_L_D, f64, arg(3)))
+//      }
+//    }
+
 
     for((rs, uops) <- unpackSpec; uop <- uops) layer(uop).addRsSpec(rs, 0)
     uopLock.release()
@@ -61,7 +119,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
         val data = Bits(ohInputWidth bits)
       }
 
-      val portCount = 1 //TODO
+      val portCount = 2
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.build(Request(), portCount)
       val results = Vec.fill(portCount)(Flow(Result()))
 
@@ -75,7 +133,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
 
       import input._
 
-      val setup = new Area(1) {
+      val setup = new Area(1) { //TODO can probably be shorter pip
         val shiftBy = insert(OHToUInt(OHMasking.firstV2(args.data.reversed << 1)))
       }
       import setup._
@@ -204,6 +262,49 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0) extends Fiber
           RS.exponent := AFix(128)
           RS.mantissa.raw := (default -> False, RS.mantissa.raw.high -> True)
         }
+      }
+    }
+
+    val unpackDone = !onUnpack.rs.map(_.normalizer.freezeIt).toList.orR
+
+
+    val onCvt = new layer.el.Execute(unpackAt){
+      val rs1 = up(layer.el(IntRegFile, RS1))
+      val rs1Zero = rs1(31 downto 0) === 0
+      if(Riscv.XLEN.get == 64) rs1Zero setWhen(!RsUnsignedPlugin.IS_W && rs1(63 downto 32) === 0)
+
+      val fsmPortId = 1
+      val fsmCmd = unpacker.arbiter.io.inputs(fsmPortId)
+      val fsmRsp = unpacker.results(fsmPortId)
+      val clear = isReady || isCancel
+      val asked = RegInit(False) setWhen (fsmCmd.ready) clearWhen (clear)
+      val served = RegInit(False) setWhen (fsmRsp.valid) clearWhen (clear)
+      val fsmResult = fsmRsp.toReg
+
+      fsmCmd.valid := isValid && SEL_I2F && unpackDone && !asked
+      fsmCmd.data := RsUnsignedPlugin.RS1_UNSIGNED.asBits.resized
+
+      val freezeIt = isValid && SEL_I2F && !served
+      layer.el.freezeWhen(freezeIt)
+
+      packPort.cmd.at(0) := isValid && SEL_I2F
+      packPort.cmd.flags.clearAll()
+      packPort.cmd.format := FORMAT
+      packPort.cmd.roundMode := FpuUtils.ROUNDING
+      packPort.cmd.hartId := Global.HART_ID
+      packPort.cmd.uopId := Decode.UOP_ID
+
+      packPort.cmd.value.quiet := False
+      packPort.cmd.value.sign := RsUnsignedPlugin.RS1_REVERT
+      packPort.cmd.value.exponent := unpacker.ohInputWidth - fsmResult.shift
+      if (widthOf(fsmResult.data) > widthOf(packPort.cmd.value.mantissa.raw)) {
+        packPort.cmd.value.mantissa.raw := fsmResult.data.takeHigh(p.mantissaWidth + 1) ## fsmResult.data.dropHigh(p.mantissaWidth + 1).orR
+      } else {
+        packPort.cmd.value.mantissa.raw := fsmResult.data << widthOf(packPort.cmd.value.mantissa.raw) - widthOf(fsmResult.data)
+      }
+      packPort.cmd.value.setNormal
+      when(rs1Zero) {
+        packPort.cmd.value.setZero
       }
     }
     buildBefore.release()
