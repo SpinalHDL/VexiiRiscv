@@ -23,6 +23,7 @@ import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 
 import java.io.{File, IOException, PrintWriter}
 import java.net.{ServerSocket, Socket}
+import java.nio.ByteBuffer
 import java.util.Scanner
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -58,6 +59,7 @@ class TestArgs{
   def dbusReadyFactor(value : Double) : this.type = {args ++= List("--dbus-ready-factor", value.toString); this }
 
   def loadBin(address : Long, file : String) : this.type = {args ++= List("--load-bin", f"0x${address.toHexString},$file"); this }
+  def loadU32(address : Long, value : Long) : this.type = {args ++= List("--load-u32", f"0x${address.toHexString},0x${value.toHexString}"); this }
 }
 
 trait FsmHal{
@@ -111,6 +113,7 @@ class TestOptions{
   var startSymbol = Option.empty[String]
   var startSymbolOffset = 0l
   val bins = ArrayBuffer[(Long, File)]()
+  val u32s = ArrayBuffer[(Long, Int)]()
   val elfs = ArrayBuffer[File]()
   var testName = Option.empty[String]
   var passSymbolName = "pass"
@@ -121,6 +124,8 @@ class TestOptions{
   var seed = 2
   var jtagRemote = false
   var spawnProcess = Option.empty[String]
+
+//  traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true; printStats = true
 
   def getTestName() = testName.getOrElse("test")
 
@@ -146,7 +151,8 @@ class TestOptions{
     opt[Long]("fail-after") action { (v, c) => failAfter = Some(v) }
     opt[Long]("pass-after") action { (v, c) => passAfter = Some(v) }
     opt[Double]("sim-speed-printer") action { (v, c) => simSpeedPrinter = Some(v) }
-    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x",""), 16) -> new File(v(1)) }
+    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
+    opt[Seq[String]]("load-u32") unbounded() action { (v, c) => u32s += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Integer.parseInt(v(1).replace("0x", ""), 16) }
     opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
@@ -239,6 +245,13 @@ class TestOptions{
       mem.loadBin(offset, file)
       if (withRvlsCheck) rvls.loadBin(offset, file)
       tracerFile.foreach(_.loadBin(offset, file))
+    }
+
+    for ((offset, value) <- u32s) {
+      mem.write(offset, value)
+      val array = ByteBuffer.allocate(4).putInt(value).array.reverse
+      if (withRvlsCheck) rvls.loadBytes(offset, array)
+      tracerFile.foreach(_.loadBytes(offset, array))
     }
 
     // load elfs
