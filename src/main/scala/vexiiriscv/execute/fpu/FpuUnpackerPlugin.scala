@@ -86,22 +86,6 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
       }
     }
 
-//    f2i(Rvfd.FCVT_WU_S, f32, arg(0)))
-//    f2i(Rvfd.FCVT_W_S,  f32, arg(1)))
-//    if (Riscv.XLEN.get == 64) {
-//      f2i(Rvfd.FCVT_LU_S, f32, arg(2)))
-//      f2i(Rvfd.FCVT_L_S, f32, arg(3)))
-//    }
-//    if (Riscv.RVD) {
-//      f2i(Rvfd.FCVT_WU_D, f64, arg(0)))
-//      f2i(Rvfd.FCVT_W_D, f64, arg(1)))
-//      if (Riscv.XLEN.get == 64) {
-//        f2i(Rvfd.FCVT_LU_D, f64, arg(2)))
-//        f2i(Rvfd.FCVT_L_D, f64, arg(3)))
-//      }
-//    }
-
-
     for((rs, uops) <- unpackSpec; uop <- uops) layer(uop).addRsSpec(rs, 0)
     uopLock.release()
 
@@ -268,7 +252,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
     val unpackDone = !onUnpack.rs.map(_.normalizer.freezeIt).toList.orR
 
 
-    val onCvt = new layer.el.Execute(unpackAt){
+    val onCvt = new layer.el.Execute(unpackAt){ //TODO fmax
       val rs1 = up(layer.el(IntRegFile, RS1))
       val rs1Zero = rs1(31 downto 0) === 0
       if(Riscv.XLEN.get == 64) rs1Zero setWhen(!RsUnsignedPlugin.IS_W && rs1(63 downto 32) === 0)

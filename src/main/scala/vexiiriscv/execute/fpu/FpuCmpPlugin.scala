@@ -21,7 +21,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
   val p = FpuUtils
 
   val SEL_FLOAT = Payload(Bool())
-  val SEL_INT = Payload(Bool())
+  val SEL_CMP = Payload(Bool())
   val LESS = Payload(Bool())
   val EQUAL = Payload(Bool())
   val FLOAT_OP = Payload(FpuCmpFloatOp())
@@ -43,7 +43,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
     val iwb = iwbp.access(intWbAt)
 
     layer.el.setDecodingDefault(SEL_FLOAT, False)
-    layer.el.setDecodingDefault(SEL_INT, False)
+    layer.el.setDecodingDefault(SEL_CMP, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)
@@ -54,7 +54,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
           spec.setCompletion(floatWbAt)
           fwbp.addMicroOp(fwb, spec)
         case RfResource(rf, rs: RfWrite) if rf == IntRegFile =>
-          spec.addDecoding(SEL_INT -> True)
+          spec.addDecoding(SEL_CMP -> True)
           iwbp.addMicroOp(iwb, spec)
         case _ =>
       }
@@ -89,7 +89,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
     val RS2_FP = fup(RS2)
 
     val onCmp = new layer.Execute(cmpAt) {
-      val signalQuiet = SEL_INT && !LESS
+      val signalQuiet = SEL_CMP && !LESS
       val rs1NanNv = RS1_FP.isNan && (!RS1_FP.quiet || signalQuiet)
       val rs2NanNv = RS2_FP.isNan && (!RS2_FP.quiet || signalQuiet)
       val NV = insert(rs1NanNv || rs2NanNv)
@@ -121,12 +121,12 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
       val SGNJ_RESULT = insert((RS1_FP.sign && SGNJ_RS1) ^ RS2_FP.sign ^ INVERT)
 
-      ffwb.ats(0) := (SEL_FLOAT && FLOAT_OP === FpuCmpFloatOp.MIN_MAX || SEL_INT)
+      ffwb.ats(0) := (SEL_FLOAT && FLOAT_OP === FpuCmpFloatOp.MIN_MAX || SEL_CMP)
       ffwb.flags.assign(NV = NV)
     }
 
     val onIntWb = new layer.Execute(intWbAt) {
-      iwb.valid := SEL_INT
+      iwb.valid := SEL_CMP
       iwb.payload := onCmp.CMP_RESULT.asBits.resized
     }
 
