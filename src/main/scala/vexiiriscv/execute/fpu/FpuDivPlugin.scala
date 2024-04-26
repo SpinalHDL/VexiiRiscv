@@ -61,7 +61,7 @@ class FpuDivPlugin(val layer : LaneLayer,
     val pickAt = 0
     
     val onExecute = new layer.Execute(exeAt) {
-      when(isValid && SEL) {
+      when(isValid && SEL && fup.unpackingDone(exeAt)) {
         dr.divInject(layer, exeAt, U(B"1" ## RS1_FP.mantissa.raw), U(B"1" ## RS2_FP.mantissa.raw), interations-1)
       }
       val DIVIDER_RSP = insert(dr.divRsp.result(pickAt, iterationsWished bits) | U(dr.divRsp.remain.orR || dr.divRsp.result(0, pickAt bits).orR).resized)
