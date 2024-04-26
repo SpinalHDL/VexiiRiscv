@@ -129,18 +129,27 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val riscvTests = riscvTestsFile.listFiles().sorted
   val rvti = riscvTests.filter{ t => val n = t.getName; n.startsWith(s"rv${xlen}ui-p-") && !n.contains(".") && !rejectedTests.contains(n) }
   val rvtm = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}um-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
-  val rvta = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ua-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
+  val rvta = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ua-p-") && !n.contains(".") && !rejectedTests.contains(n) }
+  val rvtf = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}uf-p-") && !n.contains(".") && !rejectedTests.contains(n) }
 
-  val riscvTestsFrom2 = ArrayBuffer[File]()
+  val riscvTestsFrom2, riscvTestsFromStart = ArrayBuffer[File]()
   riscvTestsFrom2 ++= rvti
   if(rvm) riscvTestsFrom2 ++= rvtm
-  if(dut.database(Riscv.RVA)) riscvTestsFrom2 ++= rvta
+  if (rva) riscvTestsFrom2 ++= rvta
+  if (rvf) riscvTestsFromStart ++= rvtf
 
   for(elf <- riscvTestsFrom2) {
     val args = newArgs()
     args.loadElf(elf)
     args.failAfter(100000)
     args.startSymbol("test_2")
+    args.name("riscv-tests/" + elf.getName)
+  }
+
+  for (elf <- riscvTestsFromStart) {
+    val args = newArgs()
+    args.loadElf(elf)
+    args.failAfter(100000)
     args.name("riscv-tests/" + elf.getName)
   }
 
