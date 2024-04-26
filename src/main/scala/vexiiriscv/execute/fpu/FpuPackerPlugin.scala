@@ -31,11 +31,11 @@ class FpuPackerPort(_cmd : FpuPackerCmd) extends Area{
 }
 
 class FpuPackerPlugin(val lane: ExecuteLanePlugin,
-                      var wbAt : Int = 3) extends FiberPlugin with CompletionService with RegFileWriterService {
+                      var wbAt : Int = 3) extends FiberPlugin with RegFileWriterService {
   val p = FpuUtils
 
 
-  override def getCompletions(): Seq[Flow[CompletionPayload]] = List(logic.completion)
+//  override def getCompletions(): Seq[Flow[CompletionPayload]] = List(logic.completion)
   override def getRegFileWriters(): Seq[Flow[RegFileWriter]] = List(logic.s3.fpWriter)
 
   val elaborationLock = Retainer()
@@ -55,7 +55,6 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
 
     elaborationLock.await()
 
-    val completion = Flow(CompletionPayload())
     val wbPorts = mutable.LinkedHashMap[Int, Flow[Bits]]()
     val uopsAt = mutable.LinkedHashMap[Int, ArrayBuffer[UopLayerSpec]]()
     for(port <- ports; (uop, at) <- port.uopsAt) uopsAt.getOrElseUpdate(at, ArrayBuffer[UopLayerSpec]()) += uop
@@ -65,6 +64,7 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       wbPorts(at) = port
       for(uop <- uops) {
         wbp.addMicroOp(port, uop)
+        uop.setCompletion(at+latency)
         uop.reserve(FpuPackerPlugin.this, at)
         ffwbp.addUop(flagsWb, uop, at+latency)
       }
@@ -237,14 +237,9 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
         port.valid := GROUP_OH(i)
         port.payload := fwb.value
       }
-      completion.valid  := valid && GROUP_OH.orR
-      completion.hartId := Global.HART_ID
-      completion.uopId  := Decode.UOP_ID
-      completion.trap   := False
-      completion.commit := True
 
       val fpWriter = Flow(RegFileWriter(FloatRegFile))
-      fpWriter.valid := completion.valid
+      fpWriter.valid := GROUP_OH.orR && valid
       fpWriter.data := fwb.value
       fpWriter.uopId := Decode.UOP_ID
 
