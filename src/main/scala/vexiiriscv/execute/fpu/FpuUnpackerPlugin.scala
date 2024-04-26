@@ -149,7 +149,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
       val fsmRequesters = Bits(rsList.size bits)
       val fsmServed = Bits(rsList.size bits)
 
-      val clear = isReady || isCancel
+      val clear = isReady
       val rs = for ((input, inputId) <- rsValues.zipWithIndex) yield new Area {
         val rfRead = rsList(inputId)
         val rfa = Decode.rfaKeys.get(rfRead)
@@ -216,8 +216,8 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
         apply(RS) := RS_PRE_NORM
         val normalizer = new Area {
           val valid = unpackerSel && IS_SUBNORMAL
-          val asked = RegInit(False) setWhen (fsmRequesters(inputId) && !fsmRequesters.dropLow(inputId + 1).orR) clearWhen (clear)
-          val served = RegInit(False) setWhen (fsmRsp.valid && fsmServed.dropLow(inputId + 1).andR) clearWhen (clear)
+          val asked = RegInit(False) setWhen (fsmRequesters(inputId) && !fsmRequesters.dropLow(inputId + 1).orR || isCancel) clearWhen (clear)
+          val served = RegInit(False) setWhen (fsmRsp.valid && fsmServed.dropLow(inputId + 1).andR || isCancel) clearWhen (clear)
           fsmRequesters(inputId) := valid && !asked
           fsmServed(inputId) := !valid || served
 
@@ -236,7 +236,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
             exponent := recodedExpSub - fsmRsp.shift.intoSInt
             mantissa.raw := fsmRsp.data >> widthOf(fsmCmd.data) - widthOf(RS_PRE_NORM.mantissa.raw)
           }
-          val freezeIt = valid && !served
+          val freezeIt = valid && !served //Maybe a bit hard on timings
           layer.el.freezeWhen(freezeIt)
         }
 
@@ -260,9 +260,9 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
       val fsmPortId = 1
       val fsmCmd = unpacker.arbiter.io.inputs(fsmPortId)
       val fsmRsp = unpacker.results(fsmPortId)
-      val clear = isReady || isCancel
-      val asked = RegInit(False) setWhen (fsmCmd.ready) clearWhen (clear)
-      val served = RegInit(False) setWhen (fsmRsp.valid) clearWhen (clear)
+      val clear = isReady
+      val asked = RegInit(False) setWhen (fsmCmd.ready || isCancel) clearWhen (clear)
+      val served = RegInit(False) setWhen (fsmRsp.valid || isCancel) clearWhen (clear)
       val fsmResult = fsmRsp.toReg
 
       fsmCmd.valid := isValid && SEL_I2F && unpackDone && !asked
