@@ -89,7 +89,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
     val RS2_FP = fup(RS2)
 
     val onCmp = new layer.Execute(cmpAt) {
-      val signalQuiet = SEL_CMP && !LESS
+      val signalQuiet = SEL_CMP && LESS
       val rs1NanNv = RS1_FP.isNan && (!RS1_FP.quiet || signalQuiet)
       val rs2NanNv = RS2_FP.isNan && (!RS2_FP.quiet || signalQuiet)
       val NV = insert(rs1NanNv || rs2NanNv)
