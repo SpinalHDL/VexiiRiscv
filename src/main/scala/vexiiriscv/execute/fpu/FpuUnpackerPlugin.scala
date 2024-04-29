@@ -32,6 +32,10 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
     logic.onUnpack.rs.toList(logic.rsList.toList.indexOf(rs)).IS_SUBNORMAL
   }
 
+  def getBadBoxing(rs: RfRead): Payload[Bool] = {
+    logic.onUnpack.rs.toList(logic.rsList.toList.indexOf(rs)).badBoxing.HIT
+  }
+
   def unpackingDone(at : Int) : Bool = at match {
     case unpackAt => logic.unpackDone
     case _ => True
@@ -91,7 +95,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
 
     val rsList = unpackSpec.keys.toArray
 
-    val unpacker = new StagePipeline {
+    val unpacker = new StagePipeline { //TODO this kinda bloated now that all unpack are unified
       val ohInputWidth = p.rsIntWidth max Riscv.fpuMantissaWidth
 
       case class Request() extends Bundle {
@@ -240,11 +244,12 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
           layer.el.freezeWhen(freezeIt)
         }
 
-        if (p.rvd) when(p.FORMAT === FpuFormat.FLOAT && !input(63 downto 32).andR) {
-          RS.setNanQuiet
-          RS.sign := False
-          RS.exponent := AFix(128)
-          RS.mantissa.raw := (default -> False, RS.mantissa.raw.high -> True)
+        val badBoxing = p.rvd generate new Area {
+          val HIT = insert(p.FORMAT === FpuFormat.FLOAT && !input(63 downto 32).andR)
+          when(HIT) { //This kinda create a long combinatoral path
+            RS.setNanQuiet
+            RS.sign := False
+          }
         }
       }
     }
@@ -254,8 +259,10 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
 
     val onCvt = new layer.el.Execute(unpackAt){ //TODO fmax
       val rs1 = up(layer.el(IntRegFile, RS1))
-      val rs1Zero = rs1(31 downto 0) === 0
-      if(Riscv.XLEN.get == 64) rs1Zero setWhen(!RsUnsignedPlugin.IS_W && rs1(63 downto 32) === 0)
+      val rs1Zero = Riscv.XLEN.get match {
+        case 32 => rs1(31 downto 0) === 0
+        case 64 => rs1(31 downto 0) === 0 && (RsUnsignedPlugin.IS_W || rs1(63 downto 32) === 0)
+      }
 
       val fsmPortId = 1
       val fsmCmd = unpacker.arbiter.io.inputs(fsmPortId)

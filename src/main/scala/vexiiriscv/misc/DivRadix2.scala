@@ -8,7 +8,7 @@ import spinal.core.{B, U, _}
 import spinal.lib._
 
 
-class DivRadix2(width: Int, val lowArea: Boolean = true) extends DivComp(width){
+class DivRadix2(width: Int, val lowArea: Boolean = true) extends DivComp(width, 1){
 
   val predictShiftInCycle0 = false // Does not work yet.
 

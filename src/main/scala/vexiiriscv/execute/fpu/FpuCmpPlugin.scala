@@ -135,7 +135,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
       fwb.payload := (FLOAT_OP === FpuCmpFloatOp.MIN_MAX && onCmp.MIN_MAX_RS2).mux(up(layer.el(FloatRegFile, RS2)), up(layer.el(FloatRegFile, RS1)))
       val doNan = RS1_FP.isNan && RS2_FP.isNan && FLOAT_OP === FpuCmpFloatOp.MIN_MAX
       val wb = fwb.payload
-      when(doNan){
+      when(doNan) {
         p.whenDouble(FORMAT)(wb(52, 11 bits).setAll())(wb(23, 8 bits).setAll())
         p.whenDouble(FORMAT)(wb(0, 52 bits).clearAll())(wb(0, 23 bits).clearAll())
         p.whenDouble(FORMAT)(wb(51) := True)(wb(22) := True)
@@ -146,6 +146,9 @@ class FpuCmpPlugin(val layer : LaneLayer,
       }
       when(FLOAT_OP === FpuCmpFloatOp.SGNJ){
         p.whenDouble(FORMAT)(wb(63) := onCmp.SGNJ_RESULT)(wb(31) := onCmp.SGNJ_RESULT)
+        if(Riscv.RVD) when(fup.getBadBoxing(RS1)){
+          doNan := True
+        }
       }
     }
 

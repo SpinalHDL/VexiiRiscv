@@ -229,7 +229,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     val testCount = (0x50000 * fpuTestFactor).toInt
     args.loadU32(0xA0000000l, testCount)
     args.loadU32(0xA0000004l, testId)
-    args.failAfter(500000000*fpuTestFactor toLong)
+    args.failAfter(500000000l*fpuTestFactor*(List("sqrt", "div").exists(name.contains).mux(30,1)) toLong)
   }
   def fpuTest3() = {
     val args = newArgs()

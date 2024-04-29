@@ -159,15 +159,15 @@ class ParamSimple(){
     withMul = true
     withDiv = true
 //    withDispatcherBuffer = true
-//    withAlignerBuffer = true
-//    withRvc = true
+    withAlignerBuffer = true
+    withRvc = true
     withRva = true
     withRvf = true
-//    withRvd = true
+    withRvd = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-//    xlen = 64
+    xlen = 64
 
 
     privParam.withDebug = true

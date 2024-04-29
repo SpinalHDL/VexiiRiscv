@@ -7,10 +7,10 @@ package vexiiriscv.misc
 import spinal.core._
 import spinal.lib._
 
-case class DivCmd(width : Int) extends Bundle{
+case class DivCmd(width : Int, radixBits : Int) extends Bundle{
   val a,b = UInt(width bits)
   val normalized = Bool()
-  val iterations = UInt(log2Up(width) bits)
+  val iterations = UInt(log2Up(width)+1-radixBits bits)
 }
 
 case class DivRsp(width : Int) extends Bundle{
@@ -18,21 +18,21 @@ case class DivRsp(width : Int) extends Bundle{
   val remain = UInt(width bits)
 }
 
-case class DivIo(width : Int) extends Bundle{
+case class DivIo(width : Int, radixBits : Int) extends Bundle{
   val flush = in Bool()
-  val cmd = slave Stream (DivCmd(width))
+  val cmd = slave Stream (DivCmd(width, radixBits))
   val rsp = master Stream (DivRsp(width))
 }
 
-class DivComp(val width : Int) extends Component{
-  val io = DivIo(width)
+class DivComp(val width : Int, val radixBits : Int) extends Component{
+  val io = DivIo(width, radixBits)
 }
 
-class DivRadix(width : Int, radix : Int) extends DivComp(width) {
-  val radixBits = radix match {
-    case 2 => 1
-    case 4 => 2
-  }
+class DivRadix(width: Int, radix: Int) extends DivComp(width, radix match {
+  case 2 => 1
+  case 4 => 2
+}) {
+
   assert(width % radixBits == 0)
 
   val iterations = width/radixBits
@@ -99,7 +99,7 @@ class DivRadix(width : Int, radix : Int) extends DivComp(width) {
       }
     }
     when(io.cmd.normalized){
-      counter := iterations-1-(io.cmd.iterations >> log2Up(radixBits))
+      counter := iterations-1-io.cmd.iterations
       shifter := U(io.cmd.a.dropLow(radixBits)).resized
       numerator := io.cmd.a |<< (width - radixBits)
     }

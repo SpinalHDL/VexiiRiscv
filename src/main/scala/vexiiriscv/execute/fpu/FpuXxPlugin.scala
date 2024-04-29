@@ -57,6 +57,7 @@ class FpuXxPlugin(val layer : LaneLayer,
       packPort.cmd.hartId := Global.HART_ID
       packPort.cmd.uopId := Decode.UOP_ID
       packPort.cmd.value := RS1_FP
+      packPort.cmd.value.quiet.removeAssignments() := True
       packPort.cmd.flags.assign(NV = RS1_FP.isNan && !RS1_FP.quiet)
     }
 

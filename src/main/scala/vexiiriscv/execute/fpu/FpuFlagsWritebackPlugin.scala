@@ -8,7 +8,6 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
-import vexiiriscv.misc.InflightService
 import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
 import vexiiriscv.riscv._
 
@@ -78,13 +77,10 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
     }
 
     val afterCommit = for(spec <- specs; ats = spec.ats.zipWithIndex.filter(_._1 > pipTo); if ats.nonEmpty) yield {
-      flagsOrInputs += spec.port.flags.andMask(ats.map(e => spec.port.ats(e._2)).orR)
-    }
-
-    val inflight = False
-    val hazardUntil = hazardSels.keys.max
-    for(eId <- pipTo+1 to hazardUntil) new lane.Execute(eId){
-      inflight setWhen(isValid && hazardSels.filter(_._1 >= eId).map(e => this(e._2)).orR)
+      flagsOrInputs += spec.port.flags.andMask(ats.map { e =>
+        val exe = lane.execute(e._1)
+        exe.isValid && exe.isReady && exe(Global.COMMIT) && spec.port.ats(e._2)
+      }.orR)
     }
 
     val flagsOr = flagsOrInputs.reduceBalancedTree(_ | _)
