@@ -73,9 +73,9 @@ class FpuCmpPlugin(val layer : LaneLayer,
     add(Rvfd.FLT_S   , f32, EQUAL -> False, LESS -> True)
 
     if(Riscv.RVD) {
-      add(Rvfd.FSGNJ_S , f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> False)
-      add(Rvfd.FSGNJN_S, f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> True , SGNJ_RS1 -> False)
-      add(Rvfd.FSGNJX_S, f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> True)
+      add(Rvfd.FSGNJ_D , f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> False)
+      add(Rvfd.FSGNJN_D, f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> True , SGNJ_RS1 -> False)
+      add(Rvfd.FSGNJX_D, f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> True)
       add(Rvfd.FMIN_D  , f64, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> True)
       add(Rvfd.FMAX_D  , f64, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> False)
       add(Rvfd.FLE_D   , f64, EQUAL -> True , LESS -> True )

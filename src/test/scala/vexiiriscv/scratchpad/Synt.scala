@@ -1114,4 +1114,8 @@ Artix 7 -> 181 Mhz 3986 LUT 3195 FF
 with_fpu_inaccurate_fma f2i ->
 Artix 7 -> 90 Mhz 3808 LUT 3227 FF
 Artix 7 -> 165 Mhz 4199 LUT 3274 FF
+
+with_fpu_inaccurate_fma ->
+Artix 7 -> 90 Mhz 3877 LUT 3229 FF
+Artix 7 -> 177 Mhz 4310 LUT 3309 FF
  */
