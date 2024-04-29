@@ -425,7 +425,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
         argsFile.write(args.args.map(v => if(v.contains(" ")) '"' + v + '"' else v).mkString(" "))
         argsFile.close()
 
-        testArgs.synchronized(t.test(compiled))
+        t.test(compiled)
         val bf = new BufferedWriter(new FileWriter(passFile))
         bf.flush()
         bf.close()
