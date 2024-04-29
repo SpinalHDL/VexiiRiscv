@@ -167,7 +167,7 @@ class ParamSimple(){
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-    //    xlen = 64
+//    xlen = 64
 
 
     privParam.withDebug = true
@@ -323,7 +323,7 @@ class ParamSimple(){
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
-    val intWritebackAt = 2
+    val intWritebackAt = 2 //Alias for "trap at" aswell
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc)
     withMmu match {
@@ -464,6 +464,7 @@ class ParamSimple(){
       rfReadAt = 0,
       decodeAt = 0+regFileSync.toInt,
       executeAt = 0+regFileSync.toInt + 1,
+      trapAt = intWritebackAt,
       withBypasses = allowBypassFrom == 0
     )
 
@@ -658,7 +659,7 @@ class ParamSimple(){
 //      plugins += new execute.fpu.FpuExecute(early0, 0)
       plugins += new WriteBackPlugin("lane0", FloatRegFile, writeAt = 10, allowBypassFrom = allowBypassFrom)
       plugins += new execute.fpu.FpuFlagsWritebackPlugin(lane0, pipTo = intWritebackAt)
-      plugins += new execute.fpu.FpuCsrPlugin(List(lane0))
+      plugins += new execute.fpu.FpuCsrPlugin(List(lane0), intWritebackAt)
       plugins += new execute.fpu.FpuUnpackerPlugin(early0)
       plugins += new execute.fpu.FpuAddSharedPlugin(lane0)
       plugins += new execute.fpu.FpuAddPlugin(early0)

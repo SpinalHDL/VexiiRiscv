@@ -8,9 +8,9 @@ import spinal.lib.logic.{DecodingSpec, Masked}
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
-import vexiiriscv.Global.{TRAP, COMMIT}
+import vexiiriscv.Global.{COMMIT, TRAP}
 import vexiiriscv.decode.Decode
-import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService, TrapService}
+import vexiiriscv.misc.{CtrlPipelinePlugin, InflightService, PipelineService, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
 import vexiiriscv.schedule.{Ages, DispatchPlugin, FlushCmd, ReschedulePlugin}
@@ -23,8 +23,9 @@ case class UopImplKey(uop : MicroOp, name : LaneLayer)
 class ExecuteLanePlugin(override val laneName : String,
                         override val rfReadAt : Int,
                         val decodeAt : Int,
+                        val trapAt : Int,
                         override val executeAt : Int,
-                        override val withBypasses : Boolean) extends FiberPlugin with ExecuteLaneService with CompletionService{
+                        override val withBypasses : Boolean) extends FiberPlugin with ExecuteLaneService with CompletionService with InflightService {
   setName("execute_" + laneName)
 
   val readLatencyMax = Handle[Int]
@@ -32,6 +33,8 @@ class ExecuteLanePlugin(override val laneName : String,
 
   val layers = ArrayBuffer[LaneLayer]()
   override def add(layer: LaneLayer): Unit = layers += layer
+
+  override def hasInflight(hartId: Int): Bool = api.hartsInflight(hartId)
 
   override def getUopLayerSpec(): Iterable[UopLayerSpec] = {
     uopLock.await()
@@ -82,6 +85,11 @@ class ExecuteLanePlugin(override val laneName : String,
 
   override def getCompletions(): Seq[Flow[CompletionPayload]] = logic.completions.onCtrl.map(_.port).toSeq
   def eupp = host[ExecutePipelinePlugin]
+
+  val api = during build new Area {
+    val hartsInflight = Bits(Global.HART_COUNT bits)
+  }
+
   val logic = during setup new Area {
     val ts = host[TrapService]
     val trapRetain = retains(ts.trapLock)
@@ -94,6 +102,25 @@ class ExecuteLanePlugin(override val laneName : String,
     uopLock.await()
 
     getLayers().foreach(_.doChecks())
+
+    val completionGrouped = getUopLayerSpec.groupBy(_.completion)
+    val inflightHarts = Array.fill(Global.HART_COUNT)(ArrayBuffer[Bool]())
+    for(at <- 1 to completionGrouped.keys.map(_.get).max) new Ctrl(at){
+      val hit = (at <= trapAt).mux(isValid, isValid && !Global.COMPLETED)
+      for(hartId <- 0 until Global.HART_COUNT) inflightHarts(hartId) += hit && Global.HART_ID === hartId
+    }
+
+    for ((at, uops) <- completionGrouped) new Ctrl(at.get) {
+      val HIT = Payload(Bool()).setName(s"COMPLETION_AT_" + at.get)
+      setDecodingDefault(HIT, False)
+      uops.foreach(_.addDecoding(HIT -> True))
+      bypass(Global.COMPLETED) := up(Global.COMPLETED) || HIT
+    }
+
+    for(hartId <- 0 until Global.HART_COUNT){
+      api.hartsInflight(hartId) := inflightHarts(hartId).orR
+    }
+
 
     var readLatencyMax = 0
     val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked

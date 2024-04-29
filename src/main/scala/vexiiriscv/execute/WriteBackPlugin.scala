@@ -8,8 +8,9 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.Global._
 import vexiiriscv.decode.Decode._
+import vexiiriscv.execute.fpu.FpuCsrPlugin
 import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
-import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec}
+import vexiiriscv.riscv.{FloatRegFile, MicroOp, RD, RegfileSpec}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -62,6 +63,9 @@ class WriteBackPlugin(val laneName : String,
         for (impl <- spec.impls) {
           impl.setRdSpec(DATA, Math.max(ctrlId, broadcastMin), writeAt + rfp.writeLatency)
           impl.addDecoding(SEL -> True)
+          if(rf == FloatRegFile){
+            impl.addDecoding(FpuCsrPlugin.DIRTY -> True)
+          }
 //          impl.dontFlushFrom(writeAt+1)
         }
       }

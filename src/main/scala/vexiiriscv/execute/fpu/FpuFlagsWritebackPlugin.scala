@@ -21,7 +21,7 @@ case class FpuFlagsWritebackPort(atsSpec : Seq[Int]) extends Bundle{
   val ats = Bits(atsSpec.size bits)
 }
 
-class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extends FiberPlugin with InflightService{
+class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extends FiberPlugin{
   val elaborationLock = Retainer()
 
   case class Spec(port : FpuFlagsWritebackPort, ats : Seq[Int]){
@@ -43,11 +43,9 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
         lane.setDecodingDefault(v, False)
         v
       })
-      uop.addDecoding(sel -> True)
+      uop.addDecoding(sel -> True, FpuCsrPlugin.DIRTY -> True)
     }
   }
-
-  override def hasInflight(hartId: Int): Bool = logic.inflight
 
   val logic = during setup new Area{
     val cp = host[CsrService]
@@ -62,7 +60,6 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
     val specs = portToSpec.values
     val specsAts = specs.flatMap(_.ats).distinctLinked.toList.sorted
     val flagsOrInputs = ArrayBuffer[FpuFlags]()
-    val inflights = ArrayBuffer[Bool]()
     val beforeCommit = specsAts.filter(_ <= pipTo)
     if(beforeCommit.nonEmpty) {
       for(at <- beforeCommit){

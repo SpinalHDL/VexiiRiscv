@@ -391,16 +391,18 @@ class DispatchPlugin(var dispatchAt : Int,
       import insertNode._
       val oh = B(scheduler.arbiters.map(l => l.doIt && l.eusOh(id)))
       val mux = candidates.reader(oh, true)
+      val trap = mux(_.ctx.hm(TRAP))
       insertNode(CtrlLaneApi.LANE_SEL) := oh.orR && !mux(_.cancel) && !api.haltDispatch
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.UOP := mux(_.ctx.uop)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
-      when(!CtrlLaneApi.LANE_SEL || mux(_.ctx.hm(TRAP))){
+      when(!CtrlLaneApi.LANE_SEL || trap){
         //Allow to avoid having to check the valid down the pipeline
         rdKeys.ENABLE := False
         MAY_FLUSH := False
       }
       Execute.LANE_AGE := mux(_.age)
+      Global.COMPLETED := trap
 
       val layerOhUnfiltred = scheduler.arbiters.reader(oh)(_.layerOh) // include the bits of the other eu
       val layersOfInterest = lanesLayers.zipWithIndex.filter(_._1.el == eu) // Only the bits for our eu  (LaneLayer -> Int

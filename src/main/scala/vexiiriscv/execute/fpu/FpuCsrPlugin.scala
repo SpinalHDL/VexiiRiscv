@@ -12,16 +12,31 @@ import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
 import vexiiriscv.riscv._
 
 
-class FpuCsrPlugin(lanes : Seq[ExecuteLaneService]) extends FiberPlugin{
+object FpuCsrPlugin extends AreaObject {
+  val DIRTY = Payload(Bool())
+}
+
+trait FpuDirtyService{
+  def gotDirty() : Bool
+}
+
+class FpuCsrPlugin(lanes : Seq[ExecuteLaneService], dirtyAt : Int) extends FiberPlugin with FpuDirtyService {
   val api = during build new Area{
     val rm = Reg(Bits(3 bits)) init (0)
     val flags = Reg(FpuFlags())
+    val gotDirty = False
   }
+
+  override def gotDirty(): Bool = api.gotDirty
 
   val logic = during setup new Area{
     val cp = host[CsrService]
     val buildBefore = retains(lanes.map(_.pipelineLock) :+ cp.csrLock)
+    val uopLock = retains(lanes.map(_.uopLock))
     awaitBuild()
+
+    lanes.foreach(_.setDecodingDefault(FpuCsrPlugin.DIRTY, False))
+    uopLock.release()
 
     assert(Global.HART_COUNT.get == 1)
     api.flags.NV init (False)
@@ -39,6 +54,17 @@ class FpuCsrPlugin(lanes : Seq[ExecuteLaneService]) extends FiberPlugin{
       val instrRounding = Decode.UOP(Const.funct3Range)
       FpuUtils.ROUNDING.assignFromBits((instrRounding === B"111").mux(api.rm, instrRounding))
     }
+    for (lane <- lanes) new lane.Execute(dirtyAt) {
+      api.gotDirty setWhen (isValid && isReady && !isCancel && Global.COMMIT && FpuCsrPlugin.DIRTY)
+    }
+
+    val csrDirty = CsrListFilter(List(CSR.FRM, CSR.FCSR, CSR.FFLAGS))
+    cp.onWrite(csrDirty, true) {
+      api.gotDirty := True
+    }
+
+    //Flush the pipeline if the rounding mode changed
+    cp.trapNextOnWrite += CsrListFilter(List(CSR.FRM, CSR.FCSR))
 
     buildBefore.release()
   }

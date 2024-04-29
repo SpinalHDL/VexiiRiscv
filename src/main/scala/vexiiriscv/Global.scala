@@ -35,6 +35,7 @@ object Global extends AreaRoot{
   val TVAL = Payload(Bits(TVAL_WIDTH bits))
   val TRAP = Payload(Bool())
   val COMMIT = Payload(Bool())
+  val COMPLETED = Payload(Bool())
 
   def HART_ID_WIDTH = log2Up(HART_COUNT)
   val HART_ID = Payload(UInt(HART_ID_WIDTH bits))
