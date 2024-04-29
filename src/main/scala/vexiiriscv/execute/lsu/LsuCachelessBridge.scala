@@ -47,7 +47,7 @@ class LsuCachelessBusToTilelink(up : LsuCachelessBus, hashWidth : Int) extends A
   down.a.param   := 0
   down.a.source  := up.cmd.id
   down.a.address := up.cmd.address
-  down.a.size    := log2Up(up.p.dataWidth/8)
+  down.a.size    := up.cmd.size
   down.a.debugId := DebugId.withPostfix(up.cmd.id)
   down.a.mask    := up.cmd.mask
   down.a.data    := up.cmd.data
