@@ -14,9 +14,10 @@ import vexiiriscv.riscv._
 
 
 class FpuF2iPlugin(val layer : LaneLayer,
-                   var shiftAt : Int = 0,
-                   var resultAt : Int = 1,
-                   var intWbAt: Int = 1) extends FiberPlugin{
+                   var setupAt: Int = 0,
+                   var shiftAt: Int = 1,
+                   var resultAt : Int = 2,
+                   var intWbAt: Int = 2) extends FiberPlugin{
   val p = FpuUtils
 
   val SEL = Payload(Bool())
@@ -71,11 +72,15 @@ class FpuF2iPlugin(val layer : LaneLayer,
     val RS1_FP = fup(RS1)
 
     val shifterWidth = (p.rsIntWidth + 2) max (p.mantissaWidth + 2)
-    val onShift = new layer.Execute(shiftAt) {
+
+    val onSetup = new layer.Execute(setupAt) {
       val f2iShiftFull = insert(AFix(p.rsIntWidth - 1) - RS1_FP.exponent)
       val f2iShift = insert(U(f2iShiftFull.raw).sat(widthOf(f2iShiftFull.raw) - log2Up(p.rsIntWidth) - 1))
+    }
 
-      val SHIFTED = insert(Shift.rightWithScrap(True ## RS1_FP.mantissa.raw ## B(0, shifterWidth - 1 - p.mantissaWidth bits), f2iShift))
+
+    val onShift = new layer.Execute(shiftAt) {
+      val SHIFTED = insert(Shift.rightWithScrap(True ## RS1_FP.mantissa.raw ## B(0, shifterWidth - 1 - p.mantissaWidth bits), onSetup.f2iShift))
     }
 
     val onResult = new layer.Execute(resultAt){
