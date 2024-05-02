@@ -14,7 +14,6 @@ import scala.collection.mutable.ArrayBuffer
 object DivPlugin extends AreaObject {
   val REM = Payload(Bool())
   val DIV_RESULT = Payload(Bits(XLEN bits))
-  val DIV_REVERT_RESULT = Payload(Bool())
 }
 
 trait DivReuse{
@@ -78,7 +77,7 @@ class DivPlugin(val layer : LaneLayer,
     val processing = new el.Execute(divAt) {
       val div = impl(Riscv.XLEN, radix, area)
 
-      DIV_REVERT_RESULT := (RS1_REVERT ^ (RS2_REVERT && !REM)) && !(RS2_FORMATED === 0 && RS2_SIGNED && !REM) //RS2_SIGNED == RS1_SIGNED anyway
+      val divRevertResult = RegNext((RS1_REVERT ^ (RS2_REVERT && !REM)) && !(RS2_FORMATED === 0 && RS2_SIGNED && !REM)) //RS2_SIGNED == RS1_SIGNED anyway
 
       val cmdSent = RegInit(False) setWhen (div.io.cmd.fire) clearWhen (isReady)
       val request = isValid && SEL
@@ -98,7 +97,7 @@ class DivPlugin(val layer : LaneLayer,
       val selected = REM ? div.io.rsp.remain otherwise div.io.rsp.result
 
       def twoComplement(that: Bits, enable: Bool): UInt = (Mux(enable, ~that, that).asUInt + enable.asUInt)
-      DIV_RESULT := twoComplement(B(selected), DIV_REVERT_RESULT).asBits.resized
+      DIV_RESULT := twoComplement(B(selected), divRevertResult).asBits.resized
     }
 
     val writeback = new el.Execute(writebackAt){
