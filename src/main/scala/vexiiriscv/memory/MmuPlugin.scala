@@ -276,7 +276,7 @@ class MmuPlugin(var spec : MmuSpec,
         requireMmuLockup clearWhen(!status.mprv && isMachine)
         when(isMachine) {
           if (ps.usage == LOAD_STORE) {
-            requireMmuLockup clearWhen (!status.mprv || isMachine)
+            requireMmuLockup clearWhen (!status.mprv || priv.logic.harts(0).m.status.mpp === 3)
           } else {
             requireMmuLockup := False
           }
