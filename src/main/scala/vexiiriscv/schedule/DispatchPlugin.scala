@@ -238,7 +238,7 @@ class DispatchPlugin(var dispatchAt : Int,
             val hazardRange = hazardFrom until hazardUntil
             for(id <- hazardRange) {
               val node = writeEu.ctrl(id-hazardFrom+1)
-              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && node(rdKeys.RFID) === c.ctx.hm(rs.RFID) && !node(getBypassed(writeEu, id)) // node.isValid &&
+              hazards += node.up(rdKeys.ENABLE) && node.up(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && node.up(rdKeys.RFID) === c.ctx.hm(rs.RFID) && !node(getBypassed(writeEu, id)) // node.isValid &&
             }
           }
           val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR && !skip
