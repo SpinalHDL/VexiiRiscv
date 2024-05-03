@@ -1033,17 +1033,26 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         WAYS_HIT := B(WAYS_HITS).orR
       }
 
+      val cHazardRange = 20 downto hazardCheckRange.low
+      val onPreCtrl = new pip.Ctrl(coherentCtrlAt-1){
+        val wbHits = writeback.slots.map(s => s.valid && s.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)).orR
+        val wbPushHit = writeback.push.valid && writeback.push.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)
+        val WB_HAZARD = insert(wbHits || wbPushHit)
+
+        val LOCK_HIT = insert(lockPort.valid && lockPort.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange))
+        val LOCK_VALID = insert(lockPort.valid)
+        assert(isReady)
+      }
+      import onPreCtrl._
+
       val onCtrl = new pip.Ctrl(coherentCtrlAt){
         val reservation = tagsWriteArbiter.create(1)
-        val cHazardRange = 20 downto hazardCheckRange.low
         val waysReader = this (WAYS_TAGS).reader(WAYS_HITS)
         val hitUnique = waysReader(_.unique)
         val hitFault = waysReader(_.fault)
         val hitDirty = (SHARED.dirty & WAYS_HITS).orR
-
-        val wbHazard = writeback.slots.map(s => s.valid && s.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)).orR
-        val locked = lockPort.valid && lockPort.address(refillRange) === PHYSICAL_ADDRESS(refillRange) && hitUnique
-        HAZARD := wbHazard || SET_HAZARD || locked || FORCE_HAZARD
+        val locked = LOCK_HIT || !LOCK_VALID && lockPort.valid //Pessimistic approach
+        HAZARD := onPreCtrl.WB_HAZARD || SET_HAZARD || locked || FORCE_HAZARD
 
         val askData = hitDirty && !ALLOW_UNIQUE && ALLOW_PROBE_DATA
         val canData = reservation.win && !writeback.full
