@@ -99,20 +99,31 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       for((at, sel) <- (uopsAt.keys, GROUP_OH.asBools).zipped){
         sel := (for(port <- ports; (portAt, i) <- port.cmd.ats.zipWithIndex; if portAt == at) yield port.cmd.at(i)).orR
       }
-
-      val EXP_SUBNORMAL = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023)(-127)))
-      val EXP_DIF = insert(EXP_SUBNORMAL - VALUE.exponent)
-      val EXP_DIF_PLUS_ONE = insert(U(EXP_SUBNORMAL - VALUE.exponent) + 1)
     }
 
     import s0._
 
 
     val s1 = new pip.Area(1) {
-      val SUBNORMAL = insert(EXP_DIF.isPositive() && VALUE.isNormal)
-      val MAN_SHIFT_NO_SAT = insert(!SUBNORMAL ?[UInt] 0 | EXP_DIF_PLUS_ONE)
-      val MAN_SHIFT = insert(MAN_SHIFT_NO_SAT.sat(widthOf(MAN_SHIFT_NO_SAT) - log2Up(p.mantissaWidth + 2)))
-      val MAN_SHIFTED = insert(U(Shift.rightWithScrap(True ## VALUE.mantissa.raw, MAN_SHIFT).dropHigh(1)))
+      val EXP_SUBNORMAL = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023)(-127)))
+      val subnormalComb = VALUE.exponent <= EXP_SUBNORMAL && VALUE.isNormal
+      val SUBNORMAL = insert(RegNext(subnormalComb) clearWhen (!lane.isFreezed()))
+      val EXP_DIF_PLUS_ONE = insert(U(EXP_SUBNORMAL - VALUE.exponent) + 1)
+
+      val counter = Reg(UInt(2 bits)) init(0)
+      val freezeIt = isValid && subnormalComb && counter =/= 2
+      lane.freezeWhen(freezeIt)
+      when(freezeIt) { counter := counter + 1 }
+      when(!lane.isFreezed()){ counter := 0 }
+
+      val manShiftNoSat = EXP_DIF_PLUS_ONE
+      val manShift = manShiftNoSat.sat(widthOf(manShiftNoSat) - log2Up(p.mantissaWidth + 2))
+      val manShifter = RegNext(U(Shift.rightWithScrap(True ## VALUE.mantissa.raw, manShift).dropHigh(1)))
+      val MAN_SHIFTED = insert(manShifter)
+      when(!SUBNORMAL){
+        MAN_SHIFTED := U(VALUE.mantissa.raw)
+      }
+
 
       val f32ManPos = p.mantissaWidth + 2 - 23
       val roundAdjusted = insert(p.muxDouble(FORMAT)(MAN_SHIFTED(0, 2 bits))(MAN_SHIFTED(f32ManPos - 2, 2 bits) | U(MAN_SHIFTED(f32ManPos - 2 - 1 downto 0).orR, 2 bits)))
