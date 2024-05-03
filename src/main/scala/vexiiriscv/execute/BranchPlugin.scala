@@ -266,7 +266,7 @@ class BranchPlugin(val layer : LaneLayer,
     }
 
     val wbLogic = new el.Execute(wbAt){
-      wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
+      wb.valid := SEL
       wb.payload := Global.expendPc(PC_FALSE, Riscv.XLEN).asBits
     }
   }
