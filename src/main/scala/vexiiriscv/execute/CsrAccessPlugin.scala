@@ -209,23 +209,34 @@ class CsrAccessPlugin(val layer : LaneLayer,
           bypass(Global.TRAP) := True
         }
 
+        // For timing reasons, avoinding trap to get long combinatorial path
+        val sampled = RegNext(elp.isFreezed()) init(False)
+        val trapReg = RegNext(trap)
+        val busTrapReg = RegNext(bus.decode.trap)
+        val busTrapCodeReg = RegNext(bus.decode.trapCode)
+
         IDLE whenIsActive {
           (regs.sels.values, sels.values).zipped.foreach(_ := _)
           when(onDecodeDo) {
-            when(trap) {
-              bypass(Global.TRAP) := True
-              bypass(Global.COMMIT) := False
-              flushPort.valid := True
-              trapPort.valid := True
-              unfreeze := elp.isFreezed()
-            } otherwise {
+            when(!trap && !bus.decode.trap) {
               goto(READ)
-              when(bus.decode.trap){
+            }
+            when(sampled) {
+              when(trapReg) {
                 bypass(Global.TRAP) := True
+                bypass(Global.COMMIT) := False
                 flushPort.valid := True
                 trapPort.valid := True
-                trapPort.exception := False
-                trapPort.code := bus.decode.trapCode
+                unfreeze := elp.isFreezed()
+              } otherwise {
+                goto(READ)
+                when(busTrapReg) {
+                  bypass(Global.TRAP) := True
+                  flushPort.valid := True
+                  trapPort.valid := True
+                  trapPort.exception := False
+                  trapPort.code := busTrapCodeReg
+                }
               }
             }
           }
