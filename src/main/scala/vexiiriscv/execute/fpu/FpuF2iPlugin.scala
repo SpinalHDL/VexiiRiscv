@@ -65,8 +65,6 @@ class FpuF2iPlugin(val layer : LaneLayer,
       }
     }
 
-
-
     uopLock.release()
 
     val RS1_FP = fup(RS1)
@@ -76,11 +74,25 @@ class FpuF2iPlugin(val layer : LaneLayer,
     val onSetup = new layer.Execute(setupAt) {
       val f2iShiftFull = insert(AFix(p.rsIntWidth - 1) - RS1_FP.exponent)
       val f2iShift = insert(U(f2iShiftFull.raw).sat(widthOf(f2iShiftFull.raw) - log2Up(p.rsIntWidth) - 1))
+      val SHIFTED_PARTIAL = insert(Shift.rightWithScrap(True ## RS1_FP.mantissa.raw ## B(0, shifterWidth - 1 - p.mantissaWidth bits), f2iShift(0, 4 bits)))
     }
 
 
     val onShift = new layer.Execute(shiftAt) {
-      val SHIFTED = insert(Shift.rightWithScrap(True ## RS1_FP.mantissa.raw ## B(0, shifterWidth - 1 - p.mantissaWidth bits), onSetup.f2iShift))
+      val signed = !Decode.UOP(20)
+      val SHIFTED = insert(Shift.rightWithScrap(onSetup.SHIFTED_PARTIAL, (onSetup.f2iShift >> 4) << 4))
+      val (high, low) = SHIFTED.splitAt(shifterWidth - p.rsIntWidth)
+      val unsigned = U(high)
+      val round = low.msb ## low.dropHigh(1).orR
+      val resign = insert(signed && RS1_FP.sign)
+      val increment = insert(ROUNDING.mux(
+        FpuRoundMode.RNE -> (round(1) && (round(0) || unsigned(0))),
+        FpuRoundMode.RTZ -> False,
+        FpuRoundMode.RDN -> (round =/= 0 && RS1_FP.sign),
+        FpuRoundMode.RUP -> (round =/= 0 && !RS1_FP.sign),
+        FpuRoundMode.RMM -> (round(1))
+      ))
+      val incrementPatched = insert((resign ^ increment).asUInt)
     }
 
     val onResult = new layer.Execute(resultAt){
@@ -90,23 +102,16 @@ class FpuF2iPlugin(val layer : LaneLayer,
       val (high, low) = onShift.SHIFTED.splitAt(shifterWidth - p.rsIntWidth)
       val unsigned = U(high)
       val round = low.msb ## low.dropHigh(1).orR
-      val resign = signed && RS1_FP.sign
-      val increment = ROUNDING.mux(
-        FpuRoundMode.RNE -> (round(1) && (round(0) || unsigned(0))),
-        FpuRoundMode.RTZ -> False,
-        FpuRoundMode.RDN -> (round =/= 0 && RS1_FP.sign),
-        FpuRoundMode.RUP -> (round =/= 0 && !RS1_FP.sign),
-        FpuRoundMode.RMM -> (round(1))
-      )
-      val resultRaw = (Mux(resign, ~unsigned, unsigned) + (resign ^ increment).asUInt)
+
+      val resultRaw = (Mux(onShift.resign, ~unsigned, unsigned) + onShift.incrementPatched)
       val expMax = (i64 ? AFix(62) | AFix(30)) + AFix(!signed)
       val expMin = (i64 ? AFix(63) | AFix(31))
       val unsignedMin = muxRv64[UInt](i64)(BigInt(1) << 63)(BigInt(1) << 31)
       val overflow = (RS1_FP.exponent > expMax || RS1_FP.isInfinity) && !RS1_FP.sign || RS1_FP.isNan
-      val underflow = (RS1_FP.exponent > expMin || signed && RS1_FP.exponent === expMin && (unsigned =/= unsignedMin || increment) || !signed && (unsigned =/= 0 || increment) || RS1_FP.isInfinity) && RS1_FP.sign
+      val underflow = (RS1_FP.exponent > expMin || signed && RS1_FP.exponent === expMin && (unsigned =/= unsignedMin || onShift.increment) || !signed && (unsigned =/= 0 || onShift.increment) || RS1_FP.isInfinity) && RS1_FP.sign
       val isZero = RS1_FP.isZero
       if (p.rvd) {
-        overflow setWhen (!i64 && !RS1_FP.sign && increment && unsigned(30 downto 0).andR && (signed || unsigned(31)))
+        overflow setWhen (!i64 && !RS1_FP.sign && onShift.increment && unsigned(30 downto 0).andR && (signed || unsigned(31)))
       }
       val NV = insert(RS1_FP.isNan && !RS1_FP.quiet)
       val NX = insert(False)
