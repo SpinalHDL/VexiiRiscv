@@ -148,6 +148,8 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
       val fsmRsp = unpacker.results(fsmPortId)
       fsmCmd.setIdle()
 
+      val firstCycle = RegNext(False) setWhen(!layer.el.isFreezed())
+
       val rsValues = rsList.map(rs => this.up(layer.el(FloatRegFile, rs)))
 
       val fsmRequesters = Bits(rsList.size bits)
@@ -220,6 +222,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
         apply(RS) := RS_PRE_NORM
         val normalizer = new Area {
           val valid = unpackerSel && IS_SUBNORMAL
+          val validReg = RegNext(unpackerSel && IS_SUBNORMAL ) clearWhen(!layer.el.isFreezed()) init(False)
           val asked = RegInit(False) setWhen (fsmRequesters(inputId) && !fsmRequesters.dropLow(inputId + 1).orR || isCancel) clearWhen (clear)
           val served = RegInit(False) setWhen (fsmRsp.valid && fsmServed.dropLow(inputId + 1).andR || isCancel) clearWhen (clear)
           fsmRequesters(inputId) := valid && !asked
@@ -240,7 +243,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
             exponent := recodedExpSub - fsmRsp.shift.intoSInt
             mantissa.raw := fsmRsp.data >> widthOf(fsmCmd.data) - widthOf(RS_PRE_NORM.mantissa.raw)
           }
-          val freezeIt = valid && !served //Maybe a bit hard on timings
+          val freezeIt = validReg && !served || firstCycle && unpackerSel && expZero  //Maybe a bit hard on timings
           layer.el.freezeWhen(freezeIt)
         }
 
