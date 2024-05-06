@@ -438,9 +438,10 @@ class LsuPlugin(var layer : LaneLayer,
         val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False)
         val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel) init(False)
         val doIt = isValid && l1.SEL && IO
+        val doItReg = RegNext(doIt) init(False)
 
         val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
-        bus.cmd.valid := doIt && !cmdSent && allowIt && !tooEarly
+        bus.cmd.valid := doItReg && !cmdSent && allowIt && !tooEarly
         bus.cmd.write := l1.STORE
         bus.cmd.address := l1.PHYSICAL_ADDRESS //TODO Overflow on TRANSLATED itself ?
         bus.cmd.data := l1.WRITE_DATA
@@ -465,7 +466,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
 
-      val rspData = io.doIt.mux[Bits](io.rsp.data, l1.READ_DATA)
+      val rspData = io.cmdSent.mux[Bits](io.rsp.data, l1.READ_DATA)
       val rspSplits = rspData.subdivideIn(8 bits)
       val rspShifted = Bits(LSLEN bits)
       val wordBytes = LSLEN / 8
