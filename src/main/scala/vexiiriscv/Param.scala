@@ -268,6 +268,7 @@ class ParamSimple(){
     opt[Unit]("with-rvd") action { (v, c) => withRvd = true; withRvf = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
+    opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuFmaFullAccuracy = false }
     opt[Unit]("with-aligner-buffer") unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
@@ -657,7 +658,7 @@ class ParamSimple(){
       )
 
 //      plugins += new execute.fpu.FpuExecute(early0, 0)
-      plugins += new WriteBackPlugin("lane0", FloatRegFile, writeAt = 10, allowBypassFrom = allowBypassFrom)
+      plugins += new WriteBackPlugin("lane0", FloatRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions
       plugins += new execute.fpu.FpuFlagsWritebackPlugin(lane0, pipTo = intWritebackAt)
       plugins += new execute.fpu.FpuCsrPlugin(List(lane0), intWritebackAt)
       plugins += new execute.fpu.FpuUnpackerPlugin(early0)
@@ -668,7 +669,7 @@ class ParamSimple(){
       plugins += new execute.fpu.FpuClassPlugin(early0)
       plugins += new execute.fpu.FpuCmpPlugin(early0)
       plugins += new execute.fpu.FpuF2iPlugin(early0)
-      plugins += new execute.fpu.FpuMvPlugin(early0)
+      plugins += new execute.fpu.FpuMvPlugin(early0, floatWbAt = 2)
       if(withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0)

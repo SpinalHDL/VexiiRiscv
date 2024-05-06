@@ -9,15 +9,17 @@ import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber}
 import spinal.lib.bus.tilelink.fabric
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
-import spinal.lib.misc.TilelinkClintFiber
+import spinal.lib.misc.{PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
-import spinal.lib.{Delay, Flow, ResetCtrlFiber, StreamPipe, master, slave}
+import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, slave}
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryTransferTag, PMA}
 import vexiiriscv.ParamSimple
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
+import vexiiriscv.prediction.GSharePlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 import vexiiriscv.soc.demo.DebugModuleSocFiber
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 case class LitexMemoryRegion(mapping : SizeMapping, mode : String, bus : String){
@@ -303,10 +305,48 @@ object SocGen extends App{
   spinalConfig.addStandardMemBlackboxing(blackboxByteEnables)
   spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
-  spinalConfig.generateVerilog {
-
+  val report = spinalConfig.generateVerilog {
     new Soc(socConfig, ClockDomain.external("system")).setDefinitionName(netlistName)
   }
+
+  val cpu0 = report.toplevel.system.vexiis(0).logic.core
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl3_up_LsuL1_PHYSICAL_ADDRESS_lane0")
+//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
+
+//  val from = cpu0.reflectBaseType("DispatchPlugin_logic_slots_0_ctx_uop")
+//  val from = cpu0.reflectBaseType("DispatchPlugin_logic_slots_0_ctx_hm_RS3_PHYS")
+//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl0_down_float_RS3_lane0")
+
+//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_LsuL1_PHYSICAL_ADDRESS") // start point was optimized, but aligner timing issue remains
+//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0")
+
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_Decode_UOP_lane0")
+//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0")
+
+//  val from = cpu0.reflectBaseType("fetch_logic_ctrls_2_down_valid")
+//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0")
+
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl3_up_LsuL1_PHYSICAL_ADDRESS_lane0")
+//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_integer_RS2_lane0")
+
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
+//  val to = cpu0.reflectBaseType("FpuPackerPlugin_logic_pip_node_1_s0_EXP_DIF_PLUS_ONE")
+
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0")
+//  val to = cpu0.host[GSharePlugin].logic.onLearn.cmd.valid
+
+  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
+  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_writeback_slots_1_timer_counter")
+
+  val drivers = mutable.LinkedHashSet[BaseType]()
+  AnalysisUtils.seekNonCombDrivers(to){driver =>
+    driver match {
+      case bt : BaseType => drivers += bt
+    }
+  }
+  drivers.foreach(e => println(e.getName()))
+  println("******")
+  println(PathTracer.impl(from, to).report())
 }
 
 object PythonArgsGen extends App{
@@ -404,27 +444,10 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --bu
 //linux++ 64 bits fpu
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --with-jtag-tap  --bus-standard axi-lite --vexii-args=" \
 --allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 \
---regfile-async --xlen=64 --with-rvc --with-rvf --with-rvd \
+--regfile-async --xlen=64 --with-rvc --with-rvf --with-rvd --fma-reduced-accuracy \
 --fetch-l1 --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 \
 --lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2  --with-lsu-bypass \
---with-btb --with-ras --with-gshare --relaxed-branch"  --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=131072 --update-repo=no  --sys-clk-freq 80000000 --build   --load  --sys-clk-freq 80000000
-
-
-python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --with-jtag-tap --bus-standard axi-lite  --vexii-args=" \
---allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 \
---regfile-async --xlen=64 --with-rvc --with-rvf --with-rvd \
---fetch-l1 --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 \
---lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-refill-count 1 --lsu-l1-writeback-count 1 --with-lsu-bypass \
---relaxed-branch"  --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=0 --update-repo=no --build   --load  --sys-clk-freq 80000000
-
-
-python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --with-jtag-tap --bus-standard axi-lite --vexii-args=" \
---allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 \
---regfile-async --xlen=32 --with-rvc --with-rvf --with-rvd \
---fetch-l1 --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 \
---lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-refill-count 1 --lsu-l1-writeback-count 1 --with-lsu-bypass \
---relaxed-branch"  --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=0 --update-repo=no --build   --load  --sys-clk-freq 100000000
-
+--with-btb --with-ras --with-gshare --relaxed-branch"  --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=131072 --update-repo=no  --sys-clk-freq 100000000 --build   --load
 
 
 
@@ -479,56 +502,43 @@ cat >> /etc/X11/xorg.conf << EOF
 
 
 TODO debug :
-/media/data2/proj/vexii/litex/debian$ litex_sim --cpu-type=vexiiriscv  --with-sdram --sdram-data-width=64  --vexii-args=" \
---allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 \
---regfile-async --xlen=64 --with-rvc --with-rvf --with-rvd \
---fetch-l1 --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 \
---lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-refill-count 1 --lsu-l1-writeback-count 1 --with-lsu-bypass \
---relaxed-branch"  --cpu-count=2 --with-jtag-tap  --with-jtagremote  --sdram-init boot.json --update-repo no
-
-[    0.074696] smp: Bringing up secondary CPUs ...
-[    0.089174] Oops - instruction access fault [#1]
-[    0.089305] CPU: 1 PID: 0 Comm: swapper/1 Not tainted 6.6.0-rc5+ #1
-[    0.089461] epc : __riscv_copy_words_unaligned+0xa/0x50
-[    0.089658]  ra : check_unaligned_access+0x84/0x216
-[    0.089814] epc : ffffffff80002706 ra : ffffffff80002d36 sp : ffffffc800093f80
-[    0.089936]  gp : ffffffff810cb770 tp : ffffffd8014fb5c0 t0 : 0000000000000003
-[    0.090048]  t1 : 0000000000000000 t2 : 000000000000000b s0 : ffffffc800093fe0
-[    0.090153]  s1 : 0000000000000001 a0 : ffffffd80154c001 a1 : ffffffd80154e003
-[    0.090266]  a2 : 0000000000001f80 a3 : ffffffd80154ff83 a4 : 0000000000001f80
-[    0.090375]  a5 : ffffffd7bf000000 a6 : ffffffd89df0e000 a7 : ffffffff81100430
-[    0.090496]  s2 : ffffffd80154c001 s3 : 0000000041001066 s4 : ffffffd81e97c7e0
-[    0.090611]  s5 : 0000000000000001 s6 : ffffffd80154e003 s7 : 0000000000000000
-[    0.090716]  s8 : 0000000000002000 s9 : 0000000000000000 s10: 0000000000000000
-[    0.090817]  s11: 0000000000000000 t3 : ffffffd81e97c7e0 t4 : 0000000000000002
-[    0.090923]  t5 : 0000000000000007 t6 : 0000000000000001
-[    0.090999] status: 0000000200000100 badaddr: ffffffff80002706 cause: 0000000000000001
-[    0.091118] [<ffffffff80002706>] __riscv_copy_words_unaligned+0xa/0x50
-[    0.091306] [<ffffffff80005db8>] smp_callin+0x48/0x64
-[    0.091673] Code: b57d c097 0072 80e7 47c0 7713 fc06 c729 86b3 00e5 (6198) 659c
-[    0.091775] ---[ end trace 0000000000000000 ]---
-[    0.091851] Kernel panic - not syncing: Fatal exception in interrupt
-[    0.091915] SMP: stopping secondary CPUs
-
-
-root@nexys:/home/miaou/readonly# /usr/games/numptyphysics
-[  675.176824] numptyphysics[614]: unhandled signal 11 code 0x2 at 0x0000002ab6814a00 in numptyphysics[2ab67e6000+4a000]
-[  675.185076] CPU: 1 PID: 614 Comm: numptyphysics Not tainted 6.1.0-rc2+ #11
-[  675.190719] epc : 0000002ab6814a00 ra : 0000002ab68149e4 sp : 0000003fe0d414e0
-[  675.196269]  gp : 0000002ab6834f10 tp : 0000003fa3a30780 t0 : 0000003fa43fa290
-[  675.202124]  t1 : 0000002ab67f309c t2 : 0000000000000023 s0 : 0000003fa208a014
-[  675.208050]  s1 : 0000003fe0d41598 a0 : 0000003fa20da030 a1 : 00000000000000ff
-[  675.213771]  a2 : ffffffffffffffff a3 : 0000000000004001 a4 : 0000000000000001
-[  675.219706]  a5 : 0000003fa208a024 a6 : 0000000000000000 a7 : 0000003fa20da030
-[  675.225435]  s2 : 0000002ab6914d98 s3 : 0000002ab68fbb70 s4 : 0000003fe0d41598
-[  675.231382]  s5 : 0000000000000001 s6 : 0000003fa43f8d80 s7 : 0000002ab68caae0
-[  675.237105]  s8 : 0000003fa43f9030 s9 : 0000003fa43f8d80 s10: 0000002ac2ad6a4c
-[  675.243062]  s11: 0000002ac2ad69c0 t3 : 0000003fa3ec77d2 t4 : 0000003fa3f740d0
-[  675.248770]  t5 : 0000000002ab68a4 t6 : 0000000000360ae0
-[  675.253094] status: 8000000200006020 badaddr: 0000002ab6814a00 cause: 0000000000000001
-
-
-xeyes
+[ 9576.106084] CPU: 0 PID: 4072 Comm: gmain Not tainted 6.1.0-rc2+ #11
+[ 9576.109440] watchdog: BUG: soft lockup - CPU#1 stuck for 22s! [gdbus:4073]
+[ 9576.111128] epc : find_vma+0x14/0x44
+[ 9576.116689] CPU: 1 PID: 4073 Comm: gdbus Not tainted 6.1.0-rc2+ #11
+[ 9576.119598]  ra : do_page_fault+0xf2/0x31a
+[ 9576.124672] epc : handle_mm_fault+0x3c/0xd6
+[ 9576.128004] epc : ffffffff8010b100 ra : ffffffff800073d8 sp : ffffffc800ecb880
+[ 9576.131406]  ra : handle_mm_fault+0x36/0xd6
+[ 9576.137241]  gp : ffffffff810c9240 tp : ffffffd802923480 t0 : ffffffff800072e6
+[ 9576.140644] epc : ffffffff8010580a ra : ffffffff80105804 sp : ffffffc800ed3870
+[ 9576.146478]  t1 : ffffffff80c00208 t2 : ffffffff80c00288 s0 : ffffffc800ecb8a0
+[ 9576.152313]  gp : ffffffff810c9240 tp : ffffffd80435b480 t0 : 0000000000000001
+[ 9576.158148]  s1 : ffffffc800ecb920 a0 : ffffffd8008f0f00 a1 : 0000002ac1f46b36
+[ 9576.163982]  t1 : 000000000000000e t2 : 0000000000000002 s0 : ffffffc800ed38a0
+[ 9576.169818]  a2 : ffffffff810c8a68 a3 : 0000000000040000 a4 : 0000000000000000
+[ 9576.175651]  s1 : 0000000000000215 a0 : 0000000000000400 a1 : 0000000000000002
+[ 9576.181486]  a5 : 0000002ac1f46b36 a6 : ffffffc800ecba88 a7 : 0000000000000002
+[ 9576.187321]  a2 : 0000000000000008 a3 : 0000000000000007 a4 : 0000000000000000
+[ 9576.193156]  s2 : ffffffd8008f0f00 s3 : ffffffd802923480 s4 : 0000002ac1f46b36
+[ 9576.198990]  a5 : 0000000000001000 a6 : 0000000000001000 a7 : 00000000000000fd
+[ 9576.204825]  s5 : ffffffd802923480 s6 : 0000000000000215 s7 : 000000000000000c
+[ 9576.210659]  s2 : 0000000000000400 s3 : 0000003f94000b96 s4 : ffffffc800ed3920
+[ 9576.216495]  s8 : 000000000000000f s9 : 000000000000000d s10: ffffffd8008f0f60
+[ 9576.222329]  s5 : ffffffd8008442a8 s6 : 0000000000000215 s7 : 000000000000000c
+[ 9576.228164]  s11: 000000000000000f t3 : 0000000000000001 t4 : 0000000000000340
+[ 9576.233998]  s8 : 000000000000000f s9 : 000000000000000d s10: ffffffd8008f0f60
+[ 9576.239833]  t5 : 0000000000000000 t6 : 0000000000000000
+[ 9576.245667]  s11: 000000000000000f t3 : 0000003f94000000 t4 : ffffffd803d5e10c
+[ 9576.249974] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[ 9576.255808]  t5 : 0000000000000000 t6 : 0000003fa3b98fff
+[ 9576.262205] [<ffffffff800073d8>] do_page_fault+0xf2/0x31a
+[ 9576.266506] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[ 9576.270884] [<ffffffff80002f76>] ret_from_exception+0x0/0xc
+[ 9576.277276] [<ffffffff80007402>] do_page_fault+0x11c/0x31a
+[ 9576.281789] [<ffffffff80144a98>] do_sys_poll+0x144/0x42c
+[ 9576.286235] [<ffffffff80002f76>] ret_from_exception+0x0/0xc
+[ 9576.295073] [<ffffffff80144a98>] do_sys_poll+0x144/0x42c
 
 
 
@@ -540,5 +550,49 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --wi
 --lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2  --with-lsu-bypass \
 --with-btb --with-ras --with-gshare --relaxed-branch"  --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=131072 --update-repo=no  --sys-clk-freq 80000000    --build  --sys-clk-freq 80000000
 
-
+- Node((toplevel/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0 :  Bits[32 bits]))
+  - Node((toplevel/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_decode_ctrls_0_down_Decode_INSTRUCTION_0 :  Bits[32 bits]))
+    - Node((toplevel/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_decode_ctrls_0_up_Decode_INSTRUCTION_0 :  Bits[32 bits]))
+      - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_extractors_0_ctx_instruction :  Bits[32 bits]))
+        - Node((Bits | Bits)[32 bits])
+          - Node((Bits | Bits)[32 bits])
+            - Node((Bits | Bits)[32 bits])
+              - Node((Bool ? Bits | Bits)[32 bits])
+                - Node(Bits(Int))
+                  - Node((toplevel/vexiis_0_logic_core/_zz_AlignerPlugin_logic_extractors_0_ctx_instruction :  Bits[8 bits]))
+                    - Node(Bits ## Bits)
+                      - Node(Bits -> Bits)
+                        - Node((toplevel/vexiis_0_logic_core/_zz_AlignerPlugin_logic_extractors_0_redo_7 :  Bool))
+                          - Node(Bits(Int))
+                            - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_extractors_0_slicesOh :  Bits[8 bits]))
+                              - Node((toplevel/vexiis_0_logic_core/_zz_AlignerPlugin_logic_extractors_0_slicesOh :  Bits[8 bits]))
+                                - Node(Bool && Bool)
+                                  - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_extractors_0_usableMask_bools_0 :  Bool))
+                                    - Node(Bits(Int))
+                                      - Node((toplevel/vexiis_0_logic_core/_zz_AlignerPlugin_logic_extractors_0_usableMask_bools_0 :  Bits[8 bits]))
+                                        - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_extractors_0_usableMask :  Bits[8 bits]))
+                                          - Node(Bits ## Bits)
+                                            - Node(Bits -> Bits)
+                                              - Node(Bool && Bool)
+                                                - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_scanners_7_valid :  Bool))
+                                                  - Node(Bool && Bool)
+                                                    - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_scanners_7_checker_0_valid :  Bool))
+                                                      - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_scanners_7_checker_0_present :  Bool))
+                                                        - Node(Bits(Int))
+                                                          - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_slices_mask :  Bits[8 bits]))
+                                                            - Node(Bits ## Bits)
+                                                              - Node((Bool ? Bits | Bits)[4 bits])
+                                                                - Node((toplevel/vexiis_0_logic_core/fetch_logic_ctrls_2_down_valid :  Bool))
+                                                    - Node(Bool || Bool)
+                                                      - Node(| Bits)
+                                                        - Node(Bits ## Bits)
+                                                          - Node(Bits -> Bits)
+                                                            - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_scanners_7_checker_0_redo :  Bool))
+                                                              - Node(Bool && Bool)
+                                                                - Node(Bool && Bool)
+                                                                  - Node(Bits(Int))
+                                                                    - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_slices_last :  Bits[8 bits]))
+                                                                      - Node(Bits ## Bits)
+                                                                        - Node((Bool ? Bits | Bits)[4 bits])
+                                                                          - Node((toplevel/vexiis_0_logic_core/fetch_logic_ctrls_2_down_valid :  Bool))
  */
