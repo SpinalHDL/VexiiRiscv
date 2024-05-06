@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib.StreamFifo
 import spinal.lib.eda.bench.{AlteraStdTargets, Bench, EfinixStdTargets, Rtl, Target, XilinxStdTargets}
 import vexiiriscv.compat.MultiPortWritesSymplifier
+import vexiiriscv.execute.lsu.LsuL1Plugin
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 
 import scala.collection.mutable.ArrayBuffer
@@ -84,16 +85,16 @@ object IntegrationSynthBench extends App{
 //    p.divArea = false
 //  }
 //
-  add("with fpu inaccurate fma") { p =>
-    p.fetchL1Enable = true
-    p.lsuL1Enable = true
-    p.relaxedBranch = true
-    p.withRvf = true
-    p.withMul = true
-    p.withDiv = true
-    p.fpuFmaFullAccuracy = false
-    p.divArea = false
-  }
+//  add("with fpu inaccurate fma") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.relaxedBranch = true
+//    p.withRvf = true
+//    p.withMul = true
+//    p.withDiv = true
+//    p.fpuFmaFullAccuracy = false
+//    p.divArea = false
+//  }
 //  add("with fpu") { p =>
 //    p.fetchL1Enable = true
 //    p.lsuL1Enable = true
@@ -611,6 +612,110 @@ object IntegrationSynthBench extends App{
 //      new StreamFifo(UInt(8 bits), 16)
 //    })
 
+//  rtls += Rtl(sc.generateVerilog {
+//    val param = new ParamSimple
+//    import param._
+//    decoders = 1
+//    lanes = 1
+//    regFileSync = false
+//    withGShare = true
+//    withBtb = true
+//    withRas = true
+//    withMul = true
+//    withDiv = true
+//    divArea = false
+//
+//    xlen = 64
+//    withRva = true
+//    withRvc = true
+//    withAlignerBuffer = true
+//
+//    allowBypassFrom = 0
+//    relaxedBranch = true
+//    withPerformanceCounters = true
+//    additionalPerformanceCounters = 0
+//
+//    fetchL1Enable = true
+//    fetchL1Sets = 64
+//    fetchL1Ways = 4
+//
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    lsuL1RefillCount = 2
+//    lsuL1WritebackCount = 2
+//    lsuStoreBufferSlots = 2
+//    lsuStoreBufferOps = 32
+//    lsuL1Coherency = true
+//
+//
+//    val plugins = param.plugins()
+//    ParamSimple.setPma(plugins)
+//    plugins.foreach {
+//      case p: LsuL1Plugin =>
+//        p.ackIdWidth = 8
+//        p.probeIdWidth = log2Up(p.writebackCount)
+//      case _ =>
+//    }
+//    Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName("vexii_debian_no_fpu"))
+//  })
+
+
+  rtls += Rtl(sc.generateVerilog {
+    val param = new ParamSimple
+    import param._
+    decoders = 1
+    lanes = 1
+    regFileSync = false
+    withGShare = true
+    withBtb = true
+    withRas = true
+    withMul = true
+    withDiv = true
+    divArea = false
+
+    xlen = 64
+    privParam.withSupervisor = true
+    privParam.withUser = true
+    withMmu = true
+    withRva = true
+    withRvf = true
+    withRvd = true
+    fpuFmaFullAccuracy = false
+    withRvc = true
+    withAlignerBuffer = true
+    privParam.withDebug = true
+
+    allowBypassFrom = 0
+    relaxedBranch = true
+    withPerformanceCounters = true
+    additionalPerformanceCounters = 0
+
+    fetchL1Enable = true
+    fetchL1Sets = 64
+    fetchL1Ways = 4
+
+    lsuL1Enable = true
+    lsuL1Sets = 64
+    lsuL1Ways = 4
+    lsuL1RefillCount = 2
+    lsuL1WritebackCount = 2
+    lsuStoreBufferSlots = 2
+    lsuStoreBufferOps = 32
+    lsuL1Coherency = true
+
+
+    val plugins = param.plugins()
+    ParamSimple.setPma(plugins)
+    plugins.foreach{
+      case p : LsuL1Plugin =>
+        p.ackIdWidth = 8
+        p.probeIdWidth = log2Up(p.writebackCount)
+      case _ =>
+    }
+    Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName("vexii_debian"))
+  })
+
   val targets = ArrayBuffer[Target]()
   targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
 //  targets ++= AlteraStdTargets()
@@ -620,6 +725,21 @@ object IntegrationSynthBench extends App{
 }
 
 /*
+vexii_debian_no_fpu ->
+Artix 7 -> 71 Mhz 6262 LUT 4710 FF
+Artix 7 -> 153 Mhz 6886 LUT 4763 FF
+vexii_debian fpuFmaFullAccuracy no fpu bypass
+Artix 7 -> 71 Mhz 10197 LUT 7288 FF
+Artix 7 -> 136 Mhz 11068 LUT 7314 FF
+vexii_debian fpuFmaFullAccuracy bypass from 0
+Artix 7 -> 67 Mhz 11344 LUT 7539 FF
+Artix 7 -> 137 Mhz 12394 LUT 7611 FF
+vexii_debian fpuFmaFullAccuracy bypass from 2->
+Artix 7 -> 66 Mhz 11155 LUT 7607 FF
+Artix 7 -> 136 Mhz 12109 LUT 7646 FF
+
+
+
 2 issue + lates alues
 Artix 7 -> 70 Mhz 5318 LUT 2404 FF
 Artix 7 -> 120 Mhz 5515 LUT 2410 FF
