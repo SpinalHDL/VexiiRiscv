@@ -380,12 +380,12 @@ class ParamSimple(){
         levels = List(
           MmuStorageLevel(
             id = 0,
-            ways = 4,
+            ways = 2,
             depth = 32
           ),
           MmuStorageLevel(
             id = 1,
-            ways = 2,
+            ways = 1,
             depth = 32
           )
         ),
@@ -414,12 +414,12 @@ class ParamSimple(){
         levels = List(
           MmuStorageLevel(
             id = 0,
-            ways = 4,
+            ways = 2,
             depth = 32
           ),
           MmuStorageLevel(
             id = 1,
-            ways = 2,
+            ways = 1,
             depth = 32
           )
         ),
@@ -463,9 +463,9 @@ class ParamSimple(){
     def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(
       name,
       rfReadAt = 0,
-      decodeAt = 0+regFileSync.toInt,
+      decodeAt  = 0+regFileSync.toInt,
       executeAt = 0+regFileSync.toInt + 1,
-      trapAt = intWritebackAt,
+      trapAt    = 0+regFileSync.toInt + 1 + intWritebackAt,
       withBypasses = allowBypassFrom == 0
     )
 
@@ -495,12 +495,12 @@ class ParamSimple(){
         levels = List(
           MmuStorageLevel(
             id = 0,
-            ways = 4,
+            ways = 3,
             depth = 32
           ),
           MmuStorageLevel(
             id = 1,
-            ways = 2,
+            ways = 1,
             depth = 32
           )
         ),
@@ -527,12 +527,12 @@ class ParamSimple(){
           levels = List(
             MmuStorageLevel(
               id = 0,
-              ways = 4,
+              ways = 3,
               depth = 32
             ),
             MmuStorageLevel(
               id = 1,
-              ways = 2,
+              ways = 1,
               depth = 32
             )
           ),
@@ -542,7 +542,7 @@ class ParamSimple(){
           case false => null
           case true => MmuPortParameter(
             readAt = 0,
-            hitsAt = 1,
+            hitsAt = 0,
             ctrlAt = 1,
             rspAt = 1
           )
