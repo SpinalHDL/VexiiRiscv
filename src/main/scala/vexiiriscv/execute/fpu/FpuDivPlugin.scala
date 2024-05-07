@@ -11,8 +11,7 @@ import vexiiriscv.riscv._
 
 
 class FpuDivPlugin(val layer : LaneLayer,
-                   var exeAt : Int = 0,
-                   var packAt : Int = 0) extends FiberPlugin{
+                   var exeAt : Int = 0) extends FiberPlugin{
   val p = FpuUtils
 
   val SEL = Payload(Bool())
@@ -30,7 +29,7 @@ class FpuDivPlugin(val layer : LaneLayer,
       exponentMin   = p.unpackedConfig.exponentMin-p.unpackedConfig.exponentMax-1,
       mantissaWidth = p.unpackedConfig.mantissaWidth+2
     )
-    val packPort = fpp.createPort(List(packAt), packParam)
+    val packPort = fpp.createPort(List(exeAt), packParam)
 
     layer.el.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
@@ -41,7 +40,7 @@ class FpuDivPlugin(val layer : LaneLayer,
         case RfResource(_, rs: RfRead) => fup.unpack(uop, rs)
         case _ =>
       }
-      packPort.uopsAt += spec -> packAt
+      packPort.uopsAt += spec -> exeAt
     }
 
     add(Rvfd.FDIV_S, FORMAT -> FpuFormat.FLOAT)
@@ -64,13 +63,11 @@ class FpuDivPlugin(val layer : LaneLayer,
         dr.divInject(layer, exeAt, U(B"1" ## RS1_FP.mantissa.raw), U(B"1" ## RS2_FP.mantissa.raw), interations-1)
       }
       val DIVIDER_RSP = insert(dr.divRsp.result(pickAt, bitsNeeded bits) | U(dr.divRsp.remain.orR || dr.divRsp.result(0, pickAt bits).orR).resized)
-    }
-    import onExecute.DIVIDER_RSP
 
-    val onPack = new layer.Execute(packAt) {
       val needShift = !DIVIDER_RSP.msb
       val mantissa = needShift.mux(DIVIDER_RSP(0, internalMantissaSize+2 bits), DIVIDER_RSP(1, internalMantissaSize+2 bits) | U(DIVIDER_RSP(0)).resized)
-      val exponent = RS1_FP.exponent - RS2_FP.exponent - AFix(U(needShift))
+      val exponent = RegNext(RS1_FP.exponent - RS2_FP.exponent) - AFix(U(needShift))
+
 
       packPort.cmd.at(0) := isValid && SEL
       packPort.cmd.value.setNormal
