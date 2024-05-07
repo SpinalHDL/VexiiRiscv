@@ -1,7 +1,7 @@
 package vexiiriscv.execute.fpu
 
 import spinal.core._
-import spinal.lib.Shift
+import spinal.lib.{Delay, Shift}
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
@@ -14,6 +14,7 @@ import vexiiriscv.riscv._
 
 
 class FpuF2iPlugin(val layer : LaneLayer,
+                   var halfRate : Boolean = true, //Hard to squize it tall in 3 stages => improve fmax with halfRate
                    var setupAt: Int = 0,
                    var shiftAt: Int = 1,
                    var resultAt : Int = 2,
@@ -103,7 +104,14 @@ class FpuF2iPlugin(val layer : LaneLayer,
       val unsigned = U(high)
       val round = low.msb ## low.dropHigh(1).orR
 
-      val resultRaw = (Mux(onShift.resign, ~unsigned, unsigned) + onShift.incrementPatched)
+      val halfRater = halfRate generate new Area {
+        val firstCycle = RegNext(!layer.el.isFreezed()) init (True)
+        val freezeIt = isValid && SEL && firstCycle
+        layer.el.freezeWhen(freezeIt)
+      }
+
+      val inverter = Delay(Mux(onShift.resign, ~unsigned, unsigned) + onShift.incrementPatched, halfRate.toInt)
+      val resultRaw = CombInit(inverter)
       val expMax = (i64 ? AFix(62) | AFix(30)) + AFix(!signed)
       val expMin = (i64 ? AFix(63) | AFix(31))
       val unsignedMin = muxRv64[UInt](i64)(BigInt(1) << 63)(BigInt(1) << 31)
