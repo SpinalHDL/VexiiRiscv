@@ -99,6 +99,9 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       for((at, sel) <- (uopsAt.keys, GROUP_OH.asBools).zipped){
         sel := (for(port <- ports; (portAt, i) <- port.cmd.ats.zipWithIndex; if portAt == at) yield port.cmd.at(i)).orR
       }
+
+      val EXP_SUBNORMAL = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023)(-127)))
+      val SUBNORMAL = insert(VALUE.exponent <= EXP_SUBNORMAL && VALUE.isNormal)
     }
 
     import s0._
@@ -106,9 +109,6 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
 
     val s1 = new pip.Area(1) {
       // First we check if we are subnormal, in which case we need to denormalize the mantissa
-      val EXP_SUBNORMAL = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023)(-127)))
-      val subnormalComb = VALUE.exponent <= EXP_SUBNORMAL && VALUE.isNormal
-      val SUBNORMAL = insert(RegNext(subnormalComb) clearWhen (!lane.isFreezed()))
       val EXP_DIF_PLUS_ONE = insert(U(EXP_SUBNORMAL - VALUE.exponent) + 1)
 
       val manShiftNoSat = EXP_DIF_PLUS_ONE
@@ -120,7 +120,7 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       }
 
       val counter = Reg(UInt(2 bits)) init(0)
-      val freezeIt = isValid && subnormalComb && counter =/= 2
+      val freezeIt = isValid && SUBNORMAL && counter =/= 2
       lane.freezeWhen(freezeIt)
       when(freezeIt) { counter := counter + 1 }
       when(!lane.isFreezed()){ counter := 0 }
@@ -142,19 +142,20 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       val MAN_CARRY = manIncrWithCarry.msb
       val MAN_INCR = (manIncrWithCarry.dropHigh(1))
       val EXP_INCR = insert(VALUE.exponent + AFix(U(MAN_CARRY)))
-      val EXP_MAX = insert(AFix(p.muxDouble[SInt](FORMAT)(1023)(127)))
-      val EXP_MIN = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023 - 52 + 1)(-127 - 23 + 1)))
 
       val EXP_RESULT = insert(this(ROUNDING_INCR).mux[AFix](EXP_INCR, VALUE.exponent))
       val MAN_RESULT = insert(this(ROUNDING_INCR).mux(MAN_INCR, B(MAN_SHIFTED >> 2)))
-      val EXP_OVERFLOW = insert(EXP_RESULT > EXP_MAX)
-      val EXP_UNDERFLOW = insert(EXP_RESULT < EXP_MIN)
     }
     import s1._
 
     val s2 = new pip.Area(wbAt) {
       val SUBNORMAL_FINAL = insert((EXP_SUBNORMAL - EXP_RESULT).isPositive())
       val EXP = insert(!SUBNORMAL_FINAL ? (EXP_RESULT - EXP_SUBNORMAL) | AFix(0))
+
+      val EXP_MAX = insert(AFix(p.muxDouble[SInt](FORMAT)(1023)(127)))
+      val EXP_MIN = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023 - 52 + 1)(-127 - 23 + 1)))
+      val EXP_OVERFLOW = insert(EXP_RESULT > EXP_MAX)
+      val EXP_UNDERFLOW = insert(EXP_RESULT < EXP_MIN)
 
       val mr = VALUE.mantissa.raw
       val tinyRound = p.muxDouble(FORMAT) {
