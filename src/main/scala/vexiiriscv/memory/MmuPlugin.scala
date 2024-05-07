@@ -396,7 +396,7 @@ class MmuPlugin(var spec : MmuSpec,
             val specLevel = storageLevel.level
 
             val sel = storageOhReg(sid)
-            storageLevel.write.mask                 := UIntToOh(storageLevel.allocId).andMask(sel)
+            storageLevel.write.mask                 := UIntToOh(storageLevel.allocId).andMask(sel).resized
             storageLevel.write.address              := virtual(storageLevel.lineRange)
             storageLevel.write.data.valid           := True
             storageLevel.write.data.virtualAddress  := virtual(specLevel.virtualOffset + log2Up(storageLevel.slp.depth), widthOf(storageLevel.write.data.virtualAddress) bits)
