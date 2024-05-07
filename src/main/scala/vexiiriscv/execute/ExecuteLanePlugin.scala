@@ -105,7 +105,7 @@ class ExecuteLanePlugin(override val laneName : String,
 
     val completionGrouped = getUopLayerSpec.groupBy(_.completion)
     val inflightHarts = Array.fill(Global.HART_COUNT)(ArrayBuffer[Bool]())
-    for(at <- 1 to completionGrouped.keys.map(_.get).max) new Ctrl(at){
+    for(at <- 1 to completionGrouped.keys.map(_.get).max.max(trapAt)) new Ctrl(at){
       val hit = (at <= trapAt).mux(isValid, isValid && !Global.COMPLETED)
       for(hartId <- 0 until Global.HART_COUNT) inflightHarts(hartId) += hit && Global.HART_ID === hartId
     }
