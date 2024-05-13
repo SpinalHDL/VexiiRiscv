@@ -101,8 +101,12 @@ object CSR {
   def MINSTRET  = 0xB02 // MRW Machine instructions-retired counter.
   def MCYCLEH   = 0xB80 // MRW Upper 32 bits of mcycle, RV32I only.
   def MINSTRETH = 0xB82 // MRW Upper 32 bits of minstret, RV32I only.
-  def MHPMCOUNTER3  = 0xB03 // MRW Machine instructions-retired counter.
-  def MHPMEVENT0    = 0x320 // MRW Machine instructions-retired counter.
+  def MHPMCOUNTER0 = 0xB00 // MRW Machine instructions-retired counter.
+  def MHPMCOUNTER3 = 0xB03 // MRW Machine instructions-retired counter.
+  def MHPMCOUNTER0H = 0xB80 // MRW Machine instructions-retired counter.
+  def MHPMCOUNTER3H = 0xB83 // MRW Machine instructions-retired counter.
+  def MHPMEVENT0 = 0x320 // MRW Machine instructions-retired counter.
+  def MHPMEVENT3 = 0x323 // MRW Machine instructions-retired counter.
   val MCOUNTEREN  = 0x306
   val MCOUNTINHIBIT = 0x320
 
@@ -123,6 +127,12 @@ object CSR {
   def UTIMEH   = 0xC81
   def UINSTRET  = 0xC02 // UR Machine instructions-retired counter.
   def UINSTRETH = 0xC82 // UR Upper 32 bits of minstret, RV32I only.
+
+  def UHPMCOUNTER3 = 0xC03
+  def UHPMCOUNTER3H = 0xC83
+
+  def UHPMCOUNTER0 = 0xC00
+  def UHPMCOUNTER0H = 0xC80
 
   val USTATUS = 0x0
   val UIE = 0x4
