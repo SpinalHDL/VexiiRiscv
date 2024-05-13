@@ -14,6 +14,8 @@ VexiiRiscv (Vex2Risc5) is the successor of VexRiscv. Work in progress, here are 
 - Pipeline visualisation in simulation via Konata
 - Lock step simulation via RVLS and Spike
 
+Overall the goal is to have a design which can stretch (through configuration) from Cortex M0 up to a Cortex A53 and potentialy beyond.
+
 Here is the online documentation : 
 
 - https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Introduction/#
