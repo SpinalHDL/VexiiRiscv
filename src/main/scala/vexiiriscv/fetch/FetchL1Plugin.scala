@@ -83,9 +83,10 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val rp = host[ReschedulePlugin]
     val ts = host[TrapService]
     val ats = host[AddressTranslationService]
+    val pcs = host.get[PerformanceCounterService]
     val buildBefore = retains(pp.elaborationLock, ats.portsLock)
     val atsStorageLock = retains(ats.storageLock)
-    val setupLock = retains(ts.trapLock, pcp.elaborationLock, rp.elaborationLock)
+    val setupLock = retains(List(ts.trapLock, pcp.elaborationLock, rp.elaborationLock) ++ pcs.map(_.elaborationLock).toList)
     awaitBuild()
 
     Fetch.WORD_WIDTH.set(fetchDataWidth)
@@ -100,6 +101,13 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val age = pp.getAge(ctrlAt, false)
     val trapPort = ts.newTrap(pp.getAge(ctrlAt), 0)
     val holdPorts = (0 until HART_COUNT).map(pcp.newHoldPort(_))
+
+    val events = pcs.map(p => new Area {
+      val access  = p.createEventPort(PerformanceCounterService.ICACHE_ACCESS)
+      val miss    = p.createEventPort(PerformanceCounterService.ICACHE_MISS)
+      val waiting = p.createEventPort(PerformanceCounterService.ICACHE_WAITING)
+    })
+
     setupLock.release()
 
     val cacheSize = wayCount*setCount*lineSize
@@ -358,7 +366,13 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val hazard = new pp.Fetch(readAt+1) {
       import cmd._
       val pageRange = 11 downto wordRange.high + 1
-      HAZARD := TAGS_UPDATE || REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
+      up(HAZARD) := TAGS_UPDATE || REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
+    }
+
+    for(fetchId <- readAt + 1 until ctrlAt) new pp.Fetch(fetchId) {
+      val peristence = RegNext(down(HAZARD)) clearWhen(up.isCancel || up.isReady || !up.isValid)
+      bypass(HAZARD) := up(HAZARD) | refill.start.valid | peristence
+      assert(Global.HART_COUNT.get == 1)
     }
 
     val hits = new pp.Fetch(hitsAt){
@@ -408,7 +422,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      val allowRefill = !WAYS_HIT && !HAZARD && !trapSent
+      val allowRefill = !WAYS_HIT && !HAZARD
 
       when(!WAYS_HIT || HAZARD) {
         trapPort.valid := True
@@ -462,6 +476,13 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       when(up.isValid && up.isReady){
         plru.write.valid := True
       }
+
+      val onEvents = events.map( e => new Area {
+        val waiting = RegInit(False) clearWhen (!refill.valid && isValid) setWhen (e.miss)
+        e.access := up.isMoving
+        e.miss   := up.isMoving && allowRefill
+        e.waiting := waiting
+      })
     }
 
     assert(!(refill.valid && !invalidate.done))

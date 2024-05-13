@@ -13,7 +13,7 @@ import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.UOP
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
-import vexiiriscv.misc.{AddressToMask, LsuTriggerService, TrapArg, TrapReason, TrapService}
+import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
@@ -89,15 +89,22 @@ class LsuPlugin(var layer : LaneLayer,
     val ats = host[AddressTranslationService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
+    val pcs = host.get[PerformanceCounterService]
     val fpwbp = host.findOption[WriteBackPlugin](p => p.laneName == layer.laneName && p.rf == FloatRegFile)
     val buildBefore = retains(elp.pipelineLock, ats.portsLock)
-    val earlyLock = retains(List(ats.storageLock))
+    val earlyLock = retains(List(ats.storageLock) ++ pcs.map(_.elaborationLock).toList)
     val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))
     awaitBuild()
     Riscv.RVA.set(withRva)
 
     val translationStorage = ats.newStorage(translationStorageParameter)
     val fpwb = fpwbp.map(_.createPort(wbAt))
+
+    val events = pcs.map(p => new Area {
+      val waiting = p.createEventPort(PerformanceCounterService.DCACHE_WAITING)
+      waiting := False
+    })
+
     earlyLock.release()
 
     val trapPort = ts.newTrap(layer.el.getExecuteAge(ctrlAt), Execute.LANE_AGE_WIDTH)
@@ -230,6 +237,7 @@ class LsuPlugin(var layer : LaneLayer,
         val threshold = Math.max(storeBufferOps - wordPerLine, storeBufferOps/2)
         val waitIt = RegInit(False) clearWhen (slotsFree && ops.occupancy <= threshold)
         host[DispatchPlugin].haltDispatchWhen(waitIt)
+        events.foreach(_.waiting setWhen(waitIt))
       }
 
       val waitL1 = new L1Waiter()
@@ -736,6 +744,7 @@ class LsuPlugin(var layer : LaneLayer,
         when(isValid && SEL && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
           capture(down)
         }
+        events.foreach(_.waiting setWhen(valid))
       }
     }
 

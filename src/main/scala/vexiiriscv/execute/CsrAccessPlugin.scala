@@ -140,7 +140,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         val sels = grouped.map(e => e._1 -> Bool().setName("COMB_CSR_" + filterToName(e._1)))
         for ((filter, sel) <- sels) sel := (filter match {
           case filter: Int => csrAddress === filter
-          case filter: CsrListFilter => filter.mapping.map(csrAddress === _).orR
+          case filter: CsrListFilter => filter.mapping.map(csrAddress === _).orR //TODO
         })
         val implemented = sels.values.orR
 

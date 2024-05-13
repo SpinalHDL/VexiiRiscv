@@ -335,8 +335,12 @@ object SocGen extends App{
 //  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0")
 //  val to = cpu0.host[GSharePlugin].logic.onLearn.cmd.valid
 
-  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
-  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_writeback_slots_1_timer_counter")
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
+//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_writeback_slots_1_timer_counter")
+
+  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl2_up_LsuL1_MIXED_ADDRESS_lane0")
+  val to = cpu0.reflectBaseType("FpuPackerPlugin_logic_pip_node_1_s0_SUBNORMAL")
+
 
   val drivers = mutable.LinkedHashSet[BaseType]()
   AnalysisUtils.seekNonCombDrivers(to){driver =>
@@ -449,6 +453,12 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --wi
 --lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2  --with-lsu-bypass \
 --with-btb --with-ras --with-gshare --relaxed-branch"  --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=131072 --update-repo=no  --sys-clk-freq 100000000 --build   --load
 
+python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --with-jtag-tap  --bus-standard axi-lite --vexii-args=" \
+--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 9 \
+--regfile-async --xlen=64 --with-rvc --with-rvf --with-rvd --fma-reduced-accuracy \
+--fetch-l1 --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 \
+--lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2  --with-lsu-bypass \
+--with-btb --with-ras --with-gshare --relaxed-branch"  --cpu-count=4 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no  --sys-clk-freq 100000000 --build   --load
 
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--debug-privileged" --with-jtag-tap --build --load
@@ -464,7 +474,7 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --ve
 
 
 opensbi =>
-git clone https://github.com/Dolu1990/opensbi.git --branch uart-fix
+git clone https://github.com/Dolu1990/opensbi.git --branch vexii-debian
 cd opensbi
 make PLATFORM_RISCV_XLEN=64 PLATFORM_RISCV_ABI=lp64d PLATFORM_RISCV_ISA=rv64gc CROSS_COMPILE=riscv-none-embed- PLATFORM=litex/vexriscv
 
@@ -498,6 +508,21 @@ cat >> /etc/X11/xorg.conf << EOF
 > EndSection
 > EOF
 
+
+https://www.brendangregg.com/perf.html
+perf stat  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
+perf record md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
+perf report
+
+perf stat -e branch-misses -e branches -e cache-misses -e cache-references -e L1-icache-loads -e L1-icache-load-misses -e cycles -e instructions ls
+
+14.70%  chocolate-doom  chocolate-doom           [.] R_DrawColumn
+ 5.79%  chocolate-doom  libSDL2-2.0.so.0.2800.4  [.] 0x00000000000c103a
+ 5.41%  chocolate-doom  chocolate-doom           [.] R_DrawSpan
+ 4.52%  chocolate-doom  libc.so.6                [.] 0x000000000007c8a0
+ 3.31%  chocolate-doom  libSDL2-2.0.so.0.2800.4  [.] 0x00000000000c102a
+ 2.74%  chocolate-doom  libSDL2-2.0.so.0.2800.4  [.] 0x00000000000c1036
+ 2.67%  chocolate-doom  libSDL2-2.0.so.0.2800.4  [.] 0x00000000000c1038
 
 
 
@@ -543,12 +568,6 @@ TODO debug :
 
 
 debug fmax =>
-python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --with-jtag-tap  --bus-standard axi-lite --vexii-args=" \
---allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 \
---regfile-async --xlen=64 --with-rvc --with-rvf --with-rvd --decoders=2 --lanes=2 --with-dispatcher-buffer \
---fetch-l1 --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 \
---lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2  --with-lsu-bypass \
---with-btb --with-ras --with-gshare --relaxed-branch"  --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=131072 --update-repo=no  --sys-clk-freq 80000000    --build  --sys-clk-freq 80000000
 
 - Node((toplevel/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0 :  Bits[32 bits]))
   - Node((toplevel/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_decode_ctrls_0_down_Decode_INSTRUCTION_0 :  Bits[32 bits]))

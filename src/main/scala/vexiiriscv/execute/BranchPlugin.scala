@@ -98,7 +98,10 @@ class BranchPlugin(val layer : LaneLayer,
 
     val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last
     val isLastOfLane = BranchPlugin.this == lastOfLane
-    val branchMissEvent = (isLastOfLane && pcs.nonEmpty).option(pcs.get.createEventPort(PerformanceCounterService.BRANCH_MISS))
+    val events = (isLastOfLane && pcs.nonEmpty).option(new Area{
+      val branchMiss = pcs.get.createEventPort(PerformanceCounterService.BRANCH_MISS)
+      val branchCount = pcs.get.createEventPort(PerformanceCounterService.BRANCH_COUNT)
+    })
     awaitBuild()
 
     import SrcKeys._
@@ -260,7 +263,10 @@ class BranchPlugin(val layer : LaneLayer,
         for (e <- ls.learnCtxElements) {
           learn.ctx(e).assignFrom(apply(e))
         }
-        branchMissEvent.foreach(_ := learn.valid && learn.isBranch && learn.wasWrong)
+        events.foreach{e =>
+          e.branchMiss := learn.valid && learn.isBranch && learn.wasWrong
+          e.branchCount := learn.valid && learn.isBranch
+        }
       }
 
     }

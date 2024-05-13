@@ -10,7 +10,7 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.Global
-import vexiiriscv.misc.Reservation
+import vexiiriscv.misc.{PerformanceCounterService, Reservation}
 import vexiiriscv.riscv.{AtomicAlu, Riscv}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{InitService, LsuL1Service, LsuService}
@@ -128,6 +128,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
   val logic = during setup new Area{
     import LsuL1._
 
+    val pcs = host.get[PerformanceCounterService]
+    val earlyLock = retains(pcs.map(_.elaborationLock).toList)
     awaitBuild()
 
     assert(coherentCtrlAt <= ctrlAt) //To ensure that slots valids timings vs pipeline
@@ -139,6 +141,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     ackUnlock.set(False)
     WRITEBACK_BUSY.soon()
     LsuL1.coherency.set(withCoherency)
+
+    val events = pcs.map(p => new Area {
+      val access = p.createEventPort(PerformanceCounterService.DCACHE_ACCESS)
+      val miss = p.createEventPort(PerformanceCounterService.DCACHE_MISS)
+    })
+    earlyLock.release()
 
     elaborationRetainer.await()
 
@@ -830,6 +838,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         MISS := !HAZARD && !WAYS_HIT && !FLUSH
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
+
+        events.map{e =>
+          e.access := up.isFiring && SEL
+          e.miss   := e.access && !HAZARD && (MISS || MISS_UNIQUE)
+        }
 
         val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard
         val canFlush = reservation.win && !writeback.full && !refill.slots.map(_.valid).orR && !writebackHazard
