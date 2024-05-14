@@ -96,12 +96,13 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val selWidth = log2Up((specs.map(_.id) :+ 0).max + 1)
       val grouped = specs.groupByLinked(_.id)
       val sums = grouped.map{ case (id, specs) => id -> CountOne(specs.map(_.event)) }
+      val widthMax = sums.map(_._2.getWidth).max
     }
 
     val hpm = for(id <- 0 until 3+additionalCounterCount) yield (id >= 3) generate new Area{
       val counter = counters.additionals(id-3)
       val eventId = Reg(UInt(events.selWidth bits)) init(0)
-      val incr    = if(events.sums.isEmpty) U(0) else events.sums.map(e => e._2.andMask(eventId === e._1)).toList.reduceBalancedTree(_ | _)
+      val incr    = if(events.sums.isEmpty) U(0) else events.sums.map(e => e._2.andMask(eventId === e._1).resize(events.widthMax)).toList.reduceBalancedTree(_ | _)
       when(!counter.mcountinhibit) {
         counter.value := counter.value + incr
       }
