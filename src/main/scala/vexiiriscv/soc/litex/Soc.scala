@@ -338,19 +338,19 @@ object SocGen extends App{
 //  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
 //  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_writeback_slots_1_timer_counter")
 
-  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl2_up_LsuL1_MIXED_ADDRESS_lane0")
-  val to = cpu0.reflectBaseType("FpuPackerPlugin_logic_pip_node_1_s0_SUBNORMAL")
-
-
-  val drivers = mutable.LinkedHashSet[BaseType]()
-  AnalysisUtils.seekNonCombDrivers(to){driver =>
-    driver match {
-      case bt : BaseType => drivers += bt
-    }
-  }
-  drivers.foreach(e => println(e.getName()))
-  println("******")
-  println(PathTracer.impl(from, to).report())
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl3_up_LsuL1_PHYSICAL_ADDRESS_lane0")
+//  val to = cpu0.reflectBaseType("FetchL1Plugin_logic_ways_0_read_cmd_valid")
+//
+//
+//  val drivers = mutable.LinkedHashSet[BaseType]()
+//  AnalysisUtils.seekNonCombDrivers(to){driver =>
+//    driver match {
+//      case bt : BaseType => drivers += bt
+//    }
+//  }
+//  drivers.foreach(e => println(e.getName()))
+//  println("******")
+//  println(PathTracer.impl(from, to).report())
 }
 
 object PythonArgsGen extends App{
@@ -508,13 +508,86 @@ cat >> /etc/X11/xorg.conf << EOF
 > EndSection
 > EOF
 
+https://github.com/zielmicha/SDL2/blob/master/README.DirectFB
+https://bbs.archlinux.org/viewtopic.php?id=243100
+
+--dfb:system=FBDev
 
 https://www.brendangregg.com/perf.html
 perf stat  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 perf record md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 perf report
 
+PMU Hardware doesn't support sampling/overflow-interrupts
+
+branch-instructions OR branches                    [Hardware event]
+branch-misses                                      [Hardware event]
+bus-cycles                                         [Hardware event]
+cache-misses                                       [Hardware event]
+cache-references                                   [Hardware event]
+cpu-cycles OR cycles                               [Hardware event]
+instructions                                       [Hardware event]
+ref-cycles                                         [Hardware event]
+stalled-cycles-backend OR idle-cycles-backend      [Hardware event]
+stalled-cycles-frontend OR idle-cycles-frontend    [Hardware event]
+alignment-faults                                   [Software event]
+bpf-output                                         [Software event]
+cgroup-switches                                    [Software event]
+context-switches OR cs                             [Software event]
+cpu-clock                                          [Software event]
+cpu-migrations OR migrations                       [Software event]
+dummy                                              [Software event]
+emulation-faults                                   [Software event]
+major-faults                                       [Software event]
+minor-faults                                       [Software event]
+page-faults OR faults                              [Software event]
+task-clock                                         [Software event]
+duration_time                                      [Tool event]
+user_time                                          [Tool event]
+system_time                                        [Tool event]
+
+
+cpu:
+L1-dcache-loads OR cpu/L1-dcache-loads/
+L1-dcache-load-misses OR cpu/L1-dcache-load-misses/
+L1-dcache-stores OR cpu/L1-dcache-stores/
+L1-dcache-store-misses OR cpu/L1-dcache-store-misses/
+L1-dcache-prefetches OR cpu/L1-dcache-prefetches/
+L1-dcache-prefetch-misses OR cpu/L1-dcache-prefetch-misses/
+L1-icache-loads OR cpu/L1-icache-loads/
+L1-icache-load-misses OR cpu/L1-icache-load-misses/
+L1-icache-prefetches OR cpu/L1-icache-prefetches/
+L1-icache-prefetch-misses OR cpu/L1-icache-prefetch-misses/
+LLC-loads OR cpu/LLC-loads/
+LLC-load-misses OR cpu/LLC-load-misses/
+LLC-stores OR cpu/LLC-stores/
+LLC-store-misses OR cpu/LLC-store-misses/
+LLC-prefetches OR cpu/LLC-prefetches/
+LLC-prefetch-misses OR cpu/LLC-prefetch-misses/
+dTLB-loads OR cpu/dTLB-loads/
+dTLB-load-misses OR cpu/dTLB-load-misses/
+dTLB-stores OR cpu/dTLB-stores/
+dTLB-store-misses OR cpu/dTLB-store-misses/
+dTLB-prefetches OR cpu/dTLB-prefetches/
+dTLB-prefetch-misses OR cpu/dTLB-prefetch-misses/
+iTLB-loads OR cpu/iTLB-loads/
+iTLB-load-misses OR cpu/iTLB-load-misses/
+branch-loads OR cpu/branch-loads/
+branch-load-misses OR cpu/branch-load-misses/
+node-loads OR cpu/node-loads/
+node-load-misses OR cpu/node-load-misses/
+node-stores OR cpu/node-stores/
+node-store-misses OR cpu/node-store-misses/
+node-prefetches OR cpu/node-prefetches/
+node-prefetch-misses OR cpu/node-prefetch-misses/
+
+
 perf stat -e branch-misses -e branches -e cache-misses -e cache-references -e L1-icache-loads -e L1-icache-load-misses -e cycles -e instructions ls
+
+~/c/libsdl2/libsdl2-2.30.2+dfsg/debian/build-tests# make -j1 check "TESTSUITEFLAGS=-j1 --verbose" VERBOSE=1 V=1 &> testlog.txt
+
+export DEB_BUILD_OPTIONS="nocheck parallel=4"
+fakeroot debian/rules binary
 
 14.70%  chocolate-doom  chocolate-doom           [.] R_DrawColumn
  5.79%  chocolate-doom  libSDL2-2.0.so.0.2800.4  [.] 0x00000000000c103a
