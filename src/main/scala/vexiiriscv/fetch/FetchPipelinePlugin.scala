@@ -39,7 +39,14 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
       val age = getAge(id)
       val c = fetch(id)
       val doIt = rp.isFlushedAt(age, c(Global.HART_ID), U(0))
-      doIt.foreach(v => c.throwWhen(v, usingReady = false))
+      doIt.foreach(v =>
+        if(flushRange.last != id) {
+          c.throwWhen(v, usingReady = false)
+        } else  {
+          c.forgetOneWhen(v)
+          c.requests.cancels += v
+        }
+      )
     }
   }
 
