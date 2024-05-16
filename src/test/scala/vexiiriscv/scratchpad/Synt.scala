@@ -673,6 +673,8 @@ object IntegrationSynthBench extends App{
     withMul = true
     withDiv = true
     divArea = false
+    relaxedBranch = true
+    relaxedBtb = true
 
     xlen = 64
     privParam.withSupervisor = true
@@ -687,7 +689,6 @@ object IntegrationSynthBench extends App{
     privParam.withDebug = true
 
     allowBypassFrom = 0
-    relaxedBranch = true
     withPerformanceCounters = true
     additionalPerformanceCounters = 0
 

@@ -451,14 +451,14 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --wi
 --regfile-async --xlen=64 --with-rvc --with-rvf --with-rvd --fma-reduced-accuracy \
 --fetch-l1 --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 \
 --lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2  --with-lsu-bypass \
---with-btb --with-ras --with-gshare --relaxed-branch"  --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=131072 --update-repo=no  --sys-clk-freq 100000000 --build   --load
+--with-btb --with-ras --with-gshare --relaxed-branch --relaxed-btb"  --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=131072 --update-repo=no  --sys-clk-freq 100000000 --build   --load
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --with-jtag-tap  --bus-standard axi-lite --vexii-args=" \
 --allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 9 \
 --regfile-async --xlen=64 --with-rvc --with-rvf --with-rvd --fma-reduced-accuracy \
 --fetch-l1 --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 \
 --lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2  --with-lsu-bypass \
---with-btb --with-ras --with-gshare --relaxed-branch"  --cpu-count=4 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no  --sys-clk-freq 100000000 --build   --load
+--with-btb --with-ras --with-gshare --relaxed-branch --relaxed-btb"  --cpu-count=4 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no  --sys-clk-freq 100000000 --build   --load
 
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--debug-privileged" --with-jtag-tap --build --load
@@ -517,6 +517,8 @@ https://www.brendangregg.com/perf.html
 perf stat  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 perf record md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 perf report
+
+video capture => qv4l2
 
 PMU Hardware doesn't support sampling/overflow-interrupts
 
