@@ -85,6 +85,7 @@ class DivRadix(width: Int, radix: Int) extends DivComp(width, radix match {
   val slicesZero = slices.map(_ === 0)
   val shiftSel = B((0 until sliceCount).map(i => slicesZero.drop(i).andR))
   val sel = OHToUInt(OHMasking.firstV2(True ## shiftSel))
+  val wasBusy = RegNext(busy) init(False)
   when(!busy){
     busy   := io.cmd.valid
     div1   := io.cmd.b.resized

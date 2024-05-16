@@ -134,7 +134,7 @@ class ParamSimple(){
     withBtb = true
     withRas = true
     //    relaxedBranch = true  // !!
-    //    relaxedBtb = true     // !!
+    relaxedBtb = true     // !!
     fetchL1Enable = true
     fetchL1Sets = 64
     fetchL1Ways = 4
@@ -153,21 +153,21 @@ class ParamSimple(){
     //    lsuForkAt = 1
     divArea = false
     divRadix = 4
-//    decoders = 2
-//    lanes = 2
-//    withLateAlu = true
+    decoders = 2
+    lanes = 2
+    withLateAlu = true
     withMul = true
     withDiv = true
-//    withDispatcherBuffer = true
+    withDispatcherBuffer = true
     withAlignerBuffer = true
-    withRvc = true
+//    withRvc = true
     withRva = true
-    withRvf = true
-    withRvd = true
+//    withRvf = true
+//    withRvd = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-    xlen = 64
+    xlen = 32
 
 
     privParam.withDebug = true
@@ -568,15 +568,13 @@ class ParamSimple(){
       plugins += new RsUnsignedPlugin("lane0")
       plugins += new DivPlugin(
         layer = early0,
+        relaxedInputs = xlen == 64,
         radix = divRadix,
         area  = divArea,
         impl = {
           def pasta(width: Int, radix: Int, area : Boolean) = new DivRadix2(width, lowArea = area)
           def vexii(width: Int, radix: Int, area: Boolean) = new DivRadix(width, radix)
-          def default(width: Int, radix: Int, area: Boolean) = radix match {
-            case 2 if area => pasta(width, radix, area)
-            case _ => vexii(width, radix, area)
-          }
+          def default(width: Int, radix: Int, area: Boolean) = vexii(width, radix, area)
           divImpl match {
             case "" => default
             case "bitpasta" => pasta

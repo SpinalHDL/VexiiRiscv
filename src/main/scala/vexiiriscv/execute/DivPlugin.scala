@@ -23,6 +23,7 @@ trait DivReuse{
 }
 
 class DivPlugin(val layer : LaneLayer,
+                var relaxedInputs: Boolean,
                 var impl : (Int, Int, Boolean) => DivComp,
                 var divAt: Int = 0,
                 var writebackAt : Int = 0,
@@ -37,8 +38,8 @@ class DivPlugin(val layer : LaneLayer,
     val divWidth = logic.processing.div.width
     assert(divWidth >= widthOf(a))
     assert(divWidth >= widthOf(b))
-    logic.processing.div.io.cmd.a := a.resized // << (divWidth-widthOf(a))
-    logic.processing.div.io.cmd.b := b.resized // << (divWidth-widthOf(b))
+    logic.processing.a := a.resized // << (divWidth-widthOf(a))
+    logic.processing.b := b.resized // << (divWidth-widthOf(b))
     logic.processing.div.io.cmd.normalized := True
     logic.processing.div.io.cmd.iterations := interations
   }
@@ -81,13 +82,21 @@ class DivPlugin(val layer : LaneLayer,
 
       val cmdSent = RegInit(False) setWhen (div.io.cmd.fire) clearWhen (isReady)
       val request = isValid && SEL
+      val a, b = UInt(Riscv.XLEN bits)
+      a := RS1_UNSIGNED.resized
+      b := RS2_UNSIGNED.resized
       div.io.cmd.valid := request && !cmdSent
-      div.io.cmd.a := RS1_UNSIGNED.resized
-      div.io.cmd.b := RS2_UNSIGNED.resized
+      div.io.cmd.a := Delay(a, relaxedInputs.toInt).resized
+      div.io.cmd.b := Delay(b, relaxedInputs.toInt).resized
       div.io.cmd.normalized := False
       div.io.cmd.iterations.assignDontCare()
       div.io.flush := isReady
       div.io.rsp.ready := False
+
+      val relaxer = relaxedInputs generate new Area{
+        val hadRequest = RegNext(request && el.isFreezed()) init(False)
+        div.io.cmd.valid clearWhen(!hadRequest)
+      }
 
 
       val unscheduleRequest = RegNext(isCancel) clearWhen (isReady) init (False)
