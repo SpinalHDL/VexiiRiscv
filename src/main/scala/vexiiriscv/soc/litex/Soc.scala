@@ -4,7 +4,7 @@ import spinal.core.fiber.Fiber
 import spinal.core._
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4SpecRenamer, Axi4ToTilelinkFiber}
 import spinal.lib.bus.amba4.axilite.AxiLite4SpecRenamer
-import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber}
 import spinal.lib.bus.tilelink.fabric
 import spinal.lib.bus.tilelink.fabric.Node
@@ -12,7 +12,7 @@ import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.misc.{PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, slave}
-import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryTransferTag, PMA}
+import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
 import vexiiriscv.ParamSimple
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
 import vexiiriscv.prediction.GSharePlugin
@@ -87,8 +87,6 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
       cBus << filter.down
       filter.down.setDownConnection(a = StreamPipe.FULL)
 
-
-
       //As litex reset will release before our one, we need to ensure that we don't eat a transaction
       Fiber build {
         bridge.read.get
@@ -138,9 +136,7 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
       toAxi4.down.addTag(PMA.MAIN)
       toAxi4.down.addTag(PMA.EXECUTABLE)
       for(region <- memRegions) {
-        toAxi4.down.addTag(new MemoryEndpoint {
-          override def mapping = region.mapping
-        })
+        toAxi4.down.addTag(new MemoryEndpointTag(region.mapping))
       }
     }
 
@@ -165,7 +161,6 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
         }
       }
 
-
       for (vexii <- vexiis) {
         vexii.bind(clint)
         vexii.bind(plic)
@@ -174,84 +169,19 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
       val toAxiLite4 = new fabric.AxiLite4Bridge
       toAxiLite4.up << bus
 
-
-
-
-      val virtualRegions = for (region <- axiLiteRegions) yield new Area with SpinalTagReady {
-        def self = this
-
-        new MemoryConnection {
-          override def up = toAxiLite4.down
-          override def down = self
-          override def transformers = Nil
-//          override def mapping = region.mapping //TODO
-          populate()
-        }
-        self.addTag(new MemoryEndpoint {
-          override def mapping = region.mapping
-        })
-
-        addTag(new MemoryTransferTag {
-          override def get = toAxiLite4.up.m2s.parameters.emits
-        })
-        if (region.isCachable) addTag(PMA.MAIN)
-        if (region.isExecutable) addTag(PMA.EXECUTABLE)
+      val virtualRegions = for (region <- axiLiteRegions) yield new VirtualEndpoint(toAxiLite4.down, region.mapping){
+        if (region.isCachable) self.addTag(PMA.MAIN)
+        if (region.isExecutable) self.addTag(PMA.EXECUTABLE)
       }
     }
 
     val mBus = withMem generate (Fiber build master(toAxi4.down.pipelined()))
     val pBus = Fiber build master(peripheral.toAxiLite4.down.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.HALF, b = StreamPipe.HALF, r = StreamPipe.HALF))
 
-//    val debug = c.withDebug generate new Area {
-//      val cd = ClockDomain.current.copy(reset = in Bool())
-//      val cdi = c.withJtagInstruction generate ClockDomain.external("jtag_instruction", withReset = false)
-//
-//      val dm = cd(new DebugModuleFiber())
-//      vexiis.foreach(dm.bindHart)
-//      val tap = c.withJtagTap generate cd(dm.withJtagTap())
-//      val instruction = c.withJtagInstruction generate cdi(dm.withJtagInstruction())
-//    }
-
     val patcher = Fiber build new Area {
-      if (c.withDma) {
-        Axi4SpecRenamer(dma.bus)
-      }
+      if (c.withDma) Axi4SpecRenamer(dma.bus)
       if (withMem) Axi4SpecRenamer(mBus.get)
       AxiLite4SpecRenamer(pBus.get)
-
-//      vexii(0).dBus.bus
-
-
-      val i = MemoryConnection.getMemoryTransfers(vexiis(0).iBus)
-      val d = MemoryConnection.getMemoryTransfers(vexiis(0).dBus)
-//      val p = MemoryConnection.getMemoryTransfers(vexiis(0).pBus)
-
-      println(i)
-
-//      if (withJtagTap) debug.tap.jtag.setName("jtag")
-//      if (withJtagInstruction) debug.instruction.setName("jtag_instruction")
-//      if (c.withDebug) {
-//        debug.dm.ndmreset.toIo().setName("debug_ndmreset")
-//        debug.cd.reset.setName("debug_reset")
-//      }
-
-//      val tracer = master(Reg(Flow(Bits(8 bits))))
-//      val trigger = False
-//      tracer.valid init (False)
-//      tracer.valid := Delay(trigger, 2)
-//      tracer.payload init (0)
-//      for (nax <- vexii) {
-//        nax.plugins.collectFirst { case p: CsrTracer => p } match {
-//          case Some(p) => when(p.logic.flowOut.valid) {
-//            trigger := True
-//            tracer.payload := p.logic.flowOut.payload
-//          }
-//          case None =>
-//        }
-//      }
-
-//      vexiis.foreach(_.logic.core.addAttribute("keep_hierarchy", "yes"))
-//      component.definition.addAttribute("keep_hierarchy", "yes")
     }
   }
 
@@ -335,7 +265,7 @@ object SocGen extends App{
 //  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
 //  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_writeback_slots_1_timer_counter")
 
-//  val from = report.toplevel.reflectBaseType("vexiis_0_lsuL1Bus_noDecoder_toDown_d_rData_opcode")
+//  val from = report.toplevel.reflectBaseType("vexiis_0_lsuL1Bus_noDecoder_toDown_d_rData_opcode")   <---- TODO fix this path
 //  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_WB_HAZARD")
 //
 //
