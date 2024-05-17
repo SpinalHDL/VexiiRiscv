@@ -585,6 +585,30 @@ node-prefetches OR cpu/node-prefetches/
 node-prefetch-misses OR cpu/node-prefetch-misses/
 
 
+
+Bluetooth :
+killall bluealsa
+bluealsa -p a2dp-source -p a2dp-sink --a2dp-force-audio-cd
+bluetoothctl
+connect 88:C9:E8:E6:2A:69
+pulseaudio --start
+systemctl status bluetooth
+speaker-test -t wav -c 6
+speaker-test -t wav -c 6 -D btheadset
+pacmd list-sinks
+aplay -D bluealsa piano2.wave
+
+https://agl-gsod-2020-demo-mkdocs.readthedocs.io/en/latest/icefish/apis_services/reference/audio/audio/bluez-alsa/
+
+
+systemctl restart bluetooth
+
+pulseaudio-module-bluetooth naaaaa
+
+mpg123 -a bluealsa mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
+--sbc-quality=low
+
+
 perf stat -e branch-misses -e branches -e cache-misses -e cache-references -e L1-icache-loads -e L1-icache-load-misses -e cycles -e instructions ls
 
 ~/c/libsdl2/libsdl2-2.30.2+dfsg/debian/build-tests# make -j1 check "TESTSUITEFLAGS=-j1 --verbose" VERBOSE=1 V=1 &> testlog.txt

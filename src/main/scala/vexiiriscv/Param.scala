@@ -167,7 +167,7 @@ class ParamSimple(){
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-    xlen = 32
+    xlen = 64
 
 
     privParam.withDebug = true
