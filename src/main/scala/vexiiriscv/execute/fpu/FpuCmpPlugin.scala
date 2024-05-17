@@ -31,8 +31,8 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
-    val fwbp = host.find[WriteBackPlugin](p => p.laneName == layer.el.laneName && p.rf == FloatRegFile)
-    val iwbp = host.find[IntFormatPlugin](p => p.laneName == layer.laneName)
+    val fwbp = host.find[WriteBackPlugin](p => p.lane == layer.el && p.rf == FloatRegFile)
+    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.el)
     val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == layer.el)
     val buildBefore = retains(layer.el.pipelineLock)
     val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fwbp.elaborationLock, iwbp.elaborationLock, ffwbp.elaborationLock)

@@ -160,14 +160,14 @@ class ParamSimple(){
     withDiv = true
     withDispatcherBuffer = true
     withAlignerBuffer = true
-//    withRvc = true
+    withRvc = true
     withRva = true
 //    withRvf = true
 //    withRvd = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-    xlen = 64
+//    xlen = 64
 
 
     privParam.withDebug = true
@@ -479,7 +479,7 @@ class ParamSimple(){
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
-    plugins += new IntFormatPlugin("lane0")
+    plugins += new IntFormatPlugin(lane0)
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
     if(withRvZb) plugins ++= ZbPlugin.make(early0, formatAt=0)
     if(!lsuL1Enable) plugins += new LsuCachelessPlugin(
@@ -584,6 +584,8 @@ class ParamSimple(){
       )
     }
 
+    plugins += new execute.SimdAddRawPlugin(early0)
+
     plugins += new CsrRamPlugin()
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
@@ -612,7 +614,7 @@ class ParamSimple(){
       if(withRvZb) plugins ++= ZbPlugin.make(late0, executeAt = lateAluAt, formatAt = lateAluAt)
     }
 
-    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
+    plugins += new WriteBackPlugin(lane0, IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
 
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
@@ -622,7 +624,7 @@ class ParamSimple(){
       plugins += new SrcPlugin(early1, executeAt = 0, relaxedRs = relaxedSrc)
       plugins += new IntAluPlugin(early1, formatAt = 0)
       plugins += shifter(early1, formatAt = relaxedShift.toInt)
-      plugins += new IntFormatPlugin("lane1")
+      plugins += new IntFormatPlugin(lane1)
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
       if(withRvZb) plugins ++= ZbPlugin.make(early1, formatAt=0)
 
@@ -637,7 +639,7 @@ class ParamSimple(){
 //      if (withMul) {
 //        plugins += new MulPlugin(early1)
 //      }
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
+      plugins += new WriteBackPlugin(lane1, IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
     }
 
     plugins.foreach {
@@ -656,7 +658,7 @@ class ParamSimple(){
       )
 
 //      plugins += new execute.fpu.FpuExecute(early0, 0)
-      plugins += new WriteBackPlugin("lane0", FloatRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions
+      plugins += new WriteBackPlugin(lane0, FloatRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions
       plugins += new execute.fpu.FpuFlagsWritebackPlugin(lane0, pipTo = intWritebackAt)
       plugins += new execute.fpu.FpuCsrPlugin(List(lane0), intWritebackAt)
       plugins += new execute.fpu.FpuUnpackerPlugin(early0)

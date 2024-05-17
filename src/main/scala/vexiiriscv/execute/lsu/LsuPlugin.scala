@@ -83,14 +83,14 @@ class LsuPlugin(var layer : LaneLayer,
   val logic = during setup new Area{
     assert(!(storeBufferSlots != 0 ^ storeBufferOps != 0))
     val withStoreBuffer = storeBufferSlots != 0
-    val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
-    val ifp = host.find[IntFormatPlugin](_.laneName == layer.laneName)
+    val elp = host.find[ExecuteLanePlugin](_ == layer.el)
+    val ifp = host.find[IntFormatPlugin](_.lane == layer.el)
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host[AddressTranslationService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
     val pcs = host.get[PerformanceCounterService]
-    val fpwbp = host.findOption[WriteBackPlugin](p => p.laneName == layer.laneName && p.rf == FloatRegFile)
+    val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.el && p.rf == FloatRegFile)
     val buildBefore = retains(elp.pipelineLock, ats.portsLock)
     val earlyLock = retains(List(ats.storageLock) ++ pcs.map(_.elaborationLock).toList)
     val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))

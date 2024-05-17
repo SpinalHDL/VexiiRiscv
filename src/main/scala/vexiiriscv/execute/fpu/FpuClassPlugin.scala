@@ -17,7 +17,7 @@ class FpuClassPlugin(val layer : LaneLayer, var wbAt : Int = 0) extends FiberPlu
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
-    val iwbp = host.find[IntFormatPlugin](p => p.laneName == layer.laneName)
+    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.el)
     val buildBefore = retains(layer.el.pipelineLock)
     val uopLock = retains(layer.el.uopLock, fup.elaborationLock, iwbp.elaborationLock)
     awaitBuild()

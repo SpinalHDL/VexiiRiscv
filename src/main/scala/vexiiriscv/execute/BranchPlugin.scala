@@ -86,7 +86,7 @@ class BranchPlugin(val layer : LaneLayer,
   }
 
   val logic = during setup new Logic{
-    val wbp = host.find[WriteBackPlugin](p => p.laneName == layer.el.laneName && p.rf == IntRegFile)
+    val wbp = host.find[WriteBackPlugin](p => p.lane == layer.el && p.rf == IntRegFile)
     val sp = host[ReschedulePlugin]
     val pcp = host[PcPlugin]
     val hp = host.get[HistoryPlugin]

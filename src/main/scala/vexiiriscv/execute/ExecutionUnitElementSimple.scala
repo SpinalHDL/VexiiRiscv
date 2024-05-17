@@ -73,7 +73,7 @@ abstract class ExecutionUnitElementSimple(layer : LaneLayer) extends FiberPlugin
   class Logic extends ExecuteUnitElementSimple.Api(layer,  host.find[SrcPlugin](_.layer == layer), SEL, rsUnsignedPlugin = host.get[RsUnsignedPlugin].getOrElse(null)) with Area with PostInitCallback {
     val el = layer.el
     val srcp = srcPlugin
-    val ifp = host.find[IntFormatPlugin](_.laneName == layer.el.laneName)
+    val ifp = host.find[IntFormatPlugin](_.lane == layer.el)
     val uopRetainer = retains(el.uopLock, srcp.elaborationLock, ifp.elaborationLock)
     val euPipelineRetainer = retains(el.pipelineLock)
 

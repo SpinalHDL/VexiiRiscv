@@ -139,7 +139,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
         address := c(p.logic.tpk.TRANSLATED)
-        data := host.find[IntFormatPlugin](_.laneName == p.layer.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
+        data := host.find[IntFormatPlugin](_.lane == p.layer.el).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
       })
 
 
@@ -150,7 +150,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
         address := c(LsuL1.PHYSICAL_ADDRESS)
-        data := host.find[IntFormatPlugin](_.laneName == p.layer.laneName).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
+        data := host.find[IntFormatPlugin](_.lane == p.layer.el).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
       })
     }
 

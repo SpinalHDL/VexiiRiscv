@@ -11,8 +11,8 @@ import vexiiriscv.riscv.{IntRegFile, MicroOp, Riscv}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class IntFormatPlugin(val laneName : String) extends FiberPlugin{
-  withPrefix(laneName)
+class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin{
+  withPrefix(lane.laneName)
   val elaborationLock = Retainer()
 
   case class ExtendsSpec(op: UopLayerSpec, bitId: Int)
@@ -50,8 +50,8 @@ class IntFormatPlugin(val laneName : String) extends FiberPlugin{
   }
 
   val logic = during setup new Area{
-    val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
-    val wbp = host.find[WriteBackPlugin](p => p.laneName == laneName && p.rf == IntRegFile)
+    val eu = host.find[ExecuteLanePlugin](_ == lane)
+    val wbp = host.find[WriteBackPlugin](p => p.lane == lane && p.rf == IntRegFile)
     val buildBefore = retains(eu.pipelineLock, wbp.elaborationLock)
     awaitBuild()
 

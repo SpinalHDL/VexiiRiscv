@@ -47,7 +47,7 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
 
   val logic = during setup new Area{
     val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == lane)
-    val wbp = host.find[WriteBackPlugin](p => p.laneName == lane.laneName && p.rf == FloatRegFile)
+    val wbp = host.find[WriteBackPlugin](p => p.lane == lane && p.rf == FloatRegFile)
     val buildBefore = retains(lane.pipelineLock, wbp.elaborationLock, ffwbp.elaborationLock)
     val uopLock = retains(lane.uopLock)
     awaitBuild()

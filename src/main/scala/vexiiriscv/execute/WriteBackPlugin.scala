@@ -15,11 +15,11 @@ import vexiiriscv.riscv.{FloatRegFile, MicroOp, RD, RegfileSpec}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class WriteBackPlugin(val laneName : String,
+class WriteBackPlugin(val lane : ExecuteLaneService,
                       val rf : RegfileSpec,
                       var writeAt : Int,
                       var allowBypassFrom : Int) extends FiberPlugin with RegFileWriterService{
-  withPrefix(laneName + "_" + rf.getName())
+  withPrefix(lane.laneName + "_" + rf.getName())
 
   val elaborationLock = Retainer()
 
@@ -44,7 +44,7 @@ class WriteBackPlugin(val laneName : String,
   val SEL = Payload(Bool())
 
   val logic = during setup new Area {
-    val eu = host.find[ExecuteLanePlugin](_.laneName == laneName)
+    val eu = host.find[ExecuteLanePlugin](_ == lane)
     val rfp = host.find[RegfileService](_.rfSpec == rf)
     val uopRetainer = retains(eu.uopLock)
     val buildBefore = retains(eu.pipelineLock, rfp.elaborationLock)

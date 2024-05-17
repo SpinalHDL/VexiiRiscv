@@ -26,7 +26,7 @@ class FpuF2iPlugin(val layer : LaneLayer,
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
-    val iwbp = host.find[IntFormatPlugin](p => p.laneName == layer.laneName)
+    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.el)
     val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == layer.el)
     val buildBefore = retains(layer.el.pipelineLock)
     val uopLock = retains(layer.el.uopLock, fup.elaborationLock, iwbp.elaborationLock, ffwbp.elaborationLock)

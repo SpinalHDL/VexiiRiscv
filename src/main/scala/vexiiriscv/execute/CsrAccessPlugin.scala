@@ -42,7 +42,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
   val logic = during setup new Area {
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
     val irf = host.find[RegfileService](_.rfSpec == IntRegFile)
-    val iwb = host.find[IntFormatPlugin](_.laneName == layer.laneName)
+    val iwb = host.find[IntFormatPlugin](_.lane == layer.el)
     val dp = host[DispatchPlugin]
     val ram = host.get[CsrRamService]
     val sp = host[ReschedulePlugin]
