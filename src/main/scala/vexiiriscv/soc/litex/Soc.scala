@@ -134,18 +134,15 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
     val toAxi4 = withMem generate new fabric.Axi4Bridge
     if (withMem) {
       toAxi4.up.forceDataWidth(litedramWidth)
-      regions.filter(_.onMemory).foreach(r =>
-        toAxi4.up at r.mapping of perfBus
-      )
+      toAxi4.up << perfBus
       toAxi4.down.addTag(PMA.MAIN)
       toAxi4.down.addTag(PMA.EXECUTABLE)
       for(region <- memRegions) {
         toAxi4.down.addTag(new MemoryEndpoint {
-          override def mapping = SizeMapping(0, region.mapping.size)
+          override def mapping = region.mapping
         })
       }
     }
-
 
     val peripheral = new Area {
       val bus = Node()
@@ -338,8 +335,8 @@ object SocGen extends App{
 //  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
 //  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_writeback_slots_1_timer_counter")
 
-//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl3_up_LsuL1_PHYSICAL_ADDRESS_lane0")
-//  val to = cpu0.reflectBaseType("FetchL1Plugin_logic_ways_0_read_cmd_valid")
+//  val from = report.toplevel.reflectBaseType("vexiis_0_lsuL1Bus_noDecoder_toDown_d_rData_opcode")
+//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_WB_HAZARD")
 //
 //
 //  val drivers = mutable.LinkedHashSet[BaseType]()
@@ -460,6 +457,10 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --wi
 --lsu-l1 --lsu-l1-ways=4  --lsu-l1-mem-data-width-min=64 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2  --with-lsu-bypass \
 --with-btb --with-ras --with-gshare --relaxed-branch --relaxed-btb"  --cpu-count=4 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no  --sys-clk-freq 100000000 --build   --load
 
+
+debian boot :
+- 1c => 164s log
+- 4c => 77s log
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--debug-privileged" --with-jtag-tap --build --load
 export HART_COUNT=2
