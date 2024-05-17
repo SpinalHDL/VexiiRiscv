@@ -584,8 +584,6 @@ class ParamSimple(){
       )
     }
 
-    plugins += new execute.SimdAddRawPlugin(early0)
-
     plugins += new CsrRamPlugin()
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
