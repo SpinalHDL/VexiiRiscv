@@ -11,6 +11,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.misc.PrivilegedPlugin
+import vexiiriscv.riscv.FloatRegFile
 //import vexiiriscv.execute.LsuCachelessPlugin
 import vexiiriscv.fetch.Fetch
 import vexiiriscv.riscv.{IntRegFile, Riscv}
@@ -31,6 +32,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
   def get[T](e : Element[T]) = cpu.database(e)
   val xlen = get(Riscv.XLEN)
+  val floatOr = get(Riscv.RVD).mux(0, 0xFFFFFFFF00000000l)
   val hartsCount = get(Global.HART_COUNT)
   val fetchIdWidth = get(Fetch.ID_WIDTH)
   val decodeIdWidth = get(Decode.DOP_ID_WIDTH)
@@ -238,6 +240,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
     var lsuAddress = -1l
     var lsuLen = 0
+    var lsuAmo = false
     var storeValid = false
     var storeData = -1l
     var storeSqId = -1
@@ -310,6 +313,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       loadValid = false
       storeValid = false
       isSc = false
+      lsuAmo = false
     }
 
     clear()
@@ -410,6 +414,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       uop.storeSqId = storeCommit.storeId.toInt
       uop.lsuAddress = address
       uop.lsuLen = bytes
+      uop.lsuAmo = storeCommit.amo.toBoolean
+      if(!uop.lsuAmo) {
+        backends.foreach(_.storeExecute(hart.hartId, uop.storeSqId, address, bytes, uop.storeData))
+      }
     }
 
     if (storeConditional.fire.toBoolean) {
@@ -446,6 +454,10 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         case IntRegFile => {
           ctx.integerWriteValid = true
           ctx.integerWriteData = xlenExtends(port.data.toLong)
+        }
+        case FloatRegFile => {
+          ctx.floatWriteValid = true
+          ctx.floatWriteData = port.data.toLong | floatOr
         }
       }
     }
@@ -566,10 +578,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
               backends.foreach(_.storeConditional(hartId, uop.scFailure))
             }
             if (uop.storeValid) {
-              backends.foreach(_.storeCommit(hartId, uop.storeSqId, uop.lsuAddress, uop.lsuLen, uop.storeData))
+              if(uop.lsuAmo){
+                backends.foreach(_.storeExecute(hart.hartId, uop.storeSqId, uop.lsuAddress, uop.lsuLen, uop.storeData))
+              }
+              backends.foreach(_.storeCommit(hartId, uop.storeSqId))
             }
             if (uop.integerWriteValid) {
               backends.foreach(_.writeRf(hartId, 0, 32, uop.integerWriteData))
+            }
+            if (uop.floatWriteValid) {
+              backends.foreach(_.writeRf(hartId, 1, 32, uop.floatWriteData))
             }
             if (uop.csrValid) {
               if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))

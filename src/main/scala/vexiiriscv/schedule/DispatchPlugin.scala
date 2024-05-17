@@ -10,7 +10,7 @@ import vexiiriscv.Global
 import vexiiriscv.Global.{HART_COUNT, TRAP}
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
 import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin, LaneLayer}
-import vexiiriscv.misc.{CommitService, PipelineBuilderPlugin, TrapService}
+import vexiiriscv.misc.{CommitService, InflightService, PipelineBuilderPlugin, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RfRead, RfResource}
 
@@ -84,6 +84,13 @@ class DispatchPlugin(var dispatchAt : Int,
       }
     }
 
+
+    class ReservationSpec(what: Any) extends Area {
+      val sels = mutable.LinkedHashMap[LaneLayer,mutable.LinkedHashMap[Int, Payload[Bool]]]()
+    }
+    val reservationSpecs = mutable.LinkedHashMap[Any, ReservationSpec]()
+
+
     hmKeys.add(FENCE_OLDER)
     hmKeys.add(MAY_FLUSH)
     hmKeys.add(DONT_FLUSH)
@@ -100,6 +107,17 @@ class DispatchPlugin(var dispatchAt : Int,
       spec.dontFlushFrom foreach { x =>
         if (x <= mayFlushUpToMax) dontFlushFromLanesUops += spec.uop
         if (x < mayFlushUpToMax) dontFlushUops += spec.uop
+      }
+      for((what, ats) <- spec.reservations; at <- ats){
+        val resSpec = reservationSpecs.getOrElseUpdate(what, new ReservationSpec(what))
+        val onLayer = resSpec.sels.getOrElseUpdate(spec.elImpl, new mutable.LinkedHashMap[Int, Payload[Bool]]())
+        val sel = onLayer.getOrElseUpdate(at, {
+          val p = Payload(Bool()).setCompositeName(what, s"RESERVED_ON_${spec.elImpl.name}_AT_$at")
+          dp.addMicroOpDecodingDefault(p, False)
+          hmKeys.add(p)
+          p
+        })
+        dp.addMicroOpDecoding(spec.uop, sel, True)
       }
     }
 
@@ -152,7 +170,7 @@ class DispatchPlugin(var dispatchAt : Int,
 
     val rdKeys = Decode.rfaKeys.get(RD)
     assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
-    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
+//    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
 
     val slotsCount = if(withBuffer) Decode.LANES-1 else 0
     val slots = for(slotId <- 0 until slotsCount) yield new Area {
@@ -169,6 +187,7 @@ class DispatchPlugin(var dispatchAt : Int,
       val cancel = Bool()
 
       val rsHazards = Bits(lanesLayers.size bits)
+      val reservationHazards = Bits(lanesLayers.size bits)
       val flushHazards = Bool() //Pessimistic, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
       val fenceOlderHazards = Bool()
       val age = Execute.LANE_AGE()
@@ -204,7 +223,7 @@ class DispatchPlugin(var dispatchAt : Int,
               decodeSpec += Masked(uop.uop.key) -> (v.from >= hazardUntilMax).mux(Masked.one, Masked.zero)
             }
           }
-          val skip = Symplify(c.ctx.uop, decodeSpec, 1).as(Bool())
+          val skip = Symplify(c.ctx.uop, decodeSpec, 1).as(Bool()) /// Overall, hazardUntilMax doesn't work when using the FPU as the pipeline get longer, need a proper implementation to enable late RS use
 
           for (spec <- bypassedSpecs.values) yield new Area {
             for (l <- spec.el.getLayers(); uop <- l.uops.values) {
@@ -219,12 +238,28 @@ class DispatchPlugin(var dispatchAt : Int,
             val hazardRange = hazardFrom until hazardUntil
             for(id <- hazardRange) {
               val node = writeEu.ctrl(id-hazardFrom+1)
-              hazards += node(rdKeys.ENABLE) && node(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && !node(getBypassed(writeEu, id))
+              hazards += node.up(rdKeys.ENABLE) && node.up(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && node.up(rdKeys.RFID) === c.ctx.hm(rs.RFID) && !node(getBypassed(writeEu, id)) // node.isValid &&
             }
           }
           val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR && !skip
         }
         c.rsHazards(llId) := onRs.map(_.hazard).orR
+      }
+    }
+
+
+    val reservationChecker = for (c <- candidates) yield new Area {
+      val onLl = for ((ll, llId) <- lanesLayers.zipWithIndex) yield new Area {
+        val res = for (resSpec <- reservationSpecs.values; if resSpec.sels.contains(ll); (selfAt, selfSel) <- resSpec.sels(ll)) yield new Area {
+          val checks = for ((otherLl, otherAts) <- resSpec.sels;
+                            (otherAt, otherSel) <- otherAts;
+                            delta = otherAt - selfAt; if delta > 0) yield new Area { //So currently we aren't trying to catch multi issue reservation being dispacthed at the same cycle (limitation)
+            val otherCtrl = otherLl.el.ctrl(delta)
+            val hit = c.ctx.hm(selfSel) && otherCtrl.isValid && otherCtrl(otherSel)
+          }
+        }
+        val hit = res.flatMap(_.checks).map(_.hit).orR
+        c.reservationHazards(llId) := hit
       }
     }
 
@@ -270,7 +305,7 @@ class DispatchPlugin(var dispatchAt : Int,
     }
 
     val fenceChecker = new Area{
-      val olderInflights = B(for(hartId <- 0 until Global.HART_COUNT) yield host.list[CommitService].map(_.hasInflight(hartId)).orR)
+      val olderInflights = B(for(hartId <- 0 until Global.HART_COUNT) yield host.list[InflightService].map(_.hasInflight(hartId)).orR)
       for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
         val c = candidates(cId)
         val olderCandidate = candidates.take(cId).map(older => older.ctx.valid && older.ctx.hartId === c.ctx.hartId).orR
@@ -342,7 +377,7 @@ class DispatchPlugin(var dispatchAt : Int,
           val hit = doWrite && rfas.orR
         }
         val candHazard = candHazards.map(_.hit).orR
-        val layersHits = c.ctx.laneLayerHits & ~c.rsHazards & eusToLayers(eusFree(id))
+        val layersHits = c.ctx.laneLayerHits & ~c.rsHazards & ~c.reservationHazards & eusToLayers(eusFree(id))
         val layerOh = OHMasking.firstV2(layersHits)
         val eusOh = layersToEus(layerOh)
         val doIt = c.ctx.valid && !c.flushHazards && !c.fenceOlderHazards && layerOh.orR && hartFree(id)(c.ctx.hartId) && !candHazard
@@ -356,16 +391,18 @@ class DispatchPlugin(var dispatchAt : Int,
       import insertNode._
       val oh = B(scheduler.arbiters.map(l => l.doIt && l.eusOh(id)))
       val mux = candidates.reader(oh, true)
+      val trap = mux(_.ctx.hm(TRAP))
       insertNode(CtrlLaneApi.LANE_SEL) := oh.orR && !mux(_.cancel) && !api.haltDispatch
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.UOP := mux(_.ctx.uop)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
-      when(!CtrlLaneApi.LANE_SEL){
+      when(!CtrlLaneApi.LANE_SEL || trap){
         //Allow to avoid having to check the valid down the pipeline
         rdKeys.ENABLE := False
         MAY_FLUSH := False
       }
       Execute.LANE_AGE := mux(_.age)
+      Global.COMPLETED := trap
 
       val layerOhUnfiltred = scheduler.arbiters.reader(oh)(_.layerOh) // include the bits of the other eu
       val layersOfInterest = lanesLayers.zipWithIndex.filter(_._1.el == eu) // Only the bits for our eu  (LaneLayer -> Int

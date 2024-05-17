@@ -42,7 +42,7 @@ case class AccessKeys(rfa : RfAccess, physWidth : Int, rfMapping : Seq[RegfileSp
   def is(rfs: RegfileSpec, that: UInt) = that === idOf(rfs)
   def idOf(rfs: RegfileSpec) = rfMapping.indexOf(rfs)
 
-  val ENABLE = Payload(Bool())
+  val ENABLE = Payload(Bool()) // Note that for the execute pipeline, it is important for timings to use execute(x).up(rd.ENABLE)
   val PHYS = Payload(UInt(physWidth bits))
   val RFID = Payload(UInt(rfIdWidth bits))
   def ARCH = PHYS

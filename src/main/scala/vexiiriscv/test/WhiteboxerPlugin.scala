@@ -162,7 +162,8 @@ class WhiteboxerPlugin extends FiberPlugin{
       val size = UInt(2 bits)
       val address = Global.PHYSICAL_ADDRESS()
       val data = Bits(Riscv.LSLEN bits)
-      SimPublic(fire, hartId, uopId, storeId, size, address, data)
+      val amo = Bool()
+      SimPublic(fire, hartId, uopId, storeId, size, address, data, amo)
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.forkCtrl
@@ -174,6 +175,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         address := bus.cmd.address
         data := bus.cmd.data
         storeId := c(Decode.UOP_ID).resized
+        amo := p.withAmo.mux(bus.cmd.amoEnable, False)
       })
 
       val lp = host.get[LsuPlugin] map (p => new Area {
@@ -185,6 +187,7 @@ class WhiteboxerPlugin extends FiberPlugin{
         address := c(p.logic.tpk.TRANSLATED)
         data := c(LsuL1.WRITE_DATA)
         storeId := c(Decode.STORE_ID)
+        amo := False
       })
     }
 
@@ -410,6 +413,7 @@ class WhiteboxerPlugin extends FiberPlugin{
       val size = storeCommit.size.simProxy()
       val address = storeCommit.address.simProxy()
       val data = storeCommit.data.simProxy()
+      val amo = storeCommit.amo.simProxy()
     }
 
     class StoreConditionalProxy {

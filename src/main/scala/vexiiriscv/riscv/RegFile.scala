@@ -11,6 +11,7 @@ object IntRegFile extends RegfileSpec with AreaObject {
   override def width = Riscv.XLEN
   override def x0AlwaysZero = true
   override def getName() = "integer"
+  override def initialValue: BigInt = 0
 
   def TypeR(key : MaskedLiteral) = SingleDecoding(
     key = key,
@@ -65,6 +66,7 @@ object FloatRegFile extends RegfileSpec with AreaObject {
   override def width = if(Riscv.RVD) 64 else 32
   override def x0AlwaysZero = false
   override def getName() = "float"
+  override def initialValue: BigInt = 0 //if(Riscv.RVD) 0x7FF8000000000000l else 0x7fc00000l
 
   def TypeR(key : MaskedLiteral) = SingleDecoding(
     key = key,

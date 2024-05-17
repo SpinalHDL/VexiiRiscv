@@ -8,13 +8,15 @@ import vexiiriscv.fetch.Fetch
 
 class RiscvPlugin(var xlen : Int,
                   var hartCount : Int,
-                  var rvc : Boolean) extends FiberPlugin{
+                  var rvc: Boolean,
+                  var rvf: Boolean,
+                  var rvd: Boolean) extends FiberPlugin{
 
   val logic = during build new Area{
     if(Riscv.RVC.isEmpty) Riscv.RVC.set(rvc)
     if(Riscv.RVM.isEmpty) Riscv.RVM.set(false)
-    if(Riscv.RVF.isEmpty) Riscv.RVF.set(false)
-    if(Riscv.RVD.isEmpty) Riscv.RVD.set(false)
+    if(Riscv.RVF.isEmpty) Riscv.RVF.set(rvf)
+    if(Riscv.RVD.isEmpty) Riscv.RVD.set(rvd)
     if(Riscv.RVZba.isEmpty) Riscv.RVZba.set(false)
     if(Riscv.RVZbb.isEmpty) Riscv.RVZbb.set(false)
     if(Riscv.RVZbc.isEmpty) Riscv.RVZbc.set(false)
@@ -30,6 +32,6 @@ class RiscvPlugin(var xlen : Int,
     Fetch.SLICE_RANGE.set((Fetch.SLICE_RANGE_LOW.get + log2Up(Fetch.SLICE_COUNT.get) - 1) downto Fetch.SLICE_RANGE_LOW.get)
     Fetch.ID_WIDTH.set(10)
     Decode.DOP_ID_WIDTH.set(10)
-    Decode.UOP_ID_WIDTH.set(10)
+    Decode.UOP_ID_WIDTH.set(16)
   }
 }

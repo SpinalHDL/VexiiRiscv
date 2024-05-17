@@ -13,7 +13,7 @@ import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.UOP
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
-import vexiiriscv.misc.{AddressToMask, LsuTriggerService, TrapArg, TrapReason, TrapService}
+import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
@@ -89,14 +89,23 @@ class LsuPlugin(var layer : LaneLayer,
     val ats = host[AddressTranslationService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
+    val pcs = host.get[PerformanceCounterService]
+    val fpwbp = host.findOption[WriteBackPlugin](p => p.laneName == layer.laneName && p.rf == FloatRegFile)
     val buildBefore = retains(elp.pipelineLock, ats.portsLock)
-    val atsStorageLock = retains(ats.storageLock)
-    val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock)
+    val earlyLock = retains(List(ats.storageLock) ++ pcs.map(_.elaborationLock).toList)
+    val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))
     awaitBuild()
     Riscv.RVA.set(withRva)
 
     val translationStorage = ats.newStorage(translationStorageParameter)
-    atsStorageLock.release()
+    val fpwb = fpwbp.map(_.createPort(wbAt))
+
+    val events = pcs.map(p => new Area {
+      val waiting = p.createEventPort(PerformanceCounterService.DCACHE_WAITING)
+      waiting := False
+    })
+
+    earlyLock.release()
 
     val trapPort = ts.newTrap(layer.el.getExecuteAge(ctrlAt), Execute.LANE_AGE_WIDTH)
     val flushPort = ss.newFlushPort(layer.el.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
@@ -106,15 +115,25 @@ class LsuPlugin(var layer : LaneLayer,
     val iwb = ifp.access(wbAt)
     val amos = Riscv.RVA.get.option(frontend.amos.uops).toList.flatten
     for(load <- frontend.writingRf ++ amos){
-      val spec = Rvi.loadSpec(load)
       val op = layer(load)
-      ifp.addMicroOp(iwb, op)
-      spec.signed match {
-        case false => ifp.zeroExtend(iwb, op, spec.width)
-        case true  => ifp.signExtend(iwb, op, spec.width)
-      }
       op.mayFlushUpTo(ctrlAt) // page fault / trap
       op.dontFlushFrom(ctrlAt+1) //The +1 make the assumption that if a flush happen it is the first cycle in ctrlAt. Also, io access wait one cycle before starting
+
+      Rvi.loadSpec.get(load) match {
+        case Some(spec) =>
+          ifp.addMicroOp(iwb, op)
+          spec.signed match {
+            case false => ifp.zeroExtend(iwb, op, spec.width)
+            case true => ifp.signExtend(iwb, op, spec.width)
+          }
+        case None =>
+      }
+    }
+
+    fpwbp.foreach(_.addMicroOp(fpwb.get, layer, frontend.writeRfFloat))
+    for(fp <- frontend.writeRfFloat) {
+      val spec = layer(fp)
+      spec.setCompletion(wbAt)
     }
 
     for(store <- frontend.writingMem ++ amos){
@@ -218,6 +237,7 @@ class LsuPlugin(var layer : LaneLayer,
         val threshold = Math.max(storeBufferOps - wordPerLine, storeBufferOps/2)
         val waitIt = RegInit(False) clearWhen (slotsFree && ops.occupancy <= threshold)
         host[DispatchPlugin].haltDispatchWhen(waitIt)
+        events.foreach(_.waiting setWhen(waitIt))
       }
 
       val waitL1 = new L1Waiter()
@@ -415,15 +435,21 @@ class LsuPlugin(var layer : LaneLayer,
       val IO = insert(pmaL1.rsp.fault && !pmaIo.rsp.fault && withAddress)
 
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
+      if(Riscv.withFpu) when(FLOAT){
+        val value = elp(FloatRegFile, riscv.RS2)
+        writeData(value.bitsRange) := value
+      }
+
       val scMiss = Bool()
 
       val io = new Area {
         val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False)
         val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel) init(False)
         val doIt = isValid && l1.SEL && IO
+        val doItReg = RegNext(doIt) init(False)
 
         val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
-        bus.cmd.valid := doIt && !cmdSent && allowIt && !tooEarly
+        bus.cmd.valid := doItReg && !cmdSent && allowIt && !tooEarly
         bus.cmd.write := l1.STORE
         bus.cmd.address := l1.PHYSICAL_ADDRESS //TODO Overflow on TRANSLATED itself ?
         bus.cmd.data := l1.WRITE_DATA
@@ -448,7 +474,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
 
-      val rspData = io.doIt.mux[Bits](io.rsp.data, l1.READ_DATA)
+      val rspData = io.cmdSent.mux[Bits](io.rsp.data, l1.READ_DATA)
       val rspSplits = rspData.subdivideIn(8 bits)
       val rspShifted = Bits(LSLEN bits)
       val wordBytes = LSLEN / 8
@@ -718,16 +744,25 @@ class LsuPlugin(var layer : LaneLayer,
         when(isValid && SEL && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
           capture(down)
         }
+        events.foreach(_.waiting setWhen(valid))
       }
     }
 
     val onWb = new elp.Execute(wbAt){
-      iwb.valid := SEL
+      iwb.valid := SEL && !FLOAT
       iwb.payload := onCtrl.READ_SHIFTED
 
       if (withRva) when(l1.ATOMIC && !l1.LOAD) {
         iwb.payload(0) := onCtrl.SC_MISS
         iwb.payload(7 downto 1) := 0
+      }
+
+      fpwb.foreach{p =>
+        p.valid := SEL && FLOAT
+        p.payload := onCtrl.READ_SHIFTED
+        if(Riscv.RVD) when(SIZE === 2) {
+          p.payload(63 downto 32).setAll()
+        }
       }
 
       val storeFire = down.isFiring && AguPlugin.SEL && AguPlugin.STORE && !onCtrl.IO

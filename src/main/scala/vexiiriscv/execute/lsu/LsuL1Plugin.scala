@@ -10,7 +10,7 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.Global
-import vexiiriscv.misc.Reservation
+import vexiiriscv.misc.{PerformanceCounterService, Reservation}
 import vexiiriscv.riscv.{AtomicAlu, Riscv}
 import vexiiriscv.execute._
 import vexiiriscv.fetch.{InitService, LsuL1Service, LsuService}
@@ -78,7 +78,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var bankReadAt: Int = 0,
                   var wayReadAt: Int = 0,
                   var hitsAt: Int = 1,
-                  var hitAt: Int = 1,
+                  var hitAt: Int = 2,
                   var bankMuxesAt: Int = 1,
                   var bankMuxAt: Int = 2,
                   var ctrlAt: Int = 2,
@@ -128,6 +128,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
   val logic = during setup new Area{
     import LsuL1._
 
+    val pcs = host.get[PerformanceCounterService]
+    val earlyLock = retains(pcs.map(_.elaborationLock).toList)
     awaitBuild()
 
     assert(coherentCtrlAt <= ctrlAt) //To ensure that slots valids timings vs pipeline
@@ -139,6 +141,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     ackUnlock.set(False)
     WRITEBACK_BUSY.soon()
     LsuL1.coherency.set(withCoherency)
+
+    val events = pcs.map(p => new Area {
+      val access = p.createEventPort(PerformanceCounterService.DCACHE_ACCESS)
+      val miss = p.createEventPort(PerformanceCounterService.DCACHE_MISS)
+    })
+    earlyLock.release()
 
     elaborationRetainer.await()
 
@@ -831,6 +839,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
 
+        events.map{e =>
+          e.access := up.isFiring && SEL
+          e.miss   := e.access && !HAZARD && (MISS || MISS_UNIQUE)
+        }
+
         val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard
         val canFlush = reservation.win && !writeback.full && !refill.slots.map(_.valid).orR && !writebackHazard
         val needFlushs = CombInit(loadedDirties)
@@ -1033,17 +1046,26 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         WAYS_HIT := B(WAYS_HITS).orR
       }
 
+      val cHazardRange = 20 downto hazardCheckRange.low
+      val onPreCtrl = new pip.Ctrl(coherentCtrlAt-1){
+        val wbHits = writeback.slots.map(s => s.valid && s.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)).orR
+        val wbPushHit = writeback.push.valid && writeback.push.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)
+        val WB_HAZARD = insert(wbHits || wbPushHit)
+
+        val LOCK_HIT = insert(lockPort.valid && lockPort.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange))
+        val LOCK_VALID = insert(lockPort.valid)
+        assert(isReady)
+      }
+      import onPreCtrl._
+
       val onCtrl = new pip.Ctrl(coherentCtrlAt){
         val reservation = tagsWriteArbiter.create(1)
-        val cHazardRange = 20 downto hazardCheckRange.low
         val waysReader = this (WAYS_TAGS).reader(WAYS_HITS)
         val hitUnique = waysReader(_.unique)
         val hitFault = waysReader(_.fault)
         val hitDirty = (SHARED.dirty & WAYS_HITS).orR
-
-        val wbHazard = writeback.slots.map(s => s.valid && s.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)).orR
-        val locked = lockPort.valid && lockPort.address(refillRange) === PHYSICAL_ADDRESS(refillRange) && hitUnique
-        HAZARD := wbHazard || SET_HAZARD || locked || FORCE_HAZARD
+        val locked = LOCK_HIT || !LOCK_VALID && lockPort.valid //Pessimistic approach
+        HAZARD := onPreCtrl.WB_HAZARD || SET_HAZARD || locked || FORCE_HAZARD
 
         val askData = hitDirty && !ALLOW_UNIQUE && ALLOW_PROBE_DATA
         val canData = reservation.win && !writeback.full

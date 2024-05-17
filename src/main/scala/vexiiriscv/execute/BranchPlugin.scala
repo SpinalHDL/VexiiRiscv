@@ -7,7 +7,7 @@ package vexiiriscv.execute
 import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
-import vexiiriscv.riscv.{CSR, Const, IMM, RD, Riscv, Rvi}
+import vexiiriscv.riscv.{CSR, Const, IMM, IntRegFile, RD, Riscv, Rvi}
 import vexiiriscv._
 import decode.Decode._
 import Global._
@@ -86,7 +86,7 @@ class BranchPlugin(val layer : LaneLayer,
   }
 
   val logic = during setup new Logic{
-    val wbp = host.find[WriteBackPlugin](_.laneName == layer.el.laneName)
+    val wbp = host.find[WriteBackPlugin](p => p.laneName == layer.el.laneName && p.rf == IntRegFile)
     val sp = host[ReschedulePlugin]
     val pcp = host[PcPlugin]
     val hp = host.get[HistoryPlugin]
@@ -98,7 +98,10 @@ class BranchPlugin(val layer : LaneLayer,
 
     val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last
     val isLastOfLane = BranchPlugin.this == lastOfLane
-    val branchMissEvent = (isLastOfLane && pcs.nonEmpty).option(pcs.get.createEventPort(PerformanceCounterService.BRANCH_MISS))
+    val events = (isLastOfLane && pcs.nonEmpty).option(new Area{
+      val branchMiss = pcs.get.createEventPort(PerformanceCounterService.BRANCH_MISS)
+      val branchCount = pcs.get.createEventPort(PerformanceCounterService.BRANCH_COUNT)
+    })
     awaitBuild()
 
     import SrcKeys._
@@ -260,13 +263,16 @@ class BranchPlugin(val layer : LaneLayer,
         for (e <- ls.learnCtxElements) {
           learn.ctx(e).assignFrom(apply(e))
         }
-        branchMissEvent.foreach(_ := learn.valid && learn.isBranch && learn.wasWrong)
+        events.foreach{e =>
+          e.branchMiss := learn.valid && learn.isBranch && learn.wasWrong
+          e.branchCount := learn.valid && learn.isBranch
+        }
       }
 
     }
 
     val wbLogic = new el.Execute(wbAt){
-      wb.valid := SEL && Decode.rfaKeys.get(RD).ENABLE
+      wb.valid := SEL
       wb.payload := Global.expendPc(PC_FALSE, Riscv.XLEN).asBits
     }
   }

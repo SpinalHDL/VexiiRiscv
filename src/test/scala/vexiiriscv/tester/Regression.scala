@@ -129,18 +129,128 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val riscvTests = riscvTestsFile.listFiles().sorted
   val rvti = riscvTests.filter{ t => val n = t.getName; n.startsWith(s"rv${xlen}ui-p-") && !n.contains(".") && !rejectedTests.contains(n) }
   val rvtm = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}um-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
-  val rvta = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ua-p-") && !n.contains(".") && !rejectedTests.contains(n)  }
+  val rvta = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ua-p-") && !n.contains(".") && !rejectedTests.contains(n) }
+  val rvtf = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}uf-p-") && !n.contains(".") && !rejectedTests.contains(n) }
+  val rvtd = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ud-p-") && !n.contains(".") && !rejectedTests.contains(n) }
 
-  val riscvTestsFrom2 = ArrayBuffer[File]()
+  val riscvTestsFrom2, riscvTestsFromStart = ArrayBuffer[File]()
   riscvTestsFrom2 ++= rvti
   if(rvm) riscvTestsFrom2 ++= rvtm
-  if(dut.database(Riscv.RVA)) riscvTestsFrom2 ++= rvta
+  if (rva) riscvTestsFrom2 ++= rvta
+  if (rvf) riscvTestsFromStart ++= rvtf
+  if (rvd) riscvTestsFromStart ++= rvtd
+
+
+
+  val fpuTestFactor = 0.01 //TODO
+
+  import scala.collection.mutable.ArrayBuffer
+
+  val fpuTestRvf32 = ArrayBuffer(
+    (0, "fmv.x.w", "f32"),
+    (31, "fmv.s.x", "f32"),
+    (101, "fadd.s", "f32"),
+    (102, "fsub.s", "f32"),
+    (103, "fmul.s", "f32"),
+    (104, "fdiv.s", "f32"),
+    (105, "fsqrt.s", "f32"),
+    (106, "fmadd.s", "f32"),
+    (107, "fmsub.s", "f32"),
+    (108, "fnmadd.s", "f32"),
+    (109, "fnmsub.s", "f32"),
+    (110, "fsgnj.s", "f32"),
+    (111, "fsgnjn.s", "f32"),
+    (112, "fsgnjx.s", "f32"),
+    (113, "fmin.s", "f32"),
+    (114, "fmax.s", "f32"),
+    (115, "fle.s", "f32"),
+    (116, "feq.s", "f32"),
+    (117, "flt.s", "f32"),
+    (118, "fclass.s", "f32"),
+    (119, "fcvt.s.wu", "ui32"),
+    (120, "fcvt.s.w", "i32"),
+    (121, "fcvt.wu.s", "f32"),
+    (122, "fcvt.w.s", "f32")
+  )
+
+  val fpuTestRvf64 = ArrayBuffer(
+    (127, "fcvt.s.lu", "ui64"),
+    (128, "fcvt.s.l", "i64"),
+    (129, "fcvt.lu.s", "f32"),
+    (130, "fcvt.l.s", "f32"),
+    (31, "fmv.s.x_64", "f64"),
+    (202, "fcvt.s.wu_64", "ui64"),
+    (203, "fcvt.s.w_64", "i64")
+  )
+
+  val fpuTestRvd32 =  ArrayBuffer(
+    (1, "fadd.d", "f64"),
+    (2, "fsub.d", "f64"),
+    (3, "fmul.d", "f64"),
+    (4, "fdiv.d", "f64"),
+    (5, "fsqrt.d", "f64"),
+    (6, "fmadd.d", "f64"),
+    (7, "fmsub.d", "f64"),
+    (8, "fnmadd.d", "f64"),
+    (9, "fnmsub.d", "f64"),
+    (10, "fsgnj.d", "f64"),
+    (11, "fsgnjn.d", "f64"),
+    (12, "fsgnjx.d", "f64"),
+    (13, "fmin.d", "f64"),
+    (14, "fmax.d", "f64"),
+    (15, "fle.d", "f64"),
+    (16, "feq.d", "f64"),
+    (17, "flt.d", "f64"),
+    (18, "fclass.d", "f64"),
+    (19, "fcvt.d.wu", "ui32"),
+    (20, "fcvt.d.w", "i32"),
+    (21, "fcvt.wu.d", "f64"),
+    (22, "fcvt.w.d", "f64"),
+    (23, "fcvt.d.s", "f64"),
+    (24, "fcvt.s.d", "f64")
+  )
+
+  val fpuTestRvd64 = ArrayBuffer(
+    (25, "fmv.x.d", "f64"),
+    (26, "fmv.d.x", "ui64"),
+    (27, "fcvt.d.lu", "ui64"),
+    (28, "fcvt.d.l", "i64"),
+    (29, "fcvt.lu.d", "f64"),
+    (30, "fcvt.l.d", "f64"),
+    (200, "fcvt.d.wu_64", "ui64"),
+    (201, "fcvt.d.w_64", "i64")
+  )
+
+  def fpuTest(name : String, vector : String, testId : Int) = {
+    val args = newArgs()
+    args.name(s"fpu/${name}_${vector}_${testId}")
+    args.loadBin(0x90000000l, s"${nsf.getAbsolutePath}/baremetal/fpu_test/vector/${vector}.bin")
+    args.loadElf(s"${nsf.getAbsolutePath}/baremetal/fpu_test/build/${archLinux}/fpu_test.elf")
+    val testCount = (0x50000 * fpuTestFactor).toInt
+    args.loadU32(0xA0000000l, testCount)
+    args.loadU32(0xA0000004l, testId)
+    args.failAfter(500000000l*fpuTestFactor*(List("sqrt", "div").exists(name.contains).mux(30,1)) toLong)
+  }
+  def fpuTest3() = {
+    val args = newArgs()
+    args.name(s"fpu/fpu_test3")
+    args.loadBin(0x90000000l, s"${nsf.getAbsolutePath}/baremetal/fpu_test/vector/f32.bin")
+    args.loadElf(s"${nsf.getAbsolutePath}/baremetal/fpu_test3/build/${archLinux}/fpu_test3.elf")
+    args.failAfter(500000000)
+  }
 
   for(elf <- riscvTestsFrom2) {
     val args = newArgs()
     args.loadElf(elf)
     args.failAfter(100000)
     args.startSymbol("test_2")
+    args.name("riscv-tests/" + elf.getName)
+  }
+
+  for (elf <- riscvTestsFromStart) {
+    val args = newArgs()
+    args.loadElf(elf)
+    args.failAfter(1000000)
     args.name("riscv-tests/" + elf.getName)
   }
 
@@ -152,6 +262,8 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.passSymbol("test_5")
     args.name(s"riscv-tests/rv${xlen}ua-p-lrsc")
   }
+
+
 
   def doArchTest(from: String, inName: Seq[String] = Seq()) = {
     val folder = s"riscv-arch-test/rv${xlen}i_m/$from"
@@ -178,6 +290,34 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   if (rvzbs) doArchTest("B", Seq("bclr", "bext", "binv", "bset"))
 
   val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")
+
+  if (rvf) {
+    regulars += "fpu_test2"
+    fpuTest3()
+    for (e <- fpuTestRvf32) {
+      fpuTest(e._2, e._3, e._1)
+    }
+    if (xlen == 64) {
+      for (e <- fpuTestRvf64) {
+        fpuTest(e._2, e._3, e._1)
+      }
+    }
+  }
+
+  if (rvd) {
+    for (e <- fpuTestRvd32) {
+      fpuTest(e._2, e._3, e._1)
+    }
+    if (xlen == 64) {
+      for (e <- fpuTestRvd64) {
+        fpuTest(e._2, e._3, e._1)
+      }
+    }
+  }
+
+
+
+
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
   if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
   for(name <- regulars){
@@ -344,7 +484,7 @@ object RegressionSingle extends App{
 
 
 class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REGRESSION_THREAD_COUNT", "0").toInt){
-  FileUtils.deleteQuietly(new File("regression"))
+//  FileUtils.deleteQuietly(new File("regression"))
 
   val testsAdded = mutable.LinkedHashSet[String]()
   def addTest(args: String): Unit = addTest(args.replace("  ", " ").split("\\s+"))
@@ -388,7 +528,9 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("rfPorts", List("--regfile-infer-ports", "--regfile-dual-ports"))
   addDim("bypass", List(0,0,0,1,2,3,100).map(v => s"--allow-bypass-from $v")) //More weight to fully bypassed configs
   addDim("xlen", List(32, 64).map(v => s"--xlen $v"))
-  addDim("prediction", List("--with-btb", "--with-btb --with-ras", "--with-btb --with-ras --with-gshare"))
+  addDim("prediction", List("", "--with-btb", "--with-btb --with-ras", "--with-btb --with-ras --with-gshare"))
+//  addDim("prediction-relaxed", List("", "--relaxed-btb")) //incompatible with single stage fetch pipe
+
   addDim("priv", List("", "--with-supervisor", "--with-user"))
   addDim("rvm", List("--without-mul --without-div", "--with-mul --with-div"))
   addDim("divParam", List(2, 4).flatMap(radix => List("", "--div-ipc").map(opt => s"$opt --div-radix $radix")))

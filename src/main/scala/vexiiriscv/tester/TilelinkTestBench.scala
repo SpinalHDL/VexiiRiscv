@@ -277,14 +277,14 @@ object TlTbSim extends App{
 //      simSuccess()
 //    }
 
-    fork{
-      while(true) {
-        enableSimWave()
-        sleep(1000 * 10000)
-        disableSimWave()
-        sleep(100000 * 10000)
-      }
-    }
+//    fork{
+//      while(true) {
+//        enableSimWave()
+//        sleep(1000 * 10000)
+//        disableSimWave()
+//        sleep(100000 * 10000)
+//      }
+//    }
 
     onTrace {
       if (!traceWave) disableSimWave()

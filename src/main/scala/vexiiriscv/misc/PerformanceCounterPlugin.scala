@@ -49,6 +49,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 
       val mcounteren = csr.readWrite(RegInit(False), CSR.MCOUNTEREN, counterId)
       val scounteren = priv.p.withSupervisor generate csr.readWrite(RegInit(False), CSR.SCOUNTEREN, counterId)
+      val mcountinhibit = csr.readWrite(RegInit(False), CSR.MCOUNTINHIBIT, counterId)
     }
     case class Mapping(csrId : Int, alloc : CsrRamAllocation, offset : Int)
     val mappings = ArrayBuffer[Mapping]()
@@ -58,12 +59,17 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val instret = new Counter()
       val additionals = List.fill(additionalCounterCount)(new Counter)
 
-      cycle.value := cycle.value + 1
-      instret.value := instret.value + RegNext(commitCount).init(0)
+      cycle.value := cycle.value + (!cycle.mcountinhibit).asUInt
+      instret.value := instret.value + RegNext(commitCount.andMask(!instret.mcountinhibit)).init(0)
 
       mappings += Mapping(CSR.MCYCLE, cycle.alloc, 0)
+      mappings += Mapping(CSR.UCYCLE, cycle.alloc, 0)
       mappings += Mapping(CSR.MINSTRET, instret.alloc, 0)
-      for(i <- 0 until additionalCounterCount) mappings += Mapping(CSR.MHPMCOUNTER3+i, additionals(i).alloc, 0)
+      mappings += Mapping(CSR.UINSTRET, instret.alloc, 0)
+      for(i <- 0 until additionalCounterCount) {
+        mappings += Mapping(CSR.MHPMCOUNTER3 + i, additionals(i).alloc, 0)
+        mappings += Mapping(CSR.UHPMCOUNTER3 + i, additionals(i).alloc, 0)
+      }
       if (withHigh) for(b <- mappings.toArray) mappings += Mapping(b.csrId+0x80, b.alloc, b.offset+1)
 
       for (m <- mappings) {
@@ -71,7 +77,11 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       }
       val list = List(cycle, instret) ++ additionals
     }
-    csr.allowCsr(CSR.MCOUNTINHIBIT) //As read zero
+
+    val dummyCsrs = for(hpmId <- 3+additionalCounterCount to 31;
+                        csrId <- List(CSR.MHPMCOUNTER0, CSR.UHPMCOUNTER0, CSR.MHPMEVENT0) ++ (if(withHigh)List(CSR.MHPMCOUNTER0H, CSR.UHPMCOUNTER0H) else Nil)) yield csrId + hpmId
+    csr.allowCsr(CsrListFilter(dummyCsrs)) //As read zero
+
 
     ramCsrRetainer.release()
     val readPort = ram.ramReadPort(CsrRamService.priority.COUNTER)
@@ -86,13 +96,16 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val selWidth = log2Up((specs.map(_.id) :+ 0).max + 1)
       val grouped = specs.groupByLinked(_.id)
       val sums = grouped.map{ case (id, specs) => id -> CountOne(specs.map(_.event)) }
+      val widthMax = sums.map(_._2.getWidth).max
     }
 
     val hpm = for(id <- 0 until 3+additionalCounterCount) yield (id >= 3) generate new Area{
       val counter = counters.additionals(id-3)
       val eventId = Reg(UInt(events.selWidth bits)) init(0)
-      val incr    = if(events.sums.isEmpty) U(0) else events.sums.map(e => e._2.andMask(eventId === e._1)).toList.reduceBalancedTree(_ | _)
-      counter.value := counter.value + incr
+      val incr    = if(events.sums.isEmpty) U(0) else events.sums.map(e => e._2.andMask(eventId === e._1).resize(events.widthMax)).toList.reduceBalancedTree(_ | _)
+      when(!counter.mcountinhibit) {
+        counter.value := counter.value + incr
+      }
       csr.readWrite(eventId, CSR.MHPMEVENT0 + id)
     }
 

@@ -37,20 +37,28 @@ class LaneLayer(val name : String, val el : ExecuteLaneService, var priority : I
   def doChecks(): Unit = {
     for(uop <- uops.values) uop.doCheck()
   }
+  class Execute(id: Int) extends CtrlLaneMirror(el.execute(id))
 }
 
 class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLaneService) {
+  var rdOutOfPip = false
   var rd = Option.empty[RdSpec]
   var rs = mutable.LinkedHashMap[RfRead, RsSpec]()
   var completion = Option.empty[Int]
   var mayFlushUpTo = Option.empty[Int]
   var dontFlushFrom = Option.empty[Int]
   val decodings = mutable.LinkedHashMap[Payload[_ <: BaseType], Masked]()
+  val reservations = mutable.LinkedHashMap[Nameable, mutable.LinkedHashSet[Int]]()
+
+  def reserve(what : Nameable, at : Int) = {
+    val spec = reservations.getOrElseUpdate(what, mutable.LinkedHashSet[Int]())
+    spec += at+el.executeAt
+  }
 
   def doCheck(): Unit = {
     uop.resources.foreach{
       case RfResource(_, rfRead: RfRead) => assert(rs.contains(rfRead), s"$elImpl $uop doesn't has the $rfRead specification set")
-      case RfResource(_, rfWrite: RfWrite) => assert(rd.nonEmpty, s"$elImpl $uop doesn't has the rd specification set")
+      case RfResource(_, rfWrite: RfWrite) => assert(rdOutOfPip || rd.nonEmpty, s"$elImpl $uop doesn't has the rd specification set")
       case _ =>
     }
   }

@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib.StreamFifo
 import spinal.lib.eda.bench.{AlteraStdTargets, Bench, EfinixStdTargets, Rtl, Target, XilinxStdTargets}
 import vexiiriscv.compat.MultiPortWritesSymplifier
+import vexiiriscv.execute.lsu.LsuL1Plugin
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 
 import scala.collection.mutable.ArrayBuffer
@@ -48,6 +49,71 @@ object IntegrationSynthBench extends App{
 //    p.privParam.withDebug = true
 //    p.embeddedJtagTap = true
 //    p.embeddedJtagCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
+//  }
+
+
+//    add("no fpu") { p =>
+//      p.fetchL1Enable = true
+//      p.lsuL1Enable = true
+//      p.relaxedBranch = true
+//      p.withMul = true
+//      p.withDiv = true
+//      p.skipFma = true
+//      p.divArea = false
+//    }
+
+//    add("no fpu with bypass") { p =>
+//      p.fetchL1Enable = true
+//      p.lsuL1Enable = true
+//      p.relaxedBranch = true
+//      p.withMul = true
+//      p.withDiv = true
+//      p.skipFma = true
+//      p.divArea = false
+//      p.allowBypassFrom = 0
+//    }
+
+  //
+//  add("with fpu no fma") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.relaxedBranch = true
+//    p.withRvf = true
+//    p.withMul = true
+//    p.withDiv = true
+//    p.skipFma = true
+//    p.divArea = false
+//  }
+//
+//  add("with fpu inaccurate fma") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.relaxedBranch = true
+//    p.withRvf = true
+//    p.withMul = true
+//    p.withDiv = true
+//    p.fpuFmaFullAccuracy = false
+//    p.divArea = false
+//  }
+//  add("with fpu") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.relaxedBranch = true
+//    p.withRvf = true
+//    p.withMul = true
+//    p.withDiv = true
+//    p.divArea = false
+//  }
+//
+//  add("with fpu bypass") { p =>
+//    p.fetchL1Enable = true
+//    p.lsuL1Enable = true
+//    p.relaxedBranch = true
+//    p.withRvf = true
+//    p.withMul = true
+//    p.withDiv = true
+//    p.allowBypassFrom = 0
+//    p.divArea = false
 //  }
 
 
@@ -241,62 +307,62 @@ object IntegrationSynthBench extends App{
 //    p.withLateAlu = true
 //  }
 
-  add("fullPerf") { p =>
-    p.regFileSync = false
-    p.allowBypassFrom = 0
-    p.decoders = 2
-    p.lanes = 2
-//    p.withDispatcherBuffer = true
+//  add("fullPerf") { p =>
+//    p.regFileSync = false
+//    p.allowBypassFrom = 0
+//    p.decoders = 2
+//    p.lanes = 2
+////    p.withDispatcherBuffer = true
+//
+//    p.withMul = true
+//    p.withDiv = true
+//
+//    p.withBtb = true
+//    p.withGShare = true
+//    p.withRas = true
+//    p.relaxedBranch = true
+//    p.relaxedBtb = true
+//
+////    p.privParam.withSupervisor = true;
+////    p.privParam.withUser = true;
+////    p.withMmu = true
+//
+//    p.lsuL1Enable = true
+//    p.lsuL1Sets = 64
+//    p.lsuL1Ways = 4
+//
+//    p.fetchL1Enable = true
+//    p.fetchL1Sets = 64
+//    p.fetchL1Ways = 4
+//  }
 
-    p.withMul = true
-    p.withDiv = true
-
-    p.withBtb = true
-    p.withGShare = true
-    p.withRas = true
-    p.relaxedBranch = true
-    p.relaxedBtb = true
-
-//    p.privParam.withSupervisor = true;
-//    p.privParam.withUser = true;
-//    p.withMmu = true
-
-    p.lsuL1Enable = true
-    p.lsuL1Sets = 64
-    p.lsuL1Ways = 4
-
-    p.fetchL1Enable = true
-    p.fetchL1Sets = 64
-    p.fetchL1Ways = 4
-  }
-
-    add("fullPerf2") { p =>
-      p.allowBypassFrom = 0
-      p.decoders = 2
-      p.lanes = 2
-      p.withDispatcherBuffer = true
-
-      p.withMul = true
-      p.withDiv = true
-
-      p.withBtb = true
-      p.withGShare = true
-      p.withRas = true
-      p.relaxedBranch = true
-      p.relaxedBtb = true
-
-//      p.privParam.withSupervisor = true;
-//      p.privParam.withUser = true;
-//      p.withMmu = true
-
-      p.lsuL1Enable = true
-      p.lsuL1Sets = 64
-      p.lsuL1Ways = 4
-
-      p.fetchL1Enable = true
-      p.fetchL1Sets = 64
-      p.fetchL1Ways = 4
-    }
+//    add("fullPerf2") { p =>
+//      p.allowBypassFrom = 0
+//      p.decoders = 2
+//      p.lanes = 2
+//      p.withDispatcherBuffer = true
+//
+//      p.withMul = true
+//      p.withDiv = true
+//
+//      p.withBtb = true
+//      p.withGShare = true
+//      p.withRas = true
+//      p.relaxedBranch = true
+//      p.relaxedBtb = true
+//
+////      p.privParam.withSupervisor = true;
+////      p.privParam.withUser = true;
+////      p.withMmu = true
+//
+//      p.lsuL1Enable = true
+//      p.lsuL1Sets = 64
+//      p.lsuL1Ways = 4
+//
+//      p.fetchL1Enable = true
+//      p.fetchL1Sets = 64
+//      p.fetchL1Ways = 4
+//    }
 
 
   //  def cachedPerf(p : ParamSimple): ParamSimple = {
@@ -546,6 +612,111 @@ object IntegrationSynthBench extends App{
 //      new StreamFifo(UInt(8 bits), 16)
 //    })
 
+//  rtls += Rtl(sc.generateVerilog {
+//    val param = new ParamSimple
+//    import param._
+//    decoders = 1
+//    lanes = 1
+//    regFileSync = false
+//    withGShare = true
+//    withBtb = true
+//    withRas = true
+//    withMul = true
+//    withDiv = true
+//    divArea = false
+//
+//    xlen = 64
+//    withRva = true
+//    withRvc = true
+//    withAlignerBuffer = true
+//
+//    allowBypassFrom = 0
+//    relaxedBranch = true
+//    withPerformanceCounters = true
+//    additionalPerformanceCounters = 0
+//
+//    fetchL1Enable = true
+//    fetchL1Sets = 64
+//    fetchL1Ways = 4
+//
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    lsuL1RefillCount = 2
+//    lsuL1WritebackCount = 2
+//    lsuStoreBufferSlots = 2
+//    lsuStoreBufferOps = 32
+//    lsuL1Coherency = true
+//
+//
+//    val plugins = param.plugins()
+//    ParamSimple.setPma(plugins)
+//    plugins.foreach {
+//      case p: LsuL1Plugin =>
+//        p.ackIdWidth = 8
+//        p.probeIdWidth = log2Up(p.writebackCount)
+//      case _ =>
+//    }
+//    Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName("vexii_debian_no_fpu"))
+//  })
+
+
+  rtls += Rtl(sc.generateVerilog {
+    val param = new ParamSimple
+    import param._
+    decoders = 1
+    lanes = 1
+    regFileSync = false
+    withGShare = true
+    withBtb = true
+    withRas = true
+    withMul = true
+    withDiv = true
+    divArea = false
+    relaxedBranch = true
+    relaxedBtb = true
+
+    xlen = 64
+    privParam.withSupervisor = true
+    privParam.withUser = true
+    withMmu = true
+    withRva = true
+    withRvf = true
+    withRvd = true
+    fpuFmaFullAccuracy = false
+    withRvc = true
+    withAlignerBuffer = true
+    privParam.withDebug = true
+
+    allowBypassFrom = 0
+    withPerformanceCounters = true
+    additionalPerformanceCounters = 0
+
+    fetchL1Enable = true
+    fetchL1Sets = 64
+    fetchL1Ways = 4
+
+    lsuL1Enable = true
+    lsuL1Sets = 64
+    lsuL1Ways = 4
+    lsuL1RefillCount = 2
+    lsuL1WritebackCount = 2
+    lsuStoreBufferSlots = 2
+    lsuStoreBufferOps = 32
+    lsuL1Coherency = true
+
+
+    val plugins = param.plugins()
+    ParamSimple.setPma(plugins)
+    plugins.foreach{
+      case p : LsuL1Plugin =>
+        p.ackIdWidth = 8
+        p.probeIdWidth = log2Up(p.writebackCount)
+      case _ =>
+    }
+    Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName("vexii_debian"))
+  })
+
   val targets = ArrayBuffer[Target]()
   targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
 //  targets ++= AlteraStdTargets()
@@ -555,6 +726,21 @@ object IntegrationSynthBench extends App{
 }
 
 /*
+vexii_debian_no_fpu ->
+Artix 7 -> 71 Mhz 6262 LUT 4710 FF
+Artix 7 -> 153 Mhz 6886 LUT 4763 FF
+vexii_debian fpuFmaFullAccuracy no fpu bypass
+Artix 7 -> 71 Mhz 10197 LUT 7288 FF
+Artix 7 -> 136 Mhz 11068 LUT 7314 FF
+vexii_debian fpuFmaFullAccuracy bypass from 0
+Artix 7 -> 67 Mhz 11344 LUT 7539 FF
+Artix 7 -> 137 Mhz 12394 LUT 7611 FF
+vexii_debian fpuFmaFullAccuracy bypass from 2->
+Artix 7 -> 66 Mhz 11155 LUT 7607 FF
+Artix 7 -> 136 Mhz 12109 LUT 7646 FF
+
+
+
 2 issue + lates alues
 Artix 7 -> 70 Mhz 5318 LUT 2404 FF
 Artix 7 -> 120 Mhz 5515 LUT 2410 FF
@@ -998,4 +1184,59 @@ Artix 7 -> 127 Mhz 4663 LUT 3061 FF
 fullPerf2 ->
 Artix 7 -> 90 Mhz 4308 LUT 3419 FF
 Artix 7 -> 156 Mhz 4813 LUT 3593 FF
+
+no_fpu ->
+Artix 7 -> 90 Mhz 1431 LUT 1577 FF
+Artix 7 -> 203 Mhz 1609 LUT 1588 FF
+with_fpu_no_fma ->
+Artix 7 -> 90 Mhz 2626 LUT 2633 FF
+Artix 7 -> 175 Mhz 2933 LUT 2653 FF
+with_fpu_inaccurate_fma ->
+Artix 7 -> 90 Mhz 2876 LUT 2753 FF
+Artix 7 -> 192 Mhz 3160 LUT 2771 FF
+with_fpu ->
+Artix 7 -> 90 Mhz 3086 LUT 2865 FF
+Artix 7 -> 186 Mhz 3430 LUT 2899 FF
+with_fpu_bypass ->
+Artix 7 -> 90 Mhz 3773 LUT 2996 FF
+Artix 7 -> 183 Mhz 4158 LUT 3029 FF
+
+no_fpu ->
+Artix 7 -> 90 Mhz 1725 LUT 1715 FF
+Artix 7 -> 206 Mhz 1950 LUT 1745 FF
+no_fpu_with_bypass ->
+Artix 7 -> 90 Mhz 1882 LUT 1716 FF
+Artix 7 -> 202 Mhz 2129 LUT 1728 FF 
+with_fpu_no_fma ->
+Artix 7 -> 90 Mhz 3048 LUT 2855 FF
+Artix 7 -> 181 Mhz 3478 LUT 2871 FF
+with_fpu_inaccurate_fma ->
+Artix 7 -> 90 Mhz 3317 LUT 2985 FF
+Artix 7 -> 180 Mhz 3689 LUT 3022 FF
+with_fpu ->
+Artix 7 -> 90 Mhz 3504 LUT 3097 FF
+Artix 7 -> 184 Mhz 3898 LUT 3149 FF
+with_fpu_bypass ->
+Artix 7 -> 90 Mhz 4217 LUT 3227 FF
+Artix 7 -> 185 Mhz 4634 LUT 3264 FF
+
+with_fpu_inaccurate_fma ->
+Artix 7 -> 90 Mhz 3468 LUT 3219 FF
+Artix 7 -> 181 Mhz 3874 LUT 3238 FF
+
+with_fpu_inaccurate_fma ->
+Artix 7 -> 90 Mhz 3502 LUT 3109 FF
+Artix 7 -> 185 Mhz 3885 LUT 3143 FF
+
+with_fpu_inaccurate_fma i2f ->
+Artix 7 -> 90 Mhz 3605 LUT 3173 FF
+Artix 7 -> 181 Mhz 3986 LUT 3195 FF
+
+with_fpu_inaccurate_fma f2i ->
+Artix 7 -> 90 Mhz 3808 LUT 3227 FF
+Artix 7 -> 165 Mhz 4199 LUT 3274 FF
+
+with_fpu_inaccurate_fma ->
+Artix 7 -> 90 Mhz 3877 LUT 3229 FF
+Artix 7 -> 177 Mhz 4310 LUT 3309 FF
  */

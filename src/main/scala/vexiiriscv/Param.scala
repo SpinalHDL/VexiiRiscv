@@ -15,7 +15,7 @@ import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin}
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
-import vexiiriscv.riscv.IntRegFile
+import vexiiriscv.riscv.{FloatRegFile, IntRegFile}
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
@@ -76,6 +76,10 @@ class ParamSimple(){
   var withMul = false
   var withDiv = false
   var withRva = false
+  var withRvf = false
+  var skipFma = false
+  var fpuFmaFullAccuracy = true
+  var withRvd = false
   var withRvZb = false
   var privParam = PrivilegedParam.base
   var lsuForkAt = 0
@@ -129,8 +133,8 @@ class ParamSimple(){
     withGShare = true
     withBtb = true
     withRas = true
-//    relaxedBranch = true  // !!
-//    relaxedBtb = true     // !!
+    //    relaxedBranch = true  // !!
+    relaxedBtb = true     // !!
     fetchL1Enable = true
     fetchL1Sets = 64
     fetchL1Ways = 4
@@ -146,7 +150,7 @@ class ParamSimple(){
     lsuStoreBufferOps = 32
     withLsuBypass = true
 
-//    lsuForkAt = 1
+    //    lsuForkAt = 1
     divArea = false
     divRadix = 4
     decoders = 2
@@ -158,10 +162,12 @@ class ParamSimple(){
     withAlignerBuffer = true
 //    withRvc = true
     withRva = true
+//    withRvf = true
+//    withRvd = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-//    xlen = 64
+    xlen = 64
 
 
     privParam.withDebug = true
@@ -210,6 +216,8 @@ class ParamSimple(){
     var isa = s"rv${xlen}i"
     if (withMul) isa += s"m"
     if (withRva) isa += "a"
+    if (withRvf) isa += "f"
+    if (withRvd) isa += "d"
     if (withRvc) isa += "c"
     if (withRvZb) isa += "ZbaZbbZbcZbs"
     if (privParam.withSupervisor) isa += "s"
@@ -256,8 +264,11 @@ class ParamSimple(){
     opt[Unit]("with-mul") unbounded() action { (v, c) => withMul = true }
     opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
+    opt[Unit]("with-rvf") action { (v, c) => withRvf = true }
+    opt[Unit]("with-rvd") action { (v, c) => withRvd = true; withRvf = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
+    opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuFmaFullAccuracy = false }
     opt[Unit]("with-aligner-buffer") unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
@@ -313,7 +324,9 @@ class ParamSimple(){
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvc = withRvc)
+    val intWritebackAt = 2 //Alias for "trap at" aswell
+
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc)
     withMmu match {
       case false => plugins += new memory.StaticTranslationPlugin(32)
       case true => plugins += new memory.MmuPlugin(
@@ -367,12 +380,12 @@ class ParamSimple(){
         levels = List(
           MmuStorageLevel(
             id = 0,
-            ways = 4,
+            ways = 2,
             depth = 32
           ),
           MmuStorageLevel(
             id = 1,
-            ways = 2,
+            ways = 1,
             depth = 32
           )
         ),
@@ -401,12 +414,12 @@ class ParamSimple(){
         levels = List(
           MmuStorageLevel(
             id = 0,
-            ways = 4,
+            ways = 2,
             depth = 32
           ),
           MmuStorageLevel(
             id = 1,
-            ways = 2,
+            ways = 1,
             depth = 32
           )
         ),
@@ -450,8 +463,9 @@ class ParamSimple(){
     def newExecuteLanePlugin(name : String) = new execute.ExecuteLanePlugin(
       name,
       rfReadAt = 0,
-      decodeAt = 0+regFileSync.toInt,
+      decodeAt  = 0+regFileSync.toInt,
       executeAt = 0+regFileSync.toInt + 1,
+      trapAt    = 0+regFileSync.toInt + 1 + intWritebackAt,
       withBypasses = allowBypassFrom == 0
     )
 
@@ -481,12 +495,12 @@ class ParamSimple(){
         levels = List(
           MmuStorageLevel(
             id = 0,
-            ways = 4,
+            ways = 3,
             depth = 32
           ),
           MmuStorageLevel(
             id = 1,
-            ways = 2,
+            ways = 1,
             depth = 32
           )
         ),
@@ -513,12 +527,12 @@ class ParamSimple(){
           levels = List(
             MmuStorageLevel(
               id = 0,
-              ways = 4,
+              ways = 3,
               depth = 32
             ),
             MmuStorageLevel(
               id = 1,
-              ways = 2,
+              ways = 1,
               depth = 32
             )
           ),
@@ -528,7 +542,7 @@ class ParamSimple(){
           case false => null
           case true => MmuPortParameter(
             readAt = 0,
-            hitsAt = 1,
+            hitsAt = 0,
             ctrlAt = 1,
             rspAt = 1
           )
@@ -554,15 +568,13 @@ class ParamSimple(){
       plugins += new RsUnsignedPlugin("lane0")
       plugins += new DivPlugin(
         layer = early0,
+        relaxedInputs = xlen == 64,
         radix = divRadix,
         area  = divArea,
         impl = {
           def pasta(width: Int, radix: Int, area : Boolean) = new DivRadix2(width, lowArea = area)
           def vexii(width: Int, radix: Int, area: Boolean) = new DivRadix(width, radix)
-          def default(width: Int, radix: Int, area: Boolean) = radix match {
-            case 2 if area => pasta(width, radix, area)
-            case _ => vexii(width, radix, area)
-          }
+          def default(width: Int, radix: Int, area: Boolean) = vexii(width, radix, area)
           divImpl match {
             case "" => default
             case "bitpasta" => pasta
@@ -576,7 +588,7 @@ class ParamSimple(){
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(privParam, hartId until hartId+hartCount)
-    plugins += new TrapPlugin(trapAt = 2)
+    plugins += new TrapPlugin(trapAt = intWritebackAt)
     plugins += new EnvPlugin(early0, executeAt = 0)
     if(embeddedJtagTap || embeddedJtagInstruction) plugins += new EmbeddedRiscvJtag(
       p = DebugTransportModuleParameter(
@@ -589,7 +601,7 @@ class ParamSimple(){
       debugCd = embeddedJtagCd,
       noTapCd = embeddedJtagNoTapCd
     )
-    val lateAluAt = 2
+    val lateAluAt = intWritebackAt
     
     if(withLateAlu) {
       val late0 = new LaneLayer("late0", lane0, priority = -5)
@@ -600,7 +612,7 @@ class ParamSimple(){
       if(withRvZb) plugins ++= ZbPlugin.make(late0, executeAt = lateAluAt, formatAt = lateAluAt)
     }
 
-    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, 2), allowBypassFrom = allowBypassFrom)
+    plugins += new WriteBackPlugin("lane0", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
 
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
@@ -625,12 +637,41 @@ class ParamSimple(){
 //      if (withMul) {
 //        plugins += new MulPlugin(early1)
 //      }
-      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, 2), allowBypassFrom = allowBypassFrom)
+      plugins += new WriteBackPlugin("lane1", IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
     }
 
     plugins.foreach {
       case p: DispatchPlugin => p.trapLayer = early0
       case _ =>
+    }
+
+    if (withRvf || withRvd) {
+      plugins += new regfile.RegFilePlugin(
+        spec = riscv.FloatRegFile,
+        physicalDepth = 32,
+        preferedWritePortForInit = "lane0",
+        syncRead = regFileSync,
+        dualPortRam = regFileDualPortRam,
+        maskReadDuringWrite = false
+      )
+
+//      plugins += new execute.fpu.FpuExecute(early0, 0)
+      plugins += new WriteBackPlugin("lane0", FloatRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions
+      plugins += new execute.fpu.FpuFlagsWritebackPlugin(lane0, pipTo = intWritebackAt)
+      plugins += new execute.fpu.FpuCsrPlugin(List(lane0), intWritebackAt)
+      plugins += new execute.fpu.FpuUnpackerPlugin(early0)
+      plugins += new execute.fpu.FpuAddSharedPlugin(lane0)
+      plugins += new execute.fpu.FpuAddPlugin(early0)
+      plugins += new execute.fpu.FpuMulPlugin(early0, withFma = !skipFma, fmaFullAccuracy = fpuFmaFullAccuracy)
+      plugins += new execute.fpu.FpuSqrtPlugin(early0)
+      plugins += new execute.fpu.FpuClassPlugin(early0)
+      plugins += new execute.fpu.FpuCmpPlugin(early0)
+      plugins += new execute.fpu.FpuF2iPlugin(early0)
+      plugins += new execute.fpu.FpuMvPlugin(early0, floatWbAt = 2)
+      if(withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
+      plugins += new execute.fpu.FpuDivPlugin(early0)
+      plugins += new execute.fpu.FpuPackerPlugin(lane0)
+      //      plugins += new execute.fpu.FpuEmbedded()
     }
 
     plugins += new WhiteboxerPlugin()

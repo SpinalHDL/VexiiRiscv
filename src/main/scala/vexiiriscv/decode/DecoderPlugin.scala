@@ -11,7 +11,9 @@ import vexiiriscv.{Global, riscv}
 import Decode._
 import spinal.core
 import spinal.lib.logic.{DecodingSpec, Masked, Symplify}
+import vexiiriscv.execute.fpu.FpuCsrPlugin
 import vexiiriscv.prediction.{FetchWordPrediction, ForgetCmd, ForgetSource, Prediction}
+import vexiiriscv.riscv.Riscv.RVC
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.{Ages, ScheduleService}
 
@@ -76,7 +78,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     val rfaKeys = mutable.LinkedHashMap[RfAccess, AccessKeys]()
     for(rfa <- rfAccesses){
       val physWidth = 5
-      val rfMapping = resources.collect{case r : RfResource if r.access == rfa => r.rf }.toList
+      val rfMapping = resources.collect{case r : RfResource /*if r.access == rfa*/ => r.rf }.toList //Commenting if r.access == rfa ensure all rfa mappings have the same RFID mapping
       val ak = AccessKeys(rfa, physWidth, rfMapping)
       ak.setPartialName(rfa)
       rfaKeys(rfa) = ak
@@ -89,6 +91,10 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     }
 
 
+    val NEED_FPU = Payload(Bool())
+    val NEED_RM = Payload(Bool())
+    addMicroOpDecodingDefault(NEED_FPU, False)
+    addMicroOpDecodingDefault(NEED_RM, False)
     val encodings = new Area {
       val all = mutable.LinkedHashSet[Masked]()
       val one = Masked(1, 1)
@@ -113,8 +119,13 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
           case PC_READ =>
           case INSTRUCTION_SIZE =>
           case LQ =>
+          case FPU => addMicroOpDecoding(e, NEED_FPU, True)
+          case RM => addMicroOpDecoding(e, NEED_RM, True)
           case vexiiriscv.riscv.SQ =>
         }
+      }
+      if(Riscv.RVF || Riscv.RVD){
+        for (x <- 1 to 3; y <- 1 to 3) getDecodingSpec(NEED_FPU).addNeeds(Masked(0x73 + (x << 20) + (y << 12), 0xFFF0307Fl), Masked.one)
       }
     }
 
@@ -154,7 +165,16 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       }
 
       LEGAL := Symplify(Decode.INSTRUCTION, encodings.all) && !Decode.DECOMPRESSION_FAULT
-
+      val fp = Riscv.RVF.get generate new Area {
+        val csrRm = host[FpuCsrPlugin].api.rm
+        val instRm = Decode.UOP(Const.funct3Range)
+        val rm = U((instRm === 7) ? csrRm | instRm)
+        val enabled = host[PrivilegedPlugin].fpuEnable(0); assert(Global.HART_COUNT.get == 1)
+        val triggered = NEED_FPU && !enabled || NEED_RM && rm >= 5
+        when(triggered) {
+          LEGAL := False
+        }
+      }
 
       val interruptPending = interrupt.buffered(Global.HART_ID)
       val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)

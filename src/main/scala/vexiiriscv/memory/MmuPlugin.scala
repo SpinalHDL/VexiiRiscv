@@ -276,7 +276,7 @@ class MmuPlugin(var spec : MmuSpec,
         requireMmuLockup clearWhen(!status.mprv && isMachine)
         when(isMachine) {
           if (ps.usage == LOAD_STORE) {
-            requireMmuLockup clearWhen (!status.mprv || isMachine)
+            requireMmuLockup clearWhen (!status.mprv || priv.logic.harts(0).m.status.mpp === 3)
           } else {
             requireMmuLockup := False
           }
@@ -396,7 +396,7 @@ class MmuPlugin(var spec : MmuSpec,
             val specLevel = storageLevel.level
 
             val sel = storageOhReg(sid)
-            storageLevel.write.mask                 := UIntToOh(storageLevel.allocId).andMask(sel)
+            storageLevel.write.mask                 := UIntToOh(storageLevel.allocId).andMask(sel).resized
             storageLevel.write.address              := virtual(storageLevel.lineRange)
             storageLevel.write.data.valid           := True
             storageLevel.write.data.virtualAddress  := virtual(specLevel.virtualOffset + log2Up(storageLevel.slp.depth), widthOf(storageLevel.write.data.virtualAddress) bits)

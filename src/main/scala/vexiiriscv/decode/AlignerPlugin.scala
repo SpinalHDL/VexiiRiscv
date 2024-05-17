@@ -163,7 +163,7 @@ class AlignerPlugin(fetchAt : Int,
       when(api.haltIt || api.singleFetch && !first) {
         valid := False
         redo := False
-        usageMask := 0
+        if(!withBuffer) usageMask := 0
       }
     }
 
@@ -237,21 +237,28 @@ class AlignerPlugin(fetchAt : Int,
       val hm = Reg(HardMap(hmElements))
 
       slices.data.assignFromBits(up(Fetch.WORD) ## data)
-      slices.mask := up(FETCH_MASK).andMask(up.valid) ## mask
-      slices.last := up(FETCH_LAST).andMask(up.valid) ## last
+      slices.mask := up(FETCH_MASK) ## mask
+      slices.last := up(FETCH_LAST) ## last
+
+      when(!up.valid){
+        for(e <- extractors) when(e.usageMask(scannerSlices-1 downto Fetch.SLICE_COUNT) =/= 0){
+          e.valid := False
+        }
+      }
 
       val downFire = downNode.isReady || downNode.isCancel
+      val usedMask = extractors.map(e => e.usageMask.andMask(e.valid)).reduce(_ | _)
 
-      val haltUp = (mask & ~ usedMask.last.dropHigh(Fetch.SLICE_COUNT).andMask(downFire)).orR || api.haltIt
+      val haltUp = (mask & ~ usedMask.dropHigh(Fetch.SLICE_COUNT).andMask(downFire)).orR || api.haltIt
       up.ready := !haltUp
 
       when(downFire){
-        mask := mask & ~usedMask.last.takeLow(Fetch.SLICE_COUNT)
-        last := last & ~usedMask.last.takeLow(Fetch.SLICE_COUNT)
+        mask := mask & ~usedMask.takeLow(Fetch.SLICE_COUNT)
+        last := last & ~usedMask.takeLow(Fetch.SLICE_COUNT)
       }
       when(up.isValid && up.isReady && !up.isCancel){
         data := up(Fetch.WORD)
-        mask := up(FETCH_MASK) & ~usedMask.last.takeHigh(Fetch.SLICE_COUNT).andMask(downFire)
+        mask := up(FETCH_MASK) & ~usedMask.takeHigh(Fetch.SLICE_COUNT).andMask(downFire)
         trap := up(Global.TRAP)
         pc   := up(Fetch.WORD_PC)
         last := up(FETCH_LAST)

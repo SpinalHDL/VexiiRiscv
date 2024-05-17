@@ -38,17 +38,20 @@ class AguFrontend(
 
   val writingRf = ArrayBuffer[MicroOp](Rvi.LB, Rvi.LH, Rvi.LW, Rvi.LBU, Rvi.LHU)
   if (XLEN.get == 64) writingRf ++= List(Rvi.LD, Rvi.LWU)
-  if (RVF) writingRf ++= List(Rvfd.FLW)
-  if (RVD) writingRf ++= List(Rvfd.FLD)
-  for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LOAD -> True, STORE -> False, ATOMIC -> False, FLOAT -> False)
+
+  val writeRfFloat = ArrayBuffer[MicroOp]()
+  if (RVF) writeRfFloat ++= List(Rvfd.FLW)
+  if (RVD) writeRfFloat ++= List(Rvfd.FLD)
+  writingRf ++= writeRfFloat
+  for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(LOAD -> True, STORE -> False, ATOMIC -> False, FLOAT -> Bool(writeRfFloat.contains(op)))
 
   // Store stuff
   val storeOps = List(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.S)
   val writingMem = ArrayBuffer[MicroOp](Rvi.SB, Rvi.SH, Rvi.SW)
   if (XLEN.get == 64) writingMem ++= List(Rvi.SD)
   for (store <- writingMem) add(store).srcs(storeOps).decode(LOAD -> False, STORE -> True, ATOMIC -> False, FLOAT -> False)
-  if (RVF) add(Rvfd.FSW).srcs(storeOps).decode(LOAD -> False, STORE -> True, ATOMIC -> False, FLOAT -> True)
-  if (RVD) add(Rvfd.FSD).srcs(storeOps).decode(LOAD -> False, STORE -> True, ATOMIC -> False, FLOAT -> True)
+  if (RVF) writingMem += add(Rvfd.FSW).srcs(storeOps).decode(LOAD -> False, STORE -> True, ATOMIC -> False, FLOAT -> True).uop
+  if (RVD) writingMem += add(Rvfd.FSD).srcs(storeOps).decode(LOAD -> False, STORE -> True, ATOMIC -> False, FLOAT -> True).uop
 
   // Atomic stuff
   val amos = RVA.get generate new Area {

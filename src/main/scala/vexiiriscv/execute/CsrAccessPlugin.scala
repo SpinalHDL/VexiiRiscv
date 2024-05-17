@@ -21,7 +21,7 @@ object CsrFsm{
   val CSR_VALUE = Payload(Bits(XLEN bits))
 }
 
-class CsrAccessPlugin(layer : LaneLayer,
+class CsrAccessPlugin(val layer : LaneLayer,
                       writeBackKey : Any,
                       integrated : Boolean = true,
                       injectAt : Int = 0) extends FiberPlugin with CsrService with CompletionService {
@@ -136,11 +136,11 @@ class CsrAccessPlugin(layer : LaneLayer,
         val immZero = imm.z === 0
         val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
         val csrWrite = !(CSR_MASK && srcZero)
-        val csrRead = !(!CSR_MASK && !rd.ENABLE)
+        val csrRead = !(!CSR_MASK && !up(rd.ENABLE))
         val sels = grouped.map(e => e._1 -> Bool().setName("COMB_CSR_" + filterToName(e._1)))
         for ((filter, sel) <- sels) sel := (filter match {
           case filter: Int => csrAddress === filter
-          case filter: CsrListFilter => filter.mapping.map(csrAddress === _).orR
+          case filter: CsrListFilter => filter.mapping.map(csrAddress === _).orR //TODO
         })
         val implemented = sels.values.orR
 
@@ -169,7 +169,7 @@ class CsrAccessPlugin(layer : LaneLayer,
           regs.doImm := CSR_IMM
           regs.doMask := CSR_MASK
           regs.doClear := CSR_CLEAR
-          regs.rdEnable := rd.ENABLE
+          regs.rdEnable := up(rd.ENABLE)
           regs.rdPhys := rd.PHYS
         }
 
@@ -209,23 +209,34 @@ class CsrAccessPlugin(layer : LaneLayer,
           bypass(Global.TRAP) := True
         }
 
+        // For timing reasons, avoinding trap to get long combinatorial path
+        val sampled = RegNext(elp.isFreezed()) init(False)
+        val trapReg = RegNext(trap)
+        val busTrapReg = RegNext(bus.decode.trap)
+        val busTrapCodeReg = RegNext(bus.decode.trapCode)
+
         IDLE whenIsActive {
           (regs.sels.values, sels.values).zipped.foreach(_ := _)
           when(onDecodeDo) {
-            when(trap) {
-              bypass(Global.TRAP) := True
-              bypass(Global.COMMIT) := False
-              flushPort.valid := True
-              trapPort.valid := True
-              unfreeze := elp.isFreezed()
-            } otherwise {
+            when(!trap && !bus.decode.trap) {
               goto(READ)
-              when(bus.decode.trap){
+            }
+            when(sampled) {
+              when(trapReg) {
                 bypass(Global.TRAP) := True
+                bypass(Global.COMMIT) := False
                 flushPort.valid := True
                 trapPort.valid := True
-                trapPort.exception := False
-                trapPort.code := bus.decode.trapCode
+                unfreeze := elp.isFreezed()
+              } otherwise {
+                goto(READ)
+                when(busTrapReg) {
+                  bypass(Global.TRAP) := True
+                  flushPort.valid := True
+                  trapPort.valid := True
+                  trapPort.exception := False
+                  trapPort.code := busTrapCodeReg
+                }
               }
             }
           }

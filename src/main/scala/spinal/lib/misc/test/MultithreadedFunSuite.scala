@@ -13,7 +13,7 @@ object HeavyLock
 
 class MultithreadedFunSuite(threadCount : Int) extends AnyFunSuite {
   val finalThreadCount = if(threadCount > 0) threadCount else {
-    new oshi.SystemInfo().getHardware.getProcessor.getLogicalProcessorCount
+    new oshi.SystemInfo().getHardware.getProcessor.getLogicalProcessorCount*4
   }
   implicit val ec = ExecutionContext.fromExecutorService(
     new ForkJoinPool(finalThreadCount, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true)

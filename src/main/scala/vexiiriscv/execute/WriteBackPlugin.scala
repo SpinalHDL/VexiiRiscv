@@ -8,8 +8,9 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.Global._
 import vexiiriscv.decode.Decode._
+import vexiiriscv.execute.fpu.FpuCsrPlugin
 import vexiiriscv.regfile.{RegFileWriter, RegFileWriterService, RegfileService}
-import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec}
+import vexiiriscv.riscv.{FloatRegFile, MicroOp, RD, RegfileSpec}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -29,6 +30,7 @@ class WriteBackPlugin(val laneName : String,
   def createPort(at : Int): Flow[Bits] = {
     val port = Flow(Bits(rf.width bits))
     portToSpec(port) = Spec(port, at)
+    assert(at <= writeAt, s"WriteBackPlugin.createPort target is behond writeback range ($at > $writeAt)")
     port
   }
   def addMicroOp(port: Flow[Bits], layer : LaneLayer, uop: Seq[MicroOp]): Unit = addMicroOp(port, uop.map(layer.apply))
@@ -61,6 +63,9 @@ class WriteBackPlugin(val laneName : String,
         for (impl <- spec.impls) {
           impl.setRdSpec(DATA, Math.max(ctrlId, broadcastMin), writeAt + rfp.writeLatency)
           impl.addDecoding(SEL -> True)
+          if(rf == FloatRegFile){
+            impl.addDecoding(FpuCsrPlugin.DIRTY -> True)
+          }
 //          impl.dontFlushFrom(writeAt+1)
         }
       }
@@ -71,12 +76,12 @@ class WriteBackPlugin(val laneName : String,
     val rfa = rfaKeys.get(RD)
     val stages = for (group <- sorted; ctrlId = group.head.ctrlAt) yield new eu.Execute(ctrlId) {
       val hits = B(group.map(_.port.valid))
-      val muxed = OHMux.or(hits, group.map(_.port.payload), group == sorted.head && group.size == 1)
+      val muxed = OHMux.or(hits, group.map(_.port.payload))
       val merged = if(group == sorted.head) muxed else up(DATA) | muxed
       bypass(DATA) := merged
 
       val write = Flow(RegFileWriter(rf))
-      write.valid := down.isFiring && hits.orR && rfa.ENABLE && Global.COMMIT
+      write.valid := down.isFiring && hits.orR && up(rfa.ENABLE) && Global.COMMIT
       write.hartId := HART_ID
       write.uopId := UOP_ID
       write.data := muxed
@@ -86,7 +91,7 @@ class WriteBackPlugin(val laneName : String,
     val writeCtrl = eu.execute(writeAt)
     val write = new writeCtrl.Area{
       val port = rfp.newWrite(false, sharingKey = laneName)
-      port.valid := isValid && isReady && !isCancel && rfa.ENABLE && SEL && Global.COMMIT
+      port.valid := isValid && isReady && !isCancel && up(rfa.ENABLE) && SEL && Global.COMMIT
       port.address := HART_ID @@ rfa.PHYS
       port.data := DATA
       port.hartId := HART_ID

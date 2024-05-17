@@ -33,6 +33,7 @@ trait RegfileSpec extends Nameable{
   def width : Int
   def x0AlwaysZero : Boolean
   def getName() : String
+  def initialValue : BigInt
 
   def ->(access : RfAccess) = RfResource(this, access)
 }

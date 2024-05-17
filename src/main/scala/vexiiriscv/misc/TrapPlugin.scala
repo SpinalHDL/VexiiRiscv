@@ -264,7 +264,6 @@ class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
         val trigger = new Area {
           val lanes = host.list[ExecuteLanePlugin] //TODO AREA filter the ones which may trap
           csr.commitMask := B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(COMMIT))
-          csr.hasInflight := (for (self <- lanes; ctrlId <- 1 to self.executeAt + trapAt; sn = self.ctrl(ctrlId).up) yield sn.isValid && sn(HART_ID) === hartId).orR
           val oh = B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(TRAP))
           val valid = oh.orR
           val reader = lanes.map(_.execute(trapAt).down).reader(oh, true)

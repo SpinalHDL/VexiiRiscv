@@ -49,10 +49,33 @@ object SyntOther extends App{
   }))
 
 
+  val shift = Rtl(SpinalVerilog(Rtl.ffIo(new Component {
+    setDefinitionName("shift")
+    val dataIn = in Bits(64 bits)
+    val sel = in UInt(6 bits)
+    val dataOut = out(dataIn >> sel)
+  })))
 
-  val rtls = List(retim)
+  val shiftScrap = Rtl(SpinalVerilog(Rtl.ffIo(new Component {
+    setDefinitionName("shiftScrap")
+    val dataIn = in Bits (64 bits)
+    val sel = in UInt (6 bits)
+    val dataOut = out(Shift.rightWithScrap(dataIn, sel))
+  })))
+
+
+  val rtls = List(shift)
 
   val targets = XilinxStdTargets().take(2)
 
   Bench(rtls, targets)
 }
+
+/*
+shift ->
+Artix 7 -> 95 Mhz 177 LUT 402 FF
+Artix 7 -> 369 Mhz 192 LUT 402 FF
+shiftScrap ->
+Artix 7 -> 95 Mhz 207 LUT 402 FF
+Artix 7 -> 261 Mhz 231 LUT 402 FF
+ */

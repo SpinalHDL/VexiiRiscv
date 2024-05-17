@@ -127,7 +127,7 @@ class RegFilePlugin(var spec : RegfileSpec,
       when(!done) {
         port.valid := True
         port.address := counter.resized
-        port.data := 0
+        port.data := spec.initialValue
         counter := counter + 1
       }
     }
