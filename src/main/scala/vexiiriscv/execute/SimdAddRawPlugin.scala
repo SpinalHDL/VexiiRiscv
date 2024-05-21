@@ -28,18 +28,19 @@ class SimdAddRawPlugin(val layer : LaneLayer) extends FiberPlugin  {
 
     val add4 = layer.add(ADD4)
 
-    val SEL = Payload(Bool())
-    layer.el.setDecodingDefault(SEL, False)
-    val wb = wbp.createPort(at = 0)
-
-    add4.addDecoding(SEL -> True)
     add4.addRsSpec(RS1, executeAt = 0)
     add4.addRsSpec(RS2, executeAt = 0)
-    wbp.addMicroOp(wb, add4)
     add4.setCompletion(0)
 //    add4.mayFlushUpTo(0)
 //    add4.dontFlushFrom(0)
 //    add4.reserve(something, at=0)
+
+    val wb = wbp.createPort(at = 0)
+    wbp.addMicroOp(wb, add4)
+
+    val SEL = Payload(Bool())
+    layer.el.setDecodingDefault(SEL, False)
+    add4.addDecoding(SEL -> True)
 
     earlyLock.release()
 

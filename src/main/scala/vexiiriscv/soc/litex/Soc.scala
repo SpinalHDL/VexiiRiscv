@@ -451,6 +451,8 @@ perf report
 
 video capture => qv4l2
 
+openssl speed -provider legacy -provider default aes-128-cbc
+
 PMU Hardware doesn't support sampling/overflow-interrupts
 
 branch-instructions OR branches                    [Hardware event]

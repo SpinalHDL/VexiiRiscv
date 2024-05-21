@@ -152,7 +152,11 @@ object MicroSocSim extends App{
   }.parse(args, Unit).nonEmpty)
 
 
-  sim.compile(new MicroSoc(p)).doSimUntilVoid("test", seed = 42){dut =>
+  sim.compile(new MicroSoc(p){
+    hardFork{
+      main.ram.thread.logic.mem.simPublic()
+    }
+  }).doSimUntilVoid("test", seed = 42){dut =>
     dut.cd100.forkStimulus()
     dut.asyncReset #= true
     delayed(100 ns)(dut.asyncReset #= false)
