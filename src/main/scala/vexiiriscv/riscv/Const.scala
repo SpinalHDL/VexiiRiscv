@@ -109,6 +109,7 @@ object CSR {
   def MHPMEVENT3 = 0x323 // MRW Machine instructions-retired counter.
   val MCOUNTEREN  = 0x306
   val MCOUNTINHIBIT = 0x320
+  def MHPMEVENT0H = 0x720 // MRW Machine instructions-retired counter.
 
   val SSTATUS     = 0x100
   val SIE         = 0x104
@@ -120,6 +121,7 @@ object CSR {
   val STVAL       = 0x143
   val SIP         = 0x144
   val SATP        = 0x180
+  val SCOUNTOVF   = 0xDA0
 
   def UCYCLE   = 0xC00 // UR Machine ucycle counter.
   def UCYCLEH  = 0xC80

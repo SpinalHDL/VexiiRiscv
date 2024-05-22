@@ -63,6 +63,9 @@ case class PrivilegedParam(var withSupervisor : Boolean,
   }
 }
 
+case class Delegator(var enable: Bool, privilege: Int)
+case class InterruptSpec(var cond: Bool, id: Int, privilege: Int, delegators: List[Delegator])
+case class ExceptionSpec(id: Int, delegators: List[Delegator])
 
 class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends FiberPlugin with CommitService with LsuTriggerService{
   def implementSupervisor = p.withSupervisor
@@ -71,9 +74,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
   def getPrivilege(hartId : UInt) : UInt = logic.harts.map(_.privilege).read(hartId)
 
-  case class Delegator(var enable: Bool, privilege: Int)
-  case class InterruptSpec(var cond: Bool, id: Int, privilege: Int, delegators: List[Delegator])
-  case class ExceptionSpec(id: Int, delegators: List[Delegator])
+
   override def getCommitMask(hartId: Int): Bits = logic.harts(hartId).commitMask
 
   val misaIds = mutable.LinkedHashSet[Int]()

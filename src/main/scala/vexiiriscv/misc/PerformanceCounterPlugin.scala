@@ -26,9 +26,11 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val csr = host[CsrAccessPlugin]
     val ram = host[CsrRamPlugin]
     val priv = host[PrivilegedPlugin]
+    val tp = host[TrapPlugin]
     val csrRetainer = csr.csrLock()
     val ramCsrRetainer = ram.csrLock()
     val ramPortRetainer = ram.portLock()
+    val trapLock = tp.trapLock()
     awaitBuild()
 
     assert(Global.HART_COUNT.get == 1)
@@ -92,6 +94,22 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 
     val csrFilter = CsrListFilter(mappings.map(m => m.csrId))
 
+    val interrupt = new Area {
+      val ip, ie = RegInit(False)
+      csr.readWrite(CSR.MIP, 13 -> ip)
+      csr.readWrite(CSR.MIE, 13 -> ie)
+      val sup = priv.implementSupervisor generate new Area {
+        val deleg = RegInit(False)
+        csr.readWrite(CSR.MIDELEG, 13 -> deleg)
+      }
+      priv.logic.harts(0).spec.addInterrupt(
+        ip && ie,
+        id = 13,
+        privilege = priv.implementSupervisor.mux(1, 3),
+        delegators = priv.implementSupervisor.mux(List(Delegator(sup.deleg, 3)), Nil)
+      )
+    }
+
     val events = new Area {
       val selWidth = log2Up((specs.map(_.id) :+ 0).max + 1)
       val grouped = specs.groupByLinked(_.id)
@@ -102,11 +120,41 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val hpm = for(id <- 0 until 3+additionalCounterCount) yield (id >= 3) generate new Area{
       val counter = counters.additionals(id-3)
       val eventId = Reg(UInt(events.selWidth bits)) init(0)
+      val overflowEvent = False
+      val OF   = RegInit(False) setWhen(overflowEvent)
+      val MINH = RegInit(False)
+      val SINH = RegInit(False)
+      val UINH = RegInit(False)
+
+      interrupt.ip.setWhen(overflowEvent && !OF)
+
       val incr    = if(events.sums.isEmpty) U(0) else events.sums.map(e => e._2.andMask(eventId === e._1).resize(events.widthMax)).toList.reduceBalancedTree(_ | _)
-      when(!counter.mcountinhibit) {
+      val inhibit = CombInit(counter.mcountinhibit)
+      when(!inhibit) {
         counter.value := counter.value + incr
       }
-      csr.readWrite(eventId, CSR.MHPMEVENT0 + id)
+      csr.readWrite(CSR.MHPMEVENT0 + id, 0 -> eventId)
+      val eb = CSR.MHPMEVENT0 + id
+      val eo = Riscv.XLEN.get match {
+        case 32 => 32
+        case 64 => 0
+      }
+      val privValue = priv.getPrivilege(0)
+      val ofRead = CombInit(OF)
+      csr.read(CSR.SCOUNTOVF, id -> ofRead)
+      ofRead clearWhen(!counter.mcounteren && !privValue(1))
+
+      csr.readWrite(eb, 63-eo -> OF, 62-eo -> MINH)
+      inhibit.setWhen(privValue === 3 && MINH)
+      if (priv.p.withSupervisor) {
+        csr.readWrite(eb, 61 - eo -> SINH)
+        inhibit.setWhen(privValue === 1 && SINH)
+        ofRead clearWhen(!counter.scounteren && !privValue(0))
+      }
+      if (priv.p.withUser) {
+        csr.readWrite(eb, 60 - eo -> UINH)
+        inhibit.setWhen(privValue === 0 && UINH)
+      }
     }
 
 
@@ -154,6 +202,12 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
         val a = if(withHigh) carry.mux(high, low) else low
         val b = if(withHigh) carry.mux(U(1), blow) else blow
         val sum = a +^ b
+      }
+
+      def doOverflow(): Unit = {
+        hpm.drop(3).onMask(cmd.oh.drop(2)) { c =>
+          c.overflowEvent := True
+        }
       }
 
       val idleCsrAddress = csrReadCmd.valid.mux(csrReadCmd.address, csrWriteCmd.address)
@@ -213,6 +267,10 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
           if (withHigh) when(calc.sum.msb){
             carry := True
             goto(READ_HIGH)
+          } else {
+            when(calc.sum.msb){
+              doOverflow()
+            }
           }
         }
       }
@@ -229,6 +287,9 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
           writePort.valid := True
           writePort.data := B(calc.sum).resized
           when(writePort.ready) {
+            when(calc.sum.msb) {
+              doOverflow()
+            }
             goto(IDLE)
           }
         }
@@ -294,5 +355,6 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       }
     }
     csrRetainer.release()
+    trapLock.release()
   }
 }
