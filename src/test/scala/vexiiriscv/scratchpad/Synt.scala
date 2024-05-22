@@ -559,26 +559,43 @@ object IntegrationSynthBench extends App{
 
 
 
-  //  rtls += Rtl(sc.generateVerilog {
-//    val param = new ParamSimple
-//    import param._
-//    decoders = 1
-//    lanes = 1
-//    regFileSync = false
+  rtls += Rtl(sc.generateVerilog {
+    val param = new ParamSimple
+    import param._
+    decoders = 1
+    lanes = 1
+    regFileSync = false
 //    withGShare = true
 //    withBtb = true
 //    withRas = true
-//    //    withMul = false
-//    //    withDiv = false
-//    withLateAlu = false
-//    allowBypassFrom = 0
-//    relaxedBranch = false
-//    relaxedShift = false
-//    relaxedSrc = true
-//    performanceCounters = 0
-//    withRvc = false
-//    Rtl.ffIo(VexiiRiscv(param.plugins()).setDefinitionName("vexii_1i"))
-//  })
+    fetchL1Enable = true
+    lsuL1Enable = true
+    withMul = true
+    withDiv = true
+    allowBypassFrom = 0
+    relaxedBranch = true
+    Rtl.ffIo(VexiiRiscv(ParamSimple.setPma(param.plugins())).setDefinitionName("vexii_1i_nobtb"))
+  })
+
+  rtls += Rtl(sc.generateVerilog {
+    val param = new ParamSimple
+    import param._
+    decoders = 1
+    lanes = 1
+    regFileSync = false
+    withGShare = true
+    withBtb = true
+    withRas = true
+    withMul = true
+    withDiv = true
+    fetchL1Enable = true
+    lsuL1Enable = true
+    allowBypassFrom = 0
+    relaxedBranch = true
+    relaxedBtb = true
+    Rtl.ffIo(VexiiRiscv(ParamSimple.setPma(param.plugins())).setDefinitionName("vexii_1i"))
+  })
+
 //
 //  rtls += Rtl(sc.generateVerilog {
 //    val param = new ParamSimple
@@ -661,61 +678,61 @@ object IntegrationSynthBench extends App{
 //  })
 
 
-  rtls += Rtl(sc.generateVerilog {
-    val param = new ParamSimple
-    import param._
-    decoders = 1
-    lanes = 1
-    regFileSync = false
-    withGShare = true
-    withBtb = true
-    withRas = true
-    withMul = true
-    withDiv = true
-    divArea = false
-    relaxedBranch = true
-    relaxedBtb = true
-
-    xlen = 64
-    privParam.withSupervisor = true
-    privParam.withUser = true
-    withMmu = true
-    withRva = true
-    withRvf = true
-    withRvd = true
-    fpuFmaFullAccuracy = false
-    withRvc = true
-    withAlignerBuffer = true
-    privParam.withDebug = true
-
-    allowBypassFrom = 0
-    withPerformanceCounters = true
-    additionalPerformanceCounters = 0
-
-    fetchL1Enable = true
-    fetchL1Sets = 64
-    fetchL1Ways = 4
-
-    lsuL1Enable = true
-    lsuL1Sets = 64
-    lsuL1Ways = 4
-    lsuL1RefillCount = 2
-    lsuL1WritebackCount = 2
-    lsuStoreBufferSlots = 2
-    lsuStoreBufferOps = 32
-    lsuL1Coherency = true
-
-
-    val plugins = param.plugins()
-    ParamSimple.setPma(plugins)
-    plugins.foreach{
-      case p : LsuL1Plugin =>
-        p.ackIdWidth = 8
-        p.probeIdWidth = log2Up(p.writebackCount)
-      case _ =>
-    }
-    Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName("vexii_debian"))
-  })
+//  rtls += Rtl(sc.generateVerilog {
+//    val param = new ParamSimple
+//    import param._
+//    decoders = 1
+//    lanes = 1
+//    regFileSync = false
+//    withGShare = true
+//    withBtb = true
+//    withRas = true
+//    withMul = true
+//    withDiv = true
+//    divArea = false
+//    relaxedBranch = true
+//    relaxedBtb = true
+//
+//    xlen = 64
+//    privParam.withSupervisor = true
+//    privParam.withUser = true
+//    withMmu = true
+//    withRva = true
+//    withRvf = true
+//    withRvd = true
+//    fpuFmaFullAccuracy = false
+//    withRvc = true
+//    withAlignerBuffer = true
+//    privParam.withDebug = true
+//
+//    allowBypassFrom = 0
+//    withPerformanceCounters = true
+//    additionalPerformanceCounters = 0
+//
+//    fetchL1Enable = true
+//    fetchL1Sets = 64
+//    fetchL1Ways = 4
+//
+//    lsuL1Enable = true
+//    lsuL1Sets = 64
+//    lsuL1Ways = 4
+//    lsuL1RefillCount = 2
+//    lsuL1WritebackCount = 2
+//    lsuStoreBufferSlots = 2
+//    lsuStoreBufferOps = 32
+//    lsuL1Coherency = true
+//
+//
+//    val plugins = param.plugins()
+//    ParamSimple.setPma(plugins)
+//    plugins.foreach{
+//      case p : LsuL1Plugin =>
+//        p.ackIdWidth = 8
+//        p.probeIdWidth = log2Up(p.writebackCount)
+//      case _ =>
+//    }
+//    Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName("vexii_debian"))
+//  })
 
   val targets = ArrayBuffer[Target]()
   targets ++=  XilinxStdTargets(withFMax = true, withArea = true)

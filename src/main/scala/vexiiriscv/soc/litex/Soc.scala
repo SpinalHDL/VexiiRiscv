@@ -447,7 +447,10 @@ https://bbs.archlinux.org/viewtopic.php?id=243100
 https://www.brendangregg.com/perf.html
 perf stat  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 perf record md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
+perf record -F 99 -g  -e cpu-clock  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp
+
 perf report
+perf report --stdio
 
 video capture => qv4l2
 
@@ -542,7 +545,7 @@ mpg123 -a bluealsa mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 
 
 perf stat -e branch-misses -e branches -e cache-misses -e cache-references -e L1-icache-loads -e L1-icache-load-misses -e cycles -e instructions ls
-
+-e r1a -e r12
 ~/c/libsdl2/libsdl2-2.30.2+dfsg/debian/build-tests# make -j1 check "TESTSUITEFLAGS=-j1 --verbose" VERBOSE=1 V=1 &> testlog.txt
 
 export DEB_BUILD_OPTIONS="nocheck parallel=4"

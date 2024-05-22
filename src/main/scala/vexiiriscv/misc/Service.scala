@@ -19,7 +19,13 @@ import spinal.core.fiber.Retainer
 	                <0x00005 0x00006 0xFF8>,
 	                <0x00003 0x00004 0xFF8>,
 	                <0x10008 0x10009 0xFF8>;
-        };
+          };
+
+
+          riscv,raw-event-to-mhpmcounters =
+              <0x0000 0x0012 0xffffffff 0xffffffff 0x00000ff8>,
+              <0x0000 0x001a 0xffffffff 0xffffffff 0x00000ff8>;
+
  */
 
 object PerformanceCounterService{
