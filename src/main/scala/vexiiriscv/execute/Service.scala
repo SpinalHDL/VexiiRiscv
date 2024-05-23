@@ -23,13 +23,13 @@ case class RsSpec(rs : RfRead){
   var from = 0
 }
 
-class LaneLayer(val name : String, val el : ExecuteLaneService, var priority : Int){
+class LaneLayer(val name : String, val lane : ExecuteLaneService, var priority : Int){
   val uops = mutable.LinkedHashMap[MicroOp, UopLayerSpec]()
-  el.add(this)
+  lane.add(this)
 
   def apply(uop: MicroOp) = uops(uop)
-  def add(uop: MicroOp) = uops.getOrElseUpdate(uop, new UopLayerSpec(uop, this, el))
-  def laneName = el.laneName
+  def add(uop: MicroOp) = uops.getOrElseUpdate(uop, new UopLayerSpec(uop, this, lane))
+  def laneName = lane.laneName
   def getRsUseAtMin(): Int = {
     uops.flatMap(_._2.rs.map(_._2.from)).fold(100)(_ min _)
   }
@@ -37,7 +37,7 @@ class LaneLayer(val name : String, val el : ExecuteLaneService, var priority : I
   def doChecks(): Unit = {
     for(uop <- uops.values) uop.doCheck()
   }
-  class Execute(id: Int) extends CtrlLaneMirror(el.execute(id))
+  class Execute(id: Int) extends CtrlLaneMirror(lane.execute(id))
 }
 
 class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLaneService) {

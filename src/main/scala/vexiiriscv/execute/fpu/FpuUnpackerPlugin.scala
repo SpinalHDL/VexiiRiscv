@@ -46,8 +46,8 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
   val logic = during setup new Area{
     val fpp = host[FpuPackerPlugin]
     val rsUnsignedPlugin = host[RsUnsignedPlugin]
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fpp.elaborationLock, rsUnsignedPlugin.elaborationLock)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fpp.elaborationLock, rsUnsignedPlugin.elaborationLock)
     awaitBuild()
 
     val packParam = FloatUnpackedParam(
@@ -59,7 +59,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
 
     elaborationLock.await()
 
-    layer.el.setDecodingDefault(SEL_I2F, False)
+    layer.lane.setDecodingDefault(SEL_I2F, False)
     def i2f(uop: MicroOp, size: Int, signed : Boolean, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)
@@ -142,15 +142,15 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
     }
 
 
-    val onUnpack = new layer.el.Execute(unpackAt){
+    val onUnpack = new layer.lane.Execute(unpackAt){
       val fsmPortId = 0
       val fsmCmd = unpacker.arbiter.io.inputs(fsmPortId)
       val fsmRsp = unpacker.results(fsmPortId)
       fsmCmd.setIdle()
 
-      val firstCycle = RegNext(False) setWhen(!layer.el.isFreezed())
+      val firstCycle = RegNext(False) setWhen(!layer.lane.isFreezed())
 
-      val rsValues = rsList.map(rs => this.up(layer.el(FloatRegFile, rs)))
+      val rsValues = rsList.map(rs => this.up(layer.lane(FloatRegFile, rs)))
 
       val fsmRequesters = Bits(rsList.size bits)
       val fsmServed = Bits(rsList.size bits)
@@ -222,7 +222,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
         apply(RS) := RS_PRE_NORM
         val normalizer = new Area {
           val valid = unpackerSel && IS_SUBNORMAL
-          val validReg = RegNext(unpackerSel && IS_SUBNORMAL ) clearWhen(!layer.el.isFreezed()) init(False)
+          val validReg = RegNext(unpackerSel && IS_SUBNORMAL ) clearWhen(!layer.lane.isFreezed()) init(False)
           val asked = RegInit(False) setWhen (fsmRequesters(inputId) && !fsmRequesters.dropLow(inputId + 1).orR || isCancel) clearWhen (clear)
           val served = RegInit(False) setWhen (fsmRsp.valid && fsmServed.dropLow(inputId + 1).andR || isCancel) clearWhen (clear)
           fsmRequesters(inputId) := valid && !asked
@@ -244,7 +244,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
             mantissa.raw := fsmRsp.data >> widthOf(fsmCmd.data) - widthOf(RS_PRE_NORM.mantissa.raw)
           }
           val freezeIt = validReg && !served || firstCycle && unpackerSel && expZero  //Maybe a bit hard on timings
-          layer.el.freezeWhen(freezeIt)
+          layer.lane.freezeWhen(freezeIt)
         }
 
         val badBoxing = p.rvd generate new Area {
@@ -260,8 +260,8 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
     val unpackDone = !onUnpack.rs.map(_.normalizer.freezeIt).toList.orR
 
 
-    val onCvt = new layer.el.Execute(unpackAt){ //TODO fmax
-      val rs1 = up(layer.el(IntRegFile, RS1))
+    val onCvt = new layer.lane.Execute(unpackAt){ //TODO fmax
+      val rs1 = up(layer.lane(IntRegFile, RS1))
       val rs1Zero = Riscv.XLEN.get match {
         case 32 => rs1(31 downto 0) === 0
         case 64 => rs1(31 downto 0) === 0 && (RsUnsignedPlugin.IS_W || rs1(63 downto 32) === 0)
@@ -279,7 +279,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
       fsmCmd.data := RsUnsignedPlugin.RS1_UNSIGNED.asBits.resized
 
       val freezeIt = isValid && SEL_I2F && !served
-      layer.el.freezeWhen(freezeIt)
+      layer.lane.freezeWhen(freezeIt)
 
       packPort.cmd.at(0) := isValid && SEL_I2F
       packPort.cmd.flags.clearAll()

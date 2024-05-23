@@ -31,19 +31,19 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
-    val fwbp = host.find[WriteBackPlugin](p => p.lane == layer.el && p.rf == FloatRegFile)
-    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.el)
-    val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == layer.el)
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fwbp.elaborationLock, iwbp.elaborationLock, ffwbp.elaborationLock)
+    val fwbp = host.find[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
+    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.lane)
+    val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == layer.lane)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fwbp.elaborationLock, iwbp.elaborationLock, ffwbp.elaborationLock)
     awaitBuild()
 
     val ffwb = ffwbp.createPort(List(cmpAt))
     val fwb = fwbp.createPort(floatWbAt)
     val iwb = iwbp.access(intWbAt)
 
-    layer.el.setDecodingDefault(SEL_FLOAT, False)
-    layer.el.setDecodingDefault(SEL_CMP, False)
+    layer.lane.setDecodingDefault(SEL_FLOAT, False)
+    layer.lane.setDecodingDefault(SEL_CMP, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)
@@ -132,7 +132,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
     val onFloatWb = new layer.Execute(floatWbAt) {
       fwb.valid := SEL_FLOAT
-      fwb.payload := (FLOAT_OP === FpuCmpFloatOp.MIN_MAX && onCmp.MIN_MAX_RS2).mux(up(layer.el(FloatRegFile, RS2)), up(layer.el(FloatRegFile, RS1)))
+      fwb.payload := (FLOAT_OP === FpuCmpFloatOp.MIN_MAX && onCmp.MIN_MAX_RS2).mux(up(layer.lane(FloatRegFile, RS2)), up(layer.lane(FloatRegFile, RS1)))
       val doNan = RS1_FP.isNan && RS2_FP.isNan && FLOAT_OP === FpuCmpFloatOp.MIN_MAX
       val wb = fwb.payload
       when(doNan) {

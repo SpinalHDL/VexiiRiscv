@@ -50,8 +50,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
   )
 
   val logic = during setup new Area{
-    val elp = host.find[ExecuteLanePlugin](_ == layer.el)
-    val ifp = host.find[IntFormatPlugin](_.lane == layer.el)
+    val elp = host.find[ExecuteLanePlugin](_ == layer.lane)
+    val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host[AddressTranslationService]
     val ts = host[TrapService]
@@ -65,8 +65,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val translationStorage = ats.newStorage(translationStorageParameter)
     atsStorageLock.release()
 
-    val trapPort = ts.newTrap(layer.el.getExecuteAge(forkAt), Execute.LANE_AGE_WIDTH)
-    val flushPort = ss.newFlushPort(layer.el.getExecuteAge(forkAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
+    val trapPort = ts.newTrap(layer.lane.getExecuteAge(forkAt), Execute.LANE_AGE_WIDTH)
+    val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(forkAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
     // IntFormatPlugin specification

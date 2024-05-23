@@ -26,16 +26,16 @@ class FpuF2iPlugin(val layer : LaneLayer,
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
-    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.el)
-    val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == layer.el)
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fup.elaborationLock, iwbp.elaborationLock, ffwbp.elaborationLock)
+    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.lane)
+    val ffwbp = host.find[FpuFlagsWritebackPlugin](p => p.lane == layer.lane)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, iwbp.elaborationLock, ffwbp.elaborationLock)
     awaitBuild()
 
     val ffwb = ffwbp.createPort(List(intWbAt))
     val iwb = iwbp.access(intWbAt)
 
-    layer.el.setDecodingDefault(SEL, False)
+    layer.lane.setDecodingDefault(SEL, False)
     def f2i(uop: MicroOp, size : Int, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)
@@ -105,9 +105,9 @@ class FpuF2iPlugin(val layer : LaneLayer,
       val round = low.msb ## low.dropHigh(1).orR
 
       val halfRater = halfRate generate new Area {
-        val firstCycle = RegNext(!layer.el.isFreezed()) init (True)
+        val firstCycle = RegNext(!layer.lane.isFreezed()) init (True)
         val freezeIt = isValid && SEL && firstCycle
-        layer.el.freezeWhen(freezeIt)
+        layer.lane.freezeWhen(freezeIt)
       }
 
       val inverter = Delay(Mux(onShift.resign, ~unsigned, unsigned) + onShift.incrementPatched, halfRate.toInt)

@@ -233,7 +233,7 @@ class DispatchPlugin(var dispatchAt : Int,
             }
           }
           for(writeEu <- eus) {
-            val hazardFrom = ll.el.rfReadHazardFrom(ll.getRsUseAtMin()) // This is a pessimistic aproach
+            val hazardFrom = ll.lane.rfReadHazardFrom(ll.getRsUseAtMin()) // This is a pessimistic aproach
             val hazardUntil = writeEu.getRdBroadcastedFromMax()
             val hazardRange = hazardFrom until hazardUntil
             for(id <- hazardRange) {
@@ -254,7 +254,7 @@ class DispatchPlugin(var dispatchAt : Int,
           val checks = for ((otherLl, otherAts) <- resSpec.sels;
                             (otherAt, otherSel) <- otherAts;
                             delta = otherAt - selfAt; if delta > 0) yield new Area { //So currently we aren't trying to catch multi issue reservation being dispacthed at the same cycle (limitation)
-            val otherCtrl = otherLl.el.ctrl(delta)
+            val otherCtrl = otherLl.lane.ctrl(delta)
             val hit = c.ctx.hm(selfSel) && otherCtrl.isValid && otherCtrl(otherSel)
           }
         }
@@ -366,8 +366,8 @@ class DispatchPlugin(var dispatchAt : Int,
       eusFree(0).setAll()
       hartFree(0).setAll()
 
-      def eusToLayers(mask: Bits) = B(lanesLayers.map(ll => mask(eus.indexOf(ll.el))))
-      def layersToEus(mask: Bits) = B(eus.map(eu => lanesLayers.zipWithIndex.filter(_._1.el == eu).map(e => mask(e._2)).orR))
+      def eusToLayers(mask: Bits) = B(lanesLayers.map(ll => mask(eus.indexOf(ll.lane))))
+      def layersToEus(mask: Bits) = B(eus.map(eu => lanesLayers.zipWithIndex.filter(_._1.lane == eu).map(e => mask(e._2)).orR))
 
       val arbiters = for ((c, id) <- candidates.zipWithIndex) yield new Area {
         val olders = candidates.take(id)
@@ -405,7 +405,7 @@ class DispatchPlugin(var dispatchAt : Int,
       Global.COMPLETED := trap
 
       val layerOhUnfiltred = scheduler.arbiters.reader(oh)(_.layerOh) // include the bits of the other eu
-      val layersOfInterest = lanesLayers.zipWithIndex.filter(_._1.el == eu) // Only the bits for our eu  (LaneLayer -> Int
+      val layersOfInterest = lanesLayers.zipWithIndex.filter(_._1.lane == eu) // Only the bits for our eu  (LaneLayer -> Int
       val layer = layersOfInterest.map(e => B(eu.getLayerId(e._1), log2Up(eu.getLayers().size) bits) -> layerOhUnfiltred(e._2))
       eu.LAYER_SEL := OHMux.or(layer.map(_._2).asBits(), layer.map(_._1), true)
     }

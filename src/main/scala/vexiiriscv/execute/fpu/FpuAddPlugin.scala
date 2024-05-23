@@ -21,13 +21,13 @@ class FpuAddPlugin(val layer : LaneLayer,
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
     val fasp = host[FpuAddSharedPlugin]
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fasp.elaborationLock, fup.elaborationLock)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fasp.elaborationLock, fup.elaborationLock)
     awaitBuild()
 
     val addPort = fasp.createPort(List(addAt), FpuUtils.unpackedConfig, FpuUtils.unpackedConfig)
 
-    layer.el.setDecodingDefault(SEL, False)
+    layer.lane.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(SEL -> True)

@@ -20,8 +20,8 @@ class FpuXxPlugin(val layer : LaneLayer,
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
     val fpp = host[FpuPackerPlugin]
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fpp.elaborationLock)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock)
     awaitBuild()
 
     val packParam = FloatUnpackedParam(
@@ -31,7 +31,7 @@ class FpuXxPlugin(val layer : LaneLayer,
     )
     val packPort = fpp.createPort(List(packAt), packParam)
 
-    layer.el.setDecodingDefault(SEL, False)
+    layer.lane.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(SEL -> True)

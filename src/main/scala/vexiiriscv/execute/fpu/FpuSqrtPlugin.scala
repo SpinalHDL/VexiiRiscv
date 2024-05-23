@@ -21,8 +21,8 @@ class FpuSqrtPlugin(val layer : LaneLayer,
     val fup = host[FpuUnpackerPlugin]
     val fpp = host[FpuPackerPlugin]
     val mp  = host[MulReuse]
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fpp.elaborationLock)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock)
     awaitBuild()
 
     val packParam = FloatUnpackedParam(
@@ -32,7 +32,7 @@ class FpuSqrtPlugin(val layer : LaneLayer,
     )
     val packPort = fpp.createPort(List(exeAt), packParam)
 
-    layer.el.setDecodingDefault(SEL, False)
+    layer.lane.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(SEL -> True)
@@ -68,7 +68,7 @@ class FpuSqrtPlugin(val layer : LaneLayer,
 
       val unscheduleRequest = RegNext(isCancel) clearWhen (isReady) init (False)
       val freeze = isValid && SEL && !sqrt.io.output.valid & !unscheduleRequest
-      layer.el.freezeWhen(freeze)
+      layer.lane.freezeWhen(freeze)
 
       val exp = (RS1_FP.exponent >>| 1)
       val scrap = sqrt.io.output.remain =/= 0

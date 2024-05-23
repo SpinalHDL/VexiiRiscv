@@ -83,14 +83,14 @@ class LsuPlugin(var layer : LaneLayer,
   val logic = during setup new Area{
     assert(!(storeBufferSlots != 0 ^ storeBufferOps != 0))
     val withStoreBuffer = storeBufferSlots != 0
-    val elp = host.find[ExecuteLanePlugin](_ == layer.el)
-    val ifp = host.find[IntFormatPlugin](_.lane == layer.el)
+    val elp = host.find[ExecuteLanePlugin](_ == layer.lane)
+    val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host[AddressTranslationService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
     val pcs = host.get[PerformanceCounterService]
-    val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.el && p.rf == FloatRegFile)
+    val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
     val buildBefore = retains(elp.pipelineLock, ats.portsLock)
     val earlyLock = retains(List(ats.storageLock) ++ pcs.map(_.elaborationLock).toList)
     val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))
@@ -107,8 +107,8 @@ class LsuPlugin(var layer : LaneLayer,
 
     earlyLock.release()
 
-    val trapPort = ts.newTrap(layer.el.getExecuteAge(ctrlAt), Execute.LANE_AGE_WIDTH)
-    val flushPort = ss.newFlushPort(layer.el.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
+    val trapPort = ts.newTrap(layer.lane.getExecuteAge(ctrlAt), Execute.LANE_AGE_WIDTH)
+    val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
     // IntFormatPlugin specification

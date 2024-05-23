@@ -42,7 +42,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
   val logic = during setup new Area {
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
     val irf = host.find[RegfileService](_.rfSpec == IntRegFile)
-    val iwb = host.find[IntFormatPlugin](_.lane == layer.el)
+    val iwb = host.find[IntFormatPlugin](_.lane == layer.lane)
     val dp = host[DispatchPlugin]
     val ram = host.get[CsrRamService]
     val sp = host[ReschedulePlugin]
@@ -77,7 +77,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
       op.addRsSpec(RS1, injectAt)
     }
 
-    val age = layer.el.getExecuteAge(injectAt)
+    val age = layer.lane.getExecuteAge(injectAt)
     val flushPort = sp.newFlushPort(age, laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val trapPort = ts.newTrap(age, Execute.LANE_AGE_WIDTH)
 

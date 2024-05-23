@@ -20,17 +20,17 @@ class FpuMvPlugin(val layer : LaneLayer,
   val SEL_INT = Payload(Bool())
 
   val logic = during setup new Area{
-    val fwbp = host.find[WriteBackPlugin](p => p.lane == layer.el && p.rf == FloatRegFile)
-    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.el)
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fwbp.elaborationLock, iwbp.elaborationLock)
+    val fwbp = host.find[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
+    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.lane)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fwbp.elaborationLock, iwbp.elaborationLock)
     awaitBuild()
 
     val fwb = fwbp.createPort(floatWbAt)
     val iwb = iwbp.access(intWbAt)
 
-    layer.el.setDecodingDefault(SEL_FLOAT, False)
-    layer.el.setDecodingDefault(SEL_INT, False)
+    layer.lane.setDecodingDefault(SEL_FLOAT, False)
+    layer.lane.setDecodingDefault(SEL_INT, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)
@@ -63,14 +63,14 @@ class FpuMvPlugin(val layer : LaneLayer,
 
     val onIntWb = new layer.Execute(intWbAt) {
       iwb.valid   := SEL_INT
-      iwb.payload := up(layer.el(FloatRegFile, RS1)).resized
+      iwb.payload := up(layer.lane(FloatRegFile, RS1)).resized
     }
 
     val onFloatWb = new layer.Execute(floatWbAt) {
       fwb.valid := SEL_FLOAT
-      fwb.payload(31 downto 0) := up(layer.el(IntRegFile, RS1))(31 downto 0)
+      fwb.payload(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
       if(Riscv.RVD.get) {
-        fwb.payload(63 downto 32) := muxDouble(FORMAT)(up(layer.el(IntRegFile, RS1))(63 downto 32))(B"xFFFFFFFF")
+        fwb.payload(63 downto 32) := muxDouble(FORMAT)(up(layer.lane(IntRegFile, RS1))(63 downto 32))(B"xFFFFFFFF")
       }
     }
 

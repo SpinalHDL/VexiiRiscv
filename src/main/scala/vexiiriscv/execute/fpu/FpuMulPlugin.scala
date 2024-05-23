@@ -29,8 +29,8 @@ class FpuMulPlugin(val layer : LaneLayer,
     val fpp = host[FpuPackerPlugin]
     val fasp = host[FpuAddSharedPlugin]
     val mp  = host[MulReuse]
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fpp.elaborationLock)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock)
     awaitBuild()
 
     val packParam = FloatUnpackedParam(
@@ -49,7 +49,7 @@ class FpuMulPlugin(val layer : LaneLayer,
     val addPort = withFma generate fasp.createPort(List(packAt), addParam, FpuUtils.unpackedConfig)
 
 
-    layer.el.setDecodingDefault(SEL, False)
+    layer.lane.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(SEL -> True)
@@ -134,7 +134,7 @@ class FpuMulPlugin(val layer : LaneLayer,
     }
     import norm._
 
-    val onPack = new layer.el.Execute(packAt) {
+    val onPack = new layer.lane.Execute(packAt) {
       val nv = False
 
       val mode = FloatMode.NORMAL()

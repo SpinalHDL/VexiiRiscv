@@ -17,14 +17,14 @@ class FpuClassPlugin(val layer : LaneLayer, var wbAt : Int = 0) extends FiberPlu
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
-    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.el)
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fup.elaborationLock, iwbp.elaborationLock)
+    val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.lane)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, iwbp.elaborationLock)
     awaitBuild()
 
     val iwb = iwbp.access(wbAt)
 
-    layer.el.setDecodingDefault(SEL, False)
+    layer.lane.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)

@@ -33,7 +33,7 @@ object BranchPlugin extends AreaObject {
 class PcCalc(bp: BranchPlugin, at: Int) extends Area {
   import bp._
   import BranchPlugin._
-  val ctrl = bp.layer.el.execute(at)
+  val ctrl = bp.layer.lane.execute(at)
   import ctrl._
 
   val srcp = host.find[SrcPlugin](_.layer == layer)
@@ -74,7 +74,7 @@ class BranchPlugin(val layer : LaneLayer,
   def catchMissaligned = !Riscv.RVC
   override def getLearnPort(): Option[Stream[LearnCmd]] = logic.jumpLogic.learn
 
-  def pluginsOnLane = host.list[BranchPlugin].filter(_.layer.el == layer.el)
+  def pluginsOnLane = host.list[BranchPlugin].filter(_.layer.lane == layer.lane)
   val pcCalc : Handle[PcCalc] = during build {
     // So, here we look for other branchplugins on the same lane to try reusing their calculation (better for fmax / LUT, cost some FF)
     val firstOfLane = pluginsOnLane.sortBy(_.jumpAt).head
@@ -86,7 +86,7 @@ class BranchPlugin(val layer : LaneLayer,
   }
 
   val logic = during setup new Logic{
-    val wbp = host.find[WriteBackPlugin](p => p.lane == layer.el && p.rf == IntRegFile)
+    val wbp = host.find[WriteBackPlugin](p => p.lane == layer.lane && p.rf == IntRegFile)
     val sp = host[ReschedulePlugin]
     val pcp = host[PcPlugin]
     val hp = host.get[HistoryPlugin]

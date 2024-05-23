@@ -20,8 +20,8 @@ class FpuDivPlugin(val layer : LaneLayer,
     val fup = host[FpuUnpackerPlugin]
     val fpp = host[FpuPackerPlugin]
     val dr  = host[DivReuse]
-    val buildBefore = retains(layer.el.pipelineLock)
-    val uopLock = retains(layer.el.uopLock, fup.elaborationLock, fpp.elaborationLock)
+    val buildBefore = retains(layer.lane.pipelineLock)
+    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock)
     awaitBuild()
 
     val packParam = FloatUnpackedParam(
@@ -31,7 +31,7 @@ class FpuDivPlugin(val layer : LaneLayer,
     )
     val packPort = fpp.createPort(List(exeAt), packParam)
 
-    layer.el.setDecodingDefault(SEL, False)
+    layer.lane.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(SEL -> True)

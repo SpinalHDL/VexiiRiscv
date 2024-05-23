@@ -34,7 +34,7 @@ class AguFrontend(
   import AguPlugin._
   val sk = SrcKeys
 
-  layer.el.setDecodingDefault(SEL, False)
+  layer.lane.setDecodingDefault(SEL, False)
 
   val writingRf = ArrayBuffer[MicroOp](Rvi.LB, Rvi.LH, Rvi.LW, Rvi.LBU, Rvi.LHU)
   if (XLEN.get == 64) writingRf ++= List(Rvi.LD, Rvi.LWU)
