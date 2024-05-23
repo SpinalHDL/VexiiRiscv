@@ -56,94 +56,34 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
     val withCoherency = vexiiParam.lsuL1Coherency
     val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
     for (vexii <- vexiis) {
-      vexii.lsuL1Bus.setDownConnection(a = StreamPipe.HALF, b = StreamPipe.HALF, c = StreamPipe.FULL, d = StreamPipe.M2S, e = StreamPipe.HALF)
-      vexii.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
-      vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
-    }
-
-    val cBus, ioBus = fabric.Node()
-    ioBus.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.NONE)
-    for (vexii <- vexiis) {
-      cBus << List(vexii.iBus, vexiiParam.fetchL1Enable.mux(vexii.lsuL1Bus, vexii.dBus))
-      if(vexiiParam.fetchL1Enable) ioBus << List(vexii.dBus)
-    }
-
-    val dma = c.withDma generate new Area {
-      val bus = slave(
-        Axi4(
-          Axi4Config(
-            addressWidth = 32,
-            dataWidth = mainDataWidth,
-            idWidth = 4
-          )
-        )
-      )
-
-      val bridge = new Axi4ToTilelinkFiber(64, 4)
-      bridge.up load bus.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.FULL, b = StreamPipe.HALF, r = StreamPipe.FULL)
-
-      val filter = new fabric.TransferFilter()
-      filter.up << bridge.down
-      cBus << filter.down
-      filter.down.setDownConnection(a = StreamPipe.FULL)
-
-      //As litex reset will release before our one, we need to ensure that we don't eat a transaction
-      Fiber build {
-        bridge.read.get
-        bridge.write.get
-        when(ClockDomain.current.isResetActive){
-          bus.ar.ready := False
-          bus.aw.ready := False
-          bus.w.ready := False
-        }
+      if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
+      if (vexiiParam.lsuL1Enable) {
+        vexii.lsuL1Bus.setDownConnection(a = StreamPipe.HALF, b = StreamPipe.HALF, c = StreamPipe.FULL, d = StreamPipe.M2S, e = StreamPipe.HALF)
+        vexii.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
       }
     }
 
-    assert(!(!withCoherency && withL2))
-
-    var perfBus: Node = null
-    val direct = (!withCoherency) generate new Area{
-      perfBus = cBus
-    }
-
-    val hub = (withCoherency && !withL2) generate new Area {
-      val hub = new HubFiber()
-      hub.up << cBus
-      hub.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL)
-      hub.down.forceDataWidth(mainDataWidth)
-      perfBus = hub.down
-    }
-
-    val l2 = (withCoherency && withL2) generate new Area {
-      val cache = new CacheFiber()
-      cache.parameter.cacheWays = l2Ways
-      cache.parameter.cacheBytes = l2Bytes
-      cache.up << cBus
-      cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
-      cache.down.setDownConnection(d = StreamPipe.S2M)
-      cache.down.forceDataWidth(mainDataWidth)
-      perfBus = cache.down
-    }
+    val ioBus = fabric.Node()
 
     val memRegions = regions.filter(e => e.onMemory && e.isCachable)
     val axiLiteRegions = regions.filter(e => e.onPeripheral)
 
     val withMem = memRegions.nonEmpty
-    val toAxi4 = withMem generate new fabric.Axi4Bridge
-    if (withMem) {
+    val mem = withMem generate new Area {
+      val toAxi4 = withMem generate new fabric.Axi4Bridge
       toAxi4.up.forceDataWidth(litedramWidth)
-      toAxi4.up << perfBus
       toAxi4.down.addTag(PMA.MAIN)
       toAxi4.down.addTag(PMA.EXECUTABLE)
-      for(region <- memRegions) {
+      for (region <- memRegions) {
         toAxi4.down.addTag(new MemoryEndpointTag(region.mapping))
       }
     }
 
+
     val peripheral = new Area {
       val bus = Node()
-      bus << (perfBus, ioBus)
-      bus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
+      bus << ioBus
+      if(vexiiParam.lsuL1Enable) bus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
       bus.forceDataWidth(32)
 
       val clint = new TilelinkClintFiber()
@@ -169,19 +109,110 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
       val toAxiLite4 = new fabric.AxiLite4Bridge
       toAxiLite4.up << bus
 
-      val virtualRegions = for (region <- axiLiteRegions) yield new VirtualEndpoint(toAxiLite4.down, region.mapping){
+      val virtualRegions = for (region <- axiLiteRegions) yield new VirtualEndpoint(toAxiLite4.down, region.mapping) {
         if (region.isCachable) self.addTag(PMA.MAIN)
         if (region.isExecutable) self.addTag(PMA.EXECUTABLE)
       }
     }
 
-    val mBus = withMem generate (Fiber build master(toAxi4.down.pipelined()))
-    val pBus = Fiber build master(peripheral.toAxiLite4.down.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.HALF, b = StreamPipe.HALF, r = StreamPipe.HALF))
+    val dma = c.withDma generate new Area {
+      val bus = slave(
+        Axi4(
+          Axi4Config(
+            addressWidth = 32,
+            dataWidth = mainDataWidth,
+            idWidth = 4
+          )
+        )
+      )
 
-    val patcher = Fiber build new Area {
+      val bridge = new Axi4ToTilelinkFiber(64, 4)
+      bridge.up load bus.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.FULL, b = StreamPipe.HALF, r = StreamPipe.FULL)
+
+      val filter = new fabric.TransferFilter()
+      filter.up << bridge.down
+      filter.down.setDownConnection(a = StreamPipe.FULL)
+
+      //As litex reset will release before our one, we need to ensure that we don't eat a transaction
+      Fiber build {
+        bridge.read.get
+        bridge.write.get
+        when(ClockDomain.current.isResetActive) {
+          bus.ar.ready := False
+          bus.aw.ready := False
+          bus.w.ready := False
+        }
+      }
+    }
+
+    val shared = !vexiiParam.lsuL1Enable generate new Area{
+      for (vexii <- vexiis) {
+        ioBus << List(vexii.iBus, vexii.dBus)
+      }
+      if (withMem) mem.toAxi4.up << ioBus
+    }
+
+    val splited = vexiiParam.lsuL1Enable generate new Area{
+      val mBus = Node()
+      ioBus.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.NONE)
+      if(withMem) mem.toAxi4.up << mBus
+      peripheral.bus << mBus
+
+      val nc = !withCoherency generate new Area {
+        for (vexii <- vexiis) {
+          mBus << List(vexii.iBus, vexii.lsuL1Bus)
+          ioBus << List(vexii.dBus)
+        }
+      }
+
+      val wc = withCoherency generate new Area {
+        val cBus = fabric.Node()
+
+        for (vexii <- vexiis) {
+          cBus << List(vexii.iBus, vexii.lsuL1Bus)
+          ioBus << List(vexii.dBus)
+        }
+
+        if(withDma) cBus << dma.filter.down
+
+        val hub = (withCoherency && !withL2) generate new Area {
+          val hub = new HubFiber()
+          hub.up << cBus
+          hub.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL)
+          hub.down.forceDataWidth(mainDataWidth)
+          mBus << hub.down
+        }
+
+        val l2 = (withCoherency && withL2) generate new Area {
+          val cache = new CacheFiber()
+          cache.parameter.cacheWays = l2Ways
+          cache.parameter.cacheBytes = l2Bytes
+          cache.up << cBus
+          cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
+          cache.down.setDownConnection(d = StreamPipe.S2M)
+          cache.down.forceDataWidth(mainDataWidth)
+          mBus << cache.down
+        }
+
+        assert(!(!withCoherency && withL2))
+      }
+    }
+
+
+    val patcher = Fiber build new AreaRoot {
+      val mBus = withMem generate Axi4SpecRenamer(master(mem.toAxi4.down.pipelined()))
+      val pBus = AxiLite4SpecRenamer(master(
+        vexiiParam.lsuL1Enable.mux(
+          peripheral.toAxiLite4.down.pipelined(
+            ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.HALF, b = StreamPipe.HALF, r = StreamPipe.HALF
+          ),
+          peripheral.toAxiLite4.down.pipelined(),
+        )
+      ))
       if (c.withDma) Axi4SpecRenamer(dma.bus)
-      if (withMem) Axi4SpecRenamer(mBus.get)
-      AxiLite4SpecRenamer(pBus.get)
+
+
+      println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus))
     }
   }
 
@@ -201,8 +232,8 @@ object SocGen extends App{
   val socConfig = new SocConfig()
   import socConfig._
 
-  vexiiParam.fetchL1Enable = true
-  vexiiParam.lsuL1Enable = true
+//  vexiiParam.fetchL1Enable = true
+//  vexiiParam.lsuL1Enable = true
   vexiiParam.privParam.withRdTime = true
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
@@ -215,8 +246,8 @@ object SocGen extends App{
     opt[Int]("l2-bytes") action { (v, c) => l2Bytes = v }
     opt[Int]("l2-ways") action { (v, c) => l2Ways = v }
     opt[Unit]("with-dma") action { (v, c) => withDma = true }
-    opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true }
-    opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true }
+    opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
+    opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
     opt[Seq[String]]("memory-region") unbounded() action  { (v, c) =>
       assert(v.length == 4, "--memory-region need 4 parameters")
       val r = new LitexMemoryRegion(SizeMapping(BigInt(v(0)), BigInt(v(1))), v(2), v(3))
@@ -307,6 +338,12 @@ object PythonArgsGen extends App{
 }
 
 /*
+
+python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
+--vexii-args="--performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2" \
+--cpu-count=4 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no  --sys-clk-freq 100000000 --build   --load
+
+
 vex 1 =>
 Memspeed at 0x40000000 (Sequential, 8.0KiB)...
   Write speed: 1.6MiB/s
@@ -413,7 +450,7 @@ make PLATFORM_RISCV_XLEN=64 PLATFORM_RISCV_ABI=lp64d PLATFORM_RISCV_ISA=rv64gc C
 make O=build/full  BR2_EXTERNAL=../config litex_vexriscv_full_defconfig
 (cd build/full/ && make -j20)
 
-litex_sim --cpu-type=vexiiriscv  --with-sdram --sdram-data-width=64 --bus-standard axi-lite --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2  --with-jtag-tap --sdram-init /media/data2/proj/vexii/litex/buildroot/rv32ima/images/boot.json
+litex_sim --cpu-type=vexiiriscv  --with-sdram --sdram-data-width=64 --bus-standard axi-lite --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2  --with-jtag-tap --sdram-init /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/boot.json
 python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-spi-sdcard --with-ethernet  --build --load
 python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-bytes=131072 --load
 --lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32
@@ -551,15 +588,7 @@ perf stat -e branch-misses -e branches -e cache-misses -e cache-references -e L1
 export DEB_BUILD_OPTIONS="nocheck parallel=4"
 fakeroot debian/rules binary
 
-14.70%  chocolate-doom  chocolate-doom           [.] R_DrawColumn
- 5.79%  chocolate-doom  libSDL2-2.0.so.0.2800.4  [.] 0x00000000000c103a
- 5.41%  chocolate-doom  chocolate-doom           [.] R_DrawSpan
- 4.52%  chocolate-doom  libc.so.6                [.] 0x000000000007c8a0
- 3.31%  chocolate-doom  libSDL2-2.0.so.0.2800.4  [.] 0x00000000000c102a
- 2.74%  chocolate-doom  libSDL2-2.0.so.0.2800.4  [.] 0x00000000000c1036
- 2.67%  chocolate-doom  libSDL2-2.0.so.0.2800.4  [.] 0x00000000000c1038
-
-
+python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian  --with-jtag-tap --cpu-count=1 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no --build --load
 
 TODO debug :
 [ 9576.106084] CPU: 0 PID: 4072 Comm: gmain Not tainted 6.1.0-rc2+ #11
@@ -601,52 +630,4 @@ TODO debug :
 [ 9576.295073] [<ffffffff80144a98>] do_sys_poll+0x144/0x42c
 
 
-
-debug fmax =>
-
-- Node((toplevel/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0 :  Bits[32 bits]))
-  - Node((toplevel/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_decode_ctrls_0_down_Decode_INSTRUCTION_0 :  Bits[32 bits]))
-    - Node((toplevel/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_decode_ctrls_0_up_Decode_INSTRUCTION_0 :  Bits[32 bits]))
-      - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_extractors_0_ctx_instruction :  Bits[32 bits]))
-        - Node((Bits | Bits)[32 bits])
-          - Node((Bits | Bits)[32 bits])
-            - Node((Bits | Bits)[32 bits])
-              - Node((Bool ? Bits | Bits)[32 bits])
-                - Node(Bits(Int))
-                  - Node((toplevel/vexiis_0_logic_core/_zz_AlignerPlugin_logic_extractors_0_ctx_instruction :  Bits[8 bits]))
-                    - Node(Bits ## Bits)
-                      - Node(Bits -> Bits)
-                        - Node((toplevel/vexiis_0_logic_core/_zz_AlignerPlugin_logic_extractors_0_redo_7 :  Bool))
-                          - Node(Bits(Int))
-                            - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_extractors_0_slicesOh :  Bits[8 bits]))
-                              - Node((toplevel/vexiis_0_logic_core/_zz_AlignerPlugin_logic_extractors_0_slicesOh :  Bits[8 bits]))
-                                - Node(Bool && Bool)
-                                  - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_extractors_0_usableMask_bools_0 :  Bool))
-                                    - Node(Bits(Int))
-                                      - Node((toplevel/vexiis_0_logic_core/_zz_AlignerPlugin_logic_extractors_0_usableMask_bools_0 :  Bits[8 bits]))
-                                        - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_extractors_0_usableMask :  Bits[8 bits]))
-                                          - Node(Bits ## Bits)
-                                            - Node(Bits -> Bits)
-                                              - Node(Bool && Bool)
-                                                - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_scanners_7_valid :  Bool))
-                                                  - Node(Bool && Bool)
-                                                    - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_scanners_7_checker_0_valid :  Bool))
-                                                      - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_scanners_7_checker_0_present :  Bool))
-                                                        - Node(Bits(Int))
-                                                          - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_slices_mask :  Bits[8 bits]))
-                                                            - Node(Bits ## Bits)
-                                                              - Node((Bool ? Bits | Bits)[4 bits])
-                                                                - Node((toplevel/vexiis_0_logic_core/fetch_logic_ctrls_2_down_valid :  Bool))
-                                                    - Node(Bool || Bool)
-                                                      - Node(| Bits)
-                                                        - Node(Bits ## Bits)
-                                                          - Node(Bits -> Bits)
-                                                            - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_scanners_7_checker_0_redo :  Bool))
-                                                              - Node(Bool && Bool)
-                                                                - Node(Bool && Bool)
-                                                                  - Node(Bits(Int))
-                                                                    - Node((toplevel/vexiis_0_logic_core/AlignerPlugin_logic_slices_last :  Bits[8 bits]))
-                                                                      - Node(Bits ## Bits)
-                                                                        - Node((Bool ? Bits | Bits)[4 bits])
-                                                                          - Node((toplevel/vexiis_0_logic_core/fetch_logic_ctrls_2_down_valid :  Bool))
  */

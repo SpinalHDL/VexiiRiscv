@@ -288,7 +288,7 @@ class ParamSimple(){
     opt[Unit]("regfile-dual-ports") action { (v, c) => regFileDualPortRam = true }
     opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
-    opt[Int]("performance-counters") action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
+    opt[Int]("performance-counters") unbounded() action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
     opt[Unit]("with-fetch-l1") unbounded() action { (v, c) => fetchL1Enable = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
