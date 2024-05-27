@@ -134,7 +134,7 @@ class ParamSimple(){
     withBtb = true
     withRas = true
     //    relaxedBranch = true  // !!
-    relaxedBtb = true     // !!
+//    relaxedBtb = true     // !!
     fetchL1Enable = true
     fetchL1Sets = 64
     fetchL1Ways = 4
@@ -152,22 +152,22 @@ class ParamSimple(){
 
     //    lsuForkAt = 1
     divArea = false
-    divRadix = 4
+    divRadix = 2
     decoders = 2
     lanes = 2
-    withLateAlu = true
+//    withLateAlu = true
     withMul = true
     withDiv = true
     withDispatcherBuffer = true
     withAlignerBuffer = true
-    withRvc = true
+//    withRvc = true
     withRva = true
 //    withRvf = true
 //    withRvd = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-    xlen = 64
+//    xlen = 64
 
 
     privParam.withDebug = true
@@ -687,6 +687,14 @@ jump at 0 :       dhrystone coremark   embench
     + 4b late alu => 2.24     4.55      1.47
     + aligner buf => 2.29     4.70      1.50
     + ali/dis buf => 2.46     4.80      1.59
+
+cached
+0.98 1l la rbtb Geometric mean
+1.00 1l Geometric mean
+1.07 1l la Geometric mean
+1.39 2l Geometric mean
+1.55 2l la Geometric mean
+
 
 
 jump at 1

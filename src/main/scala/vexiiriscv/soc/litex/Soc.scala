@@ -5,8 +5,8 @@ import spinal.core._
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4SpecRenamer, Axi4ToTilelinkFiber}
 import spinal.lib.bus.amba4.axilite.AxiLite4SpecRenamer
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
-import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber}
-import spinal.lib.bus.tilelink.fabric
+import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
+import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.misc.{PathTracer, TilelinkClintFiber}
@@ -44,6 +44,7 @@ class SocConfig(){
   var l2Ways = 0
   var cpuCount = 1
   var litedramWidth = 32
+  var selfFlush : SelfFLush = null
 //  var sharedBusWidth = 32
   def withL2 = l2Bytes > 0
 }
@@ -184,9 +185,10 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
         }
 
         val l2 = (withCoherency && withL2) generate new Area {
-          val cache = new CacheFiber()
+          val cache = new CacheFiber(withCtrl = false)
           cache.parameter.cacheWays = l2Ways
           cache.parameter.cacheBytes = l2Bytes
+          cache.parameter.selfFlush = selfFlush
           cache.up << cBus
           cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
           cache.down.setDownConnection(d = StreamPipe.S2M)
@@ -242,6 +244,10 @@ object SocGen extends App{
     opt[String]("netlist-directory") action { (v, c) => netlistDirectory = v }
     opt[String]("netlist-name") action { (v, c) => netlistName = v }
     opt[Int]("litedram-width") action { (v, c) => litedramWidth = v }
+//    opt[Seq[String]]("l2-self-flush") action { (v, c) => selfFlush = coherent.SelfFLush(BigInt(v(0)), BigInt(v(1)), BigInt(v(2))) }
+    opt[Seq[String]]("l2-self-flush")  action { (v, c) =>
+      selfFlush = coherent.SelfFLush(BigInt(v(0),16), BigInt(v(1),16  ), BigInt(v(2)))
+    }
     opt[Int]("cpu-count") action { (v, c) => cpuCount = v }
     opt[Int]("l2-bytes") action { (v, c) => l2Bytes = v }
     opt[Int]("l2-ways") action { (v, c) => l2Ways = v }
@@ -341,7 +347,7 @@ object PythonArgsGen extends App{
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
 --vexii-args="--performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2" \
---cpu-count=4 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no  --sys-clk-freq 100000000 --build   --load
+--cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40DD4C00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no  --sys-clk-freq 100000000 --build   --load
 
 
 vex 1 =>
@@ -450,7 +456,7 @@ make PLATFORM_RISCV_XLEN=64 PLATFORM_RISCV_ABI=lp64d PLATFORM_RISCV_ISA=rv64gc C
 make O=build/full  BR2_EXTERNAL=../config litex_vexriscv_full_defconfig
 (cd build/full/ && make -j20)
 
-litex_sim --cpu-type=vexiiriscv  --with-sdram --sdram-data-width=64 --bus-standard axi-lite --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2  --with-jtag-tap --sdram-init /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/boot.json
+litex_sim --cpu-type=vexiiriscv  --cpu-variant=linux --with-sdram --sdram-data-width=64 --bus-standard axi-lite --cpu-count=1  --with-jtag-tap --sdram-init /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/boot.json
 python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-spi-sdcard --with-ethernet  --build --load
 python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-bytes=131072 --load
 --lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32
@@ -560,7 +566,7 @@ node-prefetch-misses OR cpu/node-prefetch-misses/
 
 Bluetooth :
 killall bluealsa
-bluealsa -p a2dp-source -p a2dp-sink --a2dp-force-audio-cd
+bluealsa -p a2dp-source -p a2dp-sink --a2dp-force-audio-cd &
 bluetoothctl
 connect 88:C9:E8:E6:2A:69
 pulseaudio --start
@@ -568,7 +574,8 @@ systemctl status bluetooth
 speaker-test -t wav -c 6
 speaker-test -t wav -c 6 -D btheadset
 pacmd list-sinks
-aplay -D bluealsa piano2.wave
+aplay -D bluealsa piano2.wav
+mpg123 -a bluealsa http://stream.radioparadise.com/mp3-192
 
 https://agl-gsod-2020-demo-mkdocs.readthedocs.io/en/latest/icefish/apis_services/reference/audio/audio/bluez-alsa/
 

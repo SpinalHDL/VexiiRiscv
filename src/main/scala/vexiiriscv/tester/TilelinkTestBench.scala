@@ -12,7 +12,7 @@ import spinal.lib.{ResetCtrlFiber, StreamPipe}
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink._
-import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber}
+import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
 import spinal.lib.bus.tilelink.fabric.{Node, SlaveBus}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent}
 import spinal.lib.com.uart.TilelinkUartFiber
@@ -78,7 +78,8 @@ class TlTbTop(p : TlTbParam) extends Component {
 
     var perfBus: Node = null
     val l2 = (perfBus == null && l2Enable) generate new Area {
-      val cache = new CacheFiber()
+      val cache = new CacheFiber(withCtrl = true)
+      cache.parameter.selfFlush = new SelfFLush(0x90000000l, 0x90001000l, 10000)
       cache.parameter.cacheWays = l2Ways
       cache.parameter.cacheBytes = l2Bytes
       cache.up << cBus
@@ -132,6 +133,8 @@ class TlTbTop(p : TlTbParam) extends Component {
 
       val plic = new TilelinkPlicFiber()
       plic.node at 0x10C00000 of bus32
+
+      if(l2Enable) l2.cache.ctrl at 0x10020000 of bus32
 
 //      val uart = new TilelinkUartFiber()
 //      uart.node at 0x10001000 of bus32
