@@ -12,7 +12,8 @@ after 1300
 
 halt
 load_image /media/data2/proj/vexii/litex/debian/linux.dtb 0x46000000
-load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/opensbi/build/platform/litex/vexriscv/firmware/fw_jump.bin 0x40f00000
+#load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/opensbi/build/platform/litex/vexriscv/firmware/fw_jump.bin 0x40f00000
+load_image /media/data2/proj/vexii/litex/debian/opensbi_upstream/build/platform/generic/firmware/fw_jump.bin 0x40f00000
 
 for {set i 0} {$i < $cpu_count} {incr i} {
     targets $_TARGETNAME.$i
@@ -21,7 +22,7 @@ for {set i 0} {$i < $cpu_count} {incr i} {
     reg a1 0
     reg a2 0
     reg a3 0
-    #resume
+    resume
 }
 
 

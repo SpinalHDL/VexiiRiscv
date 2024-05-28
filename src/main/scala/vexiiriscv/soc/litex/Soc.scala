@@ -334,8 +334,11 @@ object PythonArgsGen extends App{
     write(
       s"""
          |VexiiRiscv.xlen = $xlen
-         |VexiiRiscv.with_rvc = ${withRvc.toInt}
          |VexiiRiscv.with_rvm = ${(withMul && withDiv).toInt}
+         |VexiiRiscv.with_rva = ${withRva.toInt}
+         |VexiiRiscv.with_rvf = ${withRvf.toInt}
+         |VexiiRiscv.with_rvd = ${withRvd.toInt}
+         |VexiiRiscv.with_rvc = ${withRvc.toInt}
          |VexiiRiscv.internal_bus_width = ${memDataWidth}
          |""".stripMargin)
     close()
@@ -347,8 +350,10 @@ object PythonArgsGen extends App{
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
 --vexii-args="--performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2" \
---cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40DD4C00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no  --sys-clk-freq 100000000 --build   --load
-
+--cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40DD4C00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
+--update-repo=no --soc-json build/csr.json --build   --load
+python3 -m litex.tools.litex_json2dts_linux build/csr.json --root-device=mmcblk0p2 > build/linux.dts
+dtc -O dtb -o build/linux.dtb build/linux.dts
 
 vex 1 =>
 Memspeed at 0x40000000 (Sequential, 8.0KiB)...
@@ -451,6 +456,17 @@ opensbi =>
 git clone https://github.com/Dolu1990/opensbi.git --branch vexii-debian
 cd opensbi
 make PLATFORM_RISCV_XLEN=64 PLATFORM_RISCV_ABI=lp64d PLATFORM_RISCV_ISA=rv64gc CROSS_COMPILE=riscv-none-embed- PLATFORM=litex/vexriscv
+
+git clone https://github.com/riscv-software-src/opensbi.git
+cd opensbi
+make CROSS_COMPILE=riscv-none-embed- \
+     PLATFORM=generic \
+     FW_FDT_PATH=../linux.dtb \
+     FW_JUMP_ADDR=0x41000000  \
+     FW_JUMP_FDT_ADDR=0x46000000 \
+     -j20
+
+arm semihosting enable
 
 //linux ++ dual core
 make O=build/full  BR2_EXTERNAL=../config litex_vexriscv_full_defconfig
