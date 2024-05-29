@@ -77,7 +77,7 @@ class EnvPlugin(layer : LaneLayer,
           trapPort.code := B(privilege.resize(Global.CODE_WIDTH) | CSR.MCAUSE_ENUM.ECALL_USER)
         }
         is(EnvPluginOp.PRIV_RET) {
-          when(xretPriv >= ps.getPrivilege(HART_ID)) {
+          when(xretPriv <= ps.getPrivilege(HART_ID)) {
             commit := True
             trapPort.exception := False
             trapPort.code := TrapReason.PRIV_RET
