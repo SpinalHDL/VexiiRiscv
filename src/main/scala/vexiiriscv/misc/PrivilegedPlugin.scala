@@ -134,6 +134,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     CODE_WIDTH.set((4 +: causesWidthMins).max)
 
     assert(HART_COUNT.get == 1)
+    api.get
 
     val rdtime = in UInt (64 bits)
     val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
@@ -182,6 +183,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         bus.running := running
         bus.halted := !running
         bus.unavailable := BufferCC(ClockDomain.current.isResetActive)
+
         when(debugMode) {
           inhibateInterrupts(hartId)
         }

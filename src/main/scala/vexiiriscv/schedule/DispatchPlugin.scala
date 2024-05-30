@@ -9,10 +9,10 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.Global.{HART_COUNT, TRAP}
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
-import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin, LaneLayer}
+import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin, LaneLayer, UopLayerSpec}
 import vexiiriscv.misc.{CommitService, InflightService, PipelineBuilderPlugin, TrapService}
 import vexiiriscv.regfile.RegfileService
-import vexiiriscv.riscv.{MicroOp, RD, RfRead, RfResource}
+import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -63,7 +63,7 @@ class DispatchPlugin(var dispatchAt : Int,
     val buildBefore = retains(
       List(pbp.elaborationLock, dpp.elaborationLock, eupp.pipelineLock) ++ host.list[ExecuteLaneService].map(_.pipelineLock)
     )
-    val dpRetains = retains(dp.elaborationLock)
+    val dpRetains = retains(dp.decodingLock)
     val tsRetains = retains(ts.trapLock)
     awaitBuild()
 
@@ -148,8 +148,6 @@ class DispatchPlugin(var dispatchAt : Int,
       }
     }
 
-    dpRetains.release()
-
     hmKeys.add(Global.PC)
     hmKeys.add(Global.TRAP)
     hmKeys.add(Decode.UOP_ID)
@@ -158,6 +156,47 @@ class DispatchPlugin(var dispatchAt : Int,
       hmKeys.add(ac.RFID)
       hmKeys.add(ac.PHYS)
     }
+
+
+    val rfaReads = Decode.rfaKeys.filter(_._1.isInstanceOf[RfRead])
+
+    case class HazardChecker(ll: LaneLayer, llId: Int) extends Area {
+      // Identify which RS are used by the pipeline
+      val resources = ll.uops.keySet.flatMap(_.resources).distinctLinked
+      val readAccess = rfaReads.filter(e => resources.exists {
+        case RfResource(_, e) => true
+        case _ => false
+      }).values
+
+      val onRs = for (rs <- readAccess) yield new Area {
+        val self = rs
+
+        val uopsOnRs = ArrayBuffer[(MicroOp, Int)]()
+        val readAts = mutable.LinkedHashSet[Int]()
+        val regFiles = mutable.LinkedHashSet[RegfileSpec]()
+        val rfa = rs.rfa.asInstanceOf[RfRead]
+        for (uop <- ll.uops.values) {
+          uop.rs.get(rfa).foreach { v =>
+            val from = ll.lane.rfReadHazardFrom(v.from)
+            uopsOnRs += uop.uop -> from
+            readAts += from
+            regFiles += v.rf
+          }
+        }
+        val regFilesList = regFiles.toArray
+
+        val readAtsSorted: List[Int] = readAts.toList.sortWith(_ < _)
+        val chunks = readAtsSorted.zip((readAtsSorted.map(_ - 1) :+ 100).tail)
+        val ENABLES = for ((cFrom, cTo) <- chunks) yield {
+          val en = Payload(Bool())
+          for ((uop, from) <- uopsOnRs) dp.addMicroOpDecoding(uop, en, Bool(from <= cFrom))
+          hmKeys += en
+          en
+        }
+      }
+    }
+
+    val hcs = for((ll, llId) <- lanesLayers.zipWithIndex) yield new HazardChecker(ll, llId)
 
     case class MicroOpCtx() extends Bundle{
       val valid = Bool()
@@ -193,6 +232,7 @@ class DispatchPlugin(var dispatchAt : Int,
       val age = Execute.LANE_AGE()
       val moving = !ctx.valid || fire || cancel
     }
+    dpRetains.release()
 
     for((c,i) <- candidates.zipWithIndex){
       c.age := CountOne(candidates.take(i).map(o => o.ctx.valid && o.ctx.hartId === c.ctx.hartId)).resize(Execute.LANE_AGE_WIDTH)
@@ -204,49 +244,36 @@ class DispatchPlugin(var dispatchAt : Int,
       bypassedSpecs.getOrElseUpdate(el -> at, BypassedSpec(el, at, Payload(Bool()).setName("BYPASSED_AT_" + at))).value
     }
 
-    val rfaReads = Decode.rfaKeys.filter(_._1.isInstanceOf[RfRead])
     val rsHazardChecker = for(c <- candidates) yield new Area {
-      val onLl = for((ll, llId) <- lanesLayers.zipWithIndex) yield new Area {
-        // Identify which RS are used by the pipeline
-        val resources = ll.uops.keySet.flatMap(_.resources).distinctLinked
-        val readAccess = rfaReads.filter(e => resources.exists{
-          case RfResource(_, e) => true
-          case _ => false
-        }).values
-        val hazardUntilMax = eus.map(_.getRdBroadcastedFromMax()).max
-
-        val onRs = for (rs <- readAccess) yield new Area {
+      val onLl = for(hc <- hcs) yield new Area{
+        val onRs = for(rs <- hc.onRs) yield new Area{
           val hazards = ArrayBuffer[Bool]()
-          val decodeSpec = ArrayBuffer[(Masked, Masked)]()
-          for(uop <- ll.uops.values){
-            uop.rs.get(rs.rfa.asInstanceOf[RfRead]).foreach{v =>
-              decodeSpec += Masked(uop.uop.key) -> (v.from >= hazardUntilMax).mux(Masked.one, Masked.zero)
-            }
-          }
-          val skip = Symplify(c.ctx.uop, decodeSpec, 1).as(Bool()) /// Overall, hazardUntilMax doesn't work when using the FPU as the pipeline get longer, need a proper implementation to enable late RS use
-
-          for (spec <- bypassedSpecs.values) yield new Area {
-            for (l <- spec.el.getLayers(); uop <- l.uops.values) {
-              uop.rd.foreach { rd =>
-                uop.addDecoding(spec.value -> Bool(rd.broadcastedFrom <= spec.at))
+          val onChunk = for(((cFrom, cTo), enable) <- rs.chunks.zip(rs.ENABLES)){
+            for (writeEu <- eus if writeEu.getUopLayerSpec().flatMap(_.rd).map(_.rf).distinctLinked.intersect(rs.regFiles).nonEmpty) {
+              val hazardRange = cFrom to (writeEu.getRdBroadcastedFromMax(rs.regFilesList) - 1 min cTo)
+              val offset = rs.chunks.head._1 - 1
+              assert(hc.ll.lane.rfReadAt == 0, "else need less bypass at the end")
+//              println(s"${hc.ll.name} ${rs.self.getName()} ${writeEu.laneName} $hazardRange offset=$offset")
+              for (id <- hazardRange) {
+                assert(id-offset >= 1)
+                val node = writeEu.ctrl(id-offset) //id - hazardFrom + 1
+                hazards += c.ctx.hm(enable) && node.up(rdKeys.ENABLE) && node.up(rdKeys.PHYS) === c.ctx.hm(rs.self.PHYS) && node.up(rdKeys.RFID) === c.ctx.hm(rs.self.RFID) && !node(getBypassed(writeEu, id))
               }
             }
           }
-          for(writeEu <- eus) {
-            val hazardFrom = ll.lane.rfReadHazardFrom(ll.getRsUseAtMin()) // This is a pessimistic aproach
-            val hazardUntil = writeEu.getRdBroadcastedFromMax()
-            val hazardRange = hazardFrom until hazardUntil
-            for(id <- hazardRange) {
-              val node = writeEu.ctrl(id-hazardFrom+1)
-              hazards += node.up(rdKeys.ENABLE) && node.up(rdKeys.PHYS) === c.ctx.hm(rs.PHYS) && node.up(rdKeys.RFID) === c.ctx.hm(rs.RFID) && !node(getBypassed(writeEu, id)) // node.isValid &&
-            }
-          }
-          val hazard = c.ctx.hm(rs.ENABLE) && hazards.orR && !skip
+          val hazard = c.ctx.hm(rs.self.ENABLE) && hazards.orR
         }
-        c.rsHazards(llId) := onRs.map(_.hazard).orR
+        c.rsHazards(hc.llId) := onRs.map(_.hazard).orR
       }
     }
 
+    for (spec <- bypassedSpecs.values) yield new Area {
+      for (l <- spec.el.getLayers(); uop <- l.uops.values) {
+        uop.rd.foreach { rd =>
+          uop.addDecoding(spec.value -> Bool(rd.broadcastedFrom <= spec.at))
+        }
+      }
+    }
 
     val reservationChecker = for (c <- candidates) yield new Area {
       val onLl = for ((ll, llId) <- lanesLayers.zipWithIndex) yield new Area {

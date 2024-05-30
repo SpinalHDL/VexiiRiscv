@@ -15,11 +15,12 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
-case class RdSpec(DATA: Payload[Bits],
+case class RdSpec(rf : RegfileSpec,
+                  DATA: Payload[Bits],
                   broadcastedFrom : Int,
                   rfReadableFrom : Int)
 
-case class RsSpec(rs : RfRead){
+case class RsSpec(rf : RegfileSpec, rs : RfRead){
   var from = 0
 }
 
@@ -65,12 +66,18 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
 
   def addRsSpec(rfRead : RfRead, executeAt : Int) = {
     assert(!rs.contains(rfRead))
-    val rsSpec = rs.getOrElseUpdate(rfRead, new RsSpec(rfRead))
+    val rf = uop.resources.collectFirst{
+      case r : RfResource if r.access == rfRead => r.rf
+    }.get
+    val rsSpec = rs.getOrElseUpdate(rfRead, new RsSpec(rf, rfRead))
     rsSpec.from = executeAt + el.executeAt
   }
   def setRdSpec(data: Payload[Bits], broadcastedFrom : Int, rfReadableFrom : Int): Unit = {
     assert(rd.isEmpty)
-    rd = Some(RdSpec(data, broadcastedFrom + el.executeAt, rfReadableFrom + el.executeAt))
+    val rf = uop.resources.collectFirst {
+      case r: RfResource if r.access == RD => r.rf
+    }.get
+    rd = Some(RdSpec(rf, data, broadcastedFrom + el.executeAt, rfReadableFrom + el.executeAt))
   }
 
   def addDecoding(head: (Payload[_ <: BaseType], Any), tail: (Payload[_ <: BaseType], Any)*): Unit = addDecoding(head :: tail.toList)
@@ -127,7 +134,7 @@ trait ExecuteLaneService extends Area{
   def apply(r: RfResource) = getStageable(r)
 //  def getSpec(op : MicroOp) : MicroOpSpec
 
-  def getRdBroadcastedFromMax() = getUopLayerSpec().flatMap(s => s.rd.map(v => v.broadcastedFrom)).max
+  def getRdBroadcastedFromMax(regFiles : Seq[RegfileSpec]) = getUopLayerSpec().filter(e => e.rd.nonEmpty && regFiles.contains(e.rd.get.rf) ).flatMap(s => s.rd.map(v => v.broadcastedFrom)).max
   def getRfReadableAtMax() = getUopLayerSpec().flatMap(s => s.rd.map(v => v.rfReadableFrom)).max
 
   val LAYER_SEL = Payload(Bits(log2Up(getLayers.size) bits))

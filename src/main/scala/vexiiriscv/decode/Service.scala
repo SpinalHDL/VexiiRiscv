@@ -12,6 +12,7 @@ import scala.collection.mutable.ArrayBuffer
 
 trait DecoderService {
   val elaborationLock = Retainer()
+  val decodingLock = Retainer()
   def covers() : Seq[Masked] //List of all instruction implemented
 
   def addMicroOpDecoding[T <: BaseType](microOp: MicroOp, key : Payload[T], value: T) : Unit = addMicroOpDecoding(microOp, DecodeList(key -> value))

@@ -155,14 +155,14 @@ class ParamSimple(){
     divRadix = 2
     decoders = 2
     lanes = 2
-//    withLateAlu = true
+    withLateAlu = true
     withMul = true
     withDiv = true
     withDispatcherBuffer = true
     withAlignerBuffer = true
 //    withRvc = true
     withRva = true
-//    withRvf = true
+    withRvf = true
 //    withRvd = true
     withMmu = true
     privParam.withSupervisor = true

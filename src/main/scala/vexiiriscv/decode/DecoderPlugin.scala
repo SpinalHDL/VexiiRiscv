@@ -234,16 +234,18 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
         rfaRd.ENABLE clearWhen (rdZero)
       }
 
-      val microOpDecoding = new Area {
-        for ((key, spec) <- decodingSpecs) {
-          key.assignFromBits(spec.build(Decode.INSTRUCTION, encodings.all).asBits)
-        }
-      }
-
       Decode.UOP := Decode.INSTRUCTION
 
       val uopIdBase = harts.map(_.uopId).read(decodeCtrl.link(Global.HART_ID))
       Decode.UOP_ID := uopIdBase + laneId
+    }
+
+
+    decodingLock.await()
+    val laneDecoding = for(laneId <- 0 until Decode.LANES) yield new decodeCtrl.LaneArea(laneId) {
+      for ((key, spec) <- decodingSpecs) {
+        key.assignFromBits(spec.build(Decode.INSTRUCTION, encodings.all).asBits)
+      }
     }
 
     buildBefore.release()
