@@ -73,6 +73,7 @@ class ParamSimple(){
   var withBtb = false
   var withRas = false
   var withLateAlu = false
+  var storeRs2Late = false
   var withMul = false
   var withDiv = false
   var withRva = false
@@ -153,8 +154,9 @@ class ParamSimple(){
     //    lsuForkAt = 1
     divArea = false
     divRadix = 2
-    decoders = 2
-    lanes = 2
+//    decoders = 2
+//    lanes = 2
+//    storeRs2Late = true
     withLateAlu = true
     withMul = true
     withDiv = true
@@ -163,11 +165,11 @@ class ParamSimple(){
 //    withRvc = true
     withRva = true
     withRvf = true
-//    withRvd = true
+    withRvd = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-//    xlen = 64
+    xlen = 64
 
 
     privParam.withDebug = true
@@ -281,7 +283,8 @@ class ParamSimple(){
     opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
-    opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0 }
+    opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0; storeRs2Late = true }
+    opt[Unit]("with-store-rs2-late") action { (v, c) => storeRs2Late = true }
     opt[Int]("btb-sets") action { (v, c) => btbSets = v }
     opt[Int]("btb-hash-width") action { (v, c) => btbHashWidth = v }
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
@@ -521,7 +524,7 @@ class ParamSimple(){
       plugins += new LsuPlugin(
         layer = early0,
         withRva = withRva,
-        storeRs2At = withLateAlu.mux(2, 0),
+        storeRs2At = storeRs2Late.mux(2, 0),
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
         translationStorageParameter = MmuStorageParameter(

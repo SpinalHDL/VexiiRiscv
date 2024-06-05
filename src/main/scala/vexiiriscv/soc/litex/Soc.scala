@@ -457,7 +457,7 @@ git clone https://github.com/Dolu1990/opensbi.git --branch vexii-debian
 cd opensbi
 make PLATFORM_RISCV_XLEN=64 PLATFORM_RISCV_ABI=lp64d PLATFORM_RISCV_ISA=rv64gc CROSS_COMPILE=riscv-none-embed- PLATFORM=litex/vexriscv
 
-git clone https://github.com/riscv-software-src/opensbi.git
+git clone https://github.com/Dolu1990/opensbi.git --branch upstream
 cd opensbi
 make CROSS_COMPILE=riscv-none-embed- \
      PLATFORM=generic \
@@ -595,7 +595,8 @@ mpg123 -a bluealsa http://stream.radioparadise.com/mp3-192
 
 https://agl-gsod-2020-demo-mkdocs.readthedocs.io/en/latest/icefish/apis_services/reference/audio/audio/bluez-alsa/
 
-
+connman-wait-online.service
+systemd-networkd-wait-online.service
 systemctl restart bluetooth
 
 pulseaudio-module-bluetooth naaaaa
@@ -604,8 +605,10 @@ mpg123 -a bluealsa mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 --sbc-quality=low
 
 
-perf stat -e branch-misses -e branches -e cache-misses -e cache-references -e L1-icache-loads -e L1-icache-load-misses -e cycles -e instructions ls
--e r1a -e r12
+perf stat -e branch-misses,branches,L1-dcache-loads,L1-dcache-load-misses,L1-icache-loads,L1-icache-load-misses,cycles,instructions ls
+r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches
+r8000000000000000,r8000000000000001,r8000000000000004
+
 ~/c/libsdl2/libsdl2-2.30.2+dfsg/debian/build-tests# make -j1 check "TESTSUITEFLAGS=-j1 --verbose" VERBOSE=1 V=1 &> testlog.txt
 
 export DEB_BUILD_OPTIONS="nocheck parallel=4"
@@ -652,5 +655,28 @@ TODO debug :
 [ 9576.286235] [<ffffffff80002f76>] ret_from_exception+0x0/0xc
 [ 9576.295073] [<ffffffff80144a98>] do_sys_poll+0x144/0x42c
 
-
+SLICE_X122Y49        FDRE (Prop_fdre_C_Q)         0.456    11.240 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/vexiis_1_logic_core_toplevel_execute_ctrl1_up_float_RS2_lane0_reg[52]/Q
+                     net (fo=7, routed)           0.824    12.064    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuUnpack_RS2_f64_exponent[0]
+SLICE_X133Y48        LUT3 (Prop_lut3_I0_O)        0.124    12.188 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_inserter_rs2_exponent[4]_i_3__0/O
+                     net (fo=1, routed)           0.615    12.803    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuUnpack_RS2_expRaw[0]
+SLICE_X134Y46        CARRY4 (Prop_carry4_CYINIT_O[1])
+                                                  0.598    13.401 f  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_inserter_rs2_exponent_reg[4]_i_2__0/O[1]
+                     net (fo=7, routed)           1.162    14.563    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/_zz_vexiis_1_logic_core_toplevel_execute_ctrl1_down_FpuUnpack_RS2_RS_PRE_NORM_lane0_exponent[2]
+SLICE_X149Y49        LUT6 (Prop_lut6_I4_O)        0.303    14.866 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[3]_i_13__0/O
+                     net (fo=4, routed)           0.622    15.489    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[3]_i_13__0_n_0
+SLICE_X149Y50        LUT5 (Prop_lut5_I0_O)        0.124    15.613 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[3]_i_9__0/O
+                     net (fo=1, routed)           0.000    15.613    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[3]_i_9__0_n_0
+SLICE_X149Y50        CARRY4 (Prop_carry4_S[2]_CO[3])
+                                                  0.398    16.011 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[3]_i_2__0/CO[3]
+                     net (fo=1, routed)           0.000    16.011    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[3]_i_2__0_n_0
+SLICE_X149Y51        CARRY4 (Prop_carry4_CI_O[3])
+                                                  0.313    16.324 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[5]_i_4__0/O[3]
+                     net (fo=1, routed)           1.281    17.605    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/_zz_FpuAddSharedPlugin_logic_pip_node_0_adder_preShift_exp21_1[7]
+SLICE_X148Y55        LUT6 (Prop_lut6_I2_O)        0.306    17.911 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[5]_i_8/O
+                     net (fo=1, routed)           0.295    18.206    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[5]_i_8_n_0
+SLICE_X149Y56        LUT6 (Prop_lut6_I3_O)        0.124    18.330 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[5]_i_3__0_comp_1/O
+                     net (fo=1, routed)           1.084    19.414    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuSqrtPlugin_logic_sqrt/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[0]
+SLICE_X130Y60        LUT6 (Prop_lut6_I1_O)        0.124    19.538 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuSqrtPlugin_logic_sqrt/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[5]_i_1/O
+                     net (fo=6, routed)           0.756    20.294    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat
+SLICE_X137Y55        FDSE                                         r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[3]/S
  */
