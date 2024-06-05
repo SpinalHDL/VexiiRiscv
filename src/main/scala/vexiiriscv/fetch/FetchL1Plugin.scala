@@ -95,7 +95,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       getBusParameter()
     ))
 
-    val translationStorage = ats.newStorage(translationStorageParameter)
+    val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
     atsStorageLock.release()
 
     val age = pp.getAge(ctrlAt, false)

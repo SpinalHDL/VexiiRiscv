@@ -4,27 +4,30 @@ import spinal.core._
 import spinal.core.fiber.Retainer
 
 /*
-        pmu {
+      pmu {
 		    compatible 			= "riscv,pmu";
 		    riscv,event-to-mhpmevent =
- 					 <0x5 0x0000 0x01>, /* BRANCH_INSTRUCTIONS -> Conditional branch instruction count */
-					 <0x6 0x0000 0x02>, /* BRANCH_MISSES       -> Misprediction of conditional branches */
-					 <0x10008 0x0000 0x10>,  /* L1I_READ_ACCESS  -> I-Cache access */
-					 <0x10009 0x0000 0x11>,  /* L1I_READ_MISS    -> I-Cache miss */
-					 <0x3 0x0000 0x18>, /* CACHE_REFERENCES    -> D-Cache access */
-					 <0x4 0x0000 0x19>; /* CACHE_REFERENCES    -> D-Cache access */
+ 					 <0x5 0x0000 0x01>, /*  Conditional branch instruction count */
+					 <0x6 0x0000 0x02>, /*  Misprediction of conditional branches */
+ 					 <0x8 0x0000 0x04>, /*  STALLED_CYCLES_FRONTEND */
+ 					 <0x9 0x0000 0x05>, /*  STALLED_CYCLES_BACKEND */
+					 <0x10000 0x0000 0x18>, /*  D-Cache load access */
+					 <0x10001 0x0000 0x19>, /*  D-Cache load miss */
+					 <0x10008 0x0000 0x10>,  /* I-Cache access */
+					 <0x10009 0x0000 0x11>;  /* I-Cache miss */
 
 
 	        riscv,event-to-mhpmcounters =
 	                <0x00005 0x00006 0xFF8>,
-	                <0x00003 0x00004 0xFF8>,
+	                <0x00008 0x00009 0xFF8>,
+	                <0x10000 0x10001 0xFF8>,
 	                <0x10008 0x10009 0xFF8>;
-          };
 
-
-          riscv,raw-event-to-mhpmcounters =
-              <0x0000 0x0012 0xffffffff 0xffffffff 0x00000ff8>,
-              <0x0000 0x001a 0xffffffff 0xffffffff 0x00000ff8>;
+		      riscv,raw-event-to-mhpmcounters = <0x0000 0x0012 0xffffffff 0xffffffff 0x00000ff8>,
+						  <0x0000 0x0013 0xffffffff 0xffffffff 0x00000ff8>,
+						  <0x0000 0x001a 0xffffffff 0xffffffff 0x00000ff8>,
+						  <0x0000 0x001b 0xffffffff 0xffffffff 0x00000ff8>;
+        };
 
  */
 
@@ -32,17 +35,27 @@ object PerformanceCounterService{
   val BRANCH_COUNT   = 0x01
   val BRANCH_MISS    = 0x02
 
-  val ICACHE_ACCESS  = 0x10
-  val ICACHE_MISS    = 0x11
-  val ICACHE_WAITING = 0x12
+  val STALLED_CYCLES_FRONTEND = 0x04 // => 8
+  val STALLED_CYCLES_BACKEND = 0x05 // => 9
 
-  val DCACHE_ACCESS  = 0x18
-  val DCACHE_MISS    = 0x19
-  val DCACHE_WAITING = 0x1A
+  val ICACHE_ACCESS     = 0x10
+  val ICACHE_MISS       = 0x11
+  val ICACHE_WAITING    = 0x12
+  val ICACHE_TLB_CYCLES = 0x13
+
+  val DCACHE_LOAD_ACCESS = 0x18
+  val DCACHE_LOAD_MISS   = 0x19
+  val DCACHE_WAITING     = 0x1A
+  val DCACHE_TLB_CYCLES  = 0x1B
 }
 
 trait PerformanceCounterService {
-  def createEventPort(id : Int) : Bool
+  def createEventPort(id: Int): Bool
+  def createEventPort(id: Int, drive : Bool): Bool = {
+    val ret = createEventPort(id)
+    ret := drive
+    ret
+  }
   val elaborationLock = Retainer()
 }
 

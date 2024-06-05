@@ -143,8 +143,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     LsuL1.coherency.set(withCoherency)
 
     val events = pcs.map(p => new Area {
-      val access = p.createEventPort(PerformanceCounterService.DCACHE_ACCESS)
-      val miss = p.createEventPort(PerformanceCounterService.DCACHE_MISS)
+      val loadAccess = p.createEventPort(PerformanceCounterService.DCACHE_LOAD_ACCESS)
+      val loadMiss = p.createEventPort(PerformanceCounterService.DCACHE_LOAD_MISS)
     })
     earlyLock.release()
 
@@ -840,8 +840,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
 
         events.map{e =>
-          e.access := up.isFiring && SEL
-          e.miss   := e.access && !HAZARD && (MISS || MISS_UNIQUE)
+          e.loadAccess := up.isFiring && SEL && LOAD
+          e.loadMiss   := e.loadAccess && !HAZARD && (MISS || MISS_UNIQUE)
         }
 
         val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard

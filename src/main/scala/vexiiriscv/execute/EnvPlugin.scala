@@ -61,7 +61,7 @@ class EnvPlugin(layer : LaneLayer,
       trapPort.valid := False
       trapPort.exception := True
       trapPort.tval := B(PC).andMask(OP === EnvPluginOp.EBREAK) //That's what spike do
-      trapPort.code.assignDontCare()
+      trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
       trapPort.arg.assignDontCare()
       trapPort.laneAge := Execute.LANE_AGE
 
@@ -69,6 +69,9 @@ class EnvPlugin(layer : LaneLayer,
       val xretPriv = Decode.UOP(29 downto 28).asUInt
       val commit = False
 
+      val retKo = ps.p.withSupervisor.mux(ps.logic.harts(0).m.status.tsr && privilege === 1 && xretPriv === 1, False)
+      val vmaKo = ps.p.withSupervisor.mux(privilege === 1 && ps.logic.harts(0).m.status.tvm || privilege === 0, False)
+      
       switch(this(OP)) {
         is(EnvPluginOp.EBREAK) {
           trapPort.code := CSR.MCAUSE_ENUM.BREAKPOINT
@@ -77,13 +80,11 @@ class EnvPlugin(layer : LaneLayer,
           trapPort.code := B(privilege.resize(Global.CODE_WIDTH) | CSR.MCAUSE_ENUM.ECALL_USER)
         }
         is(EnvPluginOp.PRIV_RET) {
-          when(xretPriv <= ps.getPrivilege(HART_ID)) {
+          when(xretPriv <= ps.getPrivilege(HART_ID) && !retKo) {
             commit := True
             trapPort.exception := False
             trapPort.code := TrapReason.PRIV_RET
             trapPort.arg(1 downto 0) := xretPriv.asBits
-          } otherwise {
-            trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
           }
         }
 
@@ -101,9 +102,11 @@ class EnvPlugin(layer : LaneLayer,
 
         if (ps.implementSupervisor) {
           is(EnvPluginOp.SFENCE_VMA) {
-            commit := True
-            trapPort.exception := False
-            trapPort.code := TrapReason.SFENCE_VMA
+            when(!vmaKo) {
+              commit := True
+              trapPort.exception := False
+              trapPort.code := TrapReason.SFENCE_VMA
+            }
           }
         }
       }

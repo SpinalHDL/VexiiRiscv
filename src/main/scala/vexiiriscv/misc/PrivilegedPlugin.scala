@@ -503,6 +503,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val mpp = p.withUser.mux(RegInit(U"00"), U"11")
           val fs = withFs generate RegInit(U"00")
           val sd = False
+          val tsr, tw, tvm = p.withSupervisor generate RegInit(False)
+
           if (RVF) {
             fpuEnable(hartId) setWhen (fs =/= 0)
             when(host.list[FpuDirtyService].map(_.gotDirty()).orR){
@@ -527,6 +529,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           if (withFs) readWrite(13 -> fs)
           if (p.withUser && XLEN.get == 64) read(32 -> U"10")
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")
+          if (p.withSupervisor) readWrite(22 -> tsr, 21 -> tw, 20 -> tvm)
         }
 
         val cause = new api.Csr(CSR.MCAUSE) {

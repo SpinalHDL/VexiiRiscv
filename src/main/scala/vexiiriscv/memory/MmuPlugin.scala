@@ -11,7 +11,7 @@ import Global._
 import spinal.lib.misc.pipeline.{NodeBaseApi, Payload}
 import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamService}
 import vexiiriscv.memory.AddressTranslationPortUsage.LOAD_STORE
-import vexiiriscv.misc.{PipelineBuilderPlugin, PrivilegedPlugin, TrapReason}
+import vexiiriscv.misc.{PerformanceCounterService, PipelineBuilderPlugin, PrivilegedPlugin, TrapReason}
 import vexiiriscv.riscv.CSR
 import vexiiriscv.riscv.Riscv._
 
@@ -96,12 +96,12 @@ class MmuPlugin(var spec : MmuSpec,
   }
   val portSpecs = ArrayBuffer[PortSpec]()
 
-  case class StorageSpec(p: MmuStorageParameter) extends Nameable
+  case class StorageSpec(p: MmuStorageParameter, pmuEventId : Int) extends Nameable
   val storageSpecs = ArrayBuffer[StorageSpec]()
 
-  override def newStorage(pAny: Any) : Any = {
+  override def newStorage(pAny: Any, pmuEventId : Int) : Any = {
     val p = pAny.asInstanceOf[MmuStorageParameter]
-    storageSpecs.addRet(StorageSpec(p))
+    storageSpecs.addRet(StorageSpec(p, pmuEventId))
   }
 
   override def getStorageId(s: Any): Int = storageSpecs.indexOf(s)
@@ -136,12 +136,13 @@ class MmuPlugin(var spec : MmuSpec,
     val csr = host[CsrAccessPlugin]
     val access = host[DBusAccessService]
     val ram = host[CsrRamService]
+    val pcs = host.get[PerformanceCounterService]
 //    val fetch = host[FetchPlugin]
 
 
     val csrLock = retains(csr.csrLock, ram.csrLock)
     val accessLock = retains(access.accessRetainer)
-    val buildBefore = retains(host[PipelineBuilderPlugin].elaborationLock)
+    val buildBefore = retains(List(host[PipelineBuilderPlugin].elaborationLock) ++ pcs.map(_.elaborationLock))
 
 
     awaitBuild()
@@ -194,8 +195,12 @@ class MmuPlugin(var spec : MmuSpec,
     val satpModeWrite = csr.bus.write.bits(satp.modeOffset, satp.modeWidth bits)
     csr.writeCancel(CSR.SATP, satpModeWrite =/= 0 && satpModeWrite =/= spec.satpMode)
 
-    csr.onDecode(CSR.SATP){
-      csr.bus.decode.doTrap(TrapReason.SFENCE_VMA)
+    csr.onDecode(CSR.SATP) {
+      when(priv.logic.harts(0).m.status.tvm && priv.getPrivilege(0) === 1) {
+        csr.bus.decode.doException()
+      } otherwise {
+        csr.bus.decode.doTrap(TrapReason.SFENCE_VMA)
+      }
     }
 
     csr.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUS, CSR.SSTATUS))
@@ -342,6 +347,13 @@ class MmuPlugin(var spec : MmuSpec,
           goto(CMD(spec.levels.size - 1))
         }
       }
+
+
+      val events = pcs map (pcs => new Area {
+        val onStorage = for((storage, sel) <- storageSpecs zip storageOhReg.asBools) yield new Area {
+          val waiting = pcs.createEventPort(storage.pmuEventId, busy && sel)
+        }
+      })
 
       val load = new Area{
         val address = Reg(UInt(PHYSICAL_WIDTH bits))

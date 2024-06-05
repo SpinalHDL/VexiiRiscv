@@ -97,7 +97,7 @@ class LsuPlugin(var layer : LaneLayer,
     awaitBuild()
     Riscv.RVA.set(withRva)
 
-    val translationStorage = ats.newStorage(translationStorageParameter)
+    val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.DCACHE_TLB_CYCLES)
     val fpwb = fpwbp.map(_.createPort(wbAt))
 
     val events = pcs.map(p => new Area {

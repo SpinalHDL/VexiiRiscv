@@ -43,7 +43,7 @@ trait AddressTranslationService extends Area {
   def mayNeedRedo : Boolean
   val storageLock = Retainer()
   val portsLock = Retainer()
-  def newStorage(pAny: Any): Any
+  def newStorage(pAny: Any, pmuEventId : Int): Any
   def getStorageId(s : Any) : Int
   def getStorageIdWidth() : Int
 

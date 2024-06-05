@@ -30,7 +30,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val csrRetainer = csr.csrLock()
     val ramCsrRetainer = ram.csrLock()
     val ramPortRetainer = ram.portLock()
-    val trapLock = tp.trapLock()
+//    val trapLock = tp.trapLock()
     awaitBuild()
 
     assert(Global.HART_COUNT.get == 1)
@@ -113,7 +113,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val events = new Area {
       val selWidth = log2Up((specs.map(_.id) :+ 0).max + 1)
       val grouped = specs.groupByLinked(_.id)
-      val sums = grouped.map{ case (id, specs) => id -> CountOne(specs.map(_.event)) }
+      val sums = grouped.map{ case (id, specs) => id -> CountOne(RegNext(specs.map(_.event).asBits)) }
       val widthMax = sums.map(_._2.getWidth).max
     }
 
@@ -355,6 +355,6 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       }
     }
     csrRetainer.release()
-    trapLock.release()
+//    trapLock.release()
   }
 }

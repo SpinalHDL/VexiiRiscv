@@ -10,7 +10,7 @@ import vexiiriscv.Global
 import vexiiriscv.Global.{HART_COUNT, TRAP}
 import vexiiriscv.decode.{AccessKeys, Decode, DecodePipelinePlugin, DecoderService}
 import vexiiriscv.execute.{Execute, ExecuteLanePlugin, ExecuteLaneService, ExecutePipelinePlugin, LaneLayer, UopLayerSpec}
-import vexiiriscv.misc.{CommitService, InflightService, PipelineBuilderPlugin, TrapService}
+import vexiiriscv.misc.{CommitService, InflightService, PerformanceCounterService, PipelineBuilderPlugin, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
 
@@ -60,8 +60,9 @@ class DispatchPlugin(var dispatchAt : Int,
     val eupp = host[ExecutePipelinePlugin]
     val pbp = host[PipelineBuilderPlugin]
     val ts = host[TrapService]
+    val pcs = host.get[PerformanceCounterService]
     val buildBefore = retains(
-      List(pbp.elaborationLock, dpp.elaborationLock, eupp.pipelineLock) ++ host.list[ExecuteLaneService].map(_.pipelineLock)
+      List(pbp.elaborationLock, dpp.elaborationLock, eupp.pipelineLock) ++ host.list[ExecuteLaneService].map(_.pipelineLock) ++ pcs.map(_.elaborationLock)
     )
     val dpRetains = retains(dp.decodingLock)
     val tsRetains = retains(ts.trapLock)
@@ -443,6 +444,11 @@ class DispatchPlugin(var dispatchAt : Int,
 //      c.flushHazards.removeAssignments().clearAll()
 //      c.fenceOlderHazards.removeAssignments().clearAll()
 //    }
+
+    val events = pcs map(pcs => new Area {
+      val frontendStall = pcs.createEventPort(PerformanceCounterService.STALLED_CYCLES_FRONTEND, candidates.map(_.ctx.valid).norR)
+      val backendStall = pcs.createEventPort(PerformanceCounterService.STALLED_CYCLES_BACKEND, candidates.map(_.ctx.valid).orR && candidates.map(_.fire).norR)
+    })
 
     buildBefore.release()
   }

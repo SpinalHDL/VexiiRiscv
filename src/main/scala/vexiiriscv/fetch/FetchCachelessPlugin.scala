@@ -13,7 +13,7 @@ import spinal.lib.system.tag.{MappedTransfers, PmaRegion}
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort}
-import vexiiriscv.misc.{TrapArg, TrapReason, TrapService}
+import vexiiriscv.misc.{PerformanceCounterService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.CSR
 
 import scala.collection.mutable.ArrayBuffer
@@ -45,7 +45,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
     Fetch.WORD_WIDTH.set(wordWidth)
 
-    val translationStorage = ats.newStorage(translationStorageParameter)
+    val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
     atsStorageLock.release()
 
     val trapPort = ts.newTrap(pp.getAge(joinAt), 0)

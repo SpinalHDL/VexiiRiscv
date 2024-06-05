@@ -12,7 +12,7 @@ import scala.collection.mutable.ArrayBuffer
 
 class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with AddressTranslationService {
   override def mayNeedRedo: Boolean = false
-  override def newStorage(pAny: Any): Any = { }
+  override def newStorage(pAny: Any, pmuStorageId : Int): Any = { }
   override def getStorageId(s: Any): Int = 0
   override def getStorageIdWidth(): Int = 0
 
