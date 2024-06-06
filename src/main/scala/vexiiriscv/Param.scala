@@ -297,12 +297,12 @@ class ParamSimple(){
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
     opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
-    opt[Int]("fetch-l1-sets") action { (v, c) => fetchL1Sets = v }
-    opt[Int]("fetch-l1-ways") action { (v, c) => fetchL1Ways = v }
+    opt[Int]("fetch-l1-sets") unbounded() action { (v, c) => fetchL1Sets = v }
+    opt[Int]("fetch-l1-ways") unbounded() action { (v, c) => fetchL1Ways = v }
     opt[Int]("fetch-l1-mem-data-width-min") action { (v, c) => fetchMemDataWidthMin = v }
     opt[Unit]("fetch-reduced-bank") action { (v, c) => fetchL1ReducedBank = true }
-    opt[Int]("lsu-l1-sets") action { (v, c) => lsuL1Sets = v }
-    opt[Int]("lsu-l1-ways") action { (v, c) => lsuL1Ways = v }
+    opt[Int]("lsu-l1-sets") unbounded() action { (v, c) => lsuL1Sets = v }
+    opt[Int]("lsu-l1-ways") unbounded() action { (v, c) => lsuL1Ways = v }
     opt[Int]("lsu-l1-store-buffer-slots") action { (v, c) => lsuStoreBufferSlots = v }
     opt[Int]("lsu-l1-store-buffer-ops") action { (v, c) => lsuStoreBufferOps = v }
     opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
