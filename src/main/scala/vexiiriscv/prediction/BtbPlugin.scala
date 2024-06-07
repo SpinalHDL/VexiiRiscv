@@ -8,7 +8,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline._
-import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin, PcService}
+import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin, InitService, PcService}
 import Fetch._
 import vexiiriscv.Global._
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
@@ -25,12 +25,15 @@ class BtbPlugin(var sets : Int,
                 var hashWidth : Int = 16,
                 var readAt : Int = 0,
                 var hitAt : Int = 1,
-                var jumpAt : Int = 1) extends FiberPlugin with FetchWordPrediction {
+                var jumpAt : Int = 1,
+                var bootMemClear : Boolean) extends FiberPlugin with FetchWordPrediction with InitService  {
 
 
   override def useAccurateHistory: Boolean = jumpAt == 1
 
   def chunksRange = 0 until chunks
+
+  override def initHold(): Bool = bootMemClear.mux(logic.initializer.busy, False)
 
   val logic = during setup new Area{
     val fpp = host[FetchPipelinePlugin]
@@ -266,6 +269,30 @@ class BtbPlugin(var sets : Int,
           val i = slice + chunk * slicePerChunk
           WORD_SLICES_BRANCH(i) := cl.hitCalc.HIT && cl.readRsp.ENTRY.isBranch && cl.readRsp.ENTRY.sliceLow === slice
           WORD_SLICES_TAKEN(i) := cl.predict.TAKEN
+        }
+      }
+    }
+
+    val initializer = bootMemClear generate new Area {
+      val counter = Reg(UInt(log2Up(sets max rasDepth) + 1 bits)) init (0)
+      val busy = !counter.msb
+      when(busy) {
+        counter := counter + 1
+        onLearn.port.valid := True
+        onLearn.port.address := counter.resized
+        for (data <- onLearn.port.data) {
+          data.hash.setAll
+          data.sliceLow := 0
+          data.isBranch := False
+          data.isPush := False
+          data.isPop := False
+          if (!withCondPrediction) data.taken := False
+        }
+
+        if (withRas) {
+          ras.write.valid := True
+          ras.write.address := counter.resized
+          ras.write.data := 0
         }
       }
     }

@@ -202,7 +202,7 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 
 
     val patcher = Fiber build new AreaRoot {
-      val mBus = withMem generate Axi4SpecRenamer(master(mem.toAxi4.down.pipelined()))
+      val mBus = withMem generate Axi4SpecRenamer(master(mem.toAxi4.down.expendId(8).pipelined()))
       val pBus = AxiLite4SpecRenamer(master(
         vexiiParam.lsuL1Enable.mux(
           peripheral.toAxiLite4.down.pipelined(
@@ -665,7 +665,7 @@ TODO debug :
 [ 9576.286235] [<ffffffff80002f76>] ret_from_exception+0x0/0xc
 [ 9576.295073] [<ffffffff80144a98>] do_sys_poll+0x144/0x42c
 
-perf stat  --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches -p 532
+perf stat  --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches -p $!
 
 relaxed btb =>
 Startup finished in 9.108s (kernel) + 1min 17.848s (userspace) = 1min 26.956s
@@ -687,6 +687,18 @@ graphical.target reached after 1min 8.574s in userspace.
 Startup finished in 8.219s (kernel) + 1min 5.727s (userspace) = 1min 13.946s
 graphical.target reached after 1min 4.705s in userspace.
 timed 5026 gametics in 8999 realtics (19.547728 fps
+
+16 KB i$d$ relaxed btb 64 bits bus
+Startup finished in 8.237s (kernel) + 1min 753ms (userspace) = 1min 8.991s
+graphical.target reached after 59.891s in userspace.
+timed 5026 gametics in 8943 realtics (19.670134 fps)
+
+16 KB i$d$ stressed btb 64 bits bus
+Startup finished in 8.806s (kernel) + 1min 213ms (userspace) = 1min 9.019s
+graphical.target reached after 59.298s in userspace.
+timed 5026 gametics in 8742 realtics (20.122398 fps)
+
+
 
 SLICE_X122Y49        FDRE (Prop_fdre_C_Q)         0.456    11.240 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/vexiis_1_logic_core_toplevel_execute_ctrl1_up_float_RS2_lane0_reg[52]/Q
                      net (fo=7, routed)           0.824    12.064    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuUnpack_RS2_f64_exponent[0]

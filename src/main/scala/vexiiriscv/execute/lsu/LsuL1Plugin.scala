@@ -93,9 +93,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var withCoherency: Boolean = false,
                   var withBypass: Boolean = false,
                   var probeIdWidth: Int = -1,
-                  var ackIdWidth: Int = -1) extends FiberPlugin with InitService with LsuL1Service{
+                  var ackIdWidth: Int = -1,
+                  var bootMemClear : Boolean) extends FiberPlugin with InitService with LsuL1Service{
 
-  override def initHold(): Bool = !logic.initializer.done
+  override def initHold(): Bool = !logic.initializer.done || bootMemClear.mux(logic.initializerMem.busy, False)
 
   def memParameter = LsuL1BusParameter(
     addressWidth = Global.PHYSICAL_WIDTH,
@@ -885,7 +886,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         WAIT_REFILL := refillHazards | refill.free.orMask(refill.full).andMask(!HAZARD && (askRefill || askUpgrade))
         WAIT_WRITEBACK := 0 // TODO  // writebackHazards | writeback.free.andMask(askRefill && refillWayNeedWriteback)
 
-        assert(CountOne(Cat(askRefill, doUpgrade, doFlush)) < 2)
+        when(SEL) {
+          assert(CountOne(Cat(askRefill, doUpgrade, doFlush)) < 2)
+        }
 
         when(SEL) {
           shared.write.address := MIXED_ADDRESS(lineRange)
@@ -1149,6 +1152,17 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
+    val initializerMem = bootMemClear generate new Area {
+      val counter = Reg(UInt(log2Up(bankWordCount) + 1 bits)) init (0)
+      val busy = !counter.msb
+      when(busy) {
+        counter := counter + 1
+        banksWrite.mask.setAll()
+        banksWrite.address := counter.resized
+        banksWrite.writeData.clearAll()
+        banksWrite.writeMask.setAll()
+      }
+    }
 
     if(withCoherency) c.pip.build()
     tagsWriteArbiter.build()

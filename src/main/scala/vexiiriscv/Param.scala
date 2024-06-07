@@ -118,6 +118,7 @@ class ParamSimple(){
   var embeddedJtagInstruction = false
   var embeddedJtagCd: ClockDomain = null
   var embeddedJtagNoTapCd: ClockDomain = null
+  var bootMemClear = false
 
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin
@@ -321,6 +322,7 @@ class ParamSimple(){
     opt[Int] ("debug-triggers") action { (v, c) => privParam.debugTriggers = v }
     opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
     opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true }
+    opt[Unit]("with-boot-mem-init") action { (v, c) => bootMemClear = true }
   }
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
@@ -353,7 +355,8 @@ class ParamSimple(){
         hashWidth = btbHashWidth,
         readAt = 0,
         hitAt = 1,
-        jumpAt = 1+relaxedBtb.toInt
+        jumpAt = 1+relaxedBtb.toInt,
+        bootMemClear = bootMemClear
       )
 //      plugins += new prediction.DecodePredictionPlugin(
 //        decodeAt = decoderAt,
@@ -364,7 +367,8 @@ class ParamSimple(){
       plugins += new prediction.GSharePlugin (
         memBytes = 4 KiB,
         historyWidth = 12,
-        readAt = 0
+        readAt = 0,
+        bootMemClear = bootMemClear
       )
       plugins += new prediction.HistoryPlugin()
     }
@@ -414,6 +418,7 @@ class ParamSimple(){
       reducedBankWidth = fetchL1ReducedBank,
       hitsWithTranslationWays = true,
       tagsReadAsync = false,
+      bootMemClear = bootMemClear,
       translationStorageParameter = MmuStorageParameter(
         levels = List(
           MmuStorageLevel(
@@ -561,7 +566,8 @@ class ParamSimple(){
         setCount       = lsuL1Sets,
         wayCount       = lsuL1Ways,
         withBypass     = withLsuBypass,
-        withCoherency  = lsuL1Coherency
+        withCoherency  = lsuL1Coherency,
+        bootMemClear = bootMemClear
       )
     }
 

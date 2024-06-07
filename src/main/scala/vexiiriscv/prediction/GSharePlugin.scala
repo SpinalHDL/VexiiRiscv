@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline._
-import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin, PcService}
+import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin, InitService, PcService}
 import Fetch._
 import vexiiriscv.Global._
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
@@ -20,11 +20,13 @@ class GSharePlugin(var historyWidth : Int,
                    var memBytes : BigInt = null,
                    var readAt : Int = 0,
                    var counterWidth : Int = 2,
-                   var readAsync : Boolean = false) extends FiberPlugin with FetchConditionalPrediction with HistoryUser{
+                   var readAsync : Boolean = false,
+                   var bootMemClear: Boolean) extends FiberPlugin with FetchConditionalPrediction with HistoryUser with InitService {
 
   override def useHistoryAt = readAt
   override def historyWidthUsed = historyWidth
   override def getPredictionAt(stageId: Int) = host[FetchPipelinePlugin].fetch(stageId)(GSHARE_COUNTER).map(_.msb)
+  override def initHold(): Bool = bootMemClear.mux(logic.initializer.busy, False)
 
   val GSHARE_COUNTER = Payload(Vec.fill(SLICE_COUNT)(UInt(counterWidth bits)))
 
@@ -105,6 +107,17 @@ class GSharePlugin(var historyWidth : Int,
       mem.write.valid := cmd.valid && cmd.isBranch && !overflow
       mem.write.address := hash
       mem.write.data := updated
+    }
+
+    val initializer = bootMemClear generate new Area {
+      val counter = Reg(UInt(log2Up(words) + 1 bits)) init (0)
+      val busy = !counter.msb
+      when(busy) {
+        counter := counter + 1
+        mem.write.valid := True
+        mem.write.address := counter.resized
+        mem.write.data.clearAll()
+      }
     }
     buildBefore.release()
   }

@@ -10,6 +10,8 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
 import vexiiriscv.riscv._
 import FpuUtils._
+import vexiiriscv.Global.TRAP
+
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
@@ -171,7 +173,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
           mantissaWidth = Riscv.fpuMantissaWidth
         ))
 
-        val unpackerSel = isValid && up(rfa.ENABLE) && rfa.is(FloatRegFile, rfa.RFID) //A bit pessimistic, as not all float instruction will need unpacking
+        val unpackerSel = isValid && up(rfa.ENABLE) && rfa.is(FloatRegFile, rfa.RFID) && !up(TRAP) //A bit pessimistic, as not all float instruction will need unpacking
 
         val f32 = new Area {
           val mantissa = input(0, 23 bits).asUInt

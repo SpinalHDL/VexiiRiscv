@@ -97,7 +97,9 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
       Decode.UOP_ID := reader(_.uopId)
       valid := reader.oh.orR
       val GROUP_OH = Payload(Bits(uopsAt.size bits))
-      assert(CountOne(GROUP_OH) <= 1)
+      when(isValid) {
+        assert(CountOne(GROUP_OH) <= 1)
+      }
       for ((at, sel) <- (uopsAt.keys, GROUP_OH.asBools).zipped) {
         sel := (for (port <- ports; (portAt, i) <- port.cmd.ats.zipWithIndex; if portAt == at) yield port.cmd.at(i)).orR
       }

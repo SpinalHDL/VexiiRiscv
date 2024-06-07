@@ -65,7 +65,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
                     var ctrlAt: Int = 2,
                     var hitsWithTranslationWays: Boolean = false,
                     var reducedBankWidth: Boolean = false,
-                    var tagsReadAsync: Boolean = false) extends FiberPlugin with FetchL1Service with InitService {
+                    var tagsReadAsync: Boolean = false,
+                    var bootMemClear : Boolean) extends FiberPlugin with FetchL1Service with InitService {
 
   def getBusParameter() = FetchL1BusParam(
     physicalWidth = PHYSICAL_WIDTH,
@@ -75,7 +76,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
   )
 
 
-  override def initHold(): Bool = logic.invalidate.firstEver
+  override def initHold(): Bool = logic.invalidate.firstEver || bootMemClear.mux(logic.initializer.busy, False)
 
   val logic = during setup new Area{
     val pp = host[FetchPipelinePlugin]
@@ -491,6 +492,19 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       plru.write.valid := True
       plru.write.address := invalidate.counter.resized
       plru.write.data.clearAll()
+    }
+
+    val initializer = bootMemClear generate new Area {
+      val counter = Reg(UInt(log2Up(banks(0).mem.wordCount) + 1 bits)) init (0)
+      val busy = !counter.msb
+      when(busy) {
+        counter := counter + 1
+        for (bank <- banks; port = bank.write) {
+          port.valid := True
+          port.address := counter.resized
+          port.data := 0
+        }
+      }
     }
 
     buildBefore.release()
