@@ -1,0 +1,830 @@
+diff -ruN chocolate-doom-3.0.1_ori/midiproc/main.c chocolate-doom-3.0.1/midiproc/main.c
+--- chocolate-doom-3.0.1_ori/midiproc/main.c	2020-06-25 05:10:06.000000000 +0200
++++ chocolate-doom-3.0.1/midiproc/main.c	2022-02-16 12:01:10.990072000 +0100
+@@ -443,7 +443,7 @@
+     if (snd_samplerate == LONG_MAX || snd_samplerate == LONG_MIN ||
+         snd_samplerate == 0)
+     {
+-        snd_samplerate = 44100;
++        snd_samplerate = 11025;
+     }
+ 
+     if (!InitPipes())
+diff -ruN chocolate-doom-3.0.1_ori/src/doom/m_menu.c chocolate-doom-3.0.1/src/doom/m_menu.c
+--- chocolate-doom-3.0.1_ori/src/doom/m_menu.c	2020-06-25 05:10:06.000000000 +0200
++++ chocolate-doom-3.0.1/src/doom/m_menu.c	2022-02-16 12:01:10.990072000 +0100
+@@ -170,7 +170,11 @@
+ char    *skullName[2] = {"M_SKULL1","M_SKULL2"};
+ 
+ // current menudef
+-menu_t*	currentMenu;                          
++menu_t*	currentMenu;     
++
++int fps_time = 0;   
++int fps_value = 0;      
++int fps_age = 0;            
+ 
+ //
+ // PROTOTYPES
+@@ -1949,6 +1953,18 @@
+     char		string[80];
+     char               *name;
+     int			start;
++    int time;
++
++    time = I_GetTimeMS();
++    fps_age += time- fps_time;
++    if(fps_age > 150){
++        fps_value = 1000/(time- fps_time);
++        fps_age = 0;
++    }
++    fps_time = time;
++    M_snprintf(string, 80, "FPS : %d", fps_value);
++    M_WriteText(18,148,string);
++
+ 
+     inhelpscreens = false;
+     
+diff -ruN chocolate-doom-3.0.1_ori/src/doom/r_draw.c chocolate-doom-3.0.1/src/doom/r_draw.c
+--- chocolate-doom-3.0.1_ori/src/doom/r_draw.c	2020-06-25 05:10:06.000000000 +0200
++++ chocolate-doom-3.0.1/src/doom/r_draw.c	2022-02-16 12:01:10.990072000 +0100
+@@ -44,6 +44,8 @@
+ // status bar height at bottom of screen
+ #define SBARHEIGHT		32
+ 
++#define ENABLE_UNROLLED
++
+ //
+ // All drawing to the view buffer is accomplished in this file.
+ // The other refresh files only know about ccordinates,
+@@ -105,6 +107,8 @@
+     pixel_t*		dest;
+     fixed_t		frac;
+     fixed_t		fracstep;	 
++    byte*           dc_source_cpy;
++    lighttable_t*   dc_colormap_cpy;
+  
+     count = dc_yh - dc_yl; 
+ 
+@@ -132,6 +136,42 @@
+     // Inner loop that does the actual texture mapping,
+     //  e.g. a DDA-lile scaling.
+     // This is as fast as it gets.
++
++#ifdef ENABLE_UNROLLED
++    dc_source_cpy = dc_source;
++    dc_colormap_cpy = dc_colormap;
++
++    while(count > 4)
++    {
++        count -= 4;
++
++        int spot[4];
++        spot[0] =(frac>>FRACBITS)&127; frac += fracstep;
++        spot[1] =(frac>>FRACBITS)&127; frac += fracstep;
++        spot[2] =(frac>>FRACBITS)&127; frac += fracstep;
++        spot[3] =(frac>>FRACBITS)&127; frac += fracstep;
++
++
++        spot[0] = dc_source_cpy[spot[0]];
++        spot[1] = dc_source_cpy[spot[1]];
++        spot[2] = dc_source_cpy[spot[2]];
++        spot[3] = dc_source_cpy[spot[3]];
++
++
++        spot[0] = dc_colormap_cpy[spot[0]];
++        spot[1] = dc_colormap_cpy[spot[1]];
++        spot[2] = dc_colormap_cpy[spot[2]];
++        spot[3] = dc_colormap_cpy[spot[3]];
++
++        dest[0*SCREENWIDTH] = spot[0];
++        dest[1*SCREENWIDTH] = spot[1];
++        dest[2*SCREENWIDTH] = spot[2];
++        dest[3*SCREENWIDTH] = spot[3];
++
++        dest += SCREENWIDTH*4;
++    }
++#endif
++
+     do 
+     {
+ 	// Re-map color indices from wall texture column
+@@ -594,6 +634,8 @@
+     int count;
+     int spot;
+     unsigned int xtemp, ytemp;
++    byte*           ds_source_cpy;
++    lighttable_t*   ds_colormap_cpy;
+ 
+ #ifdef RANGECHECK
+     if (ds_x2 < ds_x1
+@@ -622,6 +664,42 @@
+     // We do not check for zero spans here?
+     count = ds_x2 - ds_x1;
+ 
++
++#ifdef ENABLE_UNROLLED
++    ds_source_cpy = ds_source;
++    ds_colormap_cpy = ds_colormap;
++
++    while(count >= 4)
++    {
++        count -= 4;
++
++        int spot[4];
++        spot[0] = ((position >> 4) & 0x0fc0) | (position >> 26); position += step;
++        spot[1] = ((position >> 4) & 0x0fc0) | (position >> 26); position += step;
++        spot[2] = ((position >> 4) & 0x0fc0) | (position >> 26); position += step;
++        spot[3] = ((position >> 4) & 0x0fc0) | (position >> 26); position += step;
++
++
++        spot[0] = ds_source_cpy[spot[0]];
++        spot[1] = ds_source_cpy[spot[1]];
++        spot[2] = ds_source_cpy[spot[2]];
++        spot[3] = ds_source_cpy[spot[3]];
++
++
++        spot[0] = ds_colormap_cpy[spot[0]];
++        spot[1] = ds_colormap_cpy[spot[1]];
++        spot[2] = ds_colormap_cpy[spot[2]];
++        spot[3] = ds_colormap_cpy[spot[3]];
++
++        dest[0] = spot[0];
++        dest[1] = spot[1];
++        dest[2] = spot[2];
++        dest[3] = spot[3];
++
++        dest += 4;
++    }
++#endif
++
+     do
+     {
+ 	// Calculate current texture index in u,v.
+diff -ruN chocolate-doom-3.0.1_ori/src/i_sdlsound.c chocolate-doom-3.0.1/src/i_sdlsound.c
+--- chocolate-doom-3.0.1_ori/src/i_sdlsound.c	2020-04-04 21:49:05.000000000 +0200
++++ chocolate-doom-3.0.1/src/i_sdlsound.c	2022-02-16 12:01:10.990072000 +0100
+@@ -625,7 +625,13 @@
+ 
+     // If we can, use the standard / optimized SDL conversion routines.
+ 
+-    if (samplerate <= mixer_freq
++
++    if(1){
++        for(int i = 0;i < chunk->alen/4;i++){
++            ((uint16_t*)chunk->abuf)[i*2] = ((uint32_t)data[i])-128 << 8;
++            ((uint16_t*)chunk->abuf)[i*2+1] = ((uint32_t)data[i])-128 << 8;
++        }
++    }else if (samplerate <= mixer_freq
+      && ConvertibleRatio(samplerate, mixer_freq)
+      && SDL_BuildAudioCVT(&convertor,
+                           AUDIO_U8, 1, samplerate,
+@@ -808,7 +814,7 @@
+     }
+ }
+ 
+-#ifdef HAVE_LIBSAMPLERATE
++#ifndef HAVE_LIBSAMPLERATE
+ 
+ // Preload all the sound effects - stops nasty ingame freezes
+ 
+@@ -819,10 +825,10 @@
+ 
+     // Don't need to precache the sounds unless we are using libsamplerate.
+ 
+-    if (use_libsamplerate == 0)
++   /* if (use_libsamplerate == 0)
+     {
+ 	return;
+-    }
++    }*/
+ 
+     printf("I_SDL_PrecacheSounds: Precaching all sound effects..");
+ 
+diff -ruN chocolate-doom-3.0.1_ori/src/i_sound.c chocolate-doom-3.0.1/src/i_sound.c
+--- chocolate-doom-3.0.1_ori/src/i_sound.c	2020-06-25 05:10:06.000000000 +0200
++++ chocolate-doom-3.0.1/src/i_sound.c	2022-02-16 12:01:10.990072000 +0100
+@@ -31,7 +31,7 @@
+ 
+ // Sound sample rate to use for digital output (Hz)
+ 
+-int snd_samplerate = 44100;
++int snd_samplerate = 11025;
+ 
+ // Maximum number of bytes to dedicate to allocated sound effects.
+ // (Default: 64MB)
+@@ -41,7 +41,7 @@
+ // Config variable that controls the sound buffer size.
+ // We default to 28ms (1000 / 35fps = 1 buffer per tic).
+ 
+-int snd_maxslicetime_ms = 28;
++int snd_maxslicetime_ms = 50;
+ 
+ // External command to invoke to play back music.
+ 
+diff -ruN chocolate-doom-3.0.1_ori/src/i_timer.h chocolate-doom-3.0.1/src/i_timer.h
+--- chocolate-doom-3.0.1_ori/src/i_timer.h	2020-04-04 21:49:05.000000000 +0200
++++ chocolate-doom-3.0.1/src/i_timer.h	2022-02-16 12:01:10.990072000 +0100
+@@ -38,5 +38,49 @@
+ // Wait for vertical retrace or pause a bit.
+ void I_WaitVBL(int count);
+ 
++
++
++
++typedef struct{
++    int acc;
++    int startedAt;
++} Profiler;
++
++#pragma GCC diagnostic ignored "-Wunused-function"
++static int getCycle(){
++    int n;
++
++    __asm__ __volatile__("rdtime %0" : "=r"(n));
++    return n;
++}
++
++
++static void profilerInit(Profiler *p){
++   p->acc = 0;
++}
++
++static void profilerStart(Profiler *p){
++   p->startedAt = getCycle();
++}
++
++static void profilerStop(Profiler *p){
++   p->acc += getCycle() - p->startedAt;
++}
++
++#include <stdio.h>
++static void profilerReport(Profiler *p, char* msg){
++   printf("%s %d\n", msg, p->acc);
++}
++
++
++#define profile(msg, that) {\
++Profiler p; \
++profilerInit(&p); \
++profilerStart(&p); \
++that \
++profilerStop(&p); \
++profilerReport(&p, msg); \
++} \
++
+ #endif
+ 
+diff -ruN chocolate-doom-3.0.1_ori/src/i_video.c chocolate-doom-3.0.1/src/i_video.c
+--- chocolate-doom-3.0.1_ori/src/i_video.c	2020-06-25 05:10:06.000000000 +0200
++++ chocolate-doom-3.0.1/src/i_video.c	2022-02-16 12:17:50.274584547 +0100
+@@ -47,11 +47,27 @@
+ #include "w_wad.h"
+ #include "z_zone.h"
+ 
++#include <sys/mman.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++uint8_t *fb0;
++static uint16_t rgb565_palette[256];
++
+ // These are (1) the window (or the full screen) that our game is rendered to
+ // and (2) the renderer that scales the texture (see below) into this window.
+ 
+ static SDL_Window *screen;
+ static SDL_Renderer *renderer;
++static SDL_DisplayMode display_mode;
++
++#ifndef max
++#define max(a,b)            (((a) > (b)) ? (a) : (b))
++#endif
++
++#ifndef min
++#define min(a,b)            (((a) < (b)) ? (a) : (b))
++#endif
+ 
+ // Window title
+ 
+@@ -158,6 +174,13 @@
+ 
+ pixel_t *I_VideoBuffer = NULL;
+ 
++int withFlushThread = 0;
++pixel_t *I_VideoBuffer_flush = NULL;
++SDL_mutex *flush_lock = NULL;
++SDL_cond *flush_start = NULL;
++SDL_cond *flush_end = NULL;
++SDL_bool c = SDL_FALSE;
++
+ // If true, game is running as a screensaver
+ 
+ boolean screensaver_mode = false;
+@@ -199,6 +222,39 @@
+ // Joystick/gamepad hysteresis
+ unsigned int joywait = 0;
+ 
++
++#include <fcntl.h>
++#include <linux/fb.h>
++#include <sys/mman.h>
++#include <sys/ioctl.h>
++#include <unistd.h>
++struct fb_var_screeninfo vinfo;
++struct fb_fix_screeninfo finfo;
++void I_InitFb(void){
++    int fbfd = 0;
++
++    fbfd = open("/dev/fb0", O_RDWR);
++    if (fbfd == -1) {
++        perror("Error: cannot open framebuffer device");
++        exit(1);
++    }
++    printf("The framebuffer device was opened successfully.\n");
++    if (ioctl(fbfd, FBIOGET_FSCREENINFO, &finfo) == -1) {
++        perror("Error reading fixed information");
++        exit(2);
++    }
++
++    if (ioctl(fbfd, FBIOGET_VSCREENINFO, &vinfo) == -1) {
++        perror("Error reading variable information");
++        exit(3);
++    }
++    printf("I_InitFb %dx%d, %d %dbpp\n", vinfo.xres, vinfo.yres, finfo.line_length, vinfo.bits_per_pixel);
++
++    close(fbfd);
++
++    fb0 = mmap(0,finfo.line_length*vinfo.yres,PROT_READ|PROT_WRITE,MAP_SHARED,open("/dev/fb0",O_RDWR),0);
++}
++
+ static boolean MouseShouldBeGrabbed()
+ {
+     // never grab the mouse when in screensaver mode
+@@ -290,6 +346,7 @@
+ // ratio consistent with the aspect_ratio_correct variable.
+ static void AdjustWindowSize(void)
+ {
++printf("AdjustWindowSize window size =%d,%d\n", window_width, window_height);
+     if (window_width * actualheight <= window_height * SCREENWIDTH)
+     {
+         // We round up window_height if the ratio is not exact; this leaves
+@@ -300,6 +357,7 @@
+     {
+         window_width = window_height * SCREENWIDTH / actualheight;
+     }
++printf("AdjustWindowSize window size =%d,%d\n", window_width, window_height);
+ }
+ 
+ static void HandleWindowEvent(SDL_WindowEvent *event)
+@@ -678,6 +736,301 @@
+                                 h_upscale*SCREENHEIGHT);
+ }
+ 
++
++void cmap_to_fb_x2_565(uint8_t * restrict out, uint8_t * restrict in, int in_pixels)
++{
++    int i;
++    uint16_t * restrict out16 = (uint16_t * restrict)out;
++    uint16_t * restrict out16b = (uint16_t * restrict)(out+finfo.line_length);
++
++    for (i = 0; i < in_pixels/8; i++)
++    {
++        uint16_t c[8];
++        c[0] = rgb565_palette[in[0]]; 
++        c[1] = rgb565_palette[in[1]]; 
++        c[2] = rgb565_palette[in[2]]; 
++        c[3] = rgb565_palette[in[3]]; 
++        c[4] = rgb565_palette[in[4]]; 
++        c[5] = rgb565_palette[in[5]]; 
++        c[6] = rgb565_palette[in[6]]; 
++        c[7] = rgb565_palette[in[7]]; 
++
++        out16[ 0] = c[0]; out16[ 0+1] = c[0]; 
++        out16[ 2] = c[1]; out16[ 2+1] = c[1]; 
++        out16[ 4] = c[2]; out16[ 4+1] = c[2]; 
++        out16[ 6] = c[3]; out16[ 6+1] = c[3]; 
++        out16[ 8] = c[4]; out16[ 8+1] = c[4]; 
++        out16[10] = c[5]; out16[10+1] = c[5]; 
++        out16[12] = c[6]; out16[12+1] = c[6]; 
++        out16[14] = c[7]; out16[14+1] = c[7]; 
++        out16b[ 0] = c[0]; out16b[ 0+1] = c[0]; 
++        out16b[ 2] = c[1]; out16b[ 2+1] = c[1]; 
++        out16b[ 4] = c[2]; out16b[ 4+1] = c[2]; 
++        out16b[ 6] = c[3]; out16b[ 6+1] = c[3]; 
++        out16b[ 8] = c[4]; out16b[ 8+1] = c[4]; 
++        out16b[10] = c[5]; out16b[10+1] = c[5]; 
++        out16b[12] = c[6]; out16b[12+1] = c[6]; 
++        out16b[14] = c[7]; out16b[14+1] = c[7]; 
++
++        in +=8;
++        out16 += 16;
++        out16b += 16;
++    }
++}
++
++
++void cmap_to_fb_x1_565(uint8_t * restrict out, uint8_t * restrict in, int in_pixels)
++{
++    int i;
++    uint16_t * restrict out16 = (uint16_t * restrict)out;
++
++    for (i = 0; i < in_pixels/8; i++)
++    {
++        uint16_t c[8];
++        c[0] = rgb565_palette[in[0]]; 
++        c[1] = rgb565_palette[in[1]]; 
++        c[2] = rgb565_palette[in[2]]; 
++        c[3] = rgb565_palette[in[3]]; 
++        c[4] = rgb565_palette[in[4]]; 
++        c[5] = rgb565_palette[in[5]]; 
++        c[6] = rgb565_palette[in[6]]; 
++        c[7] = rgb565_palette[in[7]]; 
++
++        out16[ 0] = c[0]; 
++        out16[ 1] = c[1]; 
++        out16[ 2] = c[2];
++        out16[ 3] = c[3]; 
++        out16[ 4] = c[4];
++        out16[ 5] = c[5];
++        out16[ 6] = c[6];
++        out16[ 7] = c[7];
++
++        in +=8;
++        out16 += 8;
++    }
++}
++
++
++void cmap_to_fb_x1_888(uint8_t * restrict out, uint8_t * restrict in, int in_pixels)
++{
++    int i;
++    uint32_t * restrict out32 = (uint32_t * restrict)out;
++
++    for (i = 0; i < in_pixels/8; i++)
++    {
++        uint32_t c[8];
++        c[0] = ((uint32_t*)palette)[in[0]]; 
++        c[1] = ((uint32_t*)palette)[in[1]]; 
++        c[2] = ((uint32_t*)palette)[in[2]]; 
++        c[3] = ((uint32_t*)palette)[in[3]]; 
++        c[4] = ((uint32_t*)palette)[in[4]]; 
++        c[5] = ((uint32_t*)palette)[in[5]]; 
++        c[6] = ((uint32_t*)palette)[in[6]]; 
++        c[7] = ((uint32_t*)palette)[in[7]]; 
++
++        out32[ 0] = c[0];
++        out32[ 1] = c[1];
++        out32[ 2] = c[2];
++        out32[ 3] = c[3];
++        out32[ 4] = c[4];
++        out32[ 5] = c[5];
++        out32[ 6] = c[6];
++        out32[ 7] = c[7];
++
++        in +=8;
++        out32 += 8;
++    }
++}
++
++
++void cmap_to_fb_x2_888(uint8_t * restrict out, uint8_t * restrict in, int in_pixels)
++{
++    int i;
++    uint32_t * restrict out32 = (uint32_t * restrict)out;
++    uint32_t * restrict out32b = (uint32_t * restrict)(out+finfo.line_length);
++
++    for (i = 0; i < in_pixels/8; i++)
++    {
++        uint32_t c[8];
++        c[0] = ((uint32_t*)palette)[in[0]]; 
++        c[1] = ((uint32_t*)palette)[in[1]]; 
++        c[2] = ((uint32_t*)palette)[in[2]]; 
++        c[3] = ((uint32_t*)palette)[in[3]]; 
++        c[4] = ((uint32_t*)palette)[in[4]]; 
++        c[5] = ((uint32_t*)palette)[in[5]]; 
++        c[6] = ((uint32_t*)palette)[in[6]]; 
++        c[7] = ((uint32_t*)palette)[in[7]]; 
++
++        out32[ 0] = c[0]; out32[ 0+1] = c[0]; 
++        out32[ 2] = c[1]; out32[ 2+1] = c[1]; 
++        out32[ 4] = c[2]; out32[ 4+1] = c[2]; 
++        out32[ 6] = c[3]; out32[ 6+1] = c[3]; 
++        out32[ 8] = c[4]; out32[ 8+1] = c[4]; 
++        out32[10] = c[5]; out32[10+1] = c[5]; 
++        out32[12] = c[6]; out32[12+1] = c[6]; 
++        out32[14] = c[7]; out32[14+1] = c[7]; 
++        out32b[ 0] = c[0]; out32b[ 0+1] = c[0]; 
++        out32b[ 2] = c[1]; out32b[ 2+1] = c[1]; 
++        out32b[ 4] = c[2]; out32b[ 4+1] = c[2]; 
++        out32b[ 6] = c[3]; out32b[ 6+1] = c[3]; 
++        out32b[ 8] = c[4]; out32b[ 8+1] = c[4]; 
++        out32b[10] = c[5]; out32b[10+1] = c[5]; 
++        out32b[12] = c[6]; out32b[12+1] = c[6]; 
++        out32b[14] = c[7]; out32b[14+1] = c[7]; 
++
++        in +=8;
++        out32 += 16;
++        out32b += 16;
++    }
++}
++
++void cmap_to_fb_x4_888(uint8_t * restrict out, uint8_t * restrict in, int in_pixels)
++{
++    int i;
++    uint32_t * restrict out32[4];
++    out32[0] = (uint32_t * restrict)(out+0*finfo.line_length);
++    out32[1] = (uint32_t * restrict)(out+1*finfo.line_length);
++    out32[2] = (uint32_t * restrict)(out+2*finfo.line_length);
++    out32[3] = (uint32_t * restrict)(out+3*finfo.line_length);
++
++    for (i = 0; i < in_pixels/4; i++)
++    {
++        uint32_t c[4];
++        c[0] = ((uint32_t*)palette)[in[0]];
++        c[1] = ((uint32_t*)palette)[in[1]];
++        c[2] = ((uint32_t*)palette)[in[2]];
++        c[3] = ((uint32_t*)palette)[in[3]];
++
++
++        out32[0][ 0+0] = c[0]; out32[0][ 0+1] = c[0]; out32[0][ 0+2] = c[0]; out32[0][ 0+3] = c[0];
++        out32[0][ 4+0] = c[1]; out32[0][ 4+1] = c[1]; out32[0][ 4+2] = c[1]; out32[0][ 4+3] = c[1];
++        out32[0][ 8+0] = c[2]; out32[0][ 8+1] = c[2]; out32[0][ 8+2] = c[2]; out32[0][ 8+3] = c[2];
++        out32[0][12+0] = c[3]; out32[0][12+1] = c[3]; out32[0][12+2] = c[3]; out32[0][12+3] = c[3];
++        
++        out32[1][ 0+0] = c[0]; out32[1][ 0+1] = c[0]; out32[1][ 0+2] = c[0]; out32[1][ 0+3] = c[0];
++        out32[1][ 4+0] = c[1]; out32[1][ 4+1] = c[1]; out32[1][ 4+2] = c[1]; out32[1][ 4+3] = c[1];
++        out32[1][ 8+0] = c[2]; out32[1][ 8+1] = c[2]; out32[1][ 8+2] = c[2]; out32[1][ 8+3] = c[2];
++        out32[1][12+0] = c[3]; out32[1][12+1] = c[3]; out32[1][12+2] = c[3]; out32[1][12+3] = c[3];
++        
++        out32[2][ 0+0] = c[0]; out32[2][ 0+1] = c[0]; out32[2][ 0+2] = c[0]; out32[2][ 0+3] = c[0];
++        out32[2][ 4+0] = c[1]; out32[2][ 4+1] = c[1]; out32[2][ 4+2] = c[1]; out32[2][ 4+3] = c[1];
++        out32[2][ 8+0] = c[2]; out32[2][ 8+1] = c[2]; out32[2][ 8+2] = c[2]; out32[2][ 8+3] = c[2];
++        out32[2][12+0] = c[3]; out32[2][12+1] = c[3]; out32[2][12+2] = c[3]; out32[2][12+3] = c[3];
++        
++        out32[3][ 0+0] = c[0]; out32[3][ 0+1] = c[0]; out32[3][ 0+2] = c[0]; out32[3][ 0+3] = c[0];
++        out32[3][ 4+0] = c[1]; out32[3][ 4+1] = c[1]; out32[3][ 4+2] = c[1]; out32[3][ 4+3] = c[1];
++        out32[3][ 8+0] = c[2]; out32[3][ 8+1] = c[2]; out32[3][ 8+2] = c[2]; out32[3][ 8+3] = c[2];
++        out32[3][12+0] = c[3]; out32[3][12+1] = c[3]; out32[3][12+2] = c[3]; out32[3][12+3] = c[3];
++
++        in += 4;
++        out32[0] += 16;
++        out32[1] += 16;
++        out32[2] += 16;
++        out32[3] += 16;
++    }
++}
++
++
++static int flush_screen(void *vargp) 
++{
++    while(1){
++        int y = SCREENHEIGHT;
++        int wx,wy;
++        unsigned char *line_in, *line_out;
++        int draw_width = SCREENWIDTH;
++        int draw_height = SCREENHEIGHT;
++        int draw_x = 0;
++        int draw_y = 0;
++        int ratio = window_width/320;
++        int byte_per_pixel = vinfo.bits_per_pixel/8;
++
++        if(withFlushThread){
++            SDL_LockMutex(flush_lock);
++            while (!c) {
++                SDL_CondWait(flush_end, flush_lock);
++            }
++            SDL_UnlockMutex(flush_lock);
++        }
++
++        SDL_GetWindowPosition(screen, &wx, &wy);
++        line_in  = (unsigned char *) (withFlushThread ? I_VideoBuffer_flush : I_VideoBuffer);
++        line_out = (unsigned char *) (fb0 + wx*byte_per_pixel + wy*finfo.line_length);
++
++        draw_x += max(0, -wx + ratio -1)/ratio;
++        draw_y += max(0, -wy + ratio -1)/ratio;
++        draw_width  -= draw_x + max(0, wx + SCREENWIDTH*ratio - display_mode.w)/ratio;
++        draw_height -= draw_y + max(0, wy + SCREENHEIGHT*ratio - display_mode.h)/ratio;
++
++        line_in  += draw_x + draw_y*SCREENWIDTH;
++        line_out += draw_x*byte_per_pixel + draw_y*finfo.line_length;
++
++        y = draw_height;
++
++
++        if(draw_width > 0 && draw_height > 0) {
++            switch(vinfo.bits_per_pixel){
++            case 32:
++	            if(window_width >= 1280){ 
++                    while (y--)
++                    {
++	                    cmap_to_fb_x4_888((void*)line_out, (void*)line_in, draw_width);
++	                    line_out += finfo.line_length*4;
++	                    line_in += SCREENWIDTH;
++                    } 
++                } else if(window_width >= 640){
++                    while (y--)
++                    {
++	                    cmap_to_fb_x2_888((void*)line_out, (void*)line_in, draw_width);
++	                    line_out += finfo.line_length*2;
++	                    line_in += SCREENWIDTH;
++                    } 
++                } else {
++                     while (y--)
++                     {
++                        cmap_to_fb_x1_888((void*)line_out, (void*)line_in, draw_width);
++                        line_out += finfo.line_length;
++                        line_in += SCREENWIDTH;
++                     }
++                 }
++                break;
++
++
++            case 16:
++	            if(window_width >= 640){ 
++                    while (y--)
++                    {
++	                    cmap_to_fb_x2_565((void*)line_out, (void*)line_in, draw_width);
++	                    line_out += finfo.line_length*2;
++	                    line_in += SCREENWIDTH;
++                    } 
++                } else {
++                    while (y--)
++                    {
++	                    cmap_to_fb_x1_565((void*)line_out, (void*)line_in, draw_width);
++	                    line_out += finfo.line_length;
++	                    line_in += SCREENWIDTH;
++                    } 
++                }
++                break;
++            }
++        }
++
++        if(withFlushThread){
++            SDL_LockMutex(flush_lock);
++            c = SDL_FALSE;
++            SDL_CondSignal(flush_start);
++            SDL_UnlockMutex(flush_lock);
++        } else {
++            break;
++        }
++    }
++    //asm volatile(".word(0x500F)\n");
++    return 0; 
++} 
++
++void M_WriteText(int x, int y, char *string);
++
++
+ //
+ // I_FinishUpdate
+ //
+@@ -720,6 +1073,26 @@
+         }
+     }
+ 
++    if(withFlushThread){
++        SDL_LockMutex(flush_lock);
++        while (c) {
++            SDL_CondWait(flush_start, flush_lock);
++        }
++        SDL_UnlockMutex(flush_lock);
++
++        memcpy(I_VideoBuffer_flush, I_VideoBuffer, SCREENWIDTH*SCREENHEIGHT*sizeof(*I_VideoBuffer));
++
++        SDL_LockMutex(flush_lock);
++        c = SDL_TRUE;
++        SDL_CondSignal(flush_end);
++        SDL_UnlockMutex(flush_lock);
++    } else {
++        flush_screen(0);
++    }
++
++
++    return;
++
+     UpdateGrab();
+ 
+ #if 0 // SDL2-TODO
+@@ -814,12 +1187,19 @@
+ 
+     for (i=0; i<256; ++i)
+     {
++	    uint16_t r, g, b;
++
+         // Zero out the bottom two bits of each channel - the PC VGA
+         // controller only supports 6 bits of accuracy.
+ 
+         palette[i].r = gammatable[usegamma][*doompalette++] & ~3;
+         palette[i].g = gammatable[usegamma][*doompalette++] & ~3;
+         palette[i].b = gammatable[usegamma][*doompalette++] & ~3;
++
++        r = ((uint16_t)(palette[i].r >> 3)) << 11;
++        g = ((uint16_t)(palette[i].g >> 2)) << 5;
++        b = ((uint16_t)(palette[i].b >> 3)) << 0;
++        rgb565_palette[i] = (r | g | b);
+     }
+ 
+     palette_to_set = true;
+@@ -900,7 +1280,7 @@
+     // Pick 320x200 or 320x240, depending on aspect ratio correct
+ 
+     window_width = factor * SCREENWIDTH;
+-    window_height = factor * actualheight;
++    window_height = factor * SCREENWIDTH*3/4;
+     fullscreen = false;
+ }
+ 
+@@ -1046,6 +1426,12 @@
+     {
+         SetScaleFactor(3);
+     }
++
++
++    if (M_CheckParm("-4")) 
++    {
++        SetScaleFactor(4);
++    }
+ }
+ 
+ // Check if we have been invoked as a screensaver by xscreensaver.
+@@ -1146,7 +1532,6 @@
+     unsigned int rmask, gmask, bmask, amask;
+     int unused_bpp;
+     int window_flags = 0, renderer_flags = 0;
+-    SDL_DisplayMode mode;
+ 
+     w = window_width;
+     h = window_height;
+@@ -1205,16 +1590,16 @@
+     // intermediate texture into the upscaled texture.
+     renderer_flags = SDL_RENDERER_TARGETTEXTURE;
+ 	
+-    if (SDL_GetCurrentDisplayMode(video_display, &mode) != 0)
++    if (SDL_GetCurrentDisplayMode(video_display, &display_mode) != 0)
+     {
+         I_Error("Could not get display mode for video display #%d: %s",
+         video_display, SDL_GetError());
+     }
+ 
+     // Turn on vsync if we aren't in a -timedemo
+-    if (!singletics && mode.refresh_rate > 0)
++    if (!singletics && display_mode.refresh_rate > 0)
+     {
+-        renderer_flags |= SDL_RENDERER_PRESENTVSYNC;
++        //renderer_flags |= SDL_RENDERER_PRESENTVSYNC;
+     }
+ 
+     if (force_software_renderer)
+@@ -1273,10 +1658,16 @@
+     {
+         SDL_PixelFormatEnumToMasks(pixel_format, &unused_bpp,
+                                    &rmask, &gmask, &bmask, &amask);
++/*
++        rgbabuffer = SDL_CreateRGBSurface(0,
++                                          SCREENWIDTH, SCREENHEIGHT, 16,
++                                          0xF800, 0x7E0, 0x1F, 0x0);
++
+         rgbabuffer = SDL_CreateRGBSurface(0,
+                                           SCREENWIDTH, SCREENHEIGHT, 32,
+                                           rmask, gmask, bmask, amask);
+         SDL_FillRect(rgbabuffer, NULL, 0);
++*/
+     }
+ 
+     if (texture != NULL)
+@@ -1415,6 +1806,14 @@
+     I_VideoBuffer = screenbuffer->pixels;
+     V_RestoreBuffer();
+ 
++    if(withFlushThread){
++        I_VideoBuffer_flush = (pixel_t *) malloc(SCREENWIDTH * SCREENHEIGHT);
++        flush_lock = SDL_CreateMutex();
++        flush_start = SDL_CreateCond();
++        flush_end = SDL_CreateCond();
++        SDL_CreateThread(flush_screen, "flush_screen", NULL);
++    }
++
+     // Clear the screen to black.
+ 
+     memset(I_VideoBuffer, 0, SCREENWIDTH * SCREENHEIGHT);
+@@ -1428,6 +1827,8 @@
+     // Call I_ShutdownGraphics on quit
+ 
+     I_AtExit(I_ShutdownGraphics, true);
++
++    I_InitFb();
+ }
+ 
+ // Bind all variables controlling video options into the configuration
+diff -ruN chocolate-doom-3.0.1_ori/src/setup/sound.c chocolate-doom-3.0.1/src/setup/sound.c
+--- chocolate-doom-3.0.1_ori/src/setup/sound.c	2020-06-25 05:10:06.000000000 +0200
++++ chocolate-doom-3.0.1/src/setup/sound.c	2022-02-16 12:01:10.990072000 +0100
+@@ -46,7 +46,7 @@
+ 
+ int snd_sfxdevice = SNDDEVICE_SB;
+ int snd_musicdevice = SNDDEVICE_SB;
+-int snd_samplerate = 44100;
++int snd_samplerate = 11025;
+ int opl_io_port = 0x388;
+ int snd_cachesize = 64 * 1024 * 1024;
+ int snd_maxslicetime_ms = 28;
