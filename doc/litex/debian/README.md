@@ -57,7 +57,6 @@ chmod +x litex_setup.py
 
 ## Create a Debian rootfs
 
-
 ```shell
 cd $WORK_DIR
 export CHROOT_DIR=/tmp/riscv64-chroot
@@ -74,12 +73,11 @@ apt-get update
 apt-get --fix-broken install
 
 # Set up basic networking
-cat >>/etc/network/interfaces <<EOF
+cat > /etc/network/interfaces <<EOF
 auto lo
 iface lo inet loopback
 
-allow-hotplug
-auto eth0
+allow-hotplug eth0
 iface eth0 inet dhcp
 EOF
 
@@ -99,7 +97,7 @@ EOF
 
 
 # Install networking stuff, note the PermitRootLogin to allow SSH root login
-apt-get -y install openssh-server openntpd ntpdate net-tools 
+apt-get -y install openssh-server openntpd ntpdate net-tools avahi-daemon avahi-utils
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config
 
 # Install a few utilities
@@ -154,11 +152,18 @@ unset CROSS_COMPILE
 
 ## Generate the hardware
 
+Note that not all VexiiRiscv feature are enabled by default. For instance, you can add to the parameters bellow : 
+- --vexii-args="--regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2" 
+- --l2-byte=262144 --l2-self-flush=40c00000,40dd4c00,1666666
+
+
 ```shell
 cd $WORK_DIR
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian  --bus-standard axi-lite \
---cpu-count=1 --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma  \
---soc-json build/csr.json --cpu-count=2 --build
+--cpu-count=2 --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma  \
+--soc-json build/csr.json --build
+
+# Generate dts/dtb
 python3 -m litex.tools.litex_json2dts_linux build/csr.json --root-device=mmcblk0p2 | grep -v "linux,initrd" > build/linux.dts
 dtc -O dtb -o build/linux.dtb build/linux.dts
 ```
@@ -168,8 +173,8 @@ dtc -O dtb -o build/linux.dtb build/linux.dts
 ```shell
 cd $WORK_DIR
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian  --bus-standard axi-lite \
---cpu-count=1 --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma  \
---soc-json build/csr.json --cpu-count=2 --load
+--cpu-count=2 --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma  \
+--soc-json build/csr.json --load
 ```
 
 ## Build opensbi
