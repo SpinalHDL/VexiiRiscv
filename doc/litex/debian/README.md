@@ -60,14 +60,14 @@ chmod +x litex_setup.py
 
 ```shell
 cd $WORK_DIR
-export MNT=/tmp/riscv64-chroot
+export CHROOT_DIR=/tmp/riscv64-chroot
 
 # install base files, note that the key added bellow may change
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6ED0E7B82643E131
-sudo mmdebstrap --architectures=riscv64 sid $MNT "deb http://deb.debian.org/debian sid main" 
+sudo mmdebstrap --architectures=riscv64 sid $CHROOT_DIR "deb http://deb.debian.org/debian sid main" 
 # chroot into base filesystem and made basic configuration
-sudo chroot $MNT
+sudo chroot $CHROOT_DIR
 
 # Update package information
 apt-get update
@@ -79,6 +79,7 @@ auto lo
 iface lo inet loopback
 
 allow-hotplug
+auto eth0
 iface eth0 inet dhcp
 EOF
 
@@ -128,23 +129,10 @@ apt-get clean
 # exit chroot
 exit
 
-sudo umount $MNT
+sudo umount $CHROOT_DIR
 ```
 
 # Compile linux
-
-To do so, you will need a riscv toolchain configured to target linux. To get one you can follow https://github.com/riscv-collab/riscv-gnu-toolchain :
-
-```shell
-git clone https://github.com/riscv-collab/riscv-gnu-toolchain.git --recursive
-cd riscv-gnu-toolchain
-./configure --prefix=/opt/riscv_rv64gc_linux
-make -j$(nproc) linux
-sudo make install
-cd ..
-```
-
-Then you can compile the kernel :
 
 ```shell
 cd $WORK_DIR
@@ -153,7 +141,7 @@ cd litex-linux
 git checkout f5ee078b
 cp $WORK_DIR/VexiiRiscv/doc/litex/debian/linux.config .config
 
-export CROSS_COMPILE=/opt/riscv_rv64gc_linux/bin/riscv64-unknown-linux-gnu-
+export CROSS_COMPILE=riscv64-unknown-linux-gnu-
 make -j$(nproc) ARCH=riscv oldconfig
 make -j$(nproc) ARCH=riscv all
 
@@ -188,7 +176,7 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu
 
 ```shell
 cd $WORK_DIR
-git clone https://github.com/Dolu1990/opensbi.git --branch upstream
+git clone https://github.com/riscv-software-src/opensbi.git
 cd opensbi
 make CROSS_COMPILE=riscv64-unknown-linux-gnu- \
      PLATFORM=generic \
@@ -207,7 +195,7 @@ make CROSS_COMPILE=riscv64-unknown-linux-gnu- \
 cd $WORK_DIR
 cat > boot.json << EOF
 {
-"Image":        "0x40000000",
+"Image":        "0x41000000",
 "opensbi.bin":  "0x40C00000"
 "opensbi.bin":  "0x40f00000"
 }
@@ -253,14 +241,20 @@ sudo e2label $SDCARD_P2 rootfs
 
 ```shell
 cd $WORK_DIR
-export BOOT=mnt_p1
-mkdir -p $BOOT
-sudo mount $SDCARD_P1 $BOOT
-sudo cp boot.json $BOOT/boot.json
-sudo cp opensbi/build/platform/generic/firmware/fw_jump.bin $BOOT/opensbi.bin
-sudo cp buildroot/build/basic/images/Image $BOOT
-sudo cp buildroot/build/basic/images/rootfs.cpio $BOOT
-sudo umount $BOOT
+export P1=mnt_p1
+mkdir -p $P1
+sudo mount $SDCARD_P1 $P1
+sudo cp boot.json $P1/boot.json
+sudo cp opensbi/build/platform/generic/firmware/fw_jump.bin $P1/opensbi.bin
+sudo cp litex-linux/arch/riscv/boot/Image $P1
+sudo umount $P1
+
+
+export P2=mnt_p2
+mkdir -p $P2
+sudo mount $SDCARD_P2 $P2
+sudo rsync -aAX --progress $CHROOT_DIR/  $P2/
+sudo umount $P2
 ```
 
 
