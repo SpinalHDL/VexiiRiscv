@@ -44,6 +44,7 @@ class SocConfig(){
   var l2Ways = 0
   var cpuCount = 1
   var litedramWidth = 32
+  var withAxi3 = false
   var selfFlush : SelfFLush = null
 //  var sharedBusWidth = 32
   def withL2 = l2Bytes > 0
@@ -71,7 +72,7 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 
     val withMem = memRegions.nonEmpty
     val mem = withMem generate new Area {
-      val toAxi4 = withMem generate new fabric.Axi4Bridge
+      val toAxi4 = withMem generate new fabric.Axi4Bridge(withAxi3 = withAxi3)
       toAxi4.up.forceDataWidth(litedramWidth)
       toAxi4.down.addTag(PMA.MAIN)
       toAxi4.down.addTag(PMA.EXECUTABLE)
@@ -202,7 +203,10 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 
 
     val patcher = Fiber build new AreaRoot {
-      val mBus = withMem generate Axi4SpecRenamer(master(mem.toAxi4.down.expendId(8).pipelined()))
+      val mBus = withMem generate Axi4SpecRenamer(master(mem.toAxi4.down.expendId(8)))
+      if(withAxi3){
+
+      }
       val pBus = AxiLite4SpecRenamer(master(
         vexiiParam.lsuL1Enable.mux(
           peripheral.toAxiLite4.down.pipelined(
@@ -252,6 +256,7 @@ object SocGen extends App{
     opt[Int]("l2-bytes") action { (v, c) => l2Bytes = v }
     opt[Int]("l2-ways") action { (v, c) => l2Ways = v }
     opt[Unit]("with-dma") action { (v, c) => withDma = true }
+    opt[Unit]("with-axi3") action { (v, c) => withAxi3 = true }
     opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
     opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
     opt[Seq[String]]("memory-region") unbounded() action  { (v, c) =>
@@ -348,40 +353,40 @@ object PythonArgsGen extends App{
 
 /*
 
-# Debian 4C
+# debian 4c
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
 --vexii-args="--performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2" \
---cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40DD4C00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
+--cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40dd4c00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
 --update-repo=no --soc-json build/csr.json --build   --load
 
-# Debian 4C perf
+# debian 4c perf
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
 --vexii-args="--performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2 --stressed-btb --with-store-rs2-late" \
---cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40DD4C00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
+--cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40dd4c00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
 --update-repo=no --soc-json build/csr.json --build
 
-
+--vivado-synth-directive=performanceoptimized --vivado-route-directive=aggressiveexplore
 
 python3 -m litex.tools.litex_json2dts_linux build/csr.json --root-device=mmcblk0p2 > build/linux.dts
-dtc -O dtb -o build/linux.dtb build/linux.dts
+dtc -o dtb -o build/linux.dtb build/linux.dts
 
 vex 1 =>
-Memspeed at 0x40000000 (Sequential, 8.0KiB)...
-  Write speed: 1.6MiB/s
-   Read speed: 867.6KiB/s
+memspeed at 0x40000000 (sequential, 8.0kib)...
+  write speed: 1.6mib/s
+   read speed: 867.6kib/s
 
 
-Write speed: 647.4KiB/s
- Read speed: 689.3KiB/s
+write speed: 647.4kib/s
+ read speed: 689.3kib/s
 
-Write speed: 811.9KiB/s
- Read speed: 833.5KiB/s
+write speed: 811.9kib/s
+ read speed: 833.5kib/s
 
-Write speed: 1.3MiB/s
- Read speed: 833.5KiB/s
+write speed: 1.3mib/s
+ read speed: 833.5kib/s
 
-Write speed: 1.3MiB/s
- Read speed: 1.0MiB/s
+write speed: 1.3mib/s
+ read speed: 1.0mib/s
 
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged" --with-jtag-tap --build --load
@@ -413,21 +418,21 @@ litex_sim --cpu-type=vexiiriscv  --with-sdram --sdram-data-width=64  \
 
 
 /media/data2/proj/upstream/openocd_riscv_up/src/openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl -c "load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/rootfs.cpio 0x40000000" -c exit
-(* MARK_DEBUG = "TRUE" *)
+(* mark_debug = "true" *)
 
-// Minimal linux
+// minimal linux
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --with-rva --with-supervisor --performance-counters 0" --with-jtag-tap  --load
-load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/Image 0x40000000
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/image 0x40000000
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/rv32.dtb 0x40ef0000
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/rootfs.cpio 0x41000000
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/opensbi.bin 0x40f00000
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/opensbi/build/platform/litex/vexriscv/firmware/fw_jump.bin 0x40f00000
 resume
 
-//Linux++ single issue 1.77
+//linux++ single issue 1.77
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --bus-standard axi-lite --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --with-jtag-tap  --build --load
 
-//Linux++ dual issue
+//linux++ dual issue
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --bus-standard axi-lite --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass --decoders=2 --lanes=2" --with-jtag-tap  --build --load
 
 //linux++ 64 bits fpu
@@ -451,7 +456,7 @@ debian boot :
 - 4c => 77s log
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--debug-privileged" --with-jtag-tap --build --load
-export HART_COUNT=2
+export hart_count=2
 /media/data2/proj/upstream/openocd_riscv_up/src/openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--debug-privileged" --with-jtag-instruction --build --load
@@ -463,23 +468,23 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --ve
 
 
 opensbi =>
-git clone https://github.com/Dolu1990/opensbi.git --branch vexii-debian
+git clone https://github.com/dolu1990/opensbi.git --branch vexii-debian
 cd opensbi
-make PLATFORM_RISCV_XLEN=64 PLATFORM_RISCV_ABI=lp64d PLATFORM_RISCV_ISA=rv64gc CROSS_COMPILE=riscv-none-embed- PLATFORM=litex/vexriscv
+make platform_riscv_xlen=64 platform_riscv_abi=lp64d platform_riscv_isa=rv64gc cross_compile=riscv-none-embed- platform=litex/vexriscv
 
-git clone https://github.com/Dolu1990/opensbi.git --branch upstream
+git clone https://github.com/dolu1990/opensbi.git --branch upstream
 cd opensbi
-make CROSS_COMPILE=riscv-none-embed- \
-     PLATFORM=generic \
-     FW_FDT_PATH=../linux.dtb \
-     FW_JUMP_ADDR=0x41000000  \
-     FW_JUMP_FDT_ADDR=0x46000000 \
+make cross_compile=riscv-none-embed- \
+     platform=generic \
+     fw_fdt_path=../linux.dtb \
+     fw_jump_addr=0x41000000  \
+     fw_jump_fdt_addr=0x46000000 \
      -j20
 
 arm semihosting enable
 
 //linux ++ dual core
-make O=build/full  BR2_EXTERNAL=../config litex_vexriscv_full_defconfig
+make o=build/full  br2_external=../config litex_vexriscv_full_defconfig
 (cd build/full/ && make -j20)
 
 litex_sim --cpu-type=vexiiriscv  --cpu-variant=linux --with-sdram --sdram-data-width=64 --bus-standard axi-lite --cpu-count=1  --with-jtag-tap --sdram-init /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/boot.json
@@ -487,10 +492,10 @@ python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_n
 python3 -m litex_boards.targets.digilent_nexys_video --soc-json build/digilent_nexys_video/csr.json --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --div-ipc --with-rva --with-supervisor --performance-counters 0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-mem-data-width-min=64  --with-btb --with-ras --with-gshare --relaxed-branch --regfile-async --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --with-lsu-bypass" --cpu-count=2 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-bytes=131072 --load
 --lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32
 
-export HART_COUNT=2
+export hart_count=2
 /media/data2/proj/upstream/openocd_riscv_up/src/openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl -f dev.tcl
 
-load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/Image 0x40000000
+load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/image 0x40000000
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/linux_2c.dtb 0x40ef0000
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/rootfs.cpio 0x41000000
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/opensbi/build/platform/litex/vexriscv/firmware/fw_jump.bin 0x40f00000
@@ -500,23 +505,26 @@ targets riscv.cpu.0; resume
 boot 0x40f00000
 
 udhcpc
-cat >> /etc/X11/xorg.conf << EOF
-> Section "Module"
->   Load "fb"
->   Load "shadow"
->   Load "fbdevhw"
-> EndSection
-> EOF
+cat >> /etc/x11/xorg.conf << eof
+> section "module"
+>   load "fb"
+>   load "shadow"
+>   load "fbdevhw"
+> endsection
+> eof
 
-https://github.com/zielmicha/SDL2/blob/master/README.DirectFB
+export SDL_VIDEODRIVER=directfb
+export SDL_DIRECTFB_X11_CHECK=0
+
+https://github.com/zielmicha/sdl2/blob/master/readme.directfb
 https://bbs.archlinux.org/viewtopic.php?id=243100
 
---dfb:system=FBDev
+--dfb:system=fbdev
 
 https://www.brendangregg.com/perf.html
 perf stat  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 perf record md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
-perf record -F 99 -g  -e cpu-clock  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp
+perf record -f 99 -g  -e cpu-clock  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp
 
 perf report
 perf report --stdio
@@ -525,82 +533,82 @@ video capture => qv4l2
 
 openssl speed -provider legacy -provider default aes-128-cbc
 
-PMU Hardware doesn't support sampling/overflow-interrupts
+pmu hardware doesn't support sampling/overflow-interrupts
 
-branch-instructions OR branches                    [Hardware event]
-branch-misses                                      [Hardware event]
-bus-cycles                                         [Hardware event]
-cache-misses                                       [Hardware event]
-cache-references                                   [Hardware event]
-cpu-cycles OR cycles                               [Hardware event]
-instructions                                       [Hardware event]
-ref-cycles                                         [Hardware event]
-stalled-cycles-backend OR idle-cycles-backend      [Hardware event]
-stalled-cycles-frontend OR idle-cycles-frontend    [Hardware event]
-alignment-faults                                   [Software event]
-bpf-output                                         [Software event]
-cgroup-switches                                    [Software event]
-context-switches OR cs                             [Software event]
-cpu-clock                                          [Software event]
-cpu-migrations OR migrations                       [Software event]
-dummy                                              [Software event]
-emulation-faults                                   [Software event]
-major-faults                                       [Software event]
-minor-faults                                       [Software event]
-page-faults OR faults                              [Software event]
-task-clock                                         [Software event]
-duration_time                                      [Tool event]
-user_time                                          [Tool event]
-system_time                                        [Tool event]
+branch-instructions or branches                    [hardware event]
+branch-misses                                      [hardware event]
+bus-cycles                                         [hardware event]
+cache-misses                                       [hardware event]
+cache-references                                   [hardware event]
+cpu-cycles or cycles                               [hardware event]
+instructions                                       [hardware event]
+ref-cycles                                         [hardware event]
+stalled-cycles-backend or idle-cycles-backend      [hardware event]
+stalled-cycles-frontend or idle-cycles-frontend    [hardware event]
+alignment-faults                                   [software event]
+bpf-output                                         [software event]
+cgroup-switches                                    [software event]
+context-switches or cs                             [software event]
+cpu-clock                                          [software event]
+cpu-migrations or migrations                       [software event]
+dummy                                              [software event]
+emulation-faults                                   [software event]
+major-faults                                       [software event]
+minor-faults                                       [software event]
+page-faults or faults                              [software event]
+task-clock                                         [software event]
+duration_time                                      [tool event]
+user_time                                          [tool event]
+system_time                                        [tool event]
 
 
 cpu:
-L1-dcache-loads OR cpu/L1-dcache-loads/
-L1-dcache-load-misses OR cpu/L1-dcache-load-misses/
-L1-dcache-stores OR cpu/L1-dcache-stores/
-L1-dcache-store-misses OR cpu/L1-dcache-store-misses/
-L1-dcache-prefetches OR cpu/L1-dcache-prefetches/
-L1-dcache-prefetch-misses OR cpu/L1-dcache-prefetch-misses/
-L1-icache-loads OR cpu/L1-icache-loads/
-L1-icache-load-misses OR cpu/L1-icache-load-misses/
-L1-icache-prefetches OR cpu/L1-icache-prefetches/
-L1-icache-prefetch-misses OR cpu/L1-icache-prefetch-misses/
-LLC-loads OR cpu/LLC-loads/
-LLC-load-misses OR cpu/LLC-load-misses/
-LLC-stores OR cpu/LLC-stores/
-LLC-store-misses OR cpu/LLC-store-misses/
-LLC-prefetches OR cpu/LLC-prefetches/
-LLC-prefetch-misses OR cpu/LLC-prefetch-misses/
-dTLB-loads OR cpu/dTLB-loads/
-dTLB-load-misses OR cpu/dTLB-load-misses/
-dTLB-stores OR cpu/dTLB-stores/
-dTLB-store-misses OR cpu/dTLB-store-misses/
-dTLB-prefetches OR cpu/dTLB-prefetches/
-dTLB-prefetch-misses OR cpu/dTLB-prefetch-misses/
-iTLB-loads OR cpu/iTLB-loads/
-iTLB-load-misses OR cpu/iTLB-load-misses/
-branch-loads OR cpu/branch-loads/
-branch-load-misses OR cpu/branch-load-misses/
-node-loads OR cpu/node-loads/
-node-load-misses OR cpu/node-load-misses/
-node-stores OR cpu/node-stores/
-node-store-misses OR cpu/node-store-misses/
-node-prefetches OR cpu/node-prefetches/
-node-prefetch-misses OR cpu/node-prefetch-misses/
+l1-dcache-loads or cpu/l1-dcache-loads/
+l1-dcache-load-misses or cpu/l1-dcache-load-misses/
+l1-dcache-stores or cpu/l1-dcache-stores/
+l1-dcache-store-misses or cpu/l1-dcache-store-misses/
+l1-dcache-prefetches or cpu/l1-dcache-prefetches/
+l1-dcache-prefetch-misses or cpu/l1-dcache-prefetch-misses/
+l1-icache-loads or cpu/l1-icache-loads/
+l1-icache-load-misses or cpu/l1-icache-load-misses/
+l1-icache-prefetches or cpu/l1-icache-prefetches/
+l1-icache-prefetch-misses or cpu/l1-icache-prefetch-misses/
+llc-loads or cpu/llc-loads/
+llc-load-misses or cpu/llc-load-misses/
+llc-stores or cpu/llc-stores/
+llc-store-misses or cpu/llc-store-misses/
+llc-prefetches or cpu/llc-prefetches/
+llc-prefetch-misses or cpu/llc-prefetch-misses/
+dtlb-loads or cpu/dtlb-loads/
+dtlb-load-misses or cpu/dtlb-load-misses/
+dtlb-stores or cpu/dtlb-stores/
+dtlb-store-misses or cpu/dtlb-store-misses/
+dtlb-prefetches or cpu/dtlb-prefetches/
+dtlb-prefetch-misses or cpu/dtlb-prefetch-misses/
+itlb-loads or cpu/itlb-loads/
+itlb-load-misses or cpu/itlb-load-misses/
+branch-loads or cpu/branch-loads/
+branch-load-misses or cpu/branch-load-misses/
+node-loads or cpu/node-loads/
+node-load-misses or cpu/node-load-misses/
+node-stores or cpu/node-stores/
+node-store-misses or cpu/node-store-misses/
+node-prefetches or cpu/node-prefetches/
+node-prefetch-misses or cpu/node-prefetch-misses/
 
 
 
-Bluetooth :
+bluetooth :
 killall bluealsa
 bluealsa -p a2dp-source -p a2dp-sink --a2dp-force-audio-cd &
 bluetoothctl
-connect 88:C9:E8:E6:2A:69
+connect 88:c9:e8:e6:2a:69
 pulseaudio --start
 systemctl status bluetooth
 speaker-test -t wav -c 6
-speaker-test -t wav -c 6 -D btheadset
+speaker-test -t wav -c 6 -d btheadset
 pacmd list-sinks
-aplay -D bluealsa piano2.wav
+aplay -d bluealsa piano2.wav
 mpg123 -a bluealsa http://stream.radioparadise.com/mp3-192
 
 https://agl-gsod-2020-demo-mkdocs.readthedocs.io/en/latest/icefish/apis_services/reference/audio/audio/bluez-alsa/
@@ -615,22 +623,22 @@ mpg123 -a bluealsa mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 --sbc-quality=low
 
 
-perf stat -e branch-misses,branches,L1-dcache-loads,L1-dcache-load-misses,L1-icache-loads,L1-icache-load-misses,cycles,instructions ls
+perf stat -e branch-misses,branches,l1-dcache-loads,l1-dcache-load-misses,l1-icache-loads,l1-icache-load-misses,cycles,instructions ls
 r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches
 r8000000000000000,r8000000000000001,r8000000000000004
 
-~/c/libsdl2/libsdl2-2.30.2+dfsg/debian/build-tests# make -j1 check "TESTSUITEFLAGS=-j1 --verbose" VERBOSE=1 V=1 &> testlog.txt
+~/c/libsdl2/libsdl2-2.30.2+dfsg/debian/build-tests# make -j1 check "testsuiteflags=-j1 --verbose" verbose=1 v=1 &> testlog.txt
 
-export DEB_BUILD_OPTIONS="nocheck parallel=4"
+export deb_build_options="nocheck parallel=4"
 fakeroot debian/rules binary
 
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian  --with-jtag-tap --cpu-count=1 --with-jtag-tap  --with-video-framebuffer --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144 --update-repo=no --build --load
 
-TODO debug :
-[ 9576.106084] CPU: 0 PID: 4072 Comm: gmain Not tainted 6.1.0-rc2+ #11
-[ 9576.109440] watchdog: BUG: soft lockup - CPU#1 stuck for 22s! [gdbus:4073]
+todo debug :
+[ 9576.106084] cpu: 0 pid: 4072 comm: gmain not tainted 6.1.0-rc2+ #11
+[ 9576.109440] watchdog: bug: soft lockup - cpu#1 stuck for 22s! [gdbus:4073]
 [ 9576.111128] epc : find_vma+0x14/0x44
-[ 9576.116689] CPU: 1 PID: 4073 Comm: gdbus Not tainted 6.1.0-rc2+ #11
+[ 9576.116689] cpu: 1 pid: 4073 comm: gdbus not tainted 6.1.0-rc2+ #11
 [ 9576.119598]  ra : do_page_fault+0xf2/0x31a
 [ 9576.124672] epc : handle_mm_fault+0x3c/0xd6
 [ 9576.128004] epc : ffffffff8010b100 ra : ffffffff800073d8 sp : ffffffc800ecb880
@@ -668,60 +676,60 @@ TODO debug :
 perf stat  --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches -p $!
 
 relaxed btb =>
-Startup finished in 9.108s (kernel) + 1min 17.848s (userspace) = 1min 26.956s
+startup finished in 9.108s (kernel) + 1min 17.848s (userspace) = 1min 26.956s
 graphical.target reached after 1min 13.470s in userspace.
 timed 5026 gametics in 9474 realtics (18.567659 fps)
 
 stressed btb + late store
-Startup finished in 8.510s (kernel) + 1min 11.652s (userspace) = 1min 20.162s
+startup finished in 8.510s (kernel) + 1min 11.652s (userspace) = 1min 20.162s
 graphical.target reached after 1min 10.586s in userspace.
 timed 5026 gametics in 8885 realtics (19.798536 fps)
 12084250      stalled-cycles-frontend          #   14.50% frontend cycles idle
 16944058      stalled-cycles-backend           #   20.33% backend cycles idle
 
 stressed btb + late alu + late store
-Startup finished in 9.098s (kernel) + 1min 9.677s (userspace) = 1min 18.776s
+startup finished in 9.098s (kernel) + 1min 9.677s (userspace) = 1min 18.776s
 graphical.target reached after 1min 8.574s in userspace.
 
-16 KB i$d$ relaxed btb
-Startup finished in 8.219s (kernel) + 1min 5.727s (userspace) = 1min 13.946s
+16 kb i$d$ relaxed btb
+startup finished in 8.219s (kernel) + 1min 5.727s (userspace) = 1min 13.946s
 graphical.target reached after 1min 4.705s in userspace.
 timed 5026 gametics in 8999 realtics (19.547728 fps
 
-16 KB i$d$ relaxed btb 64 bits bus
-Startup finished in 8.237s (kernel) + 1min 753ms (userspace) = 1min 8.991s
+16 kb i$d$ relaxed btb 64 bits bus
+startup finished in 8.237s (kernel) + 1min 753ms (userspace) = 1min 8.991s
 graphical.target reached after 59.891s in userspace.
 timed 5026 gametics in 8943 realtics (19.670134 fps)
 
-16 KB i$d$ stressed btb 64 bits bus
-Startup finished in 8.806s (kernel) + 1min 213ms (userspace) = 1min 9.019s
+16 kb i$d$ stressed btb 64 bits bus
+startup finished in 8.806s (kernel) + 1min 213ms (userspace) = 1min 9.019s
 graphical.target reached after 59.298s in userspace.
 timed 5026 gametics in 8742 realtics (20.122398 fps)
 
 
 
-SLICE_X122Y49        FDRE (Prop_fdre_C_Q)         0.456    11.240 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/vexiis_1_logic_core_toplevel_execute_ctrl1_up_float_RS2_lane0_reg[52]/Q
-                     net (fo=7, routed)           0.824    12.064    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuUnpack_RS2_f64_exponent[0]
-SLICE_X133Y48        LUT3 (Prop_lut3_I0_O)        0.124    12.188 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_inserter_rs2_exponent[4]_i_3__0/O
-                     net (fo=1, routed)           0.615    12.803    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuUnpack_RS2_expRaw[0]
-SLICE_X134Y46        CARRY4 (Prop_carry4_CYINIT_O[1])
-                                                  0.598    13.401 f  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_inserter_rs2_exponent_reg[4]_i_2__0/O[1]
-                     net (fo=7, routed)           1.162    14.563    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/_zz_vexiis_1_logic_core_toplevel_execute_ctrl1_down_FpuUnpack_RS2_RS_PRE_NORM_lane0_exponent[2]
-SLICE_X149Y49        LUT6 (Prop_lut6_I4_O)        0.303    14.866 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[3]_i_13__0/O
-                     net (fo=4, routed)           0.622    15.489    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[3]_i_13__0_n_0
-SLICE_X149Y50        LUT5 (Prop_lut5_I0_O)        0.124    15.613 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[3]_i_9__0/O
-                     net (fo=1, routed)           0.000    15.613    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[3]_i_9__0_n_0
-SLICE_X149Y50        CARRY4 (Prop_carry4_S[2]_CO[3])
-                                                  0.398    16.011 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[3]_i_2__0/CO[3]
-                     net (fo=1, routed)           0.000    16.011    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[3]_i_2__0_n_0
-SLICE_X149Y51        CARRY4 (Prop_carry4_CI_O[3])
-                                                  0.313    16.324 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[5]_i_4__0/O[3]
-                     net (fo=1, routed)           1.281    17.605    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/_zz_FpuAddSharedPlugin_logic_pip_node_0_adder_preShift_exp21_1[7]
-SLICE_X148Y55        LUT6 (Prop_lut6_I2_O)        0.306    17.911 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[5]_i_8/O
-                     net (fo=1, routed)           0.295    18.206    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[5]_i_8_n_0
-SLICE_X149Y56        LUT6 (Prop_lut6_I3_O)        0.124    18.330 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[5]_i_3__0_comp_1/O
-                     net (fo=1, routed)           1.084    19.414    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuSqrtPlugin_logic_sqrt/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[0]
-SLICE_X130Y60        LUT6 (Prop_lut6_I1_O)        0.124    19.538 r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuSqrtPlugin_logic_sqrt/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat[5]_i_1/O
-                     net (fo=6, routed)           0.756    20.294    VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat
-SLICE_X137Y55        FDSE                                         r  VexiiRiscvLitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/FpuAddSharedPlugin_logic_pip_node_1_adder_preShift_expDifAbsSat_reg[3]/S
+slice_x122y49        fdre (prop_fdre_c_q)         0.456    11.240 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/vexiis_1_logic_core_toplevel_execute_ctrl1_up_float_rs2_lane0_reg[52]/q
+                     net (fo=7, routed)           0.824    12.064    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuunpack_rs2_f64_exponent[0]
+slice_x133y48        lut3 (prop_lut3_i0_o)        0.124    12.188 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_inserter_rs2_exponent[4]_i_3__0/o
+                     net (fo=1, routed)           0.615    12.803    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuunpack_rs2_expraw[0]
+slice_x134y46        carry4 (prop_carry4_cyinit_o[1])
+                                                  0.598    13.401 f  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_inserter_rs2_exponent_reg[4]_i_2__0/o[1]
+                     net (fo=7, routed)           1.162    14.563    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/_zz_vexiis_1_logic_core_toplevel_execute_ctrl1_down_fpuunpack_rs2_rs_pre_norm_lane0_exponent[2]
+slice_x149y49        lut6 (prop_lut6_i4_o)        0.303    14.866 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat[3]_i_13__0/o
+                     net (fo=4, routed)           0.622    15.489    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat[3]_i_13__0_n_0
+slice_x149y50        lut5 (prop_lut5_i0_o)        0.124    15.613 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat[3]_i_9__0/o
+                     net (fo=1, routed)           0.000    15.613    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat[3]_i_9__0_n_0
+slice_x149y50        carry4 (prop_carry4_s[2]_co[3])
+                                                  0.398    16.011 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat_reg[3]_i_2__0/co[3]
+                     net (fo=1, routed)           0.000    16.011    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat_reg[3]_i_2__0_n_0
+slice_x149y51        carry4 (prop_carry4_ci_o[3])
+                                                  0.313    16.324 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat_reg[5]_i_4__0/o[3]
+                     net (fo=1, routed)           1.281    17.605    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/_zz_fpuaddsharedplugin_logic_pip_node_0_adder_preshift_exp21_1[7]
+slice_x148y55        lut6 (prop_lut6_i2_o)        0.306    17.911 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat[5]_i_8/o
+                     net (fo=1, routed)           0.295    18.206    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat[5]_i_8_n_0
+slice_x149y56        lut6 (prop_lut6_i3_o)        0.124    18.330 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat[5]_i_3__0_comp_1/o
+                     net (fo=1, routed)           1.084    19.414    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpusqrtplugin_logic_sqrt/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat_reg[0]
+slice_x130y60        lut6 (prop_lut6_i1_o)        0.124    19.538 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpusqrtplugin_logic_sqrt/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat[5]_i_1/o
+                     net (fo=6, routed)           0.756    20.294    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat
+slice_x137y55        fdse                                         r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat_reg[3]/s
  */
