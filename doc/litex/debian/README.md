@@ -112,7 +112,7 @@ apt-get -y install twm wmaker
 # GLX is very very slow as soon as X11 app start to use pixel based buffer, need to disable it.
 cat >> /etc/X11/xorg.conf <<EOF
 Section "Extensions"
-	Option "GLX" "Disable"
+    Option "GLX" "Disable"
 EndSection
 EOF
 
@@ -128,6 +128,16 @@ apt-get clean
 exit
 
 sudo umount $CHROOT_DIR
+```
+
+Note if you use linux DRI, you need to add the following to the xorg.conf : 
+
+```
+Section "Device"
+    Identifier "Modesetting"
+    Driver "modesetting"
+    Option "AccelMethod" "none"
+EndSection
 ```
 
 # Compile linux

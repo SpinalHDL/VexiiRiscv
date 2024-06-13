@@ -60,7 +60,7 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
     for (vexii <- vexiis) {
       if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
       if (vexiiParam.lsuL1Enable) {
-        vexii.lsuL1Bus.setDownConnection(a = StreamPipe.HALF, b = StreamPipe.HALF, c = StreamPipe.FULL, d = StreamPipe.M2S, e = StreamPipe.HALF)
+        vexii.lsuL1Bus.setDownConnection(a = withCoherency.mux(StreamPipe.HALF, StreamPipe.FULL), b = StreamPipe.HALF, c = StreamPipe.FULL, d = StreamPipe.M2S, e = StreamPipe.HALF)
         vexii.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
       }
     }
@@ -521,6 +521,10 @@ https://bbs.archlinux.org/viewtopic.php?id=243100
 
 --dfb:system=fbdev
 
+systemctl disable lightdm.service
+weston --backend=drm-backend.so --use-pixman
+weston --use-pixman
+
 https://www.brendangregg.com/perf.html
 perf stat  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 perf record md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
@@ -732,4 +736,17 @@ slice_x149y56        lut6 (prop_lut6_i3_o)        0.124    18.330 r  vexiiriscvl
 slice_x130y60        lut6 (prop_lut6_i1_o)        0.124    19.538 r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpusqrtplugin_logic_sqrt/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat[5]_i_1/o
                      net (fo=6, routed)           0.756    20.294    vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat
 slice_x137y55        fdse                                         r  vexiiriscvlitex_2f3ff2b95842595a3b7d75e26dfd301e/vexiis_1_logic_core/fpuaddsharedplugin_logic_pip_node_1_adder_preshift_expdifabssat_reg[3]/s
+
+
+reg [32:0] miaou;
+
+always@(posedge sys_clk, negedge crg_locked) begin
+  if(!crg_locked) miaou <= 0;
+  else miaou <= miaou + 1;
+end
+
+assign xilinxasyncresetsynchronizerimpl0 = (~crg_locked) || !miaou[32];
+assign rx_rx = regs1;
+assign xilinxasyncresetsynchronizerimpl1 = (~zynq_ps7_rst_n);
+
  */
