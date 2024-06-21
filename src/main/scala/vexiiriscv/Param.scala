@@ -62,6 +62,7 @@ class ParamSimple(){
   var withDispatcherBuffer = false
   var hartCount = 1
   var withMmu = false
+  var physicalWidth = 32
   var resetVector = 0x80000000l
   var decoders = 1
   var lanes = 1
@@ -323,6 +324,7 @@ class ParamSimple(){
     opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
     opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true }
     opt[Unit]("with-boot-mem-init") action { (v, c) => bootMemClear = true }
+    opt[Int]("physical-width") action {(v, c) => physicalWidth = v}
   }
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
@@ -334,10 +336,10 @@ class ParamSimple(){
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc)
     withMmu match {
-      case false => plugins += new memory.StaticTranslationPlugin(32)
+      case false => plugins += new memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new memory.MmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
-        physicalWidth = 32
+        physicalWidth = physicalWidth
       )
     }
 
