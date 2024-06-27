@@ -166,12 +166,12 @@ class ParamSimple(){
     withAlignerBuffer = true
 //    withRvc = true
     withRva = true
-    withRvf = true
-    withRvd = true
+//    withRvf = true
+//    withRvd = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-    xlen = 64
+    xlen = 32
 
 
     privParam.withDebug = true

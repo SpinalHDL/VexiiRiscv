@@ -1,6 +1,7 @@
 package vexiiriscv.riscv
 
 import spinal.core.{AreaObject, MaskedLiteral, Nameable}
+import spinal.lib.logic.Masked
 
 class Resource
 case class RfResource(rf : RegfileSpec, access : RfAccess) extends Resource
@@ -21,10 +22,17 @@ object FPU extends Resource with AreaObject
 object RM  extends Resource with AreaObject
 
 abstract class MicroOp(val resources : Seq[Resource]){
-  def key : MaskedLiteral
+  def keys : Seq[MaskedLiteral]
+  def keysMasked = keys.map(Masked.apply)
 }
-case class SingleDecoding(key : MaskedLiteral, override val resources : Seq[Resource]) extends MicroOp(resources) with Nameable {
-  override def toString = s"SingleDecoding ${getName("")} $key"
+object SingleDecoding{
+  def apply(key : MaskedLiteral, resources : Seq[Resource]): SingleDecoding = {
+    SingleDecoding(List(key), resources)
+  }
+}
+
+case class SingleDecoding(keys : Seq[MaskedLiteral], override val resources : Seq[Resource]) extends MicroOp(resources) with Nameable {
+  override def toString = s"SingleDecoding ${getName("")} $keys"
 }
 case class MultiDecoding(key : MaskedLiteral, uop : Seq[MicroOp])
 
