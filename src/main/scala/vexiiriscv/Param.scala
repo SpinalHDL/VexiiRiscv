@@ -98,6 +98,8 @@ class ParamSimple(){
   var fetchL1Ways = 1
   var fetchL1ReducedBank = false
   var fetchMemDataWidthMin = 32
+  var lsuSoftwarePrefetch = false
+  var lsuHardwarePrefetch = false
   var lsuStoreBufferSlots = 0
   var lsuStoreBufferOps = 0
   var lsuL1Enable = false
@@ -152,6 +154,8 @@ class ParamSimple(){
     lsuStoreBufferSlots = 2
     lsuStoreBufferOps = 32
     withLsuBypass = true
+    lsuSoftwarePrefetch = true
+    lsuHardwarePrefetch = true
 
     //    lsuForkAt = 1
     divArea = false
@@ -307,6 +311,8 @@ class ParamSimple(){
     opt[Int]("lsu-l1-ways") unbounded() action { (v, c) => lsuL1Ways = v }
     opt[Int]("lsu-l1-store-buffer-slots") action { (v, c) => lsuStoreBufferSlots = v }
     opt[Int]("lsu-l1-store-buffer-ops") action { (v, c) => lsuStoreBufferOps = v }
+    opt[Unit]("lsu-hardware-prefetch") action { (v, c) => lsuHardwarePrefetch = true }
+    opt[Unit]("lsu-software-prefetch") action { (v, c) => lsuSoftwarePrefetch = true }
     opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
     opt[Int]("lsu-l1-writeback-count") action { (v, c) => lsuL1WritebackCount = v }
     opt[Int]("lsu-l1-mem-data-width-min") action { (v, c) => lsuMemDataWidthMin = v }
@@ -534,6 +540,8 @@ class ParamSimple(){
         storeRs2At = storeRs2Late.mux(2, 0),
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
+        hardwarePrefetch = lsuHardwarePrefetch,
+        softwarePrefetch = lsuSoftwarePrefetch,
         translationStorageParameter = MmuStorageParameter(
           levels = List(
             MmuStorageLevel(

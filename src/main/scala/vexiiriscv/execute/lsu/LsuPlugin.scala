@@ -45,17 +45,20 @@ class LsuPlugin(var layer : LaneLayer,
                 var withRva : Boolean,
                 var translationStorageParameter: Any,
                 var translationPortParameter: Any,
+                var softwarePrefetch: Boolean,
+                var hardwarePrefetch: Boolean,
                 var addressAt: Int = 0,
                 var triggerAt : Int = 1,
                 var ctrlAt: Int = 2,
                 var wbAt : Int = 2,
                 var storeRs2At : Int = 0,
                 var storeBufferSlots : Int = 0,
-                var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuService{
+                var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuService with CmoService{
 
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
 
+  override def withSoftwarePrefetch: Boolean = softwarePrefetch
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
 
   def busParam = LsuCachelessBusParam(

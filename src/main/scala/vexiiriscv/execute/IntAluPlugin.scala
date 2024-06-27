@@ -9,6 +9,7 @@ import spinal.lib.Flow
 import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.decode._
+import vexiiriscv.execute.lsu.CmoService
 import vexiiriscv.riscv.{Riscv, Rvi}
 
 object IntAluPlugin extends AreaObject {
@@ -37,6 +38,10 @@ class IntAluPlugin(var layer: LaneLayer,
     val abce = AluBitwiseCtrlEnum
 
     val wb = newWriteback(ifp, formatAt)
+    val ORI = (host.get[CmoService] match {
+      case Some(s) => s.withSoftwarePrefetch
+      case None => false
+    }).mux(Rvi.ORI_WO_X0, Rvi.ORI_FULL)
 
     add(Rvi.ADD ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
     add(Rvi.SUB ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
@@ -50,7 +55,7 @@ class IntAluPlugin(var layer: LaneLayer,
     add(Rvi.SLTI ).srcs(Op.LESS  , SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.SLT_SLTU)
     add(Rvi.SLTIU).srcs(Op.LESS_U, SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.SLT_SLTU)
     add(Rvi.XORI ).srcs(           SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.XOR )
-    add(Rvi.ORI  ).srcs(           SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.OR  )
+    add(    ORI  ).srcs(           SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.OR  )
     add(Rvi.ANDI ).srcs(           SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.AND )
 
     add(Rvi.LUI  ).srcs(Op.SRC1, SRC1.U         ).decode(ALU_CTRL -> ace.ADD_SUB)
