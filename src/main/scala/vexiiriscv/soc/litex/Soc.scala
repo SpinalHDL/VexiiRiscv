@@ -613,7 +613,7 @@ speaker-test -t wav -c 6
 speaker-test -t wav -c 6 -d btheadset
 pacmd list-sinks
 aplay -d bluealsa piano2.wav
-mpg123 -a bluealsa http://stream.radioparadise.com/mp3-192
+mpg123 -a bluealsa -b 1024 http://stream.radioparadise.com/mp3-192
 
 https://agl-gsod-2020-demo-mkdocs.readthedocs.io/en/latest/icefish/apis_services/reference/audio/audio/bluez-alsa/
 
