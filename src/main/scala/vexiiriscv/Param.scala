@@ -149,8 +149,8 @@ class ParamSimple(){
     lsuMemDataWidthMin = 64
     lsuL1Sets = 64
     lsuL1Ways = 4
-    lsuL1RefillCount = 2
-    lsuL1WritebackCount = 2
+    lsuL1RefillCount = 4
+    lsuL1WritebackCount = 4
     lsuL1Coherency = false
     lsuStoreBufferSlots = 2
     lsuStoreBufferOps = 32
@@ -176,7 +176,7 @@ class ParamSimple(){
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
-    xlen = 32
+    xlen = 64
 
 
     privParam.withDebug = true

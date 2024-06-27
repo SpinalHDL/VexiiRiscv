@@ -702,8 +702,8 @@ class LsuPlugin(var layer : LaneLayer,
 
       val mmuFailure = mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO
       l1.ABORD := FROM_LSU && !PREFETCH && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuFailure || preCtrl.MISS_ALIGNED || withStoreBuffer.mux(wb.loadHazard || fenceTrap.valid, False))
-      ??? PREFETCH / pmaL1 / miss aligned / mmu failure
-      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT || PREFETCH
+      //TODO ??? PREFETCH / pmaL1 / miss aligned / mmu failure
+      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT || FROM_LSU && PREFETCH
 
       if (withStoreBuffer) l1.ABORD setWhen (FROM_WB && wb.selfHazard)
 
