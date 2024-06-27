@@ -147,12 +147,24 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
     val FENCE = Payload(Bool())
-    frontend.uopList.foreach(layer(_).addDecoding(FENCE -> False))
-    layer.add(Rvi.FENCE).setCompletion(ctrlAt).addDecoding(SEL -> True, LOAD -> False, STORE -> False, ATOMIC -> False, FLOAT -> False, FENCE -> True)
+    val PREFETCH = Payload(Bool())
+
+    frontend.uopList.foreach(layer(_).addDecoding(FENCE -> False, PREFETCH -> False))
+    layer.add(Rvi.FENCE).setCompletion(ctrlAt).addDecoding(SEL -> True, LOAD -> False, STORE -> False, ATOMIC -> False, FLOAT -> False, FENCE -> True, PREFETCH -> False)
     elp.setDecodingDefault(FENCE, False)
 
 
     for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(ctrlAt)
+
+    val spf = softwarePrefetch generate new Area{
+      val pr = layer.add(Rvi.PREFETCH_R)
+      val pw = layer.add(Rvi.PREFETCH_W)
+      for(op <- List(pr,pw)) {
+        op.setCompletion(ctrlAt)
+        op.addDecoding(SEL -> True, LOAD -> True, STORE -> Bool(op == pw), ATOMIC -> False, FLOAT -> False, FENCE -> False, PREFETCH -> True)
+        frontend.srcPlugin.specify(op, List(SrcKeys.Op.ADD, SrcKeys.SRC1.RF, SrcKeys.SRC2.S))
+      }
+    }
 
     retainer.release()
 
@@ -315,6 +327,7 @@ class LsuPlugin(var layer : LaneLayer,
       val ports = ArrayBuffer[Stream[LsuL1Cmd]]()
 
       val ls = new Area {
+        val prefetchOp = Decode.UOP(24 downto 20)
         val port = ports.addRet(Stream(LsuL1Cmd()))
         port.valid := isValid && SEL
         port.address := srcp.ADD_SUB.asUInt.resized  //TODO Overflow  ?
@@ -435,7 +448,7 @@ class LsuPlugin(var layer : LaneLayer,
       pmaIo.cmd.op(0) := l1.STORE
 
       val withAddress = !FENCE
-      val IO = insert(pmaL1.rsp.fault && !pmaIo.rsp.fault && withAddress)
+      val IO = insert(pmaL1.rsp.fault && !pmaIo.rsp.fault && withAddress && ! PREFETCH)
 
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
       if(Riscv.withFpu) when(FLOAT){
@@ -565,7 +578,7 @@ class LsuPlugin(var layer : LaneLayer,
         val tag = p2t(LsuL1.PHYSICAL_ADDRESS)
         val hits = B(storeBuffer.slots.map(s => s.valid && s.tag === tag))
         val hit = hits.orR
-        val compatibleOp = FROM_LSU && STORE && !ATOMIC && !IO
+        val compatibleOp = FROM_LSU && STORE && !ATOMIC && !IO && !PREFETCH
         val notFull = !storeBuffer.ops.full && (storeBuffer.slotsFree || hit)
         val allowed = notFull && compatibleOp
         val slotOh = hits | storeBuffer.slotsFreeFirst.andMask(!hit)
@@ -657,7 +670,7 @@ class LsuPlugin(var layer : LaneLayer,
         storeBuffer.push.op.storeId := Decode.STORE_ID
       }
 
-      when(!withAddress){
+      when(!withAddress || PREFETCH){
         lsuTrap := False
       }
 
@@ -687,17 +700,10 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-//      val fromLsuAbord = FROM_LSU && (!isValid || isCancel || mmuFailure)
-//      val generalAbord = l1.HAZARD || l1.FAULT || !l1.FLUSH && pmaL1.rsp.fault || preCtrl.MISS_ALIGNED || withStoreBuffer.mux(wb.loadHazard, False)
-//      l1.ABORD := generalAbord || fromLsuAbord
-////      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO || preCtrl.MISS_ALIGNED || pmaFault || withStoreBuffer.mux(wb.loadHazard, False))
-//
-//      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT
-
-
       val mmuFailure = mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO
-      l1.ABORD := FROM_LSU && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuFailure || preCtrl.MISS_ALIGNED || pmaL1.rsp.fault || withStoreBuffer.mux(wb.loadHazard || fenceTrap.valid, False))
-      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT
+      l1.ABORD := FROM_LSU && !PREFETCH && (!isValid || isCancel || pmaL1.rsp.fault || l1.FAULT || mmuFailure || preCtrl.MISS_ALIGNED || withStoreBuffer.mux(wb.loadHazard || fenceTrap.valid, False))
+      ??? PREFETCH / pmaL1 / miss aligned / mmu failure
+      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT || PREFETCH
 
       if (withStoreBuffer) l1.ABORD setWhen (FROM_WB && wb.selfHazard)
 
@@ -744,7 +750,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val hartRegulation = new L1Waiter{
         host[DispatchPlugin].haltDispatchWhen(valid)
-        when(isValid && SEL && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
+        when(isValid && SEL && !PREFETCH && !IO && !FENCE && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
           capture(down)
         }
         events.foreach(_.waiting setWhen(valid))
@@ -768,7 +774,7 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      val storeFire = down.isFiring && AguPlugin.SEL && AguPlugin.STORE && !onCtrl.IO
+      val storeFire = down.isFiring && AguPlugin.SEL && AguPlugin.STORE && !onCtrl.IO && !PREFETCH
       val storeBroadcast = down.isReady && l1.SEL && l1.STORE && !l1.ABORD && !l1.SKIP_WRITE && !l1.MISS && !l1.MISS_UNIQUE && !l1.HAZARD
     }
 

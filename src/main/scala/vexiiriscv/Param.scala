@@ -144,8 +144,9 @@ class ParamSimple(){
     fetchL1Sets = 64
     fetchL1Ways = 4
     fetchL1ReducedBank = true
-    fetchMemDataWidthMin = 256
+    fetchMemDataWidthMin = 64
     lsuL1Enable = true
+    lsuMemDataWidthMin = 64
     lsuL1Sets = 64
     lsuL1Ways = 4
     lsuL1RefillCount = 2

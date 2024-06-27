@@ -38,10 +38,10 @@ class IntAluPlugin(var layer: LaneLayer,
     val abce = AluBitwiseCtrlEnum
 
     val wb = newWriteback(ifp, formatAt)
-    val ORI = (host.get[CmoService] match {
+    val ORI = Rvi.ORI(host.get[CmoService] match {
       case Some(s) => s.withSoftwarePrefetch
       case None => false
-    }).mux(Rvi.ORI_WO_X0, Rvi.ORI_FULL)
+    })
 
     add(Rvi.ADD ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
     add(Rvi.SUB ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )

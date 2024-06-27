@@ -63,6 +63,11 @@ object IntRegFile extends RegfileSpec with AreaObject {
     key = key,
     resources = Nil
   )
+
+  def TypeCmoPrefetch(key: MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(RS1).map(this -> _)
+  )
 }
 
 

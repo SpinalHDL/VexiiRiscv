@@ -160,6 +160,7 @@ class TestOptions{
     opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
     opt[Unit]("jtag-remote") unbounded() action { (v, c) => jtagRemote = true }
+    opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v }
 
     opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
     opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
