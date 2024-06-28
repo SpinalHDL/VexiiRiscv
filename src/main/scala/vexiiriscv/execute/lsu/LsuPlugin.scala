@@ -24,13 +24,15 @@ import vexiiriscv.fetch.{LsuL1Service, LsuService}
 
 import scala.collection.mutable.ArrayBuffer
 
+object LsuL1CmdOpcode extends SpinalEnum{
+  val LSU, ACCESS, STORE_BUFFER, FLUSH, PREFETCH = newElement()
+}
+
 case class LsuL1Cmd() extends Bundle {
+  val op = LsuL1CmdOpcode()
   val address = LsuL1.MIXED_ADDRESS()
   val size = SIZE()
   val load, store, atomic = Bool()
-  val fromFlush = Bool()
-  val fromAccess = Bool()
-  val fromStoreBuffer = Bool()
   val storeId = Decode.STORE_ID()
 }
 
@@ -147,10 +149,10 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
     val FENCE = Payload(Bool())
-    val PREFETCH = Payload(Bool())
+    val LSU_PREFETCH = Payload(Bool())
 
-    frontend.uopList.foreach(layer(_).addDecoding(FENCE -> False, PREFETCH -> False))
-    layer.add(Rvi.FENCE).setCompletion(ctrlAt).addDecoding(SEL -> True, LOAD -> False, STORE -> False, ATOMIC -> False, FLOAT -> False, FENCE -> True, PREFETCH -> False)
+    frontend.uopList.foreach(layer(_).addDecoding(FENCE -> False, LSU_PREFETCH -> False))
+    layer.add(Rvi.FENCE).setCompletion(ctrlAt).addDecoding(SEL -> True, LOAD -> False, STORE -> False, ATOMIC -> False, FLOAT -> False, FENCE -> True, LSU_PREFETCH -> False)
     elp.setDecodingDefault(FENCE, False)
 
 
@@ -161,7 +163,7 @@ class LsuPlugin(var layer : LaneLayer,
       val pw = layer.add(Rvi.PREFETCH_W)
       for(op <- List(pr,pw)) {
         op.setCompletion(ctrlAt)
-        op.addDecoding(SEL -> True, LOAD -> True, STORE -> Bool(op == pw), ATOMIC -> False, FLOAT -> False, FENCE -> False, PREFETCH -> True)
+        op.addDecoding(SEL -> True, LOAD -> True, STORE -> Bool(op == pw), ATOMIC -> False, FLOAT -> False, FENCE -> False, LSU_PREFETCH -> True)
         frontend.srcPlugin.specify(op, List(SrcKeys.Op.ADD, SrcKeys.SRC1.RF, SrcKeys.SRC2.S))
       }
     }
@@ -181,6 +183,7 @@ class LsuPlugin(var layer : LaneLayer,
     val FROM_LSU = Payload(Bool())
     val FROM_WB = Payload(Bool())
     val FORCE_PHYSICAL = Payload(Bool())
+    val FROM_PREFETCH = Payload(Bool())
 
     class L1Waiter extends Area {
       val refill = Reg(l1.WAIT_REFILL)
@@ -335,9 +338,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := LOAD
         port.store := STORE
         port.atomic := ATOMIC
-        port.fromFlush := False
-        port.fromAccess := False
-        port.fromStoreBuffer := False
+        port.op := LSU_PREFETCH.mux(LsuL1CmdOpcode.PREFETCH, LsuL1CmdOpcode.LSU)
 
         val storeId = Reg(Decode.STORE_ID) init (0)
         storeId := storeId + U(port.fire)
@@ -356,9 +357,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := True
         port.store := False
         port.atomic := False
-        port.fromFlush := False
-        port.fromAccess := True
-        port.fromStoreBuffer := False
+        port.op := LsuL1CmdOpcode.ACCESS
         port.storeId := 0
       }
 
@@ -370,9 +369,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := False
         port.store := False
         port.atomic := False
-        port.fromFlush := True
-        port.fromAccess := False
-        port.fromStoreBuffer := False
+        port.op := LsuL1CmdOpcode.FLUSH
         port.storeId := 0
         when(port.fire) {
           flusher.cmdCounter := flusher.cmdCounter + 1
@@ -389,9 +386,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := False
         port.store := True
         port.atomic := False
-        port.fromFlush := False
-        port.fromAccess := False
-        port.fromStoreBuffer := True
+        port.op := LsuL1CmdOpcode.STORE_BUFFER
         storeBuffer.pop.ready := port.ready || flush
         port.storeId := storeBuffer.pop.op.storeId
       }
@@ -405,11 +400,12 @@ class LsuPlugin(var layer : LaneLayer,
       l1.LOAD := arbiter.io.output.load
       l1.ATOMIC := arbiter.io.output.atomic
       l1.STORE := arbiter.io.output.store
-      l1.FLUSH := arbiter.io.output.fromFlush
+      l1.FLUSH := arbiter.io.output.op === LsuL1CmdOpcode.FLUSH
       Decode.STORE_ID := arbiter.io.output.storeId
-      FROM_ACCESS := arbiter.io.output.fromAccess
-      FROM_WB := arbiter.io.output.fromStoreBuffer
-      FROM_LSU := !(arbiter.io.output.fromFlush || arbiter.io.output.fromAccess || arbiter.io.output.fromStoreBuffer)
+      FROM_ACCESS := arbiter.io.output.op === LsuL1CmdOpcode.ACCESS
+      FROM_WB := arbiter.io.output.op === LsuL1CmdOpcode.STORE_BUFFER
+      FROM_LSU := arbiter.io.output.op === LsuL1CmdOpcode.LSU
+      FROM_PREFETCH := arbiter.io.output.op === LsuL1CmdOpcode.PREFETCH
       if(withStoreBuffer) SB_PTR := storeBuffer.pop.ptr
       val SB_DATA = withStoreBuffer generate insert(storeBuffer.pop.op.data)
       val STORE_BUFFER_EMPTY = withStoreBuffer generate insert(storeBuffer.empty)
@@ -450,8 +446,7 @@ class LsuPlugin(var layer : LaneLayer,
         io.cmd.op(0) := l1.STORE
       }
 
-      val withAddress = !FENCE
-      val IO = insert(pma.cached.rsp.fault && !pma.io.rsp.fault && withAddress && ! PREFETCH)
+      val IO = insert(pma.cached.rsp.fault && !pma.io.rsp.fault && !FENCE && !FROM_PREFETCH)
 
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
       if(Riscv.withFpu) when(FLOAT){
@@ -577,7 +572,7 @@ class LsuPlugin(var layer : LaneLayer,
         val tag = p2t(LsuL1.PHYSICAL_ADDRESS)
         val hits = B(storeBuffer.slots.map(s => s.valid && s.tag === tag))
         val hit = hits.orR
-        val compatibleOp = FROM_LSU && STORE && !ATOMIC && !IO && !PREFETCH
+        val compatibleOp = FROM_LSU && STORE && !ATOMIC && !IO
         val notFull = !storeBuffer.ops.full && (storeBuffer.slotsFree || hit)
         val allowed = notFull && compatibleOp
         val slotOh = hits | storeBuffer.slotsFreeFirst.andMask(!hit)
@@ -671,7 +666,7 @@ class LsuPlugin(var layer : LaneLayer,
         storeBuffer.push.op.storeId := Decode.STORE_ID
       }
 
-      when(!withAddress || PREFETCH){
+      when(FENCE || FROM_PREFETCH){
         lsuTrap := False
       }
 
@@ -701,10 +696,9 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      val mmuNeeded = FROM_LSU || PREFETCH
+      val mmuNeeded = FROM_LSU || FROM_PREFETCH
       val mmuFailure = mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO
 
-//      FROM_ACCESS, FROM_LSU, FROM_WB
       val abords, skipsWrite = ArrayBuffer[Bool]()
       abords += l1.HAZARD
       abords += !l1.FLUSH && pma.cached.rsp.fault
@@ -715,17 +709,13 @@ class LsuPlugin(var layer : LaneLayer,
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
       skipsWrite += l1.FAULT
       skipsWrite += preCtrl.MISS_ALIGNED
-      skipsWrite += FROM_LSU && (onTrigger.HIT || PREFETCH) //TODO hardware prefetch
+      skipsWrite += FROM_LSU && onTrigger.HIT
+      skipsWrite += FROM_PREFETCH
       if(Riscv.RVA) skipsWrite += l1.ATOMIC && !l1.LOAD && scMiss
       if (withStoreBuffer) skipsWrite += wb.selfHazard || !FROM_WB && wb.hit
 
       l1.ABORD := abords.orR
       l1.SKIP_WRITE := skipsWrite.orR
-
-//      l1.ABORD := FROM_LSU && !PREFETCH && (!isValid || isCancel || pma.cached.rsp.fault || l1.FAULT || mmuFailure || preCtrl.MISS_ALIGNED || withStoreBuffer.mux(wb.loadHazard || fenceTrap.valid, False))
-//      //TODO ??? PREFETCH / pma.cached / miss aligned / mmu failure
-//      l1.SKIP_WRITE := l1.ATOMIC && !l1.LOAD && scMiss || withStoreBuffer.mux(!FROM_WB && wb.hit || wb.selfHazard, False) || FROM_LSU && onTrigger.HIT || FROM_LSU && PREFETCH
-
 
       if(flusher != null) when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){
         flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
@@ -748,7 +738,7 @@ class LsuPlugin(var layer : LaneLayer,
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp
-        rsp.valid := l1.SEL && FROM_ACCESS && !elp.isFreezed()
+        rsp.valid    := l1.SEL && FROM_ACCESS && !elp.isFreezed()
         rsp.data     := l1.READ_DATA
         rsp.error    := l1.FAULT
         rsp.redo     := traps.l1Failed
@@ -769,7 +759,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val hartRegulation = new L1Waiter{
         host[DispatchPlugin].haltDispatchWhen(valid)
-        when(isValid && SEL && !PREFETCH && !IO && !FENCE && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
+        when(isValid && SEL && !FROM_PREFETCH && !IO && !FENCE && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
           capture(down)
         }
         events.foreach(_.waiting setWhen(valid))
@@ -793,7 +783,7 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      val storeFire      = down.isFiring && AguPlugin.SEL && AguPlugin.STORE && !onCtrl.IO && !PREFETCH
+      val storeFire      = down.isFiring && AguPlugin.SEL && AguPlugin.STORE && !onCtrl.IO && !FROM_PREFETCH
       val storeBroadcast = down.isReady && l1.SEL && l1.STORE && !l1.ABORD && !l1.SKIP_WRITE && !l1.MISS && !l1.MISS_UNIQUE && !l1.HAZARD
     }
 
