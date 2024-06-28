@@ -859,7 +859,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
-        val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE && !ABORD
+        val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
 
         val wayId = OHToUInt(WAYS_HITS)
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))
@@ -897,13 +897,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           shared.write.data.dirty := (SHARED.dirty | WAYS_HITS.andMask(doWrite)) & ~(UIntToOh(refillWayWithoutUpdate).andMask(doRefill) | needFlushOh.andMask(doFlush))
         }
 
-        when(doWrite) {
+        when(bankWriteReservation.win) {
           banksWrite.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
           banksWrite.writeData.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
           banksWrite.writeMask := 0
           banksWrite.writeMask.subdivideIn(cpuWordWidth / 8 bits)(PHYSICAL_ADDRESS(bankWordToCpuWordRange)) := MASK
           for ((bank, bankId) <- banks.zipWithIndex) when(WAYS_HITS(bankId)) {
-            banksWrite.mask(bankId) := bankId === bankHitId && allowSideEffects
+            banksWrite.mask(bankId) := bankId === bankHitId && allowSideEffects && doWrite
 //            bank.write.valid := bankId === bankHitId && allowSideEffects
 //            bank.write.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
 //            bank.write.data.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
@@ -966,7 +966,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           shared.write.valid := allowSideEffects
           plruLogic.core.io.update.id := targetWay
         }
-
+        
         when(SEL && !HAZARD && !MISS) {
           shared.write.valid := allowSideEffects
           plruLogic.core.io.update.id := wayId

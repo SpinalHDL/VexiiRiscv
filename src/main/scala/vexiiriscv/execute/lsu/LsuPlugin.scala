@@ -715,8 +715,8 @@ class LsuPlugin(var layer : LaneLayer,
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
       skipsWrite += l1.FAULT
       skipsWrite += preCtrl.MISS_ALIGNED
-      skipsWrite += FROM_LSU && PREFETCH //TODO hardware prefetch
-      if(Riscv.RVA) skipsWrite +=  l1.ATOMIC && !l1.LOAD && scMiss || FROM_LSU && onTrigger.HIT
+      skipsWrite += FROM_LSU && (onTrigger.HIT || PREFETCH) //TODO hardware prefetch
+      if(Riscv.RVA) skipsWrite += l1.ATOMIC && !l1.LOAD && scMiss
       if (withStoreBuffer) skipsWrite += wb.selfHazard || !FROM_WB && wb.hit
 
       l1.ABORD := abords.orR
