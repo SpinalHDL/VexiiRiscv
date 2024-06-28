@@ -836,13 +836,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         // For instance, a load miss may not trigger a refill, a flush may hit but may not trigger a flush
         val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False)
         HAZARD := hazardReg || loadHazard || refillHazard || storeHazard || flushHazard || coherencyHazard || HAZARD_FORCED
-        MISS := !HAZARD && !WAYS_HIT && !FLUSH
-        FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
-        MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
+        MISS := !WAYS_HIT
+        FAULT := WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
+        MISS_UNIQUE := WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
 
         events.map{e =>
           e.loadAccess := up.isFiring && SEL && LOAD
-          e.loadMiss   := e.loadAccess && !HAZARD && (MISS || MISS_UNIQUE)
+          e.loadMiss   := e.loadAccess && !HAZARD && MISS
         }
 
         val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard
@@ -851,14 +851,15 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val needFlushOh = OHMasking.firstV2(needFlushs)
         val needFlushSel = OHToUInt(needFlushOh)
 
-        val askRefill = MISS && canRefill
-        val askUpgrade = MISS_UNIQUE && canRefill
-        val askFlush = FLUSH && !HAZARD && canFlush && needFlushs.orR
+        val isAccess = !FLUSH
+        val askRefill = isAccess && MISS && canRefill
+        val askUpgrade = isAccess && MISS_UNIQUE && canRefill
+        val askFlush = FLUSH && canFlush && needFlushs.orR
 
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
-        val doWrite = SEL && !HAZARD && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
+        val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE && !ABORD
 
         val wayId = OHToUInt(WAYS_HITS)
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))
@@ -886,7 +887,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         WAIT_REFILL := refillHazards | refill.free.orMask(refill.full).andMask(!HAZARD && (askRefill || askUpgrade))
         WAIT_WRITEBACK := 0 // TODO  // writebackHazards | writeback.free.andMask(askRefill && refillWayNeedWriteback)
 
-        when(SEL) {
+        when(SEL && !ABORD) {
           assert(CountOne(Cat(askRefill, doUpgrade, doFlush)) < 2)
         }
 

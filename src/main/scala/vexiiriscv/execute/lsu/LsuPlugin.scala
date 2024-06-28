@@ -712,6 +712,7 @@ class LsuPlugin(var layer : LaneLayer,
       abords += mmuNeeded && mmuFailure
       if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid
 
+      skipsWrite += l1.MISS || l1.MISS_UNIQUE
       skipsWrite += l1.FAULT
       skipsWrite += preCtrl.MISS_ALIGNED
       skipsWrite += FROM_LSU && PREFETCH //TODO hardware prefetch
