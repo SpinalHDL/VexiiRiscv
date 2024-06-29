@@ -344,6 +344,8 @@ object PythonArgsGen extends App{
          |VexiiRiscv.with_rvf = ${withRvf.toInt}
          |VexiiRiscv.with_rvd = ${withRvd.toInt}
          |VexiiRiscv.with_rvc = ${withRvc.toInt}
+         |VexiiRiscv.with_lsu_software_prefetch = ${lsuSoftwarePrefetch.toInt}
+         |VexiiRiscv.with_lsu_hardware_prefetch = ${lsuHardwarePrefetch.toInt}
          |VexiiRiscv.internal_bus_width = ${memDataWidth}
          |""".stripMargin)
     close()
@@ -352,6 +354,8 @@ object PythonArgsGen extends App{
 }
 
 /*
+
+--lsu-software-prefetch --lsu-hardware-prefetch
 
 # debian 4c
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \

@@ -17,6 +17,7 @@ import vexiiriscv.Global._
 import Fetch._
 import spinal.core.fiber.{Handle, Retainer}
 import spinal.lib.system.tag.PmaRegion
+import vexiiriscv.execute.lsu.LsuCommitProbe
 import vexiiriscv.riscv.CSR
 import vexiiriscv.schedule.ReschedulePlugin
 
@@ -41,6 +42,7 @@ trait LsuService{
   val invalidationRetainer = Retainer()
   val invalidationPorts = ArrayBuffer[LsuL1InvalidationBus]()
   def newInvalidationPort() = invalidationPorts.addRet(LsuL1InvalidationBus())
+  def lsuCommitProbe : Flow[LsuCommitProbe]
 }
 
 trait LsuL1Service{

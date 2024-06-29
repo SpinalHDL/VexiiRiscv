@@ -164,7 +164,7 @@ class ParamSimple(){
 //    decoders = 2
 //    lanes = 2
 //    storeRs2Late = true
-    withLateAlu = true
+//    withLateAlu = true
     withMul = true
     withDiv = true
     withDispatcherBuffer = true
@@ -541,7 +541,6 @@ class ParamSimple(){
         storeRs2At = storeRs2Late.mux(2, 0),
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
-        hardwarePrefetch = lsuHardwarePrefetch,
         softwarePrefetch = lsuSoftwarePrefetch,
         translationStorageParameter = MmuStorageParameter(
           levels = List(
@@ -580,6 +579,10 @@ class ParamSimple(){
         withCoherency  = lsuL1Coherency,
         bootMemClear = bootMemClear
       )
+
+      if(lsuHardwarePrefetch){
+        plugins += new lsu.PrefetchNextLinePlugin
+      }
     }
 
     if(withMul) {

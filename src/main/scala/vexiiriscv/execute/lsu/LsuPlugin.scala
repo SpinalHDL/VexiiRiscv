@@ -48,7 +48,6 @@ class LsuPlugin(var layer : LaneLayer,
                 var translationStorageParameter: Any,
                 var translationPortParameter: Any,
                 var softwarePrefetch: Boolean,
-                var hardwarePrefetch: Boolean,
                 var addressAt: Int = 0,
                 var triggerAt : Int = 1,
                 var ctrlAt: Int = 2,
@@ -62,6 +61,7 @@ class LsuPlugin(var layer : LaneLayer,
 
   override def withSoftwarePrefetch: Boolean = softwarePrefetch
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
+  override def lsuCommitProbe: Flow[LsuCommitProbe] = logic.commitProbe
 
   def busParam = LsuCachelessBusParam(
     addressWidth = Global.PHYSICAL_WIDTH,
@@ -95,6 +95,7 @@ class LsuPlugin(var layer : LaneLayer,
     val ts = host[TrapService]
     val ss = host[ScheduleService]
     val pcs = host.get[PerformanceCounterService]
+    val hp = host.get[PrefetcherPlugin]
     val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
     val buildBefore = retains(elp.pipelineLock, ats.portsLock)
     val earlyLock = retains(List(ats.storageLock) ++ pcs.map(_.elaborationLock).toList)
@@ -115,6 +116,7 @@ class LsuPlugin(var layer : LaneLayer,
     val trapPort = ts.newTrap(layer.lane.getExecuteAge(ctrlAt), Execute.LANE_AGE_WIDTH)
     val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
+    val commitProbe = Flow(LsuCommitProbe())
 
     // IntFormatPlugin specification
     val iwb = ifp.access(wbAt)
@@ -338,7 +340,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := LOAD
         port.store := STORE
         port.atomic := ATOMIC
-        port.op := LSU_PREFETCH.mux(LsuL1CmdOpcode.PREFETCH, LsuL1CmdOpcode.LSU)
+        port.op := LsuL1CmdOpcode.LSU
+        if(softwarePrefetch) when(LSU_PREFETCH) { port.op := LsuL1CmdOpcode.PREFETCH }
 
         val storeId = Reg(Decode.STORE_ID) init (0)
         storeId := storeId + U(port.fire)
@@ -389,6 +392,19 @@ class LsuPlugin(var layer : LaneLayer,
         port.op := LsuL1CmdOpcode.STORE_BUFFER
         storeBuffer.pop.ready := port.ready || flush
         port.storeId := storeBuffer.pop.op.storeId
+      }
+
+      val fromHp = hp.nonEmpty generate new Area {
+        val feed = hp.get.io.get
+        val port = ports.addRet(Stream(LsuL1Cmd()))
+        port.arbitrationFrom(feed)
+        port.op := LsuL1CmdOpcode.PREFETCH
+        port.address := feed.address
+        port.store := feed.unique
+        port.size := 0
+        port.load := False
+        port.atomic := False
+        port.storeId := 0
       }
 
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
@@ -764,6 +780,12 @@ class LsuPlugin(var layer : LaneLayer,
         }
         events.foreach(_.waiting setWhen(valid))
       }
+
+      commitProbe.valid := down.isFiring && SEL && FROM_LSU
+      commitProbe.address := l1.MIXED_ADDRESS
+      commitProbe.load := l1.LOAD
+      commitProbe.store := l1.STORE
+      commitProbe.trap := lsuTrap
     }
 
     val onWb = new elp.Execute(wbAt){
