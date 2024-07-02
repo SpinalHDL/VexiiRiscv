@@ -62,6 +62,7 @@ class LsuPlugin(var layer : LaneLayer,
   override def withSoftwarePrefetch: Boolean = softwarePrefetch
   override def getLsuCachelessBus(): LsuCachelessBus = logic.bus
   override def lsuCommitProbe: Flow[LsuCommitProbe] = logic.commitProbe
+  override def getBlockSize: Int = LsuL1.LINE_BYTES.get
 
   def busParam = LsuCachelessBusParam(
     addressWidth = Global.PHYSICAL_WIDTH,
@@ -786,6 +787,7 @@ class LsuPlugin(var layer : LaneLayer,
       commitProbe.load := l1.LOAD
       commitProbe.store := l1.STORE
       commitProbe.trap := lsuTrap
+      commitProbe.pc := Global.PC
     }
 
     val onWb = new elp.Execute(wbAt){

@@ -99,7 +99,7 @@ class ParamSimple(){
   var fetchL1ReducedBank = false
   var fetchMemDataWidthMin = 32
   var lsuSoftwarePrefetch = false
-  var lsuHardwarePrefetch = false
+  var lsuHardwarePrefetch = "none"
   var lsuStoreBufferSlots = 0
   var lsuStoreBufferOps = 0
   var lsuL1Enable = false
@@ -155,8 +155,8 @@ class ParamSimple(){
     lsuStoreBufferSlots = 2
     lsuStoreBufferOps = 32
     withLsuBypass = true
-    lsuSoftwarePrefetch = true
-    lsuHardwarePrefetch = true
+//    lsuSoftwarePrefetch = true
+    lsuHardwarePrefetch = "rpt"
 
     //    lsuForkAt = 1
     divArea = false
@@ -312,7 +312,7 @@ class ParamSimple(){
     opt[Int]("lsu-l1-ways") unbounded() action { (v, c) => lsuL1Ways = v }
     opt[Int]("lsu-l1-store-buffer-slots") action { (v, c) => lsuStoreBufferSlots = v }
     opt[Int]("lsu-l1-store-buffer-ops") action { (v, c) => lsuStoreBufferOps = v }
-    opt[Unit]("lsu-hardware-prefetch") action { (v, c) => lsuHardwarePrefetch = true }
+    opt[String]("lsu-hardware-prefetch") action { (v, c) => lsuHardwarePrefetch = v }
     opt[Unit]("lsu-software-prefetch") action { (v, c) => lsuSoftwarePrefetch = true }
     opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
     opt[Int]("lsu-l1-writeback-count") action { (v, c) => lsuL1WritebackCount = v }
@@ -580,8 +580,13 @@ class ParamSimple(){
         bootMemClear = bootMemClear
       )
 
-      if(lsuHardwarePrefetch){
-        plugins += new lsu.PrefetchNextLinePlugin
+      lsuHardwarePrefetch match {
+        case "none" =>
+        case "nl" => plugins += new lsu.PrefetchNextLinePlugin
+        case "rpt" => plugins += new lsu.PrefetchRptPlugin(
+          sets = 128,
+          bootMemClear = bootMemClear
+        )
       }
     }
 

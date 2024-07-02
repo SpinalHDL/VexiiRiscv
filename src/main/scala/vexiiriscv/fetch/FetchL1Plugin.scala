@@ -43,6 +43,7 @@ trait LsuService{
   val invalidationPorts = ArrayBuffer[LsuL1InvalidationBus]()
   def newInvalidationPort() = invalidationPorts.addRet(LsuL1InvalidationBus())
   def lsuCommitProbe : Flow[LsuCommitProbe]
+  def getBlockSize : Int
 }
 
 trait LsuL1Service{

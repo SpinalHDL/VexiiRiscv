@@ -58,7 +58,7 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
     val withCoherency = vexiiParam.lsuL1Coherency
     val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
     for (vexii <- vexiis) {
-      if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
+      if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S_KEEP)
       if (vexiiParam.lsuL1Enable) {
         vexii.lsuL1Bus.setDownConnection(a = withCoherency.mux(StreamPipe.HALF, StreamPipe.FULL), b = StreamPipe.HALF_KEEP, c = StreamPipe.FULL, d = StreamPipe.M2S_KEEP, e = StreamPipe.HALF)
         vexii.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S_KEEP)
@@ -345,7 +345,7 @@ object PythonArgsGen extends App{
          |VexiiRiscv.with_rvd = ${withRvd.toInt}
          |VexiiRiscv.with_rvc = ${withRvc.toInt}
          |VexiiRiscv.with_lsu_software_prefetch = ${lsuSoftwarePrefetch.toInt}
-         |VexiiRiscv.with_lsu_hardware_prefetch = ${lsuHardwarePrefetch.toInt}
+         |VexiiRiscv.with_lsu_hardware_prefetch = "${lsuHardwarePrefetch}"
          |VexiiRiscv.internal_bus_width = ${memDataWidth}
          |""".stripMargin)
     close()
@@ -359,7 +359,7 @@ object PythonArgsGen extends App{
 
 # debian 4c
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
---vexii-args="--lsu-software-prefetch --lsu-hardware-prefetch --performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2" \
+--vexii-args="--lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2" \
 --cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40dd4c00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
 --update-repo=no --soc-json build/csr.json --build   --load
 
