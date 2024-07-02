@@ -20,6 +20,7 @@ import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
 import vexiiriscv.{Global, riscv}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu.AguPlugin._
+import vexiiriscv.execute.lsu.LsuL1.HAZARD
 import vexiiriscv.fetch.{LsuL1Service, LsuService}
 
 import scala.collection.mutable.ArrayBuffer
@@ -782,11 +783,13 @@ class LsuPlugin(var layer : LaneLayer,
         events.foreach(_.waiting setWhen(valid))
       }
 
-      commitProbe.valid := down.isFiring && SEL && FROM_LSU
+      commitProbe.valid := down.isFiring && SEL.mux[Bool](FROM_LSU, FROM_PREFETCH && HAZARD) // && !l1.REFILL_HIT
       commitProbe.address := l1.MIXED_ADDRESS
       commitProbe.load := l1.LOAD
       commitProbe.store := l1.STORE
       commitProbe.trap := lsuTrap
+      commitProbe.io := IO
+      commitProbe.prefetchFailed := FROM_PREFETCH
       commitProbe.pc := Global.PC
     }
 

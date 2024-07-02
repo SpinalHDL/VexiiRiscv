@@ -35,6 +35,7 @@ object LsuL1 extends AreaObject{
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
   val HAZARD, MISS, MISS_UNIQUE, FAULT = Payload(Bool()) //Note that MISS, MISS_UNIQUE are doing forward progress
   val FLUSH_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
+  val REFILL_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
 
   val SETS = blocking[Int]
   val WAYS = blocking[Int]
@@ -839,6 +840,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         MISS := !WAYS_HIT
         FAULT := WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
         MISS_UNIQUE := WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
+        REFILL_HIT := refillHazard
 
         events.map{e =>
           e.loadAccess := up.isFiring && SEL && LOAD

@@ -16,7 +16,7 @@ case class PrefetchCmd() extends Bundle {
 case class LsuCommitProbe() extends Bundle {
   val pc = Global.PC()
   val address = LsuL1.MIXED_ADDRESS()
-  val load, store, trap = Bool()
+  val load, store, trap, io, prefetchFailed = Bool()
 }
 
 
@@ -87,7 +87,7 @@ class PrefetchRptPlugin(sets : Int,
 
     val pip = new StagePipeline()
     val insert = new pip.Area(0){
-      arbitrateFrom(lsu.lsuCommitProbe)
+      arbitrateFrom(lsu.lsuCommitProbe.throwWhen(lsu.lsuCommitProbe.io))
       PROBE := lsu.lsuCommitProbe.payload
     }
 
@@ -119,7 +119,7 @@ class PrefetchRptPlugin(sets : Int,
       //TODO maybe only start to realocate entries when the new one progress forward ? not sure
       //TODO write to read hazard bypass
       //TODO on failure the score penality may need to be propotionaly reduced.
-      storage.write.valid   := isFiring && !PROBE.trap
+      storage.write.valid   := isFiring && !PROBE.trap && !PROBE.prefetchFailed
       storage.write.address := hashAddress(PROBE.pc)
       storage.write.data.tag      := ENTRY.tag
       storage.write.data.address  := PROBE.address.resized
@@ -127,8 +127,8 @@ class PrefetchRptPlugin(sets : Int,
       storage.write.data.score    := score
       storage.write.data.advance  := advanceSubed + U(orderAsk)
 
-      order.valid   := isFiring && orderAsk
-      order.address := PROBE.address + (advanceSubed+1 << log2Up(lsu.getBlockSize)) //TODO this doesn't work for non sequential stuff
+      order.valid   := isFiring && (orderAsk || PROBE.prefetchFailed)
+      order.address := PROBE.address + ((advanceSubed+1).andMask(!PROBE.prefetchFailed) << log2Up(lsu.getBlockSize)) //TODO this doesn't work for non sequential stuff
       order.unique  := PROBE.store
 
       when(!TAG_HIT){
@@ -222,6 +222,16 @@ next line with trap
 000000000000029a
 00000000000005b1
 00000000000004a9
+
+
+00000000000008a3
+
+00000000000001d9
+0000000000000347
+00000000000001d9
+0000000000000408
+000000000000071c
+00000000000006f2
 
 Write speed: 166.7MiB/s
  Read speed: 113.3MiB/s
@@ -530,4 +540,126 @@ Slack (VIOLATED) :        -1.492ns  (required time - arrival time)
     SLICE_X96Y54         LUT6 (Prop_lut6_I5_O)        0.124    16.679 r  VexiiRiscvLitex_d3790b4b6be84c304ac0232f29cd22b0/vexiis_2_logic_core/FpuSqrtPlugin_logic_sqrt/ram_block_reg_i_2__2/O
                          net (fo=1, routed)           0.764    17.443    VexiiRiscvLitex_d3790b4b6be84c304ac0232f29cd22b0/vexiis_2_logic_core/LsuL1Plugin_logic_banks_1_mem/LsuL1Plugin_logic_banks_1_write_valid
     RAMB36_X5Y12         RAMB36E1                                     r  VexiiRiscvLitex_d3790b4b6be84c304ac0232f29cd22b0/vexiis_2_logic_core/LsuL1Plugin_logic_banks_1_mem/ram_block_reg/ENBWREN
+
+
+
+ Slack (VIOLATED) :        -1.130ns  (required time - arrival time)
+  Source:                 VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/vexiis_1_logic_core_toplevel_execute_ctrl3_up_Decode_UOP_lane0_reg[31]/C
+                            (rising edge-triggered cell FDRE clocked by crg_s7mmcm0_clkout0  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[40]/D
+                            (rising edge-triggered cell FDRE clocked by crg_s7mmcm0_clkout0  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             crg_s7mmcm0_clkout0
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (crg_s7mmcm0_clkout0 rise@10.000ns - crg_s7mmcm0_clkout0 rise@0.000ns)
+  Data Path Delay:        10.847ns  (logic 3.809ns (35.114%)  route 7.038ns (64.886%))
+  Logic Levels:           21  (CARRY4=16 LUT2=1 LUT4=2 LUT6=2)
+  Clock Path Skew:        -0.292ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    6.174ns = ( 16.174 - 10.000 )
+    Source Clock Delay      (SCD):    6.719ns
+    Clock Pessimism Removal (CPR):    0.253ns
+  Clock Uncertainty:      0.067ns  ((TSJ^2 + DJ^2)^1/2) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Discrete Jitter          (DJ):    0.114ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock crg_s7mmcm0_clkout0 rise edge)
+                                                      0.000     0.000 r
+    R4                                                0.000     0.000 r  clk100 (IN)
+                         net (fo=0)                   0.000     0.000    clk100
+    R4                   IBUF (Prop_ibuf_I_O)         1.475     1.475 r  clk100_IBUF_inst/O
+                         net (fo=11, routed)          1.233     2.708    crg_s7mmcm0_clkin
+    MMCME2_ADV_X1Y2      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                      0.088     2.796 r  MMCME2_ADV/CLKOUT0
+                         net (fo=1, routed)           1.808     4.605    crg_s7mmcm0_clkout0
+    BUFGCTRL_X0Y0        BUFG (Prop_bufg_I_O)         0.096     4.701 r  BUFG/O
+                         net (fo=53450, routed)       2.018     6.719    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/out
+    SLICE_X44Y18         FDRE                                         r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/vexiis_1_logic_core_toplevel_execute_ctrl3_up_Decode_UOP_lane0_reg[31]/C
+  -------------------------------------------------------------------    -------------------
+    SLICE_X44Y18         FDRE (Prop_fdre_C_Q)         0.518     7.237 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/vexiis_1_logic_core_toplevel_execute_ctrl3_up_Decode_UOP_lane0_reg[31]/Q
+                         net (fo=129, routed)         0.501     7.738    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_alu_compare
+    SLICE_X45Y19         LUT2 (Prop_lut2_I0_O)        0.124     7.862 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer[3]_i_4__2/O
+                         net (fo=1, routed)           0.472     8.334    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/_zz_LsuPlugin_logic_onCtrl_rva_alu_addSub_3[0]
+    SLICE_X45Y22         CARRY4 (Prop_carry4_CYINIT_CO[3])
+                                                      0.580     8.914 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[3]_i_3__2/CO[3]
+                         net (fo=1, routed)           0.000     8.914    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[3]_i_3__2_n_0
+    SLICE_X45Y23         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114     9.028 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[7]_i_3__2/CO[3]
+                         net (fo=1, routed)           0.000     9.028    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[7]_i_3__2_n_0
+    SLICE_X45Y24         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114     9.142 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[11]_i_3__2/CO[3]
+                         net (fo=1, routed)           0.009     9.151    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[11]_i_3__2_n_0
+    SLICE_X45Y25         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114     9.265 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[15]_i_3__2/CO[3]
+                         net (fo=1, routed)           0.000     9.265    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[15]_i_3__2_n_0
+    SLICE_X45Y26         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114     9.379 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[19]_i_3__2/CO[3]
+                         net (fo=1, routed)           0.000     9.379    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[19]_i_3__2_n_0
+    SLICE_X45Y27         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114     9.493 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[23]_i_3__2/CO[3]
+                         net (fo=1, routed)           0.000     9.493    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[23]_i_3__2_n_0
+    SLICE_X45Y28         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114     9.607 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[27]_i_3__2/CO[3]
+                         net (fo=1, routed)           0.000     9.607    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[27]_i_3__2_n_0
+    SLICE_X45Y29         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114     9.721 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[31]_i_4__1/CO[3]
+                         net (fo=1, routed)           0.000     9.721    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[31]_i_4__1_n_0
+    SLICE_X45Y30         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114     9.835 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[35]_i_4__1/CO[3]
+                         net (fo=1, routed)           0.000     9.835    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[35]_i_4__1_n_0
+    SLICE_X45Y31         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114     9.949 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[39]_i_4__1/CO[3]
+                         net (fo=1, routed)           0.000     9.949    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[39]_i_4__1_n_0
+    SLICE_X45Y32         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    10.063 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[43]_i_4__1/CO[3]
+                         net (fo=1, routed)           0.000    10.063    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[43]_i_4__1_n_0
+    SLICE_X45Y33         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    10.177 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[47]_i_4__1/CO[3]
+                         net (fo=1, routed)           0.000    10.177    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[47]_i_4__1_n_0
+    SLICE_X45Y34         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    10.291 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[51]_i_4__1/CO[3]
+                         net (fo=1, routed)           0.000    10.291    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[51]_i_4__1_n_0
+    SLICE_X45Y35         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    10.405 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[55]_i_4__1/CO[3]
+                         net (fo=1, routed)           0.000    10.405    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[55]_i_4__1_n_0
+    SLICE_X45Y36         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    10.519 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[59]_i_4__1/CO[3]
+                         net (fo=1, routed)           0.000    10.519    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[59]_i_4__1_n_0
+    SLICE_X45Y37         CARRY4 (Prop_carry4_CI_O[3])
+                                                      0.313    10.832 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[63]_i_4__1/O[3]
+                         net (fo=2, routed)           0.700    11.531    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/_zz_LsuPlugin_logic_onCtrl_rva_alu_addSub[63]
+    SLICE_X51Y44         LUT4 (Prop_lut4_I3_O)        0.306    11.837 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer[31]_i_5__2/O
+                         net (fo=1, routed)           0.403    12.240    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer[31]_i_5__2_n_0
+    SLICE_X51Y44         LUT6 (Prop_lut6_I1_O)        0.124    12.364 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer[31]_i_3__1/O
+                         net (fo=64, routed)          2.704    15.068    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer[31]_i_3__1_n_0
+    SLICE_X114Y31        LUT6 (Prop_lut6_I4_O)        0.124    15.192 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer[40]_i_2__2/O
+                         net (fo=1, routed)           2.251    17.442    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer[40]_i_2__2_n_0
+    SLICE_X64Y50         LUT4 (Prop_lut4_I0_O)        0.124    17.566 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer[40]_i_1__1/O
+                         net (fo=1, routed)           0.000    17.566    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_alu_result[40]
+    SLICE_X64Y50         FDRE                                         r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[40]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock crg_s7mmcm0_clkout0 rise edge)
+                                                     10.000    10.000 r
+    R4                                                0.000    10.000 r  clk100 (IN)
+                         net (fo=0)                   0.000    10.000    clk100
+    R4                   IBUF (Prop_ibuf_I_O)         1.405    11.405 r  clk100_IBUF_inst/O
+                         net (fo=11, routed)          1.162    12.567    crg_s7mmcm0_clkin
+    MMCME2_ADV_X1Y2      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                      0.083    12.650 r  MMCME2_ADV/CLKOUT0
+                         net (fo=1, routed)           1.723    14.373    crg_s7mmcm0_clkout0
+    BUFGCTRL_X0Y0        BUFG (Prop_bufg_I_O)         0.091    14.464 r  BUFG/O
+                         net (fo=53450, routed)       1.710    16.174    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/out
+    SLICE_X64Y50         FDRE                                         r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[40]/C
+                         clock pessimism              0.253    16.427
+                         clock uncertainty           -0.067    16.360
+    SLICE_X64Y50         FDRE (Setup_fdre_C_D)        0.077    16.437    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/vexiis_1_logic_core/LsuPlugin_logic_onCtrl_rva_aluBuffer_reg[40]
+  -------------------------------------------------------------------
+                         required time                         16.437
+                         arrival time                         -17.566
+  -------------------------------------------------------------------
+                         slack                                 -1.130
+
+
  */

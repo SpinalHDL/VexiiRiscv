@@ -310,6 +310,8 @@ object SocGen extends App{
 //  val from = report.toplevel.reflectBaseType("vexiis_0_lsuL1Bus_noDecoder_toDown_d_rData_opcode")   <---- TODO fix this path
 //  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_WB_HAZARD")
 //
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")   <---- TODO fix this path
+//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_banks_1_write_valid")
 //
 //  val drivers = mutable.LinkedHashSet[BaseType]()
 //  AnalysisUtils.seekNonCombDrivers(to){driver =>
@@ -317,7 +319,7 @@ object SocGen extends App{
 //      case bt : BaseType => drivers += bt
 //    }
 //  }
-//  drivers.foreach(e => println(e.getName()))
+////  drivers.foreach(e => println(e.getName()))
 //  println("******")
 //  println(PathTracer.impl(from, to).report())
 }
