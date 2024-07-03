@@ -7,6 +7,7 @@ import vexiiriscv.fetch.{Fetch, InitService, LsuService}
 import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.Global._
+import vexiiriscv.execute.{CsrAccessPlugin, CsrService}
 
 case class PrefetchCmd() extends Bundle {
   val address = LsuL1.MIXED_ADDRESS()
@@ -44,8 +45,8 @@ class PrefetchRptPlugin(sets : Int,
                         tagWidth: Int = 15,
                         addressWidth: Int = 16,
                         strideWidth: Int = 12,
-                        blockAheadMax: Int = 3,
-                        scoreMax: Int = 15,
+                        blockAheadMax: Int = 6,
+                        scoreMax: Int = 31,
                         scorePass: Int = 1,
                         scoreFail: Int = 2,
                         scoreConflict: Int = 2,
@@ -54,11 +55,21 @@ class PrefetchRptPlugin(sets : Int,
 
   override def initHold(): Bool = bootMemClear.mux(logic.initializer.busy, False)
 
-  val logic = during build new Area {
+  val logic = during setup new Area {
     val lsu = host[LsuService]
+    val cp = host[CsrService]
+    val earlyLock = retains(cp.csrLock)
+    awaitBuild()
+
+    val csr = new Area{
+      val disable = RegInit(False)
+      cp.readWrite(0x7FF, 0 -> disable)
+    }
+
+    earlyLock.release()
 
     val order = Stream(PrefetchCmd())
-    io << order.stage()
+    io << order.stage() //.forceReady(order.valid)
 
     val TAG = Payload(UInt(tagWidth bits))
     val STRIDE = Payload(UInt(strideWidth bits))
@@ -115,7 +126,6 @@ class PrefetchRptPlugin(sets : Int,
       val advanceAllowed = (ENTRY.score -| scoreOffset) >> scoreShift
       val orderAsk = False
 
-      //TODO stride of zero do not need to be learned
       //TODO maybe only start to realocate entries when the new one progress forward ? not sure
       //TODO write to read hazard bypass
       //TODO on failure the score penality may need to be propotionaly reduced.
@@ -125,20 +135,22 @@ class PrefetchRptPlugin(sets : Int,
       storage.write.data.address  := PROBE.address.resized
       storage.write.data.stride   := (ENTRY.score < scoreOffset).mux[UInt](STRIDE, ENTRY.stride)
       storage.write.data.score    := score
-      storage.write.data.advance  := advanceSubed + U(orderAsk)
+      storage.write.data.advance  := advanceSubed + U(order.fire)
 
       order.valid   := isFiring && (orderAsk || PROBE.prefetchFailed)
       order.address := PROBE.address + ((advanceSubed+1).andMask(!PROBE.prefetchFailed) << log2Up(lsu.getBlockSize)) //TODO this doesn't work for non sequential stuff
       order.unique  := PROBE.store
 
       when(!TAG_HIT){
-        when(ENTRY.score =/= 0){
-          sub := scoreConflict
-        } otherwise {
-          storage.write.data.tag := hashTag(PROBE.pc)
-          storage.write.data.score := 0
-          storage.write.data.stride := 0
-          storage.write.data.advance := 0
+        when(STRIDE =/= 0) {
+          when(ENTRY.score =/= 0) {
+            sub := scoreConflict
+          } otherwise {
+            storage.write.data.tag := hashTag(PROBE.pc)
+            storage.write.data.score := 0
+            storage.write.data.stride := 0
+            storage.write.data.advance := 0
+          }
         }
       } otherwise {
         when(!STRIDE_HIT){
@@ -152,6 +164,11 @@ class PrefetchRptPlugin(sets : Int,
         when(advanceSubed < blockAheadMax && advanceSubed < advanceAllowed){
           orderAsk := True
         }
+      }
+
+      when(csr.disable){
+        order.valid := False
+        storage.write.valid := False
       }
     }
 
@@ -172,6 +189,12 @@ class PrefetchRptPlugin(sets : Int,
 
 
 /*
+https://zsmith.co/bandwidth.php
+
+Write speed: 182.0MiB/s
+ Read speed: 332.3MiB/s
+
+
 none
 0000000000000621
 0000000000000279
@@ -232,6 +255,59 @@ next line with trap
 0000000000000408
 000000000000071c
 00000000000006f2
+
+
+.Lr1:
+  # Total of 32 transfers x 8 bytes = 256 bytes.
+  # 8 transfers, 8 bytes each
+  ld	a3, (a0)
+  ld	a4, 8(a0)
+  ld	a5, 16(a0)
+  ld	a6, 24(a0)
+  ld	a7, 32(a0)
+  ld	t2, 40(a0)
+  ld	t3, 48(a0)
+  ld	t4, 56(a0)
+  addi	a0, a0, 64
+  # 8 transfers, 8 bytes each
+  ld	a3, (a0)
+  ld	a4, 8(a0)
+  ld	a5, 16(a0)
+  ld	a6, 24(a0)
+  ld	a7, 32(a0)
+  ld	t2, 40(a0)
+  ld	t3, 48(a0)
+  ld	t4, 56(a0)
+  addi	a0, a0, 64
+  # 8 transfers, 8 bytes each
+  ld	a3, (a0)
+  ld	a4, 8(a0)
+  ld	a5, 16(a0)
+  ld	a6, 24(a0)
+  ld	a7, 32(a0)
+  ld	t2, 40(a0)
+  ld	t3, 48(a0)
+  ld	t4, 56(a0)
+  addi	a0, a0, 64
+  # 8 transfers, 8 bytes each
+  ld	a3, (a0)
+  ld	a4, 8(a0)
+  ld	a5, 16(a0)
+  ld	a6, 24(a0)
+  ld	a7, 32(a0)
+  ld	t2, 40(a0)
+  ld	t3, 48(a0)
+  ld	t4, 56(a0)
+  addi	a0, a0, 64
+
+  addi	a1, a1, -256
+  bnez	a1, .Lr1
+
+  addi	a2, a2, -1
+  bnez	a2, .Lr0
+
+  ret
+
 
 Write speed: 166.7MiB/s
  Read speed: 113.3MiB/s
