@@ -73,6 +73,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
   def implementUserTrap = p.withUserTrap
 
   def getPrivilege(hartId : UInt) : UInt = logic.harts.map(_.privilege).read(hartId)
+  def isMachine(hartId : UInt) : Bool = getPrivilege(hartId) === 3
+  def isSupervisor(hartId : UInt) : Bool = getPrivilege(hartId) === 1
+  def isUSer(hartId : UInt) : Bool = getPrivilege(hartId) === 0
 
 
   override def getCommitMask(hartId: Int): Bits = logic.harts(hartId).commitMask

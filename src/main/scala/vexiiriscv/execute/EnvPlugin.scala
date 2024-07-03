@@ -89,9 +89,11 @@ class EnvPlugin(layer : LaneLayer,
         }
 
         is(EnvPluginOp.WFI) {
-          commit := True
-          trapPort.exception := False
-          trapPort.code := TrapReason.WFI
+          when(privilege === 3 || !ps.logic.harts(0).m.status.tw && (Bool(!ps.implementSupervisor) || privilege === 1)) {
+            commit := True
+            trapPort.exception := False
+            trapPort.code := TrapReason.WFI
+          }
         }
 
         is(EnvPluginOp.FENCE_I) {
