@@ -152,8 +152,8 @@ class ParamSimple(){
     lsuL1RefillCount = 4
     lsuL1WritebackCount = 4
     lsuL1Coherency = false
-//    lsuStoreBufferSlots = 2
-//    lsuStoreBufferOps = 32
+    lsuStoreBufferSlots = 2
+    lsuStoreBufferOps = 32
     withLsuBypass = true
 //    lsuSoftwarePrefetch = true
     lsuHardwarePrefetch = "rpt"

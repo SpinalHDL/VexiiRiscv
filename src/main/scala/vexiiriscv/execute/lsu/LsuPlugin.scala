@@ -418,6 +418,7 @@ class LsuPlugin(var layer : LaneLayer,
       l1.LOAD := arbiter.io.output.load
       l1.ATOMIC := arbiter.io.output.atomic
       l1.STORE := arbiter.io.output.store
+      l1.PREFETCH := arbiter.io.output.op === LsuL1CmdOpcode.PREFETCH
       l1.FLUSH := arbiter.io.output.op === LsuL1CmdOpcode.FLUSH
       Decode.STORE_ID := arbiter.io.output.storeId
       FROM_ACCESS := arbiter.io.output.op === LsuL1CmdOpcode.ACCESS

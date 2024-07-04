@@ -22,7 +22,7 @@ object LsuL1 extends AreaObject{
   // -> L1
   val ABORD, SKIP_WRITE = Payload(Bool())
   val SEL = Payload(Bool())
-  val LOAD, STORE, ATOMIC, FLUSH = Payload(Bool())
+  val LOAD, STORE, ATOMIC, FLUSH, PREFETCH = Payload(Bool())
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS)
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
@@ -826,8 +826,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val writeToReadHazard = withBypass.mux(False, WRITE_TO_READ_HAZARDS.orR)
         val bankNotRead = (BANK_BUSY_REMAPPED & WAYS_HITS).orR
-        val loadHazard  = LOAD && (bankNotRead || writeToReadHazard)
-        val storeHazard = STORE && !bankWriteReservation.win
+        val loadHazard  = LOAD && !PREFETCH  && (bankNotRead || writeToReadHazard)
+        val storeHazard = STORE && !PREFETCH  && !bankWriteReservation.win
+//        val storeHazard = False
+//        lane.freezeWhen(SEL && STORE && !FLUSH && !PREFETCH && !bankWriteReservation.win)
         val flushHazard = FLUSH && !reservation.win
         val coherencyHazard = False
         if(!withCoherency) HAZARD_FORCED := False

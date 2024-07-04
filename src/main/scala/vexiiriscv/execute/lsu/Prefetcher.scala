@@ -43,12 +43,12 @@ class PrefetchNextLinePlugin extends PrefetcherPlugin {
 class PrefetchRptPlugin(sets : Int,
                         bootMemClear : Boolean,
                         readAt : Int = 0,
-                        tagAt: Int = 1,
+                        tagAt: Int = 2,
                         ctrlAt: Int = 2,
                         tagWidth: Int = 15,
                         addressWidth: Int = 16,
                         strideWidth: Int = 12,
-                        blockAheadMax: Int = 6,
+                        blockAheadMax: Int = 4,
                         scoreMax: Int = 31,
                         scorePass: Int = 1,
                         scoreFail: Int = 2,
@@ -97,7 +97,7 @@ class PrefetchRptPlugin(sets : Int,
     val done = advanceAt === queued.to
     queued.ready := serialized.ready && done
     serialized.valid := queued.valid
-    serialized.address := queued.address + advanceAt*lsu.getBlockSize //TODO lsu.getBlockSize
+    serialized.address := queued.address + advanceAt * queued.stride
     serialized.unique := queued.unique
     counter := (counter + U(serialized.fire)).andMask(!queued.ready)
     io << serialized.stage()
@@ -132,9 +132,13 @@ class PrefetchRptPlugin(sets : Int,
     val onRead0 = new pip.Area(readAt){
       storage.read.cmd.valid := isFiring
       storage.read.cmd.payload := hashAddress(PROBE.pc)
+      val WRITTEN = insert(storage.write)
     }
     val onRead1 = new pip.Area(readAt+1) {
       ENTRY := storage.read.rsp
+      when(onRead0.WRITTEN.valid && onRead0.WRITTEN.payload.address === hashAddress(PROBE.pc)){
+        ENTRY := onRead0.WRITTEN.payload.data
+      }
     }
     val onTag = new pip.Area(tagAt) {
       TAG_HIT := ENTRY.tag === hashTag(PROBE.pc)
@@ -149,6 +153,8 @@ class PrefetchRptPlugin(sets : Int,
         val entryLast = sample(order.payload)
         val hit = (entryLast.address ^ order.address) >> log2Up(lsu.getBlockSize) === 0
       }
+      val unfiltred = cloneOf(order)
+      order << unfiltred //.throwWhen(filter.hit)
 
       val add, sub = SCORE()
       add := 0
@@ -160,7 +166,6 @@ class PrefetchRptPlugin(sets : Int,
       val orderAsk = False
 
       //TODO maybe only start to realocate entries when the new one progress forward ? not sure
-      //TODO write to read hazard bypass
       //TODO on failure the score penality may need to be propotionaly reduced.
       storage.write.valid   := isFiring && !PROBE.trap && !PROBE.prefetchFailed
       storage.write.address := hashAddress(PROBE.pc)
@@ -168,14 +173,14 @@ class PrefetchRptPlugin(sets : Int,
       storage.write.data.address  := PROBE.address.resized
       storage.write.data.stride   := (ENTRY.score < scoreOffset).mux[UInt](STRIDE, ENTRY.stride)
       storage.write.data.score    := score
-      storage.write.data.advance  := order.fire.mux(order.to, advanceSubed).resized
+      storage.write.data.advance  := unfiltred.fire.mux(unfiltred.to, advanceSubed).resized
 
-      order.valid   := isFiring && (orderAsk/* || PROBE.prefetchFailed*/)
-      order.address := PROBE.address
-      order.unique  := PROBE.store
-      order.from := advanceSubed+1
-      order.to := advanceAllowed.min(blockAheadMax).resized
-      order.stride := STRIDE
+      unfiltred.valid   := isFiring && (orderAsk/* || PROBE.prefetchFailed*/)
+      unfiltred.address := PROBE.address
+      unfiltred.unique  := PROBE.store
+      unfiltred.from := advanceSubed+1
+      unfiltred.to := advanceAllowed.min(blockAheadMax).resized
+      unfiltred.stride := STRIDE max lsu.getBlockSize
 
 //      when(PROBE.prefetchFailed){
 //        order.from := 0
@@ -231,24 +236,16 @@ class PrefetchRptPlugin(sets : Int,
 
 /*
 
-L 1x 2.23 B/cyc 7319 cyc
-L 1x 2.61 B/cyc 6274 cyc
-L 4x 4.67 B/cyc 3507 cyc
-L 16x 3.44 B/cyc 4752 cyc
-L 16x 4.02 B/cyc 16278 cyc
-S 1x 2.46 B/cyc 6645 cyc
-S 4x 2.93 B/cyc 5585 cyc
-S 16x 2.84 B/cyc 22997 cyc
-LLS 4x 1.13 B/cyc 14463 cyc
-L 1x 1.09 B/cyc 14968 cyc
-L 1x 1.09 B/cyc 14906 cyc
-L 4x 1.38 B/cyc 11831 cyc
-L 16x 1.48 B/cyc 11055 cyc
-L 16x 1.48 B/cyc 44075 cyc
-S 1x 2.17 B/cyc 7530 cyc
-S 4x 2.37 B/cyc 6901 cyc
-S 16x 2.37 B/cyc 27624 cyc
-LLS 4x 0.62 B/cyc 26202 cyc
+L 1x 2.21 B/cyc 7404 cyc
+L 1x 2.60 B/cyc 6283 cyc
+L 4x 4.62 B/cyc 3540 cyc
+L 16x 3.47 B/cyc 4719 cyc
+L 16x 4.05 B/cyc 16157 cyc
+S 1x 2.61 B/cyc 6254 cyc
+S 4x 2.95 B/cyc 5550 cyc
+S 16x 2.92 B/cyc 22430 cyc
+LLS 4x 1.10 B/cyc 14804 cyc
+
 
 https://zsmith.co/bandwidth.php
 
