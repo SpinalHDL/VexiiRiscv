@@ -8,6 +8,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.Global._
 import vexiiriscv.execute.{CsrAccessPlugin, CsrService}
+import vexiiriscv.schedule.DispatchPlugin
 
 case class PrefetchCmd() extends Bundle {
   val address = LsuL1.MIXED_ADDRESS()
@@ -37,6 +38,8 @@ class PrefetchNextLinePlugin extends PrefetcherPlugin {
   }
 }
 
+
+
 class PrefetchRptPlugin(sets : Int,
                         bootMemClear : Boolean,
                         readAt : Int = 0,
@@ -58,6 +61,7 @@ class PrefetchRptPlugin(sets : Int,
   val logic = during setup new Area {
     val lsu = host[LsuService]
     val cp = host[CsrService]
+    val dp = host[DispatchPlugin]
     val earlyLock = retains(cp.csrLock)
     awaitBuild()
 
@@ -68,9 +72,6 @@ class PrefetchRptPlugin(sets : Int,
 
     earlyLock.release()
 
-    val order = Stream(PrefetchCmd())
-    io << order.stage() //.forceReady(order.valid)
-
     val TAG = Payload(UInt(tagWidth bits))
     val STRIDE = Payload(UInt(strideWidth bits))
     val SCORE = Payload(UInt(log2Up(scoreMax + 1) bits))
@@ -79,6 +80,32 @@ class PrefetchRptPlugin(sets : Int,
     val PROBE = Payload(LsuCommitProbe())
     val ENTRY = Payload(Entry())
     val TAG_HIT, STRIDE_HIT, NEW_BLOCK = Payload(Bool())
+
+    case class PrefetchPacked() extends Bundle {
+      val address = LsuL1.MIXED_ADDRESS()
+      val unique = Bool()
+      val from = ADVANCE()
+      val to = ADVANCE()
+      val stride = STRIDE()
+    }
+
+    val order = Stream(PrefetchPacked())
+    val queued = order.queue(4).combStage()
+    val serialized = Stream(PrefetchCmd())
+    val counter = Reg(ADVANCE) init(0)
+    val advanceAt = (queued.from + counter)
+    val done = advanceAt === queued.to
+    queued.ready := serialized.ready && done
+    serialized.valid := queued.valid
+    serialized.address := queued.address + advanceAt*lsu.getBlockSize //TODO lsu.getBlockSize
+    serialized.unique := queued.unique
+    counter := (counter + U(serialized.fire)).andMask(!queued.ready)
+    io << serialized.stage()
+
+    //Dispatch throttling to ensure some prefetching goes through when the instruction stream is very heavy in load/store
+    dp.haltDispatchWhen(RegNext(!order.ready) init(False))
+
+
 
     def hashAddress(pc: UInt) = pc(Fetch.SLICE_RANGE_LOW, log2Up(sets) bits)
     def hashTag(pc: UInt) = pc(Fetch.SLICE_RANGE_LOW.get + log2Up(sets), tagWidth bits)
@@ -115,14 +142,20 @@ class PrefetchRptPlugin(sets : Int,
       NEW_BLOCK := (PROBE.address.resized ^ ENTRY.address) >> log2Up(lsu.getBlockSize) =/= 0
     }
     val onCtrl = new pip.Area(ctrlAt){
-      STRIDE_HIT := STRIDE === ENTRY.stride
+      STRIDE_HIT := STRIDE === ENTRY.stride // may need a few additional bits from the address to avoid aliasing
+
+      val filter = new Area{
+        def sample[T <: Data](that : T) : T = RegNextWhen(that, order.fire)
+        val entryLast = sample(order.payload)
+        val hit = (entryLast.address ^ order.address) >> log2Up(lsu.getBlockSize) === 0
+      }
 
       val add, sub = SCORE()
       add := 0
       sub := 0
       val score = ENTRY.score -| sub +| add //not great
 
-      val advanceSubed = ENTRY.advance -| U(NEW_BLOCK)
+      val advanceSubed = (ENTRY.advance -| U(NEW_BLOCK))
       val advanceAllowed = (ENTRY.score -| scoreOffset) >> scoreShift
       val orderAsk = False
 
@@ -135,11 +168,19 @@ class PrefetchRptPlugin(sets : Int,
       storage.write.data.address  := PROBE.address.resized
       storage.write.data.stride   := (ENTRY.score < scoreOffset).mux[UInt](STRIDE, ENTRY.stride)
       storage.write.data.score    := score
-      storage.write.data.advance  := advanceSubed + U(order.fire)
+      storage.write.data.advance  := order.fire.mux(order.to, advanceSubed).resized
 
-      order.valid   := isFiring && (orderAsk || PROBE.prefetchFailed)
-      order.address := PROBE.address + ((advanceSubed+1).andMask(!PROBE.prefetchFailed) << log2Up(lsu.getBlockSize)) //TODO this doesn't work for non sequential stuff
+      order.valid   := isFiring && (orderAsk/* || PROBE.prefetchFailed*/)
+      order.address := PROBE.address
       order.unique  := PROBE.store
+      order.from := advanceSubed+1
+      order.to := advanceAllowed.min(blockAheadMax).resized
+      order.stride := STRIDE
+
+//      when(PROBE.prefetchFailed){
+//        order.from := 0
+//        order.to := 0
+//      }
 
       when(!TAG_HIT){
         when(STRIDE =/= 0) {
@@ -155,13 +196,13 @@ class PrefetchRptPlugin(sets : Int,
       } otherwise {
         when(!STRIDE_HIT){
           sub := scoreFail
-          storage.write.data.advance := 0
+          advanceSubed := 0
         } otherwise {
           when(NEW_BLOCK){
             add := scorePass
           }
         }
-        when(advanceSubed < blockAheadMax && advanceSubed < advanceAllowed){
+        when(advanceSubed < blockAheadMax && advanceSubed < advanceAllowed /*&& !filter.hit*/){
           orderAsk := True
         }
       }
@@ -189,11 +230,39 @@ class PrefetchRptPlugin(sets : Int,
 
 
 /*
+
+L 1x 2.23 B/cyc 7319 cyc
+L 1x 2.61 B/cyc 6274 cyc
+L 4x 4.67 B/cyc 3507 cyc
+L 16x 3.44 B/cyc 4752 cyc
+L 16x 4.02 B/cyc 16278 cyc
+S 1x 2.46 B/cyc 6645 cyc
+S 4x 2.93 B/cyc 5585 cyc
+S 16x 2.84 B/cyc 22997 cyc
+LLS 4x 1.13 B/cyc 14463 cyc
+L 1x 1.09 B/cyc 14968 cyc
+L 1x 1.09 B/cyc 14906 cyc
+L 4x 1.38 B/cyc 11831 cyc
+L 16x 1.48 B/cyc 11055 cyc
+L 16x 1.48 B/cyc 44075 cyc
+S 1x 2.17 B/cyc 7530 cyc
+S 4x 2.37 B/cyc 6901 cyc
+S 16x 2.37 B/cyc 27624 cyc
+LLS 4x 0.62 B/cyc 26202 cyc
+
 https://zsmith.co/bandwidth.php
 
 Write speed: 182.0MiB/s
  Read speed: 332.3MiB/s
 
+L 1x 2.24 B/cyc 7301 cyc
+L 4x 4.56 B/cyc 3591 cyc
+L 16x 2.42 B/cyc 27013 cyc
+LLS 4x 0.97 B/cyc 16841 cyc
+L 1x 1.09 B/cyc 14977 cyc
+L 4x 1.38 B/cyc 11833 cyc
+L 16x 1.48 B/cyc 44087 cyc
+LLS 4x 0.63 B/cyc 25852 cyc
 
 none
 0000000000000621

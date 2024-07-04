@@ -361,7 +361,7 @@ object PythonArgsGen extends App{
 
 # debian 4c
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
---vexii-args="--lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2" \
+--vexii-args="--lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=2" \
 --cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40dd4c00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
 --update-repo=no --soc-json build/csr.json --build   --load
 
