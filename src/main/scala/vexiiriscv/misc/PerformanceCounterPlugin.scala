@@ -33,6 +33,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 //    val trapLock = tp.trapLock()
     awaitBuild()
 
+
     assert(Global.HART_COUNT.get == 1)
     val withHigh = Riscv.XLEN.get == 32
 
@@ -40,6 +41,9 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val commitMask = Cat(host.list[CommitService].map(_.getCommitMask(0)))
     val ignoreNextCommit = RegInit(False) clearWhen (commitMask.orR)
     val commitCount = CountOne(commitMask) - U(ignoreNextCommit && commitMask.orR)
+
+    val eventCycles = createEventPort(PerformanceCounterService.CYCLES)
+    val eventInstructions = Vec.fill(widthOf(commitMask))(createEventPort(PerformanceCounterService.INSTRUCTIONS))
 
     var counterIdPtr = 0
     class Counter extends Area{
@@ -60,6 +64,9 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       counterIdPtr += 1 //skip time
       val instret = new Counter()
       val additionals = List.fill(additionalCounterCount)(new Counter)
+
+      eventCycles := True
+      eventInstructions := (commitMask.andMask(!ignoreNextCommit)).asBools
 
       cycle.value := cycle.value + (!cycle.mcountinhibit).asUInt
       instret.value := instret.value + RegNext(commitCount.andMask(!instret.mcountinhibit)).init(0)
