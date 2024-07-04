@@ -357,11 +357,12 @@ object PythonArgsGen extends App{
 
 /*
 
-
+make CROSS_COMPILE=riscv-none-embed-      PLATFORM=generic      PLATFORM_RISCV_XLEN=64      PLATFORM_RISCV_ISA=rv64gc      PLATFORM_RISCV_ABI=lp64d      FW_FDT_PATH=../linux.dtb      FW_JUMP_ADDR=0x41000000       FW_JUMP_FDT_ADDR=0x46000000      -j20
+scp build/platform/generic/firmware/fw_jump.bin root@nexys.local:/boot/opensbi.bin
 
 # debian 4c
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
---vexii-args="--lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=2" \
+--vexii-args="--lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4" \
 --cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40dd4c00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
 --update-repo=no --soc-json build/csr.json --build   --load
 
@@ -684,6 +685,11 @@ todo debug :
 [ 9576.295073] [<ffffffff80144a98>] do_sys_poll+0x144/0x42c
 
 perf stat  --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches -p $!
+
+
+perf stat  --timeout 1000 -p $! -e stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches
+perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions
+
 
 relaxed btb =>
 startup finished in 9.108s (kernel) + 1min 17.848s (userspace) = 1min 26.956s

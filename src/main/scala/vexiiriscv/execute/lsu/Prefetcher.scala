@@ -73,7 +73,7 @@ class PrefetchRptPlugin(sets : Int,
     earlyLock.release()
 
     val TAG = Payload(UInt(tagWidth bits))
-    val STRIDE = Payload(UInt(strideWidth bits))
+    val STRIDE = Payload(SInt(strideWidth bits))
     val SCORE = Payload(UInt(log2Up(scoreMax + 1) bits))
     val ADDRESS = Payload(UInt(addressWidth bits))
     val ADVANCE = Payload(UInt(log2Up(blockAheadMax + 1) bits))
@@ -90,14 +90,14 @@ class PrefetchRptPlugin(sets : Int,
     }
 
     val order = Stream(PrefetchPacked())
-    val queued = order.queue(4).combStage()
+    val queued = order.queue(4, latency = 1).combStage()
     val serialized = Stream(PrefetchCmd())
     val counter = Reg(ADVANCE) init(0)
     val advanceAt = (queued.from + counter)
     val done = advanceAt === queued.to
     queued.ready := serialized.ready && done
     serialized.valid := queued.valid
-    serialized.address := queued.address + advanceAt * queued.stride
+    serialized.address := U(S(queued.address) + advanceAt.intoSInt * queued.stride)
     serialized.unique := queued.unique
     counter := (counter + U(serialized.fire)).andMask(!queued.ready)
     io << serialized.stage()
@@ -125,7 +125,7 @@ class PrefetchRptPlugin(sets : Int,
 
     val pip = new StagePipeline()
     val insert = new pip.Area(0){
-      arbitrateFrom(lsu.lsuCommitProbe.throwWhen(lsu.lsuCommitProbe.io))
+      arbitrateFrom(lsu.lsuCommitProbe.throwWhen(lsu.lsuCommitProbe.io || lsu.lsuCommitProbe.trap))
       PROBE := lsu.lsuCommitProbe.payload
     }
 
@@ -142,7 +142,7 @@ class PrefetchRptPlugin(sets : Int,
     }
     val onTag = new pip.Area(tagAt) {
       TAG_HIT := ENTRY.tag === hashTag(PROBE.pc)
-      STRIDE := (PROBE.address - ENTRY.address).resized
+      STRIDE := S(PROBE.address - ENTRY.address).resized
       NEW_BLOCK := (PROBE.address.resized ^ ENTRY.address) >> log2Up(lsu.getBlockSize) =/= 0
     }
     val onCtrl = new pip.Area(ctrlAt){
@@ -171,7 +171,7 @@ class PrefetchRptPlugin(sets : Int,
       storage.write.address := hashAddress(PROBE.pc)
       storage.write.data.tag      := ENTRY.tag
       storage.write.data.address  := PROBE.address.resized
-      storage.write.data.stride   := (ENTRY.score < scoreOffset).mux[UInt](STRIDE, ENTRY.stride)
+      storage.write.data.stride   := (ENTRY.score < scoreOffset).mux[SInt](STRIDE, ENTRY.stride)
       storage.write.data.score    := score
       storage.write.data.advance  := unfiltred.fire.mux(unfiltred.to, advanceSubed).resized
 
@@ -180,7 +180,7 @@ class PrefetchRptPlugin(sets : Int,
       unfiltred.unique  := PROBE.store
       unfiltred.from := advanceSubed+1
       unfiltred.to := advanceAllowed.min(blockAheadMax).resized
-      unfiltred.stride := STRIDE max lsu.getBlockSize
+      unfiltred.stride := STRIDE.msb.mux(STRIDE min lsu.getBlockSize, STRIDE max lsu.getBlockSize)
 
 //      when(PROBE.prefetchFailed){
 //        order.from := 0
@@ -236,16 +236,29 @@ class PrefetchRptPlugin(sets : Int,
 
 /*
 
-L 1x 2.21 B/cyc 7404 cyc
-L 1x 2.60 B/cyc 6283 cyc
-L 4x 4.62 B/cyc 3540 cyc
-L 16x 3.47 B/cyc 4719 cyc
-L 16x 4.05 B/cyc 16157 cyc
-S 1x 2.61 B/cyc 6254 cyc
-S 4x 2.95 B/cyc 5550 cyc
-S 16x 2.92 B/cyc 22430 cyc
-LLS 4x 1.10 B/cyc 14804 cyc
-
+L 1x516s 0.62 B/cyc 6526 cyc
+L 1x512s 0.67 B/cyc 6035 cyc
+S 1x512s 0.55 B/cyc 7380 cyc
+L 1x512ms 0.66 B/cyc 6198 cyc
+S 1x512ms 0.55 B/cyc 7323 cyc
+L 1x 2.45 B/cyc 6679 cyc
+L 1x 2.55 B/cyc 6412 cyc
+L 4x 4.51 B/cyc 3626 cyc
+L 16x 3.55 B/cyc 4615 cyc
+L 16x 4.05 B/cyc 16156 cyc
+S 1x 2.63 B/cyc 6208 cyc
+S 4x 2.95 B/cyc 5543 cyc
+S 16x 2.89 B/cyc 22635 cyc
+LLS 4x 1.14 B/cyc 14303 cyc
+L 1x516s 0.21 B/cyc 19077 cyc
+L 1x512s 0.21 B/cyc 18980 cyc
+S 1x512s 0.50 B/cyc 8034 cyc
+L 1x512ms 0.21 B/cyc 18946 cyc
+S 1x512ms 0.50 B/cyc 8032 cyc
+L 1x 1.09 B/cyc 14920 cyc
+L 1x 1.10 B/cyc 14891 cyc
+L 4x 1.38 B/cyc 11837 cyc
+L 16x 1.48 B/cyc 11055 cyc
 
 https://zsmith.co/bandwidth.php
 
@@ -802,6 +815,91 @@ Slack (VIOLATED) :        -1.492ns  (required time - arrival time)
                          arrival time                         -17.566
   -------------------------------------------------------------------
                          slack                                 -1.130
+
+
+Max Delay Paths
+--------------------------------------------------------------------------------------
+Slack (VIOLATED) :        -0.939ns  (required time - arrival time)
+  Source:                 VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/gs_ctxDownD_ram_reg/CLKARDCLK
+                            (rising edge-triggered cell RAMB18E1 clocked by crg_s7mmcm0_clkout0  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/fromUpA_buffer_ram_reg/ENARDEN
+                            (rising edge-triggered cell RAMB36E1 clocked by crg_s7mmcm0_clkout0  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             crg_s7mmcm0_clkout0
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (crg_s7mmcm0_clkout0 rise@10.000ns - crg_s7mmcm0_clkout0 rise@0.000ns)
+  Data Path Delay:        10.300ns  (logic 3.446ns (33.457%)  route 6.854ns (66.543%))
+  Logic Levels:           8  (LUT2=2 LUT3=1 LUT6=5)
+  Clock Path Skew:        -0.128ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    9.648ns = ( 19.648 - 10.000 )
+    Source Clock Delay      (SCD):    10.783ns
+    Clock Pessimism Removal (CPR):    1.007ns
+  Clock Uncertainty:      0.067ns  ((TSJ^2 + DJ^2)^1/2) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Discrete Jitter          (DJ):    0.114ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock crg_s7mmcm0_clkout0 rise edge)
+                                                      0.000     0.000 r
+    R4                                                0.000     0.000 r  clk100 (IN)
+                         net (fo=0)                   0.000     0.000    clk100
+    R4                   IBUF (Prop_ibuf_I_O)         1.475     1.475 r  clk100_IBUF_inst/O
+                         net (fo=3, routed)           1.227     2.702    clk100_IBUF
+    SLICE_X158Y131       LUT1 (Prop_lut1_I0_O)        0.124     2.826 r  crg_s7mmcm0_clkin_inst/O
+                         net (fo=9, routed)           4.239     7.065    crg_s7mmcm0_clkin
+    MMCME2_ADV_X0Y2      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                      0.088     7.153 r  MMCME2_ADV/CLKOUT0
+                         net (fo=1, routed)           1.843     8.996    crg_s7mmcm0_clkout0
+    BUFGCTRL_X0Y0        BUFG (Prop_bufg_I_O)         0.096     9.092 r  BUFG/O
+                         net (fo=54042, routed)       1.690    10.783    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/logic_ram_reg
+    RAMB18_X3Y64         RAMB18E1                                     r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/gs_ctxDownD_ram_reg/CLKARDCLK
+  -------------------------------------------------------------------    -------------------
+    RAMB18_X3Y64         RAMB18E1 (Prop_ramb18e1_CLKARDCLK_DOBDO[13])
+                                                      2.454    13.237 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/gs_ctxDownD_ram_reg/DOBDO[13]
+                         net (fo=5, routed)           1.478    14.715    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/writeBackend_putMerges_fifo/DOBDO[13]
+    SLICE_X59Y168        LUT6 (Prop_lut6_I4_O)        0.124    14.839 f  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/writeBackend_putMerges_fifo/maskLocked_1_i_11/O
+                         net (fo=1, routed)           0.597    15.436    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/writeBackend_putMerges_fifo/maskLocked_1_i_11_n_0
+    SLICE_X56Y168        LUT6 (Prop_lut6_I4_O)        0.124    15.560 f  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/writeBackend_putMerges_fifo/maskLocked_1_i_7/O
+                         net (fo=2, routed)           0.318    15.878    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/maskLocked_0_reg_0
+    SLICE_X56Y170        LUT6 (Prop_lut6_I1_O)        0.124    16.002 f  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/maskLocked_1_i_5/O
+                         net (fo=6, routed)           0.482    16.485    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/fromDownD_process_toUpD_valid
+    SLICE_X57Y173        LUT6 (Prop_lut6_I4_O)        0.124    16.609 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/maskLocked_3_i_1__3/O
+                         net (fo=5, routed)           0.616    17.224    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/maskLocked_3_i_1__3_n_0
+    SLICE_X55Y176        LUT3 (Prop_lut3_I2_O)        0.124    17.348 f  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/fromUpA_buffer_ram_reg_i_13/O
+                         net (fo=5, routed)           0.309    17.657    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/splited_wc_l2_cache_up_bus_d_rValidN_reg
+    SLICE_X55Y176        LUT6 (Prop_lut6_I2_O)        0.124    17.781 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/fromUpA_buffer_ram_reg_i_3/O
+                         net (fo=64, routed)          0.766    18.547    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/writeBackend_stages_2_valid_reg
+    SLICE_X54Y172        LUT2 (Prop_lut2_I0_O)        0.124    18.671 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/writeBackend_stages_1_CMD_address[31]_i_1/O
+                         net (fo=63, routed)          0.650    19.321    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/writeBackend_stages_1_valid_reg
+    SLICE_X55Y171        LUT2 (Prop_lut2_I0_O)        0.124    19.445 r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/toUpD_arbiter/fromUpA_buffer_ram_reg_i_1/O
+                         net (fo=2, routed)           1.638    21.083    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/writeBackend_stages_0_isFireing
+    RAMB36_X5Y33         RAMB36E1                                     r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/fromUpA_buffer_ram_reg/ENARDEN
+  -------------------------------------------------------------------    -------------------
+
+                         (clock crg_s7mmcm0_clkout0 rise edge)
+                                                     10.000    10.000 r
+    R4                                                0.000    10.000 r  clk100 (IN)
+                         net (fo=0)                   0.000    10.000    clk100
+    R4                   IBUF (Prop_ibuf_I_O)         1.405    11.405 r  clk100_IBUF_inst/O
+                         net (fo=3, routed)           1.044    12.448    clk100_IBUF
+    SLICE_X158Y131       LUT1 (Prop_lut1_I0_O)        0.100    12.548 r  crg_s7mmcm0_clkin_inst/O
+                         net (fo=9, routed)           3.610    16.158    crg_s7mmcm0_clkin
+    MMCME2_ADV_X0Y2      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                      0.083    16.241 r  MMCME2_ADV/CLKOUT0
+                         net (fo=1, routed)           1.760    18.002    crg_s7mmcm0_clkout0
+    BUFGCTRL_X0Y0        BUFG (Prop_bufg_I_O)         0.091    18.093 r  BUFG/O
+                         net (fo=54042, routed)       1.555    19.648    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/logic_ram_reg
+    RAMB36_X5Y33         RAMB36E1                                     r  VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/fromUpA_buffer_ram_reg/CLKARDCLK
+                         clock pessimism              1.007    20.654
+                         clock uncertainty           -0.067    20.587
+    RAMB36_X5Y33         RAMB36E1 (Setup_ramb36e1_CLKARDCLK_ENARDEN)
+                                                     -0.443    20.144    VexiiRiscvLitex_a3b11cf0ae64f7eed4a33651ce7e09a8/splited_wc_l2_cache_logic_cache/fromUpA_buffer_ram_reg
+  -------------------------------------------------------------------
+                         required time                         20.144
+                         arrival time                         -21.083
+  -------------------------------------------------------------------
+                         slack                                 -0.939
 
 
  */
