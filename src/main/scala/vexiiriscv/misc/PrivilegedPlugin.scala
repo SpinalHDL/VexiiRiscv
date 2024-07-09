@@ -507,7 +507,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val fs = withFs generate RegInit(U"00")
           val sd = False
           val tsr, tvm = p.withSupervisor generate RegInit(False)
-          val tw = p.withUser generate RegInit(False)
+          val tw = p.withUser.mux(RegInit(False), False)
 
           if (RVF) {
             fpuEnable(hartId) setWhen (fs =/= 0)
