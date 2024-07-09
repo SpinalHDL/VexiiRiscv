@@ -2,6 +2,8 @@ package vexiiriscv.soc.litex
 
 import spinal.core.fiber.Fiber
 import spinal.core._
+import spinal.core.blackboxByteEnables.generateUnblackboxableError
+import spinal.core.internals.MemTopology
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4SpecRenamer, Axi4ToTilelinkFiber}
 import spinal.lib.bus.amba4.axilite.AxiLite4SpecRenamer
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
@@ -9,6 +11,7 @@ import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
 import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
+import spinal.lib.eda.bench.{Bench, Rtl}
 import spinal.lib.misc.{PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, slave}
@@ -50,7 +53,7 @@ class SocConfig(){
   def withL2 = l2Bytes > 0
 }
 
-class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
+class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
   import c._
 
   val system = systemCd on new AreaRoot {
@@ -230,12 +233,22 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 }
 
 
+object blackboxPolicy extends MemBlackboxingPolicy{
+  override def translationInterest(topology: MemTopology): Boolean = {
+    if(topology.writes.exists(_.mask != null) && topology.mem.initialContent == null) return true
+    if (topology.readWriteSync.exists(_.mask != null) && topology.mem.initialContent == null) return true
+    if (topology.readsAsync.size != 0 && topology.mem.initialContent == null) return true
+    false
+  }
 
+  override def onUnblackboxable(topology: MemTopology, who: Any, message: String): Unit = generateUnblackboxableError(topology, who, message)
+}
 
 object SocGen extends App{
   var netlistDirectory = "."
   var netlistName = "VexiiRiscvLitex"
   val socConfig = new SocConfig()
+  var reducedIo = false
   import socConfig._
 
 //  vexiiParam.fetchL1Enable = true
@@ -265,17 +278,23 @@ object SocGen extends App{
       regions += r
       assert(!(r.onMemory && !r.isCachable), s"Region $r isn't supported by VexiiRiscv, data cache will always cache memory")
     }
+    opt[Unit]("reduced-io") action { (v, c) => reducedIo = true }
   }.parse(args, Unit).nonEmpty)
 
   vexiiParam.lsuL1Coherency = cpuCount > 1 || withDma
 
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
-  spinalConfig.addStandardMemBlackboxing(blackboxByteEnables)
+  spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
   spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {
-    new Soc(socConfig, ClockDomain.external("system")).setDefinitionName(netlistName)
+    val soc = new Soc(socConfig, ClockDomain.external("system")).setDefinitionName(netlistName)
+    if(reducedIo) Fiber patch{
+      Rtl.xorOutputs(soc, soc.systemCd)
+      Rtl.compactInputs(soc, soc.systemCd)
+    }
+    soc
   }
 
   val cpu0 = report.toplevel.system.vexiis(0).logic.core
@@ -356,6 +375,7 @@ object PythonArgsGen extends App{
 }
 
 /*
+MLAB Add Timing Constraints For Mixed-Port Feed-Through Mode Setting Don't Care
 
 make CROSS_COMPILE=riscv-none-embed-      PLATFORM=generic      PLATFORM_RISCV_XLEN=64      PLATFORM_RISCV_ISA=rv64gc      PLATFORM_RISCV_ABI=lp64d      FW_FDT_PATH=../linux.dtb      FW_JUMP_ADDR=0x41000000       FW_JUMP_FDT_ADDR=0x46000000      -j20
 scp build/platform/generic/firmware/fw_jump.bin root@nexys.local:/boot/opensbi.bin
@@ -688,7 +708,16 @@ perf stat  --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cyc
 
 
 perf stat  --timeout 1000 -p $! -e stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches
-perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions
+perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions,stalled-cycles-frontend,stalled-cycles-backend
+
+nohup mplayer video/BigBuckBunny_320x180.mp4 &
+perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions,branch-misses,branches
+export LD_DEBUG=statistics
+https://www.ducea.com/2008/03/06/howto-recompile-debian-packages/
+apt-get source  mplayer
+apt-get build-dep mplayer
+cd <package-ver>
+debuild -us -uc
 
 
 relaxed btb =>
