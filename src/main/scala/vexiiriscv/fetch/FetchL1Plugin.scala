@@ -110,6 +110,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       val access  = p.createEventPort(PerformanceCounterService.ICACHE_ACCESS)
       val miss    = p.createEventPort(PerformanceCounterService.ICACHE_MISS)
       val waiting = p.createEventPort(PerformanceCounterService.ICACHE_WAITING)
+//      val dev0 = p.createEventPort(PerformanceCounterService.DEV)
+//      val dev1 = p.createEventPort(PerformanceCounterService.DEV+1)
     })
 
     setupLock.release()
@@ -258,6 +260,13 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         isIo := start.isIo
         wayToAllocate := start.wayToAllocate
       }
+
+
+//      val oldDo = !valid && start.valid && invalidate.done
+//      val oldAddress = RegNextWhen(start.address, oldDo)
+//      val oldHit = ((oldAddress + lineSize) ^ start.address) >> log2Up(lineSize) === 0
+//      events.get.dev0 := oldDo
+//      events.get.dev1 := oldDo && oldHit
 
 
       invalidate.canStart clearWhen (valid || start.valid)
