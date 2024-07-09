@@ -19,15 +19,19 @@ import scala.collection.mutable.ArrayBuffer
 object Generate extends App {
   val param = new ParamSimple()
   val sc = SpinalConfig()
+  val regions = ArrayBuffer[PmaRegion]()
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
     param.addOptions(this)
+    ParamSimple.addptionRegion(this, regions)
   }.parse(args, Unit).nonEmpty)
+
+  if(regions.isEmpty) regions ++= ParamSimple.defaultPma
 
   val report = sc.generateVerilog {
     val plugins = param.plugins()
-    ParamSimple.setPma(plugins)
+    ParamSimple.setPma(plugins, regions)
     VexiiRiscv(plugins)
   }
 }

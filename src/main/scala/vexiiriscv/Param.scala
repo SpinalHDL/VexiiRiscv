@@ -22,33 +22,48 @@ import vexiiriscv.test.WhiteboxerPlugin
 import scala.collection.mutable.ArrayBuffer
 
 object ParamSimple{
-  def setPma(plugins : Seq[Hostable]) = {
-    val regions = ArrayBuffer[PmaRegion](
-      new PmaRegionImpl(
-        mapping = SizeMapping(0x80000000l, 0x80000000l),
-        isMain = true,
-        isExecutable = true,
-        transfers = M2sTransfers(
-          get = SizeRange.all,
-          putFull = SizeRange.all
-        )
-      ),
-      new PmaRegionImpl(
-        mapping = SizeMapping(0x10000000l, 0x10000000l),
-        isMain = false,
-        isExecutable = true,
-        transfers = M2sTransfers(
-          get = SizeRange.all,
-          putFull = SizeRange.all
-        )
+
+  def addptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
+    import parser._
+    opt[Map[String, String]]("region") unbounded() action { (v, c) =>
+      regions += PmaRegionImpl(
+        mapping = SizeMapping(BigInt(v("base"), 16), BigInt(v("size"), 16)),
+        transfers = M2sTransfers.all,
+        isMain = v("main") == "1",
+        isExecutable = v("exe") == "1"
+      )
+    } text ("Specify a memory region, for instance : --region base=80000000,size=80000000,main=1,exe=1 --region base=10000000,size=10000000,main=0,exe=0")
+  }
+
+  val defaultPma = List[PmaRegion](
+    new PmaRegionImpl(
+      mapping = SizeMapping(0x80000000l, 0x80000000l),
+      isMain = true,
+      isExecutable = true,
+      transfers = M2sTransfers(
+        get = SizeRange.all,
+        putFull = SizeRange.all
+      )
+    ),
+    new PmaRegionImpl(
+      mapping = SizeMapping(0x10000000l, 0x10000000l),
+      isMain = false,
+      isExecutable = true,
+      transfers = M2sTransfers(
+        get = SizeRange.all,
+        putFull = SizeRange.all
       )
     )
+  )
+
+  def setPma(plugins : Seq[Hostable], regions : Seq[PmaRegion] = defaultPma) = {
+    val array = ArrayBuffer(regions :_*)
     plugins.foreach {
-      case p: FetchCachelessPlugin => p.regions.load(regions)
-      case p: LsuCachelessPlugin => p.regions.load(regions)
-      case p: FetchL1Plugin => p.regions.load(regions)
-      case p: LsuPlugin => p.ioRegions.load(regions)
-      case p: LsuL1Plugin => p.regions.load(regions)
+      case p: FetchCachelessPlugin => p.regions.load(array)
+      case p: LsuCachelessPlugin => p.regions.load(array)
+      case p: FetchL1Plugin => p.regions.load(array)
+      case p: LsuPlugin => p.ioRegions.load(array)
+      case p: LsuL1Plugin => p.regions.load(array)
       case _ =>
     }
     plugins
@@ -179,6 +194,7 @@ class ParamSimple(){
     privParam.withSupervisor = true
     privParam.withUser = true
     xlen = 64
+    physicalWidth = 38
 
 
     privParam.withDebug = true
