@@ -73,6 +73,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
   def implementUserTrap = p.withUserTrap
 
   def getPrivilege(hartId : UInt) : UInt = logic.harts.map(_.privilege).read(hartId)
+  def isMachine(hartId : UInt) : Bool = getPrivilege(hartId) === 3
+  def isSupervisor(hartId : UInt) : Bool = getPrivilege(hartId) === 1
+  def isUSer(hartId : UInt) : Bool = getPrivilege(hartId) === 0
 
 
   override def getCommitMask(hartId: Int): Bits = logic.harts(hartId).commitMask
@@ -503,7 +506,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val mpp = p.withUser.mux(RegInit(U"00"), U"11")
           val fs = withFs generate RegInit(U"00")
           val sd = False
-          val tsr, tw, tvm = p.withSupervisor generate RegInit(False)
+          val tsr, tvm = p.withSupervisor generate RegInit(False)
+          val tw = p.withUser.mux(RegInit(False), False)
 
           if (RVF) {
             fpuEnable(hartId) setWhen (fs =/= 0)
@@ -529,7 +533,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           if (withFs) readWrite(13 -> fs)
           if (p.withUser && XLEN.get == 64) read(32 -> U"10")
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")
-          if (p.withSupervisor) readWrite(22 -> tsr, 21 -> tw, 20 -> tvm)
+          if (p.withSupervisor) readWrite(22 -> tsr, 20 -> tvm)
+          if (p.withUser) readWrite(21 -> tw)
         }
 
         val cause = new api.Csr(CSR.MCAUSE) {

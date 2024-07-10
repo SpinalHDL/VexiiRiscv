@@ -2,6 +2,8 @@ package vexiiriscv.soc.litex
 
 import spinal.core.fiber.Fiber
 import spinal.core._
+import spinal.core.blackboxByteEnables.generateUnblackboxableError
+import spinal.core.internals.MemTopology
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4SpecRenamer, Axi4ToTilelinkFiber}
 import spinal.lib.bus.amba4.axilite.AxiLite4SpecRenamer
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
@@ -9,6 +11,7 @@ import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
 import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
+import spinal.lib.eda.bench.{Bench, Rtl}
 import spinal.lib.misc.{PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, slave}
@@ -50,7 +53,7 @@ class SocConfig(){
   def withL2 = l2Bytes > 0
 }
 
-class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
+class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
   import c._
 
   val system = systemCd on new AreaRoot {
@@ -58,10 +61,10 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
     val withCoherency = vexiiParam.lsuL1Coherency
     val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
     for (vexii <- vexiis) {
-      if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
+      if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S_KEEP)
       if (vexiiParam.lsuL1Enable) {
-        vexii.lsuL1Bus.setDownConnection(a = withCoherency.mux(StreamPipe.HALF, StreamPipe.FULL), b = StreamPipe.HALF, c = StreamPipe.FULL, d = StreamPipe.M2S, e = StreamPipe.HALF)
-        vexii.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S)
+        vexii.lsuL1Bus.setDownConnection(a = withCoherency.mux(StreamPipe.HALF, StreamPipe.FULL), b = StreamPipe.HALF_KEEP, c = StreamPipe.FULL, d = StreamPipe.M2S_KEEP, e = StreamPipe.HALF)
+        vexii.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S_KEEP)
       }
     }
 
@@ -230,12 +233,22 @@ class Soc(c : SocConfig, systemCd : ClockDomain) extends Component{
 }
 
 
+object blackboxPolicy extends MemBlackboxingPolicy{
+  override def translationInterest(topology: MemTopology): Boolean = {
+    if(topology.writes.exists(_.mask != null) && topology.mem.initialContent == null) return true
+    if (topology.readWriteSync.exists(_.mask != null) && topology.mem.initialContent == null) return true
+    if (topology.readsAsync.size != 0 && topology.mem.initialContent == null) return true
+    false
+  }
 
+  override def onUnblackboxable(topology: MemTopology, who: Any, message: String): Unit = generateUnblackboxableError(topology, who, message)
+}
 
 object SocGen extends App{
   var netlistDirectory = "."
   var netlistName = "VexiiRiscvLitex"
   val socConfig = new SocConfig()
+  var reducedIo = false
   import socConfig._
 
 //  vexiiParam.fetchL1Enable = true
@@ -265,17 +278,23 @@ object SocGen extends App{
       regions += r
       assert(!(r.onMemory && !r.isCachable), s"Region $r isn't supported by VexiiRiscv, data cache will always cache memory")
     }
+    opt[Unit]("reduced-io") action { (v, c) => reducedIo = true }
   }.parse(args, Unit).nonEmpty)
 
   vexiiParam.lsuL1Coherency = cpuCount > 1 || withDma
 
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
-  spinalConfig.addStandardMemBlackboxing(blackboxByteEnables)
+  spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
   spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {
-    new Soc(socConfig, ClockDomain.external("system")).setDefinitionName(netlistName)
+    val soc = new Soc(socConfig, ClockDomain.external("system")).setDefinitionName(netlistName)
+    if(reducedIo) Fiber patch{
+      Rtl.xorOutputs(soc, soc.systemCd)
+      Rtl.compactInputs(soc, soc.systemCd)
+    }
+    soc
   }
 
   val cpu0 = report.toplevel.system.vexiis(0).logic.core
@@ -310,6 +329,8 @@ object SocGen extends App{
 //  val from = report.toplevel.reflectBaseType("vexiis_0_lsuL1Bus_noDecoder_toDown_d_rData_opcode")   <---- TODO fix this path
 //  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_WB_HAZARD")
 //
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")   <---- TODO fix this path
+//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_banks_1_write_valid")
 //
 //  val drivers = mutable.LinkedHashSet[BaseType]()
 //  AnalysisUtils.seekNonCombDrivers(to){driver =>
@@ -317,7 +338,7 @@ object SocGen extends App{
 //      case bt : BaseType => drivers += bt
 //    }
 //  }
-//  drivers.foreach(e => println(e.getName()))
+////  drivers.foreach(e => println(e.getName()))
 //  println("******")
 //  println(PathTracer.impl(from, to).report())
 }
@@ -344,6 +365,8 @@ object PythonArgsGen extends App{
          |VexiiRiscv.with_rvf = ${withRvf.toInt}
          |VexiiRiscv.with_rvd = ${withRvd.toInt}
          |VexiiRiscv.with_rvc = ${withRvc.toInt}
+         |VexiiRiscv.with_lsu_software_prefetch = ${lsuSoftwarePrefetch.toInt}
+         |VexiiRiscv.with_lsu_hardware_prefetch = "${lsuHardwarePrefetch}"
          |VexiiRiscv.internal_bus_width = ${memDataWidth}
          |""".stripMargin)
     close()
@@ -352,10 +375,14 @@ object PythonArgsGen extends App{
 }
 
 /*
+MLAB Add Timing Constraints For Mixed-Port Feed-Through Mode Setting Don't Care
+
+make CROSS_COMPILE=riscv-none-embed-      PLATFORM=generic      PLATFORM_RISCV_XLEN=64      PLATFORM_RISCV_ISA=rv64gc      PLATFORM_RISCV_ABI=lp64d      FW_FDT_PATH=../linux.dtb      FW_JUMP_ADDR=0x41000000       FW_JUMP_FDT_ADDR=0x46000000      -j20
+scp build/platform/generic/firmware/fw_jump.bin root@nexys.local:/boot/opensbi.bin
 
 # debian 4c
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
---vexii-args="--performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2" \
+--vexii-args="--lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4" \
 --cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40dd4c00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
 --update-repo=no --soc-json build/csr.json --build   --load
 
@@ -678,6 +705,20 @@ todo debug :
 [ 9576.295073] [<ffffffff80144a98>] do_sys_poll+0x144/0x42c
 
 perf stat  --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches -p $!
+
+
+perf stat  --timeout 1000 -p $! -e stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches
+perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions,stalled-cycles-frontend,stalled-cycles-backend
+
+nohup mplayer video/BigBuckBunny_320x180.mp4 &
+perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions,branch-misses,branches
+export LD_DEBUG=statistics
+https://www.ducea.com/2008/03/06/howto-recompile-debian-packages/
+apt-get source  mplayer
+apt-get build-dep mplayer
+cd <package-ver>
+debuild -us -uc
+
 
 relaxed btb =>
 startup finished in 9.108s (kernel) + 1min 17.848s (userspace) = 1min 26.956s

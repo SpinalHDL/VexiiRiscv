@@ -30,7 +30,25 @@ object Rvi extends AreaObject {
   val XORI               = TypeI(M"-----------------100-----0010011")
   val SRLI               = TypeI(M"000000-----------101-----0010011")
   val SRAI               = TypeI(M"010000-----------101-----0010011")
-  val ORI                = TypeI(M"-----------------110-----0010011")
+  val ORI_FULL           = TypeI(M"-----------------110-----0010011")
+  def ORI(withLsuPrefetch : Boolean) : SingleDecoding = {
+    if(!withLsuPrefetch) return ORI_FULL
+    TypeI(List(
+      M"-----------------1101----0010011",
+      M"-----------------110-1---0010011",
+      M"-----------------110--1--0010011",
+      M"-----------------110---1-0010011",
+      M"-----------------110----10010011",
+      M"-------1---------110000000010011",
+      M"--------1--------110000000010011",
+      M"---------1-------110000000010011",
+      M"-------000-0-----110000000010011",
+    ))
+  }
+
+  val PREFETCH_R = TypeCmoPrefetch(M"-------00001-----110000000010011")
+  val PREFETCH_W = TypeCmoPrefetch(M"-------00011-----110000000010011")
+
   val ANDI               = TypeI(M"-----------------111-----0010011")
 
 
@@ -137,7 +155,6 @@ object Rvi extends AreaObject {
   val SFENCE_VMA         = TypeNone(M"0001001----------000000001110011")
 
   val FLUSH_DATA         = TypeNone(M"-------00000-----101-----0001111")
-
 
   case class LoadSpec(width: Int, signed: Boolean)
   val loadSpec = mutable.LinkedHashMap[MicroOp, LoadSpec]()

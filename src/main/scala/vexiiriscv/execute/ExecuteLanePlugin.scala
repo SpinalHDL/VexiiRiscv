@@ -254,11 +254,11 @@ class ExecuteLanePlugin(override val laneName : String,
     val implSelMask = ((BigInt(1) << log2Up(layers.size))-1) << Decode.UOP_WIDTH
     val decoding = new decodeCtrl.Area {
       def implToMasked(impl : UopLayerSpec) = {
-        val uop = Masked(impl.uop.key)
+        val uop = impl.uop.keysMasked
         val sel = Masked(BigInt(getLayerId(impl.elImpl)) << Decode.UOP_WIDTH, implSelMask)
-        uop fuse sel
+        uop.map(_ fuse sel)
       }
-      val coverAll = getUopLayerSpec().map(implToMasked)
+      val coverAll = getUopLayerSpec().flatMap(implToMasked)
       val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
       def ds(key : Payload[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
       for((key, default) <- decodingDefaults) ds(key).setDefault(Masked(default))

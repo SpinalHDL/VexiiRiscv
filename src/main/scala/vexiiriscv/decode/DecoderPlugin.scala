@@ -32,7 +32,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
   }
 
   override def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType) = {
-    val op = Masked(microOp.key)
+    val op = microOp.keysMasked
     for ((key, value) <- decoding) {
       getDecodingSpec(key).addNeeds(op, Masked(value))
     }
@@ -44,7 +44,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
   override def covers() =  {
     elaborationLock.await()
-    host.list[ExecuteLaneService].flatMap(_.getUops()).map(e => Masked(e.key))
+    host.list[ExecuteLaneService].flatMap(_.getUops().flatMap(_.keysMasked))
   }
 
 
@@ -107,14 +107,14 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       val rfAccessDec = rfAccesses.map(rfa => rfa -> new RfAccessDecoding(rfa)).toMapLinked()
 
       for (e <- singleDecodings) {
-        val key = Masked(e.key)
-        all += key
+        val keys = e.keysMasked
+        all ++= keys
 
         e.resources.foreach {
           case r: RfResource => {
             val dec = rfAccessDec(r.access)
-            dec.read.addNeeds(key, one)
-            dec.rfid.addNeeds(key,  Masked(dec.rfaKey.idOf(r.rf), (1 << dec.rfaKey.rfIdWidth)-1))
+            dec.read.addNeeds(keys, one)
+            dec.rfid.addNeeds(keys,  Masked(dec.rfaKey.idOf(r.rf), (1 << dec.rfaKey.rfIdWidth)-1))
           }
           case PC_READ =>
           case INSTRUCTION_SIZE =>
@@ -144,8 +144,8 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     }
 
     val predictionSpec = new Area {
-      val branchKeys = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU).map(e => Masked(e.key))
-      val jalKeys = List(Rvi.JAL, Rvi.JALR).map(e => Masked(e.key))
+      val branchKeys = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU).flatMap(_.keysMasked)
+      val jalKeys = List(Rvi.JAL, Rvi.JALR).flatMap(_.keysMasked)
       val any = new DecodingSpec(Bool()).setDefault(Masked.zero)
       any.addNeeds(branchKeys ++ jalKeys, Masked.one)
     }

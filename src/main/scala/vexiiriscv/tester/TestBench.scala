@@ -160,6 +160,7 @@ class TestOptions{
     opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
     opt[Unit]("jtag-remote") unbounded() action { (v, c) => jtagRemote = true }
+    opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v }
 
     opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
     opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
@@ -234,10 +235,22 @@ class TestOptions{
       probe.backends ++= r
     }
 
-    probe.backends.foreach { b =>
-      b.addRegion(0, 0, 0x20000000l, 0xE0000000l) // mem
-      b.addRegion(0, 1, 0x10000000l, 0x10000000l) // io
+    val regions = dut.host.services.collectFirst {
+      case p: LsuCachelessPlugin => p.regions.get
+      case p: LsuL1Plugin => p.regions.get
+    }.get
+
+    for(region <- regions){
+      probe.backends.foreach { b =>
+        val mapping = region.mapping match {
+          case sm : SizeMapping => sm
+        }
+        if(mapping.base != 0x1000) {
+          b.addRegion(0, region.isMain.mux(0, 1), mapping.base.toLong, mapping.size.toLong)
+        }
+      }
     }
+
 
     val mem = SparseMemory(seed = 0)
     // Load the binaries
@@ -564,7 +577,7 @@ object TestBench extends App{
     }
     val regions = ArrayBuffer(
       new PmaRegion{
-        override def mapping: AddressMapping = SizeMapping(0x80000000l, 0x80000000l)
+        override def mapping: AddressMapping = SizeMapping(0x80000000l, (1l << param.physicalWidth) - 0x80000000l)
         override def transfers: MemoryTransfers = M2sTransfers(
           get = SizeRange.all,
           putFull = SizeRange.all
@@ -590,7 +603,6 @@ object TestBench extends App{
         override def isMain: Boolean = true
         override def isExecutable: Boolean = true
       }
-
     )
     ret.foreach{
       case p: FetchCachelessPlugin => p.regions.load(regions)

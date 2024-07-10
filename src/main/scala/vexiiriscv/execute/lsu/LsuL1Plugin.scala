@@ -22,7 +22,7 @@ object LsuL1 extends AreaObject{
   // -> L1
   val ABORD, SKIP_WRITE = Payload(Bool())
   val SEL = Payload(Bool())
-  val LOAD, STORE, ATOMIC, FLUSH = Payload(Bool())
+  val LOAD, STORE, ATOMIC, FLUSH, PREFETCH = Payload(Bool())
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS)
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
@@ -35,6 +35,7 @@ object LsuL1 extends AreaObject{
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
   val HAZARD, MISS, MISS_UNIQUE, FAULT = Payload(Bool()) //Note that MISS, MISS_UNIQUE are doing forward progress
   val FLUSH_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
+  val REFILL_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
 
   val SETS = blocking[Int]
   val WAYS = blocking[Int]
@@ -825,8 +826,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val writeToReadHazard = withBypass.mux(False, WRITE_TO_READ_HAZARDS.orR)
         val bankNotRead = (BANK_BUSY_REMAPPED & WAYS_HITS).orR
-        val loadHazard  = LOAD && (bankNotRead || writeToReadHazard)
-        val storeHazard = STORE && !bankWriteReservation.win
+        val loadHazard  = LOAD && !PREFETCH  && (bankNotRead || writeToReadHazard)
+        val storeHazard = STORE && !PREFETCH  && !bankWriteReservation.win
+//        val storeHazard = False
+//        lane.freezeWhen(SEL && STORE && !FLUSH && !PREFETCH && !bankWriteReservation.win)
         val flushHazard = FLUSH && !reservation.win
         val coherencyHazard = False
         if(!withCoherency) HAZARD_FORCED := False
@@ -836,13 +839,14 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         // For instance, a load miss may not trigger a refill, a flush may hit but may not trigger a flush
         val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False)
         HAZARD := hazardReg || loadHazard || refillHazard || storeHazard || flushHazard || coherencyHazard || HAZARD_FORCED
-        MISS := !HAZARD && !WAYS_HIT && !FLUSH
-        FAULT := !HAZARD && WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
-        MISS_UNIQUE := !HAZARD && WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
+        MISS := !WAYS_HIT
+        FAULT := WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
+        MISS_UNIQUE := WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
+        REFILL_HIT := refillHazard
 
         events.map{e =>
           e.loadAccess := up.isFiring && SEL && LOAD
-          e.loadMiss   := e.loadAccess && !HAZARD && (MISS || MISS_UNIQUE)
+          e.loadMiss   := e.loadAccess && !HAZARD && MISS
         }
 
         val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard
@@ -851,14 +855,15 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val needFlushOh = OHMasking.firstV2(needFlushs)
         val needFlushSel = OHToUInt(needFlushOh)
 
-        val askRefill = MISS && canRefill
-        val askUpgrade = MISS_UNIQUE && canRefill
-        val askFlush = FLUSH && !HAZARD && canFlush && needFlushs.orR
+        val isAccess = !FLUSH
+        val askRefill = isAccess && MISS && canRefill
+        val askUpgrade = isAccess && MISS_UNIQUE && canRefill
+        val askFlush = FLUSH && canFlush && needFlushs.orR
 
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
-        val doWrite = SEL && !HAZARD && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
+        val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
 
         val wayId = OHToUInt(WAYS_HITS)
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))
@@ -886,7 +891,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         WAIT_REFILL := refillHazards | refill.free.orMask(refill.full).andMask(!HAZARD && (askRefill || askUpgrade))
         WAIT_WRITEBACK := 0 // TODO  // writebackHazards | writeback.free.andMask(askRefill && refillWayNeedWriteback)
 
-        when(SEL) {
+        when(SEL && !ABORD) {
           assert(CountOne(Cat(askRefill, doUpgrade, doFlush)) < 2)
         }
 
@@ -896,13 +901,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           shared.write.data.dirty := (SHARED.dirty | WAYS_HITS.andMask(doWrite)) & ~(UIntToOh(refillWayWithoutUpdate).andMask(doRefill) | needFlushOh.andMask(doFlush))
         }
 
-        when(doWrite) {
+        when(bankWriteReservation.win) {
           banksWrite.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
           banksWrite.writeData.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
           banksWrite.writeMask := 0
           banksWrite.writeMask.subdivideIn(cpuWordWidth / 8 bits)(PHYSICAL_ADDRESS(bankWordToCpuWordRange)) := MASK
           for ((bank, bankId) <- banks.zipWithIndex) when(WAYS_HITS(bankId)) {
-            banksWrite.mask(bankId) := bankId === bankHitId && allowSideEffects
+            banksWrite.mask(bankId) := bankId === bankHitId && allowSideEffects && doWrite
 //            bank.write.valid := bankId === bankHitId && allowSideEffects
 //            bank.write.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
 //            bank.write.data.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
@@ -965,7 +970,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           shared.write.valid := allowSideEffects
           plruLogic.core.io.update.id := targetWay
         }
-
+        
         when(SEL && !HAZARD && !MISS) {
           shared.write.valid := allowSideEffects
           plruLogic.core.io.update.id := wayId

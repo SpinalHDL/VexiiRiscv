@@ -41,8 +41,8 @@ class DecodePredictionPlugin(var decodeAt: Int,
     forgetPort.setIdle()
 
     val decodeSpec = new Area{
-      val branchKeys = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU).map(e => Masked(e.key))
-      val jalKeys = List(Rvi.JAL, Rvi.JALR).map(e => Masked(e.key))
+      val branchKeys = List(Rvi.BEQ, Rvi.BNE, Rvi.BLT, Rvi.BGE, Rvi.BLTU, Rvi.BGEU).flatMap(_.keysMasked)
+      val jalKeys = List(Rvi.JAL, Rvi.JALR).flatMap(_.keysMasked)
       val any = new DecodingSpec(Bool()).setDefault(Masked.zero)
       any.addNeeds(branchKeys ++ jalKeys, Masked.one)
     }

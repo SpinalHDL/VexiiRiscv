@@ -22,33 +22,48 @@ import vexiiriscv.test.WhiteboxerPlugin
 import scala.collection.mutable.ArrayBuffer
 
 object ParamSimple{
-  def setPma(plugins : Seq[Hostable]) = {
-    val regions = ArrayBuffer[PmaRegion](
-      new PmaRegionImpl(
-        mapping = SizeMapping(0x80000000l, 0x80000000l),
-        isMain = true,
-        isExecutable = true,
-        transfers = M2sTransfers(
-          get = SizeRange.all,
-          putFull = SizeRange.all
-        )
-      ),
-      new PmaRegionImpl(
-        mapping = SizeMapping(0x10000000l, 0x10000000l),
-        isMain = false,
-        isExecutable = true,
-        transfers = M2sTransfers(
-          get = SizeRange.all,
-          putFull = SizeRange.all
-        )
+
+  def addptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
+    import parser._
+    opt[Map[String, String]]("region") unbounded() action { (v, c) =>
+      regions += PmaRegionImpl(
+        mapping = SizeMapping(BigInt(v("base"), 16), BigInt(v("size"), 16)),
+        transfers = M2sTransfers.all,
+        isMain = v("main") == "1",
+        isExecutable = v("exe") == "1"
+      )
+    } text ("Specify a memory region, for instance : --region base=80000000,size=80000000,main=1,exe=1 --region base=10000000,size=10000000,main=0,exe=0")
+  }
+
+  val defaultPma = List[PmaRegion](
+    new PmaRegionImpl(
+      mapping = SizeMapping(0x80000000l, 0x80000000l),
+      isMain = true,
+      isExecutable = true,
+      transfers = M2sTransfers(
+        get = SizeRange.all,
+        putFull = SizeRange.all
+      )
+    ),
+    new PmaRegionImpl(
+      mapping = SizeMapping(0x10000000l, 0x10000000l),
+      isMain = false,
+      isExecutable = true,
+      transfers = M2sTransfers(
+        get = SizeRange.all,
+        putFull = SizeRange.all
       )
     )
+  )
+
+  def setPma(plugins : Seq[Hostable], regions : Seq[PmaRegion] = defaultPma) = {
+    val array = ArrayBuffer(regions :_*)
     plugins.foreach {
-      case p: FetchCachelessPlugin => p.regions.load(regions)
-      case p: LsuCachelessPlugin => p.regions.load(regions)
-      case p: FetchL1Plugin => p.regions.load(regions)
-      case p: LsuPlugin => p.ioRegions.load(regions)
-      case p: LsuL1Plugin => p.regions.load(regions)
+      case p: FetchCachelessPlugin => p.regions.load(array)
+      case p: LsuCachelessPlugin => p.regions.load(array)
+      case p: FetchL1Plugin => p.regions.load(array)
+      case p: LsuPlugin => p.ioRegions.load(array)
+      case p: LsuL1Plugin => p.regions.load(array)
       case _ =>
     }
     plugins
@@ -98,6 +113,8 @@ class ParamSimple(){
   var fetchL1Ways = 1
   var fetchL1ReducedBank = false
   var fetchMemDataWidthMin = 32
+  var lsuSoftwarePrefetch = false
+  var lsuHardwarePrefetch = "none"
   var lsuStoreBufferSlots = 0
   var lsuStoreBufferOps = 0
   var lsuL1Enable = false
@@ -142,16 +159,21 @@ class ParamSimple(){
     fetchL1Sets = 64
     fetchL1Ways = 4
     fetchL1ReducedBank = true
-    fetchMemDataWidthMin = 256
+    fetchMemDataWidthMin = 64
     lsuL1Enable = true
+    lsuMemDataWidthMin = 64
     lsuL1Sets = 64
     lsuL1Ways = 4
-    lsuL1RefillCount = 2
-    lsuL1WritebackCount = 2
+    lsuL1RefillCount = 4
+    lsuL1WritebackCount = 4
     lsuL1Coherency = false
-    lsuStoreBufferSlots = 2
+//    lsuStoreBufferSlots = 2
+//    lsuStoreBufferOps = 32
+    lsuStoreBufferSlots = 4
     lsuStoreBufferOps = 32
     withLsuBypass = true
+//    lsuSoftwarePrefetch = true
+    lsuHardwarePrefetch = "rpt"
 
     //    lsuForkAt = 1
     divArea = false
@@ -159,19 +181,20 @@ class ParamSimple(){
 //    decoders = 2
 //    lanes = 2
 //    storeRs2Late = true
-    withLateAlu = true
+//    withLateAlu = true
     withMul = true
     withDiv = true
     withDispatcherBuffer = true
     withAlignerBuffer = true
 //    withRvc = true
     withRva = true
-    withRvf = true
-    withRvd = true
+//    withRvf = true
+//    withRvd = true
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
     xlen = 64
+    physicalWidth = 38
 
 
     privParam.withDebug = true
@@ -307,6 +330,8 @@ class ParamSimple(){
     opt[Int]("lsu-l1-ways") unbounded() action { (v, c) => lsuL1Ways = v }
     opt[Int]("lsu-l1-store-buffer-slots") action { (v, c) => lsuStoreBufferSlots = v }
     opt[Int]("lsu-l1-store-buffer-ops") action { (v, c) => lsuStoreBufferOps = v }
+    opt[String]("lsu-hardware-prefetch") action { (v, c) => lsuHardwarePrefetch = v }
+    opt[Unit]("lsu-software-prefetch") action { (v, c) => lsuSoftwarePrefetch = true }
     opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
     opt[Int]("lsu-l1-writeback-count") action { (v, c) => lsuL1WritebackCount = v }
     opt[Int]("lsu-l1-mem-data-width-min") action { (v, c) => lsuMemDataWidthMin = v }
@@ -534,6 +559,7 @@ class ParamSimple(){
         storeRs2At = storeRs2Late.mux(2, 0),
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
+        softwarePrefetch = lsuSoftwarePrefetch,
         translationStorageParameter = MmuStorageParameter(
           levels = List(
             MmuStorageLevel(
@@ -571,6 +597,15 @@ class ParamSimple(){
         withCoherency  = lsuL1Coherency,
         bootMemClear = bootMemClear
       )
+
+      lsuHardwarePrefetch match {
+        case "none" =>
+        case "nl" => plugins += new lsu.PrefetchNextLinePlugin
+        case "rpt" => plugins += new lsu.PrefetchRptPlugin(
+          sets = 128,
+          bootMemClear = bootMemClear
+        )
+      }
     }
 
     if(withMul) {

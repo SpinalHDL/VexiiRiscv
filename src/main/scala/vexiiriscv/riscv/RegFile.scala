@@ -21,6 +21,11 @@ object IntRegFile extends RegfileSpec with AreaObject {
     key = key,
     resources = List(RS1, RD).map(this -> _)
   )
+  def TypeI(keys: Seq[MaskedLiteral]) = SingleDecoding(
+    keys = keys,
+    resources = List(RS1, RD).map(this -> _)
+  )
+
   def TypeJ(key : MaskedLiteral) = SingleDecoding(
     key = key,
     resources = List(RD).map(this -> _)
@@ -57,6 +62,11 @@ object IntRegFile extends RegfileSpec with AreaObject {
   def TypeNone(key : MaskedLiteral) = SingleDecoding(
     key = key,
     resources = Nil
+  )
+
+  def TypeCmoPrefetch(key: MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(RS1).map(this -> _)
   )
 }
 

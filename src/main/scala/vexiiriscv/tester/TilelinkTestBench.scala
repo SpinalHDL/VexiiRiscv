@@ -79,7 +79,7 @@ class TlTbTop(p : TlTbParam) extends Component {
     var perfBus: Node = null
     val l2 = (perfBus == null && l2Enable) generate new Area {
       val cache = new CacheFiber(withCtrl = true)
-      cache.parameter.selfFlush = new SelfFLush(0x90000000l, 0x90001000l, 10000)
+      cache.parameter.selfFlush = new SelfFLush(0x80004000l, 0x80006000l, 100)
       cache.parameter.cacheWays = l2Ways
       cache.parameter.cacheBytes = l2Bytes
       cache.up << cBus
