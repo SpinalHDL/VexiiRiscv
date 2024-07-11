@@ -51,6 +51,7 @@ class LsuPlugin(var layer : LaneLayer,
                 var softwarePrefetch: Boolean,
                 var addressAt: Int = 0,
                 var triggerAt : Int = 1,
+                var pmaAt : Int = 1,
                 var ctrlAt: Int = 2,
                 var wbAt : Int = 2,
                 var storeRs2At : Int = 0,
@@ -450,22 +451,24 @@ class LsuPlugin(var layer : LaneLayer,
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
     }
 
+    val onPma = new elp.Execute(pmaAt){
+      val cached = new PmaPort(Global.PHYSICAL_WIDTH, List(l1.LINE_BYTES), List(PmaLoad, PmaStore))
+      val io = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN / 8)).map(1 << _), List(PmaLoad, PmaStore))
+      cached.cmd.address := tpk.TRANSLATED
+      cached.cmd.op(0) := l1.STORE
+      io.cmd.address := tpk.TRANSLATED
+      io.cmd.size := l1.SIZE.asBits
+      io.cmd.op(0) := l1.STORE
+
+      val CACHED = insert(cached.rsp)
+      val IO = insert(io.rsp)
+    }
+
     val onCtrl = new elp.Execute(ctrlAt) {
       val lsuTrap = False
       val mmuPageFault = tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
 
-      //TODO maybe this could be moved one stage earlier for timings.
-      val pma = new Area {
-        val cached = new PmaPort(Global.PHYSICAL_WIDTH, List(l1.LINE_BYTES), List(PmaLoad, PmaStore))
-        val io = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN / 8)).map(1 << _), List(PmaLoad, PmaStore))
-        cached.cmd.address := tpk.TRANSLATED
-        cached.cmd.op(0) := l1.STORE
-        io.cmd.address := tpk.TRANSLATED
-        io.cmd.size := l1.SIZE.asBits
-        io.cmd.op(0) := l1.STORE
-      }
-
-      val IO = insert(pma.cached.rsp.fault && !pma.io.rsp.fault && !FENCE && !FROM_PREFETCH)
+      val IO = insert(onPma.CACHED.fault && !onPma.IO.fault && !FENCE && !FROM_PREFETCH)
 
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
       if(Riscv.withFpu) when(FLOAT){
@@ -615,7 +618,7 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code.assignDontCare()
         trapPort.arg.allowOverride() := 0
 
-        val accessFault = (pma.cached.rsp.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT)
+        val accessFault = (onPma.CACHED.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT)
         when(accessFault) {
           lsuTrap := True
           trapPort.exception := True
@@ -623,14 +626,14 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code(1) setWhen (STORE)
         }
 
-        val l1Failed = !pma.cached.rsp.fault && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
+        val l1Failed = !onPma.CACHED.fault && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
         when(withStoreBuffer.mux((l1Failed || wb.hit) && !wb.allowed, l1Failed)) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
         }
 
-        val pmaFault = pma.cached.rsp.fault && pma.io.rsp.fault
+        val pmaFault = onPma.CACHED.fault && onPma.IO.fault
         when(pmaFault) {
           lsuTrap := True
           trapPort.exception := True
@@ -720,7 +723,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val abords, skipsWrite = ArrayBuffer[Bool]()
       abords += l1.HAZARD
-      abords += !l1.FLUSH && pma.cached.rsp.fault
+      abords += !l1.FLUSH && onPma.CACHED.fault
       abords += FROM_LSU && (!isValid || isCancel)
       abords += mmuNeeded && mmuFailure
       if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid
@@ -834,7 +837,7 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
     }
-    val l1 = new PmaLogic(logic.onCtrl.pma.cached, l1Regions)
-    val io = new PmaLogic(logic.onCtrl.pma.io, ioRegions)
+    val l1 = new PmaLogic(logic.onPma.cached, l1Regions)
+    val io = new PmaLogic(logic.onPma.io, ioRegions)
   }
 }
