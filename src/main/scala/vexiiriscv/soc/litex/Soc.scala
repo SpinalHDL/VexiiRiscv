@@ -331,6 +331,9 @@ object SocGen extends App{
 //
 //  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")   <---- TODO fix this path
 //  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_banks_1_write_valid")
+
+//  val from = cpu0.reflectBaseType("early0_DivPlugin_logic_processing_divRevertResult")
+//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl2_up_early0_SrcPlugin_SRC1_lane0")
 //
 //  val drivers = mutable.LinkedHashSet[BaseType]()
 //  AnalysisUtils.seekNonCombDrivers(to){driver =>
@@ -375,7 +378,6 @@ object PythonArgsGen extends App{
 }
 
 /*
-MLAB Add Timing Constraints For Mixed-Port Feed-Through Mode Setting Don't Care
 
 make CROSS_COMPILE=riscv-none-embed-      PLATFORM=generic      PLATFORM_RISCV_XLEN=64      PLATFORM_RISCV_ISA=rv64gc      PLATFORM_RISCV_ABI=lp64d      FW_FDT_PATH=../linux.dtb      FW_JUMP_ADDR=0x41000000       FW_JUMP_FDT_ADDR=0x46000000      -j20
 scp build/platform/generic/firmware/fw_jump.bin root@nexys.local:/boot/opensbi.bin

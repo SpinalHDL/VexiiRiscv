@@ -1,7 +1,7 @@
 package vexiiriscv.scratchpad
 
 import spinal.core._
-import spinal.lib.StreamFifo
+import spinal.lib.{OHMux, StreamFifo}
 import spinal.lib.eda.bench.{AlteraStdTargets, Bench, EfinixStdTargets, Rtl, Target, XilinxStdTargets}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.execute.lsu.LsuL1Plugin
@@ -505,14 +505,14 @@ object IntegrationSynthBench extends App{
 //    p.withLateAlu = true
 //  }
 
-  add("") { p =>
-    p.regFileSync = false
-    p.withMul = false
-    p.withDiv = false
-    p.withGShare = true
-    p.withBtb = true
-    p.withRas = true
-  }
+//  add("") { p =>
+//    p.regFileSync = false
+//    p.withMul = false
+//    p.withDiv = false
+//    p.withGShare = true
+//    p.withBtb = true
+//    p.withRas = true
+//  }
 //  add("") { p =>
 //    p.regFileSync = false
 //    p.withMul = false
@@ -559,42 +559,42 @@ object IntegrationSynthBench extends App{
 
 
 
-  rtls += Rtl(sc.generateVerilog {
-    val param = new ParamSimple
-    import param._
-    decoders = 1
-    lanes = 1
-    regFileSync = false
+//  rtls += Rtl(sc.generateVerilog {
+//    val param = new ParamSimple
+//    import param._
+//    decoders = 1
+//    lanes = 1
+//    regFileSync = false
+////    withGShare = true
+////    withBtb = true
+////    withRas = true
+//    fetchL1Enable = true
+//    lsuL1Enable = true
+//    withMul = true
+//    withDiv = true
+//    allowBypassFrom = 0
+//    relaxedBranch = true
+//    Rtl.ffIo(VexiiRiscv(ParamSimple.setPma(param.plugins())).setDefinitionName("vexii_1i_nobtb"))
+//  })
+//
+//  rtls += Rtl(sc.generateVerilog {
+//    val param = new ParamSimple
+//    import param._
+//    decoders = 1
+//    lanes = 1
+//    regFileSync = false
 //    withGShare = true
 //    withBtb = true
 //    withRas = true
-    fetchL1Enable = true
-    lsuL1Enable = true
-    withMul = true
-    withDiv = true
-    allowBypassFrom = 0
-    relaxedBranch = true
-    Rtl.ffIo(VexiiRiscv(ParamSimple.setPma(param.plugins())).setDefinitionName("vexii_1i_nobtb"))
-  })
-
-  rtls += Rtl(sc.generateVerilog {
-    val param = new ParamSimple
-    import param._
-    decoders = 1
-    lanes = 1
-    regFileSync = false
-    withGShare = true
-    withBtb = true
-    withRas = true
-    withMul = true
-    withDiv = true
-    fetchL1Enable = true
-    lsuL1Enable = true
-    allowBypassFrom = 0
-    relaxedBranch = true
-    relaxedBtb = true
-    Rtl.ffIo(VexiiRiscv(ParamSimple.setPma(param.plugins())).setDefinitionName("vexii_1i"))
-  })
+//    withMul = true
+//    withDiv = true
+//    fetchL1Enable = true
+//    lsuL1Enable = true
+//    allowBypassFrom = 0
+//    relaxedBranch = true
+//    relaxedBtb = true
+//    Rtl.ffIo(VexiiRiscv(ParamSimple.setPma(param.plugins())).setDefinitionName("vexii_1i"))
+//  })
 
 //
 //  rtls += Rtl(sc.generateVerilog {
@@ -629,9 +629,9 @@ object IntegrationSynthBench extends App{
 //      new StreamFifo(UInt(8 bits), 16)
 //    })
 
-  rtls += Rtl(sc.generateVerilog {
-    val param = new ParamSimple
-    import param._
+
+  def makeDebian(p : ParamSimple): Unit = {
+    import p._
     decoders = 1
     lanes = 1
     regFileSync = false
@@ -649,8 +649,9 @@ object IntegrationSynthBench extends App{
 
     allowBypassFrom = 0
     relaxedBranch = true
+    relaxedBtb = true
     withPerformanceCounters = true
-    additionalPerformanceCounters = 0
+    additionalPerformanceCounters = 4
 
     fetchL1Enable = true
     fetchL1Sets = 64
@@ -659,80 +660,108 @@ object IntegrationSynthBench extends App{
     lsuL1Enable = true
     lsuL1Sets = 64
     lsuL1Ways = 4
+
     lsuL1RefillCount = 2
     lsuL1WritebackCount = 2
     lsuStoreBufferSlots = 2
     lsuStoreBufferOps = 32
     lsuL1Coherency = true
 
+    withRvf = true
+    withRvd = true
+    fpuFmaFullAccuracy = false
+  }
 
-    val plugins = param.plugins()
-    ParamSimple.setPma(plugins)
-    plugins.foreach {
-      case p: LsuL1Plugin =>
-        p.ackIdWidth = 8
-        p.probeIdWidth = log2Up(p.writebackCount)
-      case _ =>
-    }
-    Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName("vexii_debian_no_fpu"))
-  })
+  def debianTweeked(name : String)(body : ParamSimple => Unit) : Unit = {
+    rtls += Rtl(sc.generateVerilog {
+      val param = new ParamSimple
+      import param._
 
+      makeDebian(param)
+      body(param)
 
-//  rtls += Rtl(sc.generateVerilog {
-//    val param = new ParamSimple
-//    import param._
-//    decoders = 1
-//    lanes = 1
-//    regFileSync = false
-//    withGShare = true
-//    withBtb = true
-//    withRas = true
-//    withMul = true
-//    withDiv = true
-//    divArea = false
-//    relaxedBranch = true
-//    relaxedBtb = true
+      val plugins = param.plugins()
+      ParamSimple.setPma(plugins)
+      plugins.foreach {
+        case p: LsuL1Plugin =>
+          p.ackIdWidth = 8
+          p.probeIdWidth = log2Up(p.writebackCount)
+        case _ =>
+      }
+      Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName(name))
+    })
+  }
+
+//  debianTweeked("vexii_debian_nofpu_nobp") { param =>
+//    param.withRvf = false
+//    param.withRvd = false
+//    param.allowBypassFrom = 100
+//  }
 //
-//    xlen = 64
-//    privParam.withSupervisor = true
-//    privParam.withUser = true
-//    withMmu = true
-//    withRva = true
-//    withRvf = true
-//    withRvd = true
-//    fpuFmaFullAccuracy = false
-//    withRvc = true
-//    withAlignerBuffer = true
-//    privParam.withDebug = true
-//
-//    allowBypassFrom = 0
-//    withPerformanceCounters = true
-//    additionalPerformanceCounters = 0
-//
-//    fetchL1Enable = true
-//    fetchL1Sets = 64
-//    fetchL1Ways = 4
-//
-//    lsuL1Enable = true
-//    lsuL1Sets = 64
-//    lsuL1Ways = 4
-//    lsuL1RefillCount = 2
-//    lsuL1WritebackCount = 2
-//    lsuStoreBufferSlots = 2
-//    lsuStoreBufferOps = 32
-//    lsuL1Coherency = true
+//  debianTweeked("vexii_debian_nofpu") { param =>
+//    param.withRvf = false
+//    param.withRvd = false
+//  }
 //
 //
-//    val plugins = param.plugins()
-//    ParamSimple.setPma(plugins)
-//    plugins.foreach{
-//      case p : LsuL1Plugin =>
-//        p.ackIdWidth = 8
-//        p.probeIdWidth = log2Up(p.writebackCount)
-//      case _ =>
-//    }
-//    Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName("vexii_debian"))
-//  })
+//  debianTweeked("vexii_debian_nobp") { param =>
+//    param.allowBypassFrom = 100
+//  }
+//
+//  debianTweeked("vexii_debian"){param =>$
+//
+//  }
+
+  debianTweeked("vexii_debian_full") { param =>
+    param.lsuHardwarePrefetch = "rpt"
+    param.lsuSoftwarePrefetch = true
+  }
+
+//
+//  debianTweeked("vexii_debian_no_fpu_dual_issue") { param =>
+//    param.withRvf = false
+//    param.withRvd = false
+//
+//    param.decoders = 2
+//    param.lanes = 2
+//  }
+//
+//  debianTweeked("vexii_debian_no_fpu_dual_issue_db") { param =>
+//    param.withRvf = false
+//    param.withRvd = false
+//
+//    param.decoders = 2
+//    param.lanes = 2
+//    param.withDispatcherBuffer = true
+//  }
+//
+//  debianTweeked("vexii_debian_no_fpu_dual_issue_db_disp2") { param =>
+//    param.withRvf = false
+//    param.withRvd = false
+//
+//    param.decoders = 2
+//    param.lanes = 2
+//    param.withDispatcherBuffer = true
+//    param.dispatcherAt = 2
+//  }
+
+//  debianTweeked("vexii_debian_no_fpu_dual_issue_db_rfsync") { param =>
+//    param.withRvf = false
+//    param.withRvd = false
+//
+//    param.decoders = 2
+//    param.lanes = 2
+//    param.withDispatcherBuffer = true
+//    param.regFileSync = true
+//  }
+
+//  import spinal.lib._
+//  rtls += Rtl(SpinalVerilog(new Component{
+//    val width = 18
+//    val inputs = Vec.fill(width)(slave Flow(Bits(8 bits)))
+//    val output = out(OHMux.or(inputs.map(_.valid), inputs.map(_.payload)))
+//  }))
+
 
   val targets = ArrayBuffer[Target]()
   targets ++=  XilinxStdTargets(withFMax = true, withArea = false)
@@ -743,6 +772,31 @@ object IntegrationSynthBench extends App{
 }
 
 /*
+
+
+
+vexii_debian_nofpu_nobp ->
+Artix 7 -> 74 Mhz 4809 LUT 4087 FF
+vexii_debian_nofpu ->
+Artix 7 -> 72 Mhz 5239 LUT 4089 FF
+vexii_debian_nobp ->
+Artix 7 -> 66 Mhz 9141 LUT 6821 FF
+vexii_debian ->
+Artix 7 -> 67 Mhz 10266 LUT 7080 FF
+
+
+vexii_debian_no_fpu ->
+Artix 7 -> 166 Mhz 5713 LUT 4086 FF
+vexii_debian_no_fpu_dual_issue ->
+Artix 7 -> 119 Mhz 9228 LUT 5226 FF
+vexii_debian_no_fpu_dual_issue_db ->
+Artix 7 -> 115 Mhz 9349 LUT 5416 FF
+vexii_debian_no_fpu_dual_issue_db_disp2 ->
+Artix 7 -> 120 Mhz 9285 LUT 5691 FF
+vexii_debian_no_fpu_dual_issue_db_rfsync ->
+Artix 7 -> 139 Mhz 8949 LUT 5792 FF
+
+
 vexii_debian_no_fpu ->
 Artix 7 -> 71 Mhz 6262 LUT 4710 FF
 Artix 7 -> 153 Mhz 6886 LUT 4763 FF
