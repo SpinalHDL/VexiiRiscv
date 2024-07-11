@@ -16,7 +16,10 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
-class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int = 0) extends FiberPlugin{
+class FpuUnpackerPlugin(val layer : LaneLayer,
+                        var ignoreSubnormal : Boolean = false,
+                        unpackAt : Int = 0,
+                        packAt : Int = 0) extends FiberPlugin{
   val p = FpuUtils
 
   val elaborationLock = Retainer()
@@ -97,6 +100,8 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
 
     val rsList = unpackSpec.keys.toArray
 
+    val withRsUnpack = !ignoreSubnormal
+
     val unpacker = new StagePipeline { //TODO this kinda bloated now that all unpack are unified
       val ohInputWidth = p.rsIntWidth max Riscv.fpuMantissaWidth
 
@@ -109,7 +114,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
         val data = Bits(ohInputWidth bits)
       }
 
-      val portCount = 2
+      val portCount = 1+withRsUnpack.toInt
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.build(Request(), portCount)
       val results = Vec.fill(portCount)(Flow(Result()))
 
@@ -145,10 +150,12 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
 
 
     val onUnpack = new layer.lane.Execute(unpackAt){
-      val fsmPortId = 0
-      val fsmCmd = unpacker.arbiter.io.inputs(fsmPortId)
-      val fsmRsp = unpacker.results(fsmPortId)
-      fsmCmd.setIdle()
+      val fsmPort = withRsUnpack generate new Area {
+        val id = 0
+        val cmd = unpacker.arbiter.io.inputs(id)
+        val rsp = unpacker.results(id)
+        cmd.setIdle()
+      }
 
       val firstCycle = RegNext(False) setWhen(!layer.lane.isFreezed())
 
@@ -173,7 +180,6 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
           mantissaWidth = Riscv.fpuMantissaWidth
         ))
 
-        val unpackerSel = isValid && up(rfa.ENABLE) && rfa.is(FloatRegFile, rfa.RFID) && !up(TRAP) //A bit pessimistic, as not all float instruction will need unpacking
 
         val f32 = new Area {
           val mantissa = input(0, 23 bits).asUInt
@@ -222,11 +228,12 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
           2 -> (manZero ? FloatMode.INF | FloatMode.NAN)
         )
         apply(RS) := RS_PRE_NORM
-        val normalizer = new Area {
+        val normalizer = withRsUnpack generate new Area {
+          val unpackerSel = isValid && up(rfa.ENABLE) && rfa.is(FloatRegFile, rfa.RFID) && !up(TRAP) //A bit pessimistic, as not all float instruction will need unpacking
           val valid = unpackerSel && IS_SUBNORMAL
           val validReg = RegNext(unpackerSel && IS_SUBNORMAL ) clearWhen(!layer.lane.isFreezed()) init(False)
           val asked = RegInit(False) setWhen (fsmRequesters(inputId) && !fsmRequesters.dropLow(inputId + 1).orR || isCancel) clearWhen (clear)
-          val served = RegInit(False) setWhen (fsmRsp.valid && fsmServed.dropLow(inputId + 1).andR || isCancel) clearWhen (clear)
+          val served = RegInit(False) setWhen (fsmPort.rsp.valid && fsmServed.dropLow(inputId + 1).andR || isCancel) clearWhen (clear)
           fsmRequesters(inputId) := valid && !asked
           fsmServed(inputId) := !valid || served
 
@@ -234,16 +241,16 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
           val mantissa = Reg(RS.mantissa)
 
           when(fsmRequesters(inputId)) {
-            fsmCmd.valid := True
-            fsmCmd.data := RS_PRE_NORM.mantissa.raw << widthOf(fsmCmd.data) - widthOf(RS_PRE_NORM.mantissa.raw)
+            fsmPort.cmd.valid := True
+            fsmPort.cmd.data := RS_PRE_NORM.mantissa.raw << widthOf(fsmPort.cmd.data) - widthOf(RS_PRE_NORM.mantissa.raw)
           }
           when(asked) {
             RS.exponent := exponent
             RS.mantissa := mantissa
           }
           when(!served) {
-            exponent := recodedExpSub - fsmRsp.shift.intoSInt
-            mantissa.raw := fsmRsp.data >> widthOf(fsmCmd.data) - widthOf(RS_PRE_NORM.mantissa.raw)
+            exponent := recodedExpSub - fsmPort.rsp.shift.intoSInt
+            mantissa.raw := fsmPort.rsp.data >> widthOf(fsmPort.cmd.data) - widthOf(RS_PRE_NORM.mantissa.raw)
           }
           val freezeIt = validReg && !served || firstCycle && unpackerSel && expZero  //Maybe a bit hard on timings
           layer.lane.freezeWhen(freezeIt)
@@ -259,7 +266,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
       }
     }
 
-    val unpackDone = !onUnpack.rs.map(_.normalizer.freezeIt).toList.orR
+    val unpackDone = withRsUnpack.mux(!onUnpack.rs.map(_.normalizer.freezeIt).toList.orR, True)
 
 
     val onCvt = new layer.lane.Execute(unpackAt){ //TODO fmax
@@ -269,7 +276,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer, unpackAt : Int = 0, packAt : Int 
         case 64 => rs1(31 downto 0) === 0 && (RsUnsignedPlugin.IS_W || rs1(63 downto 32) === 0)
       }
 
-      val fsmPortId = 1
+      val fsmPortId = withRsUnpack.toInt
       val fsmCmd = unpacker.arbiter.io.inputs(fsmPortId)
       val fsmRsp = unpacker.results(fsmPortId)
       val clear = isReady

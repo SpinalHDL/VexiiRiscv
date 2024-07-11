@@ -661,15 +661,24 @@ object IntegrationSynthBench extends App{
     lsuL1Sets = 64
     lsuL1Ways = 4
 
+    withMmu = true
+    privParam.withSupervisor = true;
+    privParam.withUser = true;
+
     lsuL1RefillCount = 2
     lsuL1WritebackCount = 2
     lsuStoreBufferSlots = 2
     lsuStoreBufferOps = 32
     lsuL1Coherency = true
 
+    lsuHardwarePrefetch = "rpt"
+    lsuSoftwarePrefetch = true
+
     withRvf = true
     withRvd = true
     fpuFmaFullAccuracy = false
+
+
   }
 
   def debianTweeked(name : String)(body : ParamSimple => Unit) : Unit = {
@@ -698,24 +707,25 @@ object IntegrationSynthBench extends App{
 //    param.allowBypassFrom = 100
 //  }
 //
-//  debianTweeked("vexii_debian_nofpu") { param =>
-//    param.withRvf = false
-//    param.withRvd = false
-//  }
+  debianTweeked("vexii_debian_nofpu") { param =>
+    param.withRvf = false
+    param.withRvd = false
+  }
 //
 //
 //  debianTweeked("vexii_debian_nobp") { param =>
 //    param.allowBypassFrom = 100
 //  }
-//
-//  debianTweeked("vexii_debian"){param =>$
-//
-//  }
 
-  debianTweeked("vexii_debian_full") { param =>
-    param.lsuHardwarePrefetch = "rpt"
-    param.lsuSoftwarePrefetch = true
+  debianTweeked("vexii_debian"){param =>
+
   }
+
+  debianTweeked("vexii_debian_ignoreSubnormal") { param =>
+    param.fpuIgnoreSubnormal = true
+  }
+
+
 
 //
 //  debianTweeked("vexii_debian_no_fpu_dual_issue") { param =>
@@ -764,7 +774,7 @@ object IntegrationSynthBench extends App{
 
 
   val targets = ArrayBuffer[Target]()
-  targets ++=  XilinxStdTargets(withFMax = true, withArea = false)
+  targets ++=  XilinxStdTargets(withFMax = false, withArea = true)
 //  targets ++= AlteraStdTargets()
 //  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
 
@@ -773,6 +783,21 @@ object IntegrationSynthBench extends App{
 
 /*
 
+vexii_debian ->
+Artix 7 -> 71 Mhz 11397 LUT 7959 FF
+Artix 7 -> 150 Mhz 12586 LUT 7982 FF
+vexii_debian_ignoreSubnormal ->
+Artix 7 -> 82 Mhz 10672 LUT 7706 FF
+Artix 7 -> 157 Mhz 11681 LUT 7723 F
+vexii_debian_nofpu ->
+Artix 7 -> 90 Mhz 6391 LUT 4975 FF
+Artix 7 -> 164 Mhz 7137 LUT 5070 FF
+
+
+
+vexii_debian_full ->
+Artix 7 -> 158 Mhz 12352 LUT 7986 FF
+Artix 7 -> 163 Mhz 12015 LUT 7944 FF
 
 
 vexii_debian_nofpu_nobp ->

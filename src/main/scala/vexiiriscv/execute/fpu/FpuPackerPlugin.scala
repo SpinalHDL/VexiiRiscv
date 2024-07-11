@@ -15,7 +15,8 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
-case class FpuPackerCmd(p : FloatUnpackedParam, ats : Seq[Int]) extends Bundle{
+case class FpuPackerCmd(p : FloatUnpackedParam,
+                        ats : Seq[Int]) extends Bundle{
   val at = Bits(ats.size bits)
   val value = FloatUnpacked(p)
   val format = FpuFormat()
@@ -31,6 +32,7 @@ class FpuPackerPort(_cmd : FpuPackerCmd) extends Area{
 }
 
 class FpuPackerPlugin(val lane: ExecuteLanePlugin,
+                      var ignoreSubnormal: Boolean = false,
                       var wbAt : Int = 2) extends FiberPlugin with RegFileWriterService {
   val p = FpuUtils
 
@@ -101,29 +103,33 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       }
 
       val EXP_SUBNORMAL = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023)(-127)))
-      val SUBNORMAL = insert(VALUE.exponent <= EXP_SUBNORMAL && VALUE.isNormal)
+      val subnormal = !ignoreSubnormal generate new Area{
+        val ENABLE = insert(ignoreSubnormal.mux(False, VALUE.exponent <= EXP_SUBNORMAL && VALUE.isNormal))
+      }
     }
 
     import s0._
 
 
     val s1 = new pip.Area(1) {
-      // First we check if we are subnormal, in which case we need to denormalize the mantissa
-      val EXP_DIF_PLUS_ONE = insert(U(EXP_SUBNORMAL - VALUE.exponent) + 1)
+      val MAN_SHIFTED = insert(U(VALUE.mantissa.raw))
 
-      val manShiftNoSat = EXP_DIF_PLUS_ONE
-      val manShift = RegNext(manShiftNoSat.sat(widthOf(manShiftNoSat) - log2Up(p.mantissaWidth + 2)))
-      val manShifter = RegNext(U(Shift.rightWithScrap(True ## VALUE.mantissa.raw, manShift).dropHigh(1)))
-      val MAN_SHIFTED = insert(manShifter)
-      when(!SUBNORMAL){
-        MAN_SHIFTED := U(VALUE.mantissa.raw)
+      // First we check if we are subnormal, in which case we need to denormalize the mantissa
+      val subnormal = !ignoreSubnormal generate new Area {
+        val EXP_DIF_PLUS_ONE = insert(U(EXP_SUBNORMAL - VALUE.exponent) + 1)
+        val manShiftNoSat = EXP_DIF_PLUS_ONE
+        val manShift = RegNext(manShiftNoSat.sat(widthOf(manShiftNoSat) - log2Up(p.mantissaWidth + 2)))
+        val manShifter = RegNext(U(Shift.rightWithScrap(True ## VALUE.mantissa.raw, manShift).dropHigh(1)))
+        when(s0.subnormal.ENABLE) {
+          MAN_SHIFTED := manShifter
+        }
+        val counter = Reg(UInt(2 bits)) init(0)
+        val freezeIt = isValid && s0.subnormal.ENABLE && counter =/= 2
+        lane.freezeWhen(freezeIt)
+        when(freezeIt) { counter := counter + 1 }
+        when(!lane.isFreezed()){ counter := 0 }
       }
 
-      val counter = Reg(UInt(2 bits)) init(0)
-      val freezeIt = isValid && SUBNORMAL && counter =/= 2
-      lane.freezeWhen(freezeIt)
-      when(freezeIt) { counter := counter + 1 }
-      when(!lane.isFreezed()){ counter := 0 }
 
       val f32ManPos = p.mantissaWidth + 2 - 23
       val roundAdjusted = insert(p.muxDouble(FORMAT)(MAN_SHIFTED(0, 2 bits))(MAN_SHIFTED(f32ManPos - 2, 2 bits) | U(MAN_SHIFTED(f32ManPos - 2 - 1 downto 0).orR, 2 bits)))
@@ -149,11 +155,11 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
     import s1._
 
     val s2 = new pip.Area(wbAt) {
-      val SUBNORMAL_FINAL = insert((EXP_SUBNORMAL - EXP_RESULT).isPositive())
+      val SUBNORMAL_FINAL = insert(ignoreSubnormal.mux(False, (EXP_SUBNORMAL - EXP_RESULT).isPositive()))
       val EXP = insert(!SUBNORMAL_FINAL ? (EXP_RESULT - EXP_SUBNORMAL) | AFix(0))
 
       val EXP_MAX = insert(AFix(p.muxDouble[SInt](FORMAT)(1023)(127)))
-      val EXP_MIN = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023 - 52 + 1)(-127 - 23 + 1)))
+      val EXP_MIN = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023 - ignoreSubnormal.mux(0, 52 + 1))(-127 - ignoreSubnormal.mux(0, 23 + 1))))
       val EXP_OVERFLOW = insert(EXP_RESULT > EXP_MAX)
       val EXP_UNDERFLOW = insert(EXP_RESULT < EXP_MIN)
 
@@ -195,9 +201,9 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
           manQuiet := VALUE.quiet
         }
         is(FloatMode.NORMAL) {
-          when(roundAdjusted =/= 0) {
+          if(!ignoreSubnormal) when(roundAdjusted =/= 0) {
             nx := True
-            when(SUBNORMAL_FINAL || SUBNORMAL && !tinyOverflow) {
+            when(SUBNORMAL_FINAL || s0.subnormal.ENABLE && !tinyOverflow) {
               uf := True
             }
           }

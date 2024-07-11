@@ -96,6 +96,7 @@ class ParamSimple(){
   var withRvf = false
   var skipFma = false
   var fpuFmaFullAccuracy = true
+  var fpuIgnoreSubnormal = false
   var withRvd = false
   var withRvZb = false
   var privParam = PrivilegedParam.base
@@ -188,8 +189,12 @@ class ParamSimple(){
     withAlignerBuffer = true
 //    withRvc = true
     withRva = true
-//    withRvf = true
-//    withRvd = true
+
+    withRvf = true
+    withRvd = true
+    fpuIgnoreSubnormal = true
+    fpuFmaFullAccuracy = false
+
     withMmu = true
     privParam.withSupervisor = true
     privParam.withUser = true
@@ -297,6 +302,7 @@ class ParamSimple(){
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
     opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuFmaFullAccuracy = false }
+    opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
     opt[Unit]("with-aligner-buffer") unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
@@ -706,7 +712,7 @@ class ParamSimple(){
       plugins += new WriteBackPlugin(lane0, FloatRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions
       plugins += new execute.fpu.FpuFlagsWritebackPlugin(lane0, pipTo = intWritebackAt)
       plugins += new execute.fpu.FpuCsrPlugin(List(lane0), intWritebackAt)
-      plugins += new execute.fpu.FpuUnpackerPlugin(early0)
+      plugins += new execute.fpu.FpuUnpackerPlugin(early0, ignoreSubnormal = fpuIgnoreSubnormal)
       plugins += new execute.fpu.FpuAddSharedPlugin(lane0)
       plugins += new execute.fpu.FpuAddPlugin(early0)
       plugins += new execute.fpu.FpuMulPlugin(early0, withFma = !skipFma, fmaFullAccuracy = fpuFmaFullAccuracy)
@@ -717,7 +723,7 @@ class ParamSimple(){
       plugins += new execute.fpu.FpuMvPlugin(early0, floatWbAt = 2)
       if(withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
-      plugins += new execute.fpu.FpuPackerPlugin(lane0)
+      plugins += new execute.fpu.FpuPackerPlugin(lane0, ignoreSubnormal = fpuIgnoreSubnormal)
       //      plugins += new execute.fpu.FpuEmbedded()
     }
 

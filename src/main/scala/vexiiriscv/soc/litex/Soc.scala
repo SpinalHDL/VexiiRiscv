@@ -656,8 +656,12 @@ mpg123 -a bluealsa mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 --sbc-quality=low
 
 
-perf stat -e branch-misses,branches,l1-dcache-loads,l1-dcache-load-misses,l1-icache-loads,l1-icache-load-misses,cycles,instructions ls
-r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches
+perf stat -p $! --timeout 1000 -e branch-misses,branches,l1-dcache-loads,l1-dcache-load-misses,l1-icache-loads,l1-icache-load-misses,cycles,instructions
+perf stat -p $! --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches
+
+
+perf stat -p $! --timeout 1000 -e r12,r13,r1a,r1b,cycles,instructions,branch-misses,branches
+perf stat -p $! --timeout 1000 -e stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions
 r8000000000000000,r8000000000000001,r8000000000000004
 
 ~/c/libsdl2/libsdl2-2.30.2+dfsg/debian/build-tests# make -j1 check "testsuiteflags=-j1 --verbose" verbose=1 v=1 &> testlog.txt
