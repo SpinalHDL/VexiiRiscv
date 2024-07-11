@@ -414,9 +414,11 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         core.io.context.state := PLRU_BYPASSED
         core.io.update.id := OHToUInt(WAYS_HITS)
 
-        plru.write.valid := False
-        plru.write.address := WORD_PC(lineRange)
-        plru.write.data := core.io.update.state
+        val buffer = cloneOf(plru.write)
+        buffer >-> plru.write
+        buffer.valid := up.isValid && up.isReady
+        buffer.address := WORD_PC(lineRange)
+        buffer.data := core.io.update.state
 
         refill.start.wayToAllocate := core.io.evict.id
 //          refill.start.wayToAllocate := refill.randomWay
@@ -484,10 +486,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
       when(!isValid || trapSent){
         trapPort.valid := False
-      }
-
-      when(up.isValid && up.isReady){
-        plru.write.valid := True
       }
 
       val onEvents = events.map( e => new Area {
