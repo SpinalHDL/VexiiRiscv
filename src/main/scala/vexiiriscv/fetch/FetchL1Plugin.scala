@@ -489,7 +489,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
 
       val onEvents = events.map( e => new Area {
-        val waiting = RegInit(False) clearWhen (!refill.valid && isValid) setWhen (e.miss)
+        val waiting = RegInit(False) clearWhen (isValid && !TRAP) setWhen (e.miss)
         e.access := up.isMoving
         e.miss   := up.isMoving && allowRefill
         e.waiting := waiting
