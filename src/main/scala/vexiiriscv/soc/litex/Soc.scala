@@ -395,6 +395,8 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu
 --update-repo=no --soc-json build/csr.json --build
 
 --vivado-synth-directive=performanceoptimized --vivado-route-directive=aggressiveexplore
+ --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128
+
 
 python3 -m litex.tools.litex_json2dts_linux build/csr.json --root-device=mmcblk0p2 > build/linux.dts
 dtc -o dtb -o build/linux.dtb build/linux.dts
@@ -662,6 +664,8 @@ perf stat -p $! --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalle
 
 perf stat -p $! --timeout 1000 -e r12,r13,r1a,r1b,cycles,instructions,branch-misses,branches
 perf stat -p $! --timeout 1000 -e stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions
+
+
 r8000000000000000,r8000000000000001,r8000000000000004
 
 ~/c/libsdl2/libsdl2-2.30.2+dfsg/debian/build-tests# make -j1 check "testsuiteflags=-j1 --verbose" verbose=1 v=1 &> testlog.txt

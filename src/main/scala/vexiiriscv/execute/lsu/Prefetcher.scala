@@ -901,5 +901,33 @@ Slack (VIOLATED) :        -0.939ns  (required time - arrival time)
   -------------------------------------------------------------------
                          slack                                 -0.939
 
-
+-------------------------------------------------------------------    -------------------
+  SLICE_X50Y41         FDRE (Prop_fdre_C_Q)         0.456    11.215 r  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/LsuL1Plugin_logic_c_pip_ctrl_2_up_SHARED_dirty_reg[3]/Q
+                       net (fo=2, routed)           0.513    11.728    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/LsuL1Plugin_logic_bus_toTilelink_coherent_onC_rspFifo/logic_ram/logic_ptr_push[1]_i_4_1[3]
+  SLICE_X50Y41         LUT4 (Prop_lut4_I2_O)        0.124    11.852 r  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/LsuL1Plugin_logic_bus_toTilelink_coherent_onC_rspFifo/logic_ram/logic_ptr_push[1]_i_5/O
+                       net (fo=1, routed)           0.291    12.143    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/LsuL1Plugin_logic_bus_toTilelink_coherent_onC_rspFifo/logic_ram/logic_ptr_push[1]_i_5_n_0
+  SLICE_X51Y43         LUT5 (Prop_lut5_I4_O)        0.124    12.267 f  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/LsuL1Plugin_logic_bus_toTilelink_coherent_onC_rspFifo/logic_ram/logic_ptr_push[1]_i_4/O
+                       net (fo=2, routed)           0.447    12.714    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/LsuL1Plugin_logic_bus_toTilelink_coherent_onC_rspFifo/logic_ram/LsuL1Plugin_logic_c_pip_ctrl_2_up_WAYS_HITS_reg[0]
+  SLICE_X51Y46         LUT3 (Prop_lut3_I0_O)        0.124    12.838 f  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/LsuL1Plugin_logic_bus_toTilelink_coherent_onC_rspFifo/logic_ram/logic_ptr_push[1]_i_3/O
+                       net (fo=22, routed)          0.691    13.529    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/LsuL1Plugin_logic_bus_toTilelink_coherent_onC_rspFifo/logic_ram/LsuL1Plugin_logic_c_pip_ctrl_2_up_ALLOW_PROBE_DATA_reg
+  SLICE_X50Y53         LUT6 (Prop_lut6_I5_O)        0.124    13.653 r  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/LsuL1Plugin_logic_bus_toTilelink_coherent_onC_rspFifo/logic_ram/ram_block_reg_0_1_36_41_i_4/O
+                       net (fo=3, routed)           0.653    14.307    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/LsuL1Plugin_logic_writeback_slots_2_busy_reg
+  SLICE_X54Y53         LUT6 (Prop_lut6_I0_O)        0.124    14.431 f  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/LsuL1Plugin_logic_ways_3_mem_reg_1_i_38/O
+                       net (fo=137, routed)         0.604    15.035    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/LsuL1Plugin_logic_c_pip_ctrl_2_up_WAYS_HIT_reg_0
+  SLICE_X59Y53         LUT6 (Prop_lut6_I0_O)        0.124    15.159 f  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/LsuL1Plugin_logic_shared_mem_reg_1_i_18/O
+                       net (fo=5, routed)           0.190    15.348    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/LsuL1Plugin_logic_c_pip_ctrl_2_up_WAYS_HIT_reg
+  SLICE_X59Y53         LUT2 (Prop_lut2_I1_O)        0.124    15.472 f  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/LsuPlugin_logic_onAddress0_access_waiter_refill[3]_i_3/O
+                       net (fo=10, routed)          0.303    15.776    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/LsuPlugin_logic_onCtrl_traps_l1Failed0
+  SLICE_X59Y53         LUT3 (Prop_lut3_I2_O)        0.124    15.900 f  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/LsuPlugin_logic_storeBuffer_ops_mem_reg_0_i_96/O
+                       net (fo=3, routed)           0.373    16.272    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/when_LsuPlugin_l6300
+  SLICE_X58Y53         LUT6 (Prop_lut6_I5_O)        0.124    16.396 r  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/PrefetchRptPlugin_logic_pip_node_1_PROBE_trap_i_2/O
+                       net (fo=4, routed)           0.714    17.110    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/LsuPlugin_logic_storeBuffer_slots_2_valid_reg
+  SLICE_X47Y47         LUT6 (Prop_lut6_I5_O)        0.124    17.234 f  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram_1/GSharePlugin_logic_mem_counter_reg_i_31/O
+                       net (fo=70, routed)          1.030    18.264    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/early0_DivPlugin_logic_processing_div/FpuUnpackerPlugin_logic_onCvt_asked_reg_1
+  SLICE_X35Y51         LUT6 (Prop_lut6_I1_O)        0.124    18.388 r  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/early0_DivPlugin_logic_processing_div/ram_block_reg_0_31_0_5_i_13/O
+                       net (fo=1, routed)           0.491    18.879    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/early0_DivPlugin_logic_processing_div/lane0_integer_WriteBackPlugin_logic_write_port_valid
+  SLICE_X34Y51         LUT2 (Prop_lut2_I1_O)        0.124    19.003 r  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/early0_DivPlugin_logic_processing_div/ram_block_reg_0_31_0_5_i_1__26/O
+                       net (fo=176, routed)         1.142    20.145    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_48_53/WE
+  SLICE_X22Y56         RAMD32                                       r  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_48_53/RAMA/WE
+-------------------------------------------------------------------    -------------------
  */
