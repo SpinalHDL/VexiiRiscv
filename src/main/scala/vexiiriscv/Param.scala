@@ -114,6 +114,7 @@ class ParamSimple(){
   var fetchL1Ways = 1
   var fetchL1ReducedBank = false
   var fetchMemDataWidthMin = 32
+  var fetchL1RefillCount = 1
   var lsuSoftwarePrefetch = false
   var lsuHardwarePrefetch = "none"
   var lsuStoreBufferSlots = 0
@@ -161,6 +162,7 @@ class ParamSimple(){
     fetchL1Ways = 4
     fetchL1ReducedBank = true
     fetchMemDataWidthMin = 64
+    fetchL1RefillCount = 4
     lsuL1Enable = true
     lsuMemDataWidthMin = 64
     lsuL1Sets = 64
@@ -446,6 +448,7 @@ class ParamSimple(){
       lineSize = 64,
       setCount = fetchL1Sets,
       wayCount = fetchL1Ways,
+      refillCount = fetchL1RefillCount,
       fetchDataWidth = 32*decoders,
       memDataWidth = fetchMemDataWidth,
       reducedBankWidth = fetchL1ReducedBank,

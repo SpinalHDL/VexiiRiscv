@@ -18,13 +18,15 @@ import scala.collection.mutable.ArrayBuffer
 
 
 
-case class FetchL1Cmd(physicalWidth : Int) extends Bundle{
+case class FetchL1Cmd(physicalWidth : Int, refillCount : Int) extends Bundle{
+  val id      = UInt(log2Up(refillCount) bits)
   val address = UInt(physicalWidth bits)
   val io      = Bool()
 }
 
-case class FetchL1Rsp(dataWidth : Int) extends Bundle{
-  val data = Bits(dataWidth bits)
+case class FetchL1Rsp(dataWidth : Int, refillCount : Int) extends Bundle{
+  val id    = UInt(log2Up(refillCount) bits)
+  val data  = Bits(dataWidth bits)
   val error = Bool()
 }
 
@@ -32,9 +34,10 @@ case class FetchL1Rsp(dataWidth : Int) extends Bundle{
 case class FetchL1BusParam(physicalWidth : Int,
                            dataWidth : Int,
                            lineSize : Int,
+                           refillCount : Int,
                            withBackPresure : Boolean){
   def toTileLinkM2sParameters(name : Nameable) = tilelink.M2sParameters(
-    sourceCount = 1,
+    sourceCount = refillCount,
     support = M2sSupport(
       addressWidth = physicalWidth,
       dataWidth = dataWidth,
@@ -46,8 +49,8 @@ case class FetchL1BusParam(physicalWidth : Int,
 case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
   import p._
 
-  val cmd = Stream(FetchL1Cmd(physicalWidth))
-  val rsp = Stream(FetchL1Rsp(dataWidth))
+  val cmd = Stream(FetchL1Cmd(physicalWidth, refillCount))
+  val rsp = Stream(FetchL1Rsp(dataWidth, refillCount))
 
   def beatCount = lineSize*8/dataWidth
   override def asMaster() = {
@@ -164,12 +167,13 @@ case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
     bus.a.valid := cmd.valid
     bus.a.opcode  := tilelink.Opcode.A.GET
     bus.a.param   := 0
-    bus.a.source  := 0
+    bus.a.source  := cmd.id
     bus.a.address := cmd.address
     bus.a.size    := log2Up(lineSize)
     cmd.ready := bus.a.ready
 
     rsp.valid := bus.d.valid
+    rsp.id    := bus.d.source
     rsp.data  := bus.d.data
     rsp.error := bus.d.denied || bus.d.corrupt
     bus.d.ready := (if(withBackPresure) rsp.ready else True)

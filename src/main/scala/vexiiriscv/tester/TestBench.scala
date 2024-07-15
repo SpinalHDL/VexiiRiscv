@@ -335,14 +335,15 @@ class TestOptions{
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
-      case class Rsp(data: Array[Byte], error : Boolean)
+      case class Rsp(data: Array[Byte], error : Boolean, id : Int)
       val pending = mutable.Queue[Rsp]()
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { pay =>
         val address = pay.address.toLong
+        val id = pay.id.toInt
         def doIt() = {
           for (i <- 0 until p.logic.memWordPerLine) {
-            pending += Rsp(mem.readBytes(address + i * p.logic.bytePerMemWord, p.memDataWidth / 8), address < 0x10000000)
+            pending += Rsp(mem.readBytes(address + i * p.logic.bytePerMemWord, p.memDataWidth / 8), address < 0x10000000, id)
           }
         }
 
@@ -360,6 +361,7 @@ class TestOptions{
           val rsp = pending.dequeue()
           p.data #= rsp.data
           p.error #= rsp.error
+          p.id #= rsp.id
         }
         doIt
       }

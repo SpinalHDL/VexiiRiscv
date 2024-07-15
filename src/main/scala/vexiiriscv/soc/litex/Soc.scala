@@ -150,13 +150,6 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
       }
     }
 
-    val shared = !vexiiParam.lsuL1Enable generate new Area{
-      for (vexii <- vexiis) {
-        ioBus << List(vexii.iBus, vexii.dBus)
-      }
-      if (withMem) mem.toAxi4.up << ioBus
-    }
-
     val splited = vexiiParam.lsuL1Enable generate new Area{
       val mBus = Node()
       ioBus.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.NONE)
@@ -733,6 +726,11 @@ apt-get build-dep mplayer
 cd <package-ver>
 debuild -us -uc
 
+
+systemctl --user stop pulseaudio.service pulseaudio.socket
+systemctl --user disable pulseaudio.service pulseaudio.socket
+systemctl --user mask pulseaudio.service
+/etc/asound.conf
 
 relaxed btb =>
 startup finished in 9.108s (kernel) + 1min 17.848s (userspace) = 1min 26.956s
