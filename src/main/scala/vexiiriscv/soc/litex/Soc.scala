@@ -720,6 +720,10 @@ perf stat  --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalled-cyc
 perf stat  --timeout 1000 -p $! -e stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions,branch-misses,branches
 perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions,stalled-cycles-frontend,stalled-cycles-backend
 
+https://www.elecard.com/videos
+https://download.blender.org/peach/bigbuckbunny_movies/
+ffmpeg -re -i BigBuckBunny_320x180.mp4  -c:v rawvideo -pix_fmt rgba -f fbdev /dev/fb0
+ffplay -vf "scale=640:360" -sws_flags neighbor -an BigBuckBunny_320x180.mp4 
 nohup mplayer video/BigBuckBunny_320x180.mp4 &
 perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions,branch-misses,branches
 export LD_DEBUG=statistics
