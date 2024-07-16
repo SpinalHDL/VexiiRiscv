@@ -390,6 +390,7 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu
 --vivado-synth-directive=performanceoptimized --vivado-route-directive=aggressiveexplore
  --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128
  --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2
+ --lsu-software-prefetch --lsu-hardware-prefetch rpt
 
 
 python3 -m litex.tools.litex_json2dts_linux build/csr.json --root-device=mmcblk0p2 > build/linux.dts
