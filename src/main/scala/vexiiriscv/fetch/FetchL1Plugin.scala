@@ -256,15 +256,11 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         val askCmd = valid && !cmdSent
       }
 
-//      val firstCycle = RegNext(False)
-//      val hadError = RegInit(False)
-
       import spinal.core.sim._
 
       val pushCounter = Reg(UInt(32 bits)) init (0) simPublic()
 
       val freeOh = OHMasking.first(slots.map(!_.valid))
-      val freeValid = slots.map(!_.valid).orR
 
       val hazard = slots.map(s => s.valid && s.address(lineRange) === start.address(lineRange)).orR
       when(start.valid && invalidate.done && !hazard) {
@@ -383,13 +379,12 @@ class FetchL1Plugin(var translationStorageParameter: Any,
           PREFETCH := prefetcher.cmd.valid
           MIXED_PC_SOLVED := PREFETCH ? prefetcher.cmd.pc | WORD_PC
           pp.fetch(readAt).haltWhen(PREFETCH)
+
+          for (ctrlId <- readAt + 1 to ctrlAt) {
+            pp.fetch(ctrlId).up(PREFETCH).setAsReg.init(False)
+          }
         }
         case None =>
-      }
-
-
-      for(ctrlId <- readAt+1 to ctrlAt){
-        pp.fetch(ctrlId).up(PREFETCH).setAsReg.init(False)
       }
 
       plru.read.cmd.valid := doIt
@@ -398,9 +393,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       val PLRU_BYPASS_VALID = insert(plru.write.valid && plru.write.address === plru.read.cmd.payload)
       val PLRU_BYPASS_DATA = insert(plru.write.data)
 
-//      val REFILL_VALID = insert(refill.valid)
-//      val REFILL_ADDRESS = insert(refill.address)
-//      val REFILL_WORD = insert(refill.wordIndex)
       val TAGS_UPDATE = insert(waysWrite.mask.orR)
       val TAGS_UPDATE_ADDRESS = insert(waysWrite.address)
     }
@@ -530,14 +522,15 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         trapPort.valid := False
       }
 
+      when(!isValid && prefetcher.nonEmpty.mux(!PREFETCH, True)) {
+        refill.start.valid := False
+      }
+
       val firstCycle = RegInit(True) clearWhen(isValid) setWhen(!isValid || isReady || up.isCanceling)
       prefetcher.map{ p =>
         p.probe.valid := isValid && firstCycle
         p.probe.pc := WORD_PC
         p.probe.refill := refill.start.valid
-        when(!isValid && !PREFETCH) {
-          refill.start.valid := False
-        }
       }
 
       val onEvents = events.map( e => new Area {

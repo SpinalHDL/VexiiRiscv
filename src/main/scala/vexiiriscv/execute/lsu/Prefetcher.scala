@@ -930,4 +930,72 @@ Slack (VIOLATED) :        -0.939ns  (required time - arrival time)
                        net (fo=176, routed)         1.142    20.145    VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_48_53/WE
   SLICE_X22Y56         RAMD32                                       r  VexiiRiscvLitex_ae5efec20a1108c1704e91b039083d92/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_48_53/RAMA/WE
 -------------------------------------------------------------------    -------------------
+
+
+
+Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+-------------------------------------------------------------------    -------------------
+                     (clock crg_s7mmcm0_clkout0 rise edge)
+                                                  0.000     0.000 r
+R4                                                0.000     0.000 r  clk100 (IN)
+                     net (fo=0)                   0.000     0.000    clk100
+R4                   IBUF (Prop_ibuf_I_O)         1.475     1.475 r  clk100_IBUF_inst/O
+                     net (fo=3, routed)           0.995     2.470    clk100_IBUF
+SLICE_X160Y123       LUT1 (Prop_lut1_I0_O)        0.124     2.594 r  crg_s7mmcm0_clkin_inst/O
+                     net (fo=9, routed)           4.111     6.706    crg_s7mmcm0_clkin
+MMCME2_ADV_X0Y2      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                  0.088     6.794 r  MMCME2_ADV/CLKOUT0
+                     net (fo=1, routed)           1.843     8.637    crg_s7mmcm0_clkout0
+BUFGCTRL_X0Y0        BUFG (Prop_bufg_I_O)         0.096     8.733 r  BUFG/O
+                     net (fo=55330, routed)       1.812    10.545    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/out
+SLICE_X77Y71         FDRE                                         r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_execute_ctrl3_up_LsuL1Plugin_logic_WAYS_HITS_lane0_reg[3]/C
+-------------------------------------------------------------------    -------------------
+SLICE_X77Y71         FDRE (Prop_fdre_C_Q)         0.456    11.001 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/vexiis_0_logic_core_toplevel_execute_ctrl3_up_LsuL1Plugin_logic_WAYS_HITS_lane0_reg[3]/Q
+                     net (fo=86, routed)          0.958    11.959    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/LsuPlugin_logic_onCtrl_rva_srcBuffer[63]_i_3_0[3]
+SLICE_X73Y70         LUT4 (Prop_lut4_I3_O)        0.124    12.083 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/LsuPlugin_logic_onCtrl_rva_srcBuffer[63]_i_4/O
+                     net (fo=1, routed)           0.524    12.607    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/LsuPlugin_logic_onCtrl_rva_srcBuffer[63]_i_4_n_0
+SLICE_X68Y75         LUT5 (Prop_lut5_I4_O)        0.124    12.731 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/LsuPlugin_logic_onCtrl_rva_srcBuffer[63]_i_3/O
+                     net (fo=1, routed)           0.593    13.325    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/vexiis_0_logic_core_toplevel_execute_ctrl3_down_LsuL1Plugin_logic_MUXED_DATA_lane0[63]
+SLICE_X69Y75         LUT4 (Prop_lut4_I0_O)        0.124    13.449 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/LsuPlugin_logic_onCtrl_rva_srcBuffer[63]_i_2/O
+                     net (fo=1, routed)           0.407    13.856    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/LsuPlugin_logic_onCtrl_rva_srcBuffer[63]_i_2_n_0
+SLICE_X69Y75         LUT6 (Prop_lut6_I5_O)        0.124    13.980 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/LsuPlugin_logic_onCtrl_rva_srcBuffer[63]_i_1/O
+                     net (fo=5, routed)           1.105    15.084    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/D[49]
+SLICE_X59Y71         LUT6 (Prop_lut6_I2_O)        0.124    15.208 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/LsuPlugin_logic_onCtrl_rva_srcBuffer[15]_i_1/O
+                     net (fo=4, routed)           0.972    16.181    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/D[9]
+SLICE_X45Y69         LUT6 (Prop_lut6_I1_O)        0.124    16.305 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/LsuPlugin_logic_onCtrl_rva_srcBuffer[7]_i_1/O
+                     net (fo=3, routed)           0.796    17.101    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/D[3]
+SLICE_X35Y66         LUT6 (Prop_lut6_I1_O)        0.124    17.225 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/vexiis_0_logic_core_toplevel_execute_ctrl1_up_early0_SrcPlugin_SRC1_lane0[7]_i_4/O
+                     net (fo=4, routed)           0.615    17.840    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/vexiis_0_logic_core_toplevel_execute_ctrl1_up_early0_SrcPlugin_SRC1_lane0[7]_i_4_n_0
+SLICE_X29Y63         LUT3 (Prop_lut3_I2_O)        0.124    17.964 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/vexiis_0_logic_core_toplevel_execute_ctrl1_up_integer_RS2_lane0[31]_i_4/O
+                     net (fo=16, routed)          0.644    18.608    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/vexiis_0_logic_core_toplevel_execute_ctrl1_up_integer_RS2_lane0[31]_i_4_n_0
+SLICE_X25Y65         LUT5 (Prop_lut5_I2_O)        0.124    18.732 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/vexiis_0_logic_core_toplevel_execute_ctrl1_up_integer_RS2_lane0[31]_i_3/O
+                     net (fo=4, routed)           0.789    19.521    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/lane0_integer_WriteBackPlugin_logic_stages_2_muxed[31]
+SLICE_X21Y62         LUT3 (Prop_lut3_I2_O)        0.124    19.645 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_30_35_i_1/O
+                     net (fo=2, routed)           1.236    20.881    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_30_35/DIA1
+SLICE_X36Y67         RAMD32                                       r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_30_35/RAMA_D1/I
+-------------------------------------------------------------------    -------------------
+
+                     (clock crg_s7mmcm0_clkout0 rise edge)
+                                                 10.000    10.000 r
+R4                                                0.000    10.000 r  clk100 (IN)
+                     net (fo=0)                   0.000    10.000    clk100
+R4                   IBUF (Prop_ibuf_I_O)         1.405    11.405 r  clk100_IBUF_inst/O
+                     net (fo=3, routed)           0.855    12.260    clk100_IBUF
+SLICE_X160Y123       LUT1 (Prop_lut1_I0_O)        0.100    12.360 r  crg_s7mmcm0_clkin_inst/O
+                     net (fo=9, routed)           3.511    15.871    crg_s7mmcm0_clkin
+MMCME2_ADV_X0Y2      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                  0.083    15.954 r  MMCME2_ADV/CLKOUT0
+                     net (fo=1, routed)           1.760    17.714    crg_s7mmcm0_clkout0
+BUFGCTRL_X0Y0        BUFG (Prop_bufg_I_O)         0.091    17.805 r  BUFG/O
+                     net (fo=55330, routed)       1.795    19.600    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_30_35/WCLK
+SLICE_X36Y67         RAMD32                                       r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_30_35/RAMA_D1/CLK
+                     clock pessimism              1.016    20.616
+                     clock uncertainty           -0.067    20.549
+SLICE_X36Y67         RAMD32 (Setup_ramd32_CLK_I)
+                                                 -0.258    20.291    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/integer_RegFilePlugin_logic_regfile_fpga/asMem_ram/ram_block_reg_0_31_30_35/RAMA_D1
+-------------------------------------------------------------------
+                     required time                         20.291
+                     arrival time                         -20.881
+-------------------------------------------------------------------
+                     slack                                 -0.590
  */

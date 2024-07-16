@@ -176,7 +176,7 @@ class TestOptions{
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
-      case true => DualSimTracer.withCb(compiled, window = 2000000 * 10, seed=seed)(test)
+      case true => DualSimTracer.withCb(compiled, window = 200000 * 10, seed=seed)(test)
       case false => compiled.doSimUntilVoid(name = getTestName(), seed=seed) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
