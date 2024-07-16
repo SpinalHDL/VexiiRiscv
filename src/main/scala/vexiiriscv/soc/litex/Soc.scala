@@ -279,7 +279,7 @@ object SocGen extends App{
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
   spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
-  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
+//  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {
     val soc = new Soc(socConfig, ClockDomain.external("system")).setDefinitionName(netlistName)
@@ -389,6 +389,7 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu
 
 --vivado-synth-directive=performanceoptimized --vivado-route-directive=aggressiveexplore
  --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128
+ --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2
 
 
 python3 -m litex.tools.litex_json2dts_linux build/csr.json --root-device=mmcblk0p2 > build/linux.dts
@@ -657,6 +658,11 @@ perf stat -p $! --timeout 1000 -e r12,r13,r1a,r1b,stalled-cycles-frontend,stalle
 
 perf stat -p $! --timeout 1000 -e r12,r13,r1a,r1b,cycles,instructions,branch-misses,branches
 perf stat -p $! --timeout 1000 -e stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions
+
+
+
+perf stat -p $! --timeout 1000 -e cycles,instructions,stalled-cycles-frontend,branch-misses,branches,r12,r13
+perf stat -p $! --timeout 1000 -e cycles,instructions,stalled-cycles-backend,r1a,r1b
 
 
 r8000000000000000,r8000000000000001,r8000000000000004

@@ -402,6 +402,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 //      val REFILL_ADDRESS = insert(refill.address)
 //      val REFILL_WORD = insert(refill.wordIndex)
       val TAGS_UPDATE = insert(waysWrite.mask.orR)
+      val TAGS_UPDATE_ADDRESS = insert(waysWrite.address)
     }
 
     val plruBypass = new pp.Fetch(readAt + 1){
@@ -429,13 +430,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val hazard = new pp.Fetch(readAt+1) {
       import cmd._
       val pageRange = 11 downto wordRange.high + 1
-      up(HAZARD) := TAGS_UPDATE// || REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
-    }
-
-    for(fetchId <- readAt + 1 until ctrlAt) new pp.Fetch(fetchId) {
-      val peristence = RegNext(down(HAZARD)) clearWhen(up.isCancel || up.isReady || !up.isValid)
-      bypass(HAZARD) := up(HAZARD) | refill.start.valid | peristence
-      assert(Global.HART_COUNT.get == 1)
+      HAZARD := TAGS_UPDATE && TAGS_UPDATE_ADDRESS === MIXED_PC_SOLVED(lineRange) // || REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
     }
 
     val hits = new pp.Fetch(hitsAt){

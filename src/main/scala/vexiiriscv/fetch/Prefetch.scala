@@ -37,10 +37,19 @@ class PrefetcherNextLinePlugin(lineSize : Int) extends PrefetcherPlugin{
 
     earlyLock.release()
 
-    val filtred = io.probe.continueWhen(!csr.disable && io.probe.refill)
-    val translated = PrefetchCmd()
-    translated.pc := filtred.pc + lineSize
-    val serialized = filtred.map(p => translated)
-    io.cmd << serialized.stage()
+    val probeAddressNext = KeepAttribute(io.probe.pc + lineSize)
+    val address = Reg(Global.PC)
+    val addressHit = address === io.probe.pc
+
+    val unbuffered = Stream(PrefetchCmd())
+    unbuffered.valid := False
+    unbuffered.pc := probeAddressNext
+    when(io.probe.valid){
+      when(io.probe.refill || addressHit){
+        unbuffered.valid setWhen(!csr.disable)
+        address := probeAddressNext
+      }
+    }
+    io.cmd << unbuffered.stage()
   }
 }
