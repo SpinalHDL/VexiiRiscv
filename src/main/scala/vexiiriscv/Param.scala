@@ -11,7 +11,7 @@ import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu._
-import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin}
+import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PrefetcherNextLinePlugin}
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
@@ -448,42 +448,52 @@ class ParamSimple(){
         )
       }
     )
-    if(fetchL1Enable) plugins += new fetch.FetchL1Plugin(
-      lineSize = 64,
-      setCount = fetchL1Sets,
-      wayCount = fetchL1Ways,
-      refillCount = fetchL1RefillCount,
-      fetchDataWidth = 32*decoders,
-      memDataWidth = fetchMemDataWidth,
-      reducedBankWidth = fetchL1ReducedBank,
-      hitsWithTranslationWays = true,
-      tagsReadAsync = false,
-      bootMemClear = bootMemClear,
-      translationStorageParameter = MmuStorageParameter(
-        levels = List(
-          MmuStorageLevel(
-            id = 0,
-            ways = 2,
-            depth = 32
+    if(fetchL1Enable) {
+      plugins += new fetch.FetchL1Plugin(
+        lineSize = 64,
+        setCount = fetchL1Sets,
+        wayCount = fetchL1Ways,
+        refillCount = fetchL1RefillCount,
+        fetchDataWidth = 32*decoders,
+        memDataWidth = fetchMemDataWidth,
+        reducedBankWidth = fetchL1ReducedBank,
+        hitsWithTranslationWays = true,
+        tagsReadAsync = false,
+        bootMemClear = bootMemClear,
+        translationStorageParameter = MmuStorageParameter(
+          levels = List(
+            MmuStorageLevel(
+              id = 0,
+              ways = 2,
+              depth = 32
+            ),
+            MmuStorageLevel(
+              id = 1,
+              ways = 1,
+              depth = 32
+            )
           ),
-          MmuStorageLevel(
-            id = 1,
-            ways = 1,
-            depth = 32
-          )
+          priority = 0
         ),
-        priority = 0
-      ),
-      translationPortParameter = withMmu match {
-        case false => null
-        case true => MmuPortParameter(
-          readAt = 1,
-          hitsAt = 1,
-          ctrlAt = 1,
-          rspAt = 1
-        )
+        translationPortParameter = withMmu match {
+          case false => null
+          case true => MmuPortParameter(
+            readAt = 1,
+            hitsAt = 1,
+            ctrlAt = 1,
+            rspAt = 1
+          )
+        }
+      )
+
+      fetchL1Prefetch match {
+        case "none" =>
+        case "nl" => {
+          plugins += new fetch.PrefetcherNextLinePlugin(64)
+          assert(fetchL1RefillCount > 1, "Fetch prefetch require fetchL1RefillCount > 1")
+        }
       }
-    )
+    }
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
