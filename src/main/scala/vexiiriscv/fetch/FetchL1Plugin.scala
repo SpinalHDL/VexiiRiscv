@@ -110,7 +110,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val age = pp.getAge(ctrlAt, false)
     val trapPort = ts.newTrap(pp.getAge(ctrlAt), 0)
-    val holdPorts = (0 until HART_COUNT).map(pcp.newHoldPort(_))
 
     val events = pcs.map(p => new Area {
       val access  = p.createEventPort(PerformanceCounterService.ICACHE_ACCESS)
@@ -314,10 +313,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
 
         val holdHarts = waysWrite.mask.orR || slots.map(s => s.valid && s.address(lineRange) === pp.fetch(readAt)(WORD_PC)(lineRange) && !(rspIdReg === s.id && wordIndex > pp.fetch(readAt)(WORD_PC)(wordRange))).orR
-        //TODO valid && hartId === i && wordIndex <= address(wordRange) !!!!!!!!!!!!!address(wordRange) => BUUUUUG, pp.fetch(readAt)(WORD_PC) instead ?
-        for ((port, i) <- holdPorts.zipWithIndex) {
-          port := holdHarts
-        }
+        pp.fetch(readAt).haltWhen(holdHarts)
 
         val firstCycle = RegInit(True) clearWhen (bus.rsp.fire)
         val reader = slots.reader(bus.rsp.id)
@@ -370,7 +366,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val cmd = new pp.Fetch(readAt) {
       val ra1 = pp.fetch(readAt + 1).up
-      val doIt = ra1.ready || !ra1.valid // Better timings than up.isReady, ra1.cancel not necessary as cancel do not collapse bubbles
+      val doIt = ra1.ready || (!ra1.valid && prefetcher.nonEmpty.mux(!ra1(PREFETCH), True)) // Better timings than up.isReady, ra1.cancel not necessary as cancel do not collapse bubbles
       for ((bank, bankId) <- banks.zipWithIndex) {
         bank.read.cmd.valid := doIt
         bank.read.cmd.payload := WORD_PC(lineRange.high downto log2Up(bankWidth / 8))
@@ -386,9 +382,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
           prefetcher.cmd.ready := down.isReady
           PREFETCH := prefetcher.cmd.valid
           MIXED_PC_SOLVED := PREFETCH ? prefetcher.cmd.pc | WORD_PC
-          for ((port, i) <- holdPorts.zipWithIndex) {
-            port setWhen (PREFETCH)
-          }
+          pp.fetch(readAt).haltWhen(PREFETCH)
         }
         case None =>
       }
@@ -399,7 +393,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
 
       plru.read.cmd.valid := doIt
-      plru.read.cmd.payload := WORD_PC(lineRange)
+      plru.read.cmd.payload := MIXED_PC_SOLVED(lineRange)
 
       val PLRU_BYPASS_VALID = insert(plru.write.valid && plru.write.address === plru.read.cmd.payload)
       val PLRU_BYPASS_DATA = insert(plru.write.data)

@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
+import vexiiriscv.execute.CsrService
 
 case class PrefetchCmd() extends Bundle {
   val pc = Global.PC()
@@ -24,8 +25,19 @@ abstract class PrefetcherPlugin extends FiberPlugin {
 
 
 class PrefetcherNextLinePlugin(lineSize : Int) extends PrefetcherPlugin{
-  val logic = during build new Area{
-    val filtred = io.probe.continueWhen(io.probe.refill)
+  val logic = during setup new Area{
+    val cp = host[CsrService]
+    val earlyLock = retains(cp.csrLock)
+    awaitBuild()
+
+    val csr = new Area {
+      val disable = RegInit(False)
+      cp.readWrite(0x7FF, 0 -> disable)
+    }
+
+    earlyLock.release()
+
+    val filtred = io.probe.continueWhen(!csr.disable && io.probe.refill)
     val translated = PrefetchCmd()
     translated.pc := filtred.pc + lineSize
     val serialized = filtred.map(p => translated)

@@ -67,7 +67,7 @@ class PrefetchRptPlugin(sets : Int,
 
     val csr = new Area{
       val disable = RegInit(False)
-      cp.readWrite(0x7FF, 0 -> disable)
+      cp.readWrite(0x7FF, 1 -> disable)
     }
 
     earlyLock.release()
