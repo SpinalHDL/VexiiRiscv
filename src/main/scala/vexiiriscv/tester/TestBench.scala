@@ -119,6 +119,7 @@ class TestOptions{
   var passSymbolName = "pass"
   val fsmTasksGen = mutable.Queue[() => FsmTask]()
   var ibusReadyFactor = 1.01f
+  var ibusBaseLatency = 0
   var dbusReadyFactor = 1.01f
   var dbusBaseLatency = 0
   var seed = 2
@@ -160,7 +161,7 @@ class TestOptions{
     opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
     opt[Unit]("jtag-remote") unbounded() action { (v, c) => jtagRemote = true }
-    opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v }
+    opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v; ibusBaseLatency = v }
 
     opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
     opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
@@ -341,7 +342,7 @@ class TestOptions{
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { pay =>
         val address = pay.address.toLong
         val id = pay.id.toInt
-        def doIt() = {
+        def doIt() = delayed(ibusBaseLatency*10) {
           for (i <- 0 until p.logic.memWordPerLine) {
             pending += Rsp(mem.readBytes(address + i * p.logic.bytePerMemWord, p.memDataWidth / 8), address < 0x10000000, id)
           }

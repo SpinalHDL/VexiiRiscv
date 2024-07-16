@@ -115,6 +115,7 @@ class ParamSimple(){
   var fetchL1ReducedBank = false
   var fetchMemDataWidthMin = 32
   var fetchL1RefillCount = 1
+  var fetchL1Prefetch = "none"
   var lsuSoftwarePrefetch = false
   var lsuHardwarePrefetch = "none"
   var lsuStoreBufferSlots = 0
@@ -162,7 +163,8 @@ class ParamSimple(){
     fetchL1Ways = 4
     fetchL1ReducedBank = true
     fetchMemDataWidthMin = 64
-    fetchL1RefillCount = 4
+    fetchL1RefillCount = 2
+    fetchL1Prefetch = "nl"
     lsuL1Enable = true
     lsuMemDataWidthMin = 64
     lsuL1Sets = 64
@@ -189,7 +191,7 @@ class ParamSimple(){
     withDiv = true
     withDispatcherBuffer = true
     withAlignerBuffer = true
-//    withRvc = true
+    withRvc = true
     withRva = true
 
     withRvf = true
@@ -332,6 +334,8 @@ class ParamSimple(){
     opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Int]("fetch-l1-sets") unbounded() action { (v, c) => fetchL1Sets = v }
     opt[Int]("fetch-l1-ways") unbounded() action { (v, c) => fetchL1Ways = v }
+    opt[Int]("fetch-l1-refill-count") unbounded() action { (v, c) => fetchL1RefillCount = v }
+    opt[String]("fetch-l1-hardware-prefetch") action { (v, c) => fetchL1Prefetch = v }
     opt[Int]("fetch-l1-mem-data-width-min") unbounded() action { (v, c) => fetchMemDataWidthMin = v }
     opt[Unit]("fetch-reduced-bank") action { (v, c) => fetchL1ReducedBank = true }
     opt[Int]("lsu-l1-sets") unbounded() action { (v, c) => lsuL1Sets = v }

@@ -29,7 +29,7 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
     val idMax = idToFetch.keys.max
     for(i <- 0 to idMax) fetch(i).unsetName() //To ensure the creation to all intermediate nodes
     val ctrls = idToFetch.toList.sortBy(_._1).map(_._2)
-    val sc = (for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageLink(from.down, to.up)).toSeq
+    val sc = (for((from, to) <- (ctrls, ctrls.tail).zipped) yield new pipeline.StageLink(from.down, to.up).withoutCollapse()).toSeq
     val connectors = (sc ++ ctrls).toSeq
     for(e <- persistenceSpec) sc(e-1).withoutCollapse().withPayloadHold()
 

@@ -32,6 +32,7 @@ trait FetchL1Service{
   val invalidationRetainer = Retainer()
   val invalidationPorts = ArrayBuffer[FetchL1InvalidationBus]()
   def newInvalidationPort() = invalidationPorts.addRet(FetchL1InvalidationBus())
+  def fetchProbe : FetchProbe
 }
 
 case class LsuL1InvalidationCmd() extends Bundle //Empty for now
@@ -80,6 +81,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     withBackPresure = false
   )
 
+
+  override def fetchProbe: FetchProbe = during build FetchProbe()
 
   override def initHold(): Bool = logic.invalidate.firstEver || bootMemClear.mux(logic.initializer.busy, False)
 
@@ -151,6 +154,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val WAYS_HITS = Payload(Vec.fill(wayCount)(Bool()))
     val WAYS_HIT = Payload(Bool())
     val HAZARD = Payload(Bool())
+    val PREFETCH = Payload(Bool())
+    val MIXED_PC = Payload(Global.PC)
 
     val BANKS_MUXES = Payload(Vec.fill(bankCount)(Bits(cpuWordWidth bits)))
 
@@ -239,6 +244,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
 
       val slots = for(slotId <- 0 until refillCount) yield new Area{
+        val id = slotId
         val valid = RegInit(False)
         val cmdSent = RegInit(True)
         val address = KeepAttribute(Reg(UInt(PHYSICAL_WIDTH bits)))
@@ -259,7 +265,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       val freeOh = OHMasking.first(slots.map(!_.valid))
       val freeValid = slots.map(!_.valid).orR
 
-      when(start.valid && invalidate.done) {
+      val hazard = slots.map(s => s.valid && s.address(lineRange) === start.address(lineRange)).orR
+      when(start.valid && invalidate.done && !hazard) {
         slots.onMask(freeOh){ s =>
           s.valid := True
           s.address := start.address
@@ -301,10 +308,11 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
 
       val onRsp = new Area{
+        val rspIdReg = RegNextWhen(bus.rsp.id, bus.rsp.valid)
         val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
 
-        val holdHarts = slots.map(s => s.valid && s.address(lineRange) === pp.fetch(readAt)(WORD_PC)(lineRange)).orR
-        //TODO valid && hartId === i && wordIndex <= address(wordRange)
+        val holdHarts = waysWrite.mask.orR || slots.map(s => s.valid && s.address(lineRange) === pp.fetch(readAt)(WORD_PC)(lineRange) && !(rspIdReg === s.id && wordIndex > pp.fetch(readAt)(WORD_PC)(wordRange))).orR
+        //TODO valid && hartId === i && wordIndex <= address(wordRange) !!!!!!!!!!!!!address(wordRange) => BUUUUUG, pp.fetch(readAt)(WORD_PC) instead ?
         for ((port, i) <- holdPorts.zipWithIndex) {
           port := holdHarts
         }
@@ -348,10 +356,16 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
     }
 
+    val prefetcher = new Area{
+      val push = Stream(Global.PC)
+      val serialized = push.map(p => p + lineSize)
+      val buffered = serialized.stage()
+    }
+
 
     val translationPort = ats.newTranslationPort(
       nodes = Seq(pp.fetch(readAt).down, pp.fetch(readAt+1).down),
-      rawAddress = Fetch.WORD_PC,
+      rawAddress = MIXED_PC,
       forcePhysical = pp.fetch(readAt).insert(False),
       usage = AddressTranslationPortUsage.FETCH,
       portSpec = translationPortParameter,
@@ -369,8 +383,27 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       for((way, wayId) <- ways.zipWithIndex) {
         way.read.cmd.valid := doIt
-        way.read.cmd.payload := WORD_PC(lineRange)
+        way.read.cmd.payload := MIXED_PC(lineRange)
       }
+
+      prefetcher.buffered.ready := down.isReady
+      PREFETCH := prefetcher.buffered.valid
+      MIXED_PC := PREFETCH ? prefetcher.buffered.payload | WORD_PC
+      for ((port, i) <- holdPorts.zipWithIndex) {
+        port setWhen(PREFETCH)
+      }
+
+      for(ctrlId <- readAt+1 to ctrlAt){
+        pp.fetch(ctrlId)(PREFETCH).setAsReg.init(False)
+      }
+//      prefetcher.buffered.ready := False
+//      PREFETCH := False
+//      MIXED_PC := WORD_PC
+//      when(!isValid){
+//        prefetcher.buffered.ready setWhen(isReady)
+//        PREFETCH := prefetcher.buffered.valid
+//        MIXED_PC := prefetcher.buffered.payload
+//      }
 
       plru.read.cmd.valid := doIt
       plru.read.cmd.payload := WORD_PC(lineRange)
@@ -425,7 +458,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         val indirect = if(!withDirectHits) new Area{
           val wayTlbHits = (0 until translationPort.wayCount) map (tlbWayId => WAYS_TAGS(wayId).address === tpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && tpk.WAYS_OH(tlbWayId))
           val translatedHits = wayTlbHits.orR
-          val bypassHits = WAYS_TAGS(wayId).address === WORD_PC >> tagRange.low
+          val bypassHits = WAYS_TAGS(wayId).address === MIXED_PC >> tagRange.low
           WAYS_HITS(wayId) := (tpk.BYPASS_TRANSLATION ? bypassHits | translatedHits) & WAYS_TAGS(wayId).loaded
         }
       }
@@ -447,7 +480,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         val buffer = cloneOf(plru.write)
         buffer >-> plru.write
         buffer.valid := up.isValid && up.isReady
-        buffer.address := WORD_PC(lineRange)
+        buffer.address := MIXED_PC(lineRange)
         buffer.data := core.io.update.state
 
         refill.start.wayToAllocate := core.io.evict.id
@@ -511,12 +544,15 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       TRAP := trapPort.valid || trapSent
 
-      when(!isValid){
+      when(!isValid && !PREFETCH){
         refill.start.valid := False
       }
       when(!isValid || trapSent){
         trapPort.valid := False
       }
+
+      prefetcher.push.valid := isValid && refill.start.valid
+      prefetcher.push.payload := WORD_PC
 
       val onEvents = events.map( e => new Area {
         val waiting = RegInit(False) clearWhen (isValid && !TRAP) setWhen (e.miss)
