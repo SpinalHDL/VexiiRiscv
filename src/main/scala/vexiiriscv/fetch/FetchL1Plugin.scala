@@ -256,8 +256,11 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         val askCmd = valid && !cmdSent
       }
 
-      import spinal.core.sim._
+      for(self <- slots; other <- slots; if self != other){
+        self.priority(other.id) clearWhen(!other.valid)
+      }
 
+      import spinal.core.sim._
       val pushCounter = Reg(UInt(32 bits)) init (0) simPublic()
 
       val freeOh = OHMasking.first(slots.map(!_.valid))
@@ -289,7 +292,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       val onCmd = new Area{
         val oh = B(for((self, slotId) <- slots.zipWithIndex) yield {
-          self.askCmd && slots.filter(_ != self).map(s => !s.askCmd || s.priority(slotId)).andR
+          self.askCmd && slots.filter(_ != self).map(s => !s.askCmd || !s.priority(slotId)).andR
         })
         val reader = slots.reader(oh, bypassIfSingle = true)
         bus.cmd.valid := oh.orR
