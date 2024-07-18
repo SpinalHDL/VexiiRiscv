@@ -13,6 +13,7 @@ jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0x10002FFF
 
 for {set i 0} {$i < $cpu_count} {incr i} {
   target create $_TARGETNAME.$i riscv -coreid $i -chain-position $_TARGETNAME
+    riscv expose_csrs 2047
 }
 
 for {set i 0} {$i < $cpu_count} {incr i} {

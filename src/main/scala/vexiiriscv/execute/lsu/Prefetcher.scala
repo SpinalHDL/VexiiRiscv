@@ -998,4 +998,76 @@ SLICE_X36Y67         RAMD32 (Setup_ramd32_CLK_I)
                      arrival time                         -20.881
 -------------------------------------------------------------------
                      slack                                 -0.590
+
+
+Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+-------------------------------------------------------------------    -------------------
+                     (clock crg_s7mmcm0_clkout0 rise edge)
+                                                  0.000     0.000 r
+R4                                                0.000     0.000 r  clk100 (IN)
+                     net (fo=0)                   0.000     0.000    clk100
+R4                   IBUF (Prop_ibuf_I_O)         1.475     1.475 r  clk100_IBUF_inst/O
+                     net (fo=3, routed)           0.899     2.374    clk100_IBUF
+SLICE_X161Y125       LUT1 (Prop_lut1_I0_O)        0.124     2.498 r  crg_s7mmcm0_clkin_inst/O
+                     net (fo=9, routed)           3.892     6.390    crg_s7mmcm0_clkin
+MMCME2_ADV_X0Y2      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                  0.088     6.478 r  MMCME2_ADV/CLKOUT0
+                     net (fo=1, routed)           1.843     8.322    crg_s7mmcm0_clkout0
+BUFGCTRL_X0Y0        BUFG (Prop_bufg_I_O)         0.096     8.418 r  BUFG/O
+                     net (fo=56537, routed)       2.117    10.535    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/out
+SLICE_X152Y38        FDRE                                         r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/fetch_logic_ctrls_1_up_Fetch_WORD_PC_reg[22]/C
+-------------------------------------------------------------------    -------------------
+SLICE_X152Y38        FDRE (Prop_fdre_C_Q)         0.478    11.013 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/fetch_logic_ctrls_1_up_Fetch_WORD_PC_reg[22]/Q
+                     net (fo=3, routed)           1.159    12.172    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/BtbPlugin_logic_ras_read_reg[37][20]
+SLICE_X155Y35        LUT6 (Prop_lut6_I4_O)        0.296    12.468 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/fetch_logic_ctrls_2_up_Prediction_WORD_JUMPED_i_7/O
+                     net (fo=1, routed)           0.000    12.468    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/fetch_logic_ctrls_2_up_Prediction_WORD_JUMPED_i_7_n_0
+SLICE_X155Y35        CARRY4 (Prop_carry4_S[3]_CO[3])
+                                                  0.401    12.869 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/fetch_logic_ctrls_2_up_Prediction_WORD_JUMPED_reg_i_4/CO[3]
+                     net (fo=1, routed)           0.000    12.869    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/fetch_logic_ctrls_2_up_Prediction_WORD_JUMPED_reg_i_4_n_0
+SLICE_X155Y36        CARRY4 (Prop_carry4_CI_CO[1])
+                                                  0.157    13.026 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/fetch_logic_ctrls_2_up_Prediction_WORD_JUMPED_reg_i_3/CO[1]
+                     net (fo=3, routed)           0.455    13.482    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/CO[0]
+SLICE_X152Y36        LUT5 (Prop_lut5_I2_O)        0.329    13.811 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/ram_block_reg_0_3_0_5_i_4/O
+                     net (fo=15, routed)          0.996    14.807    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/BtbPlugin_logic_applyIt_correctionSent_reg
+SLICE_X147Y37        LUT5 (Prop_lut5_I0_O)        0.124    14.931 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack/BtbPlugin_logic_ras_ptr_pop[1]_i_2/O
+                     net (fo=7, routed)           1.135    16.067    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_ras_mem_stack_n_2
+SLICE_X149Y43        LUT6 (Prop_lut6_I4_O)        0.124    16.191 f  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/PcPlugin_logic_harts_0_aggregator_target_inferred_i_35_comp/O
+                     net (fo=5, routed)           0.423    16.614    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_mem/FetchL1Plugin_logic_banks_3_mem_reg_0[3]
+SLICE_X149Y41        LUT5 (Prop_lut5_I0_O)        0.124    16.738 f  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_mem/ram_block_reg_0_63_15_17_i_5/O
+                     net (fo=121, routed)         0.909    17.647    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/BtbPlugin_logic_mem_n_13
+SLICE_X145Y34        LUT4 (Prop_lut4_I3_O)        0.124    17.771 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/PcPlugin_logic_harts_0_self_increment_i_7/O
+                     net (fo=2, routed)           0.574    18.345    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/FetchL1Plugin_logic_refill_onRsp_holdHarts4
+SLICE_X147Y34        LUT5 (Prop_lut5_I3_O)        0.124    18.469 f  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/PcPlugin_logic_harts_0_self_increment_i_10/O
+                     net (fo=1, routed)           0.584    19.052    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/PcPlugin_logic_harts_0_self_increment_i_10_n_0
+SLICE_X145Y34        LUT6 (Prop_lut6_I5_O)        0.124    19.176 f  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/PcPlugin_logic_harts_0_self_increment_i_6/O
+                     net (fo=2, routed)           0.777    19.953    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/FetchL1Plugin_logic_refill_onRsp_holdHarts0
+SLICE_X141Y40        LUT6 (Prop_lut6_I3_O)        0.124    20.077 f  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/PcPlugin_logic_harts_0_self_state[1]_i_2__0/O
+                     net (fo=2, routed)           0.985    21.063    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/early0_DivPlugin_logic_processing_div/PcPlugin_logic_harts_0_self_state_reg[1]_0
+SLICE_X139Y36        LUT5 (Prop_lut5_I1_O)        0.119    21.182 r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/early0_DivPlugin_logic_processing_div/fetch_logic_ctrls_1_up_valid_i_1/O
+                     net (fo=1, routed)           0.000    21.182    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/early0_DivPlugin_logic_processing_div_n_158
+SLICE_X139Y36        FDCE                                         r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/fetch_logic_ctrls_1_up_valid_reg/D
+-------------------------------------------------------------------    -------------------
+
+                     (clock crg_s7mmcm0_clkout0 rise edge)
+                                                 10.000    10.000 r
+R4                                                0.000    10.000 r  clk100 (IN)
+                     net (fo=0)                   0.000    10.000    clk100
+R4                   IBUF (Prop_ibuf_I_O)         1.405    11.405 r  clk100_IBUF_inst/O
+                     net (fo=3, routed)           0.773    12.178    clk100_IBUF
+SLICE_X161Y125       LUT1 (Prop_lut1_I0_O)        0.100    12.278 r  crg_s7mmcm0_clkin_inst/O
+                     net (fo=9, routed)           3.337    15.615    crg_s7mmcm0_clkin
+MMCME2_ADV_X0Y2      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                  0.083    15.698 r  MMCME2_ADV/CLKOUT0
+                     net (fo=1, routed)           1.760    17.458    crg_s7mmcm0_clkout0
+BUFGCTRL_X0Y0        BUFG (Prop_bufg_I_O)         0.091    17.549 r  BUFG/O
+                     net (fo=56537, routed)       1.912    19.460    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/out
+SLICE_X139Y36        FDCE                                         r  VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/fetch_logic_ctrls_1_up_valid_reg/C
+                     clock pessimism              0.966    20.426
+                     clock uncertainty           -0.067    20.359
+SLICE_X139Y36        FDCE (Setup_fdce_C_D)        0.075    20.434    VexiiRiscvLitex_1bfb18e34cfdfd7820076885afabe9e6/vexiis_0_logic_core/fetch_logic_ctrls_1_up_valid_reg
+-------------------------------------------------------------------
+                     required time                         20.434
+                     arrival time                         -21.182
+-------------------------------------------------------------------
+                       slack                                 -0.748
  */

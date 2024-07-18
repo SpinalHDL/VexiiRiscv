@@ -7,6 +7,7 @@ import spinal.core.internals.MemTopology
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4SpecRenamer, Axi4ToTilelinkFiber}
 import spinal.lib.bus.amba4.axilite.AxiLite4SpecRenamer
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
+import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
 import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
@@ -18,7 +19,9 @@ import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, maste
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
 import vexiiriscv.ParamSimple
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
+import vexiiriscv.fetch.FetchL1Plugin
 import vexiiriscv.prediction.GSharePlugin
+import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 import vexiiriscv.soc.demo.DebugModuleSocFiber
 
@@ -215,6 +218,43 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
 
 
       println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus))
+
+      def debug(that: Data) : Unit = that.addAttribute("mark_debug", "true")
+      def debug[T <: Data](that: spinal.lib.Stream[T]) : Unit = {
+        debug(that.valid)
+        debug(that.ready)
+      }
+      def debug(that: tilelink.Bus) : Unit = {
+        debug(that.a)
+        debug(that.d)
+        if(that.p.withBCE){
+          debug(that.b)
+          debug(that.c)
+          debug(that.e)
+        }
+      }
+      debug(splited.wc.l2.cache.up.bus)
+      debug(splited.wc.l2.cache.up.bus.a.address)
+      debug(splited.wc.l2.cache.down.bus)
+      for(v <- vexiis){
+        debug(v.iBus.bus)
+        debug(v.lsuL1Bus.bus)
+        debug(v.dBus.bus)
+        v.logic.core.host.services.foreach{
+          case p : FetchL1Plugin => {
+            debug(p.logic.events.get.access)
+            debug(p.logic.events.get.miss)
+            debug(p.logic.events.get.waiting)
+            debug(p.logic.refill.onRsp.holdHarts)
+            p.logic.refill.slots.foreach(s => debug(s.valid))
+          }
+          case p: DispatchPlugin => {
+            debug(p.logic.events.get.frontendStall)
+            debug(p.logic.events.get.backendStall)
+          }
+          case _ =>
+        }
+      }
     }
   }
 
