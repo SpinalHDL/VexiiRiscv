@@ -250,7 +250,7 @@ class AlignerPlugin(fetchAt : Int,
       val usedMask = extractors.map(e => e.usageMask.andMask(e.valid)).reduce(_ | _)
 
       val haltUp = (mask & ~ usedMask.dropHigh(Fetch.SLICE_COUNT).andMask(downFire)).orR || api.haltIt
-      up.ready := !haltUp
+      up.ready := !up.valid || !haltUp
 
       when(downFire){
         mask := mask & ~usedMask.takeLow(Fetch.SLICE_COUNT)
@@ -307,7 +307,7 @@ class AlignerPlugin(fetchAt : Int,
       slices.mask := up(FETCH_MASK).andMask(up.valid) & (Decode.LANES.get > 1).mux(mask, mask.getAllTrue)
       slices.last := 0
 
-      up.ready := downNode.isReady && !api.haltIt && remaningMask === 0
+      up.ready := !up.valid || downNode.isReady && !api.haltIt && remaningMask === 0
 
       val readers = for ((spec, sid) <- slices.readCtxs.zipWithIndex) yield new Area {
         assert(spec.first.size == 1 && spec.first.head.sid == sid)

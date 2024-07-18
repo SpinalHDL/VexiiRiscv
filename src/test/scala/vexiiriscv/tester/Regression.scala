@@ -542,9 +542,10 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     Dim("", List("--fetch-fork-at 0", "--fetch-fork-at 1")),
     Dim("", for (bytes <- List(1 << 10, 1 << 12, 1 << 14);
                  sets <- List(16, 32, 64);
+                 prefetch <- List(true, false);
                  if (bytes / sets >= 64)) yield {
         val ways = bytes / sets / 64
-        s"--with-fetch-l1 --fetch-l1-sets=$sets --fetch-l1-ways=$ways"
+        s"--with-fetch-l1 --fetch-l1-sets=$sets --fetch-l1-ways=$ways ${prefetch.mux(s"--fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2","")}"
       }
     )
   )
@@ -562,9 +563,10 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
                  if (bytes / sets >= 64);
                  ways = bytes / sets / 64;
                  slots <- List(0,1,2,3);
+                 prefetch <- List(true, false);
                  ops <- List(8, 16, 32, 64);
                  if !(slots != 0 ^ ops != 0)) yield {
-        s"--with-lsu-l1 --lsu-l1-sets=$sets --lsu-l1-ways=$ways --lsu-l1-store-buffer-slots=$slots --lsu-l1-store-buffer-ops=$ops"
+        s"--with-lsu-l1 --lsu-l1-sets=$sets --lsu-l1-ways=$ways --lsu-l1-store-buffer-slots=$slots --lsu-l1-store-buffer-ops=$ops ${prefetch.mux(s"--lsu-software-prefetch --lsu-hardware-prefetch rpt","")}"
       }
     )
   )

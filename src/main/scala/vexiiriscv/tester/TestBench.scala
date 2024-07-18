@@ -119,6 +119,7 @@ class TestOptions{
   var passSymbolName = "pass"
   val fsmTasksGen = mutable.Queue[() => FsmTask]()
   var ibusReadyFactor = 1.01f
+  var ibusBaseLatency = 0
   var dbusReadyFactor = 1.01f
   var dbusBaseLatency = 0
   var seed = 2
@@ -160,7 +161,7 @@ class TestOptions{
     opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
     opt[Unit]("jtag-remote") unbounded() action { (v, c) => jtagRemote = true }
-    opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v }
+    opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v; ibusBaseLatency = v }
 
     opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
     opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
@@ -175,7 +176,7 @@ class TestOptions{
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
     dualSim match {
-      case true => DualSimTracer.withCb(compiled, window = 2000000 * 10, seed=seed)(test)
+      case true => DualSimTracer.withCb(compiled, window = 200000 * 10, seed=seed)(test)
       case false => compiled.doSimUntilVoid(name = getTestName(), seed=seed) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
@@ -335,14 +336,15 @@ class TestOptions{
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
-      case class Rsp(data: Array[Byte], error : Boolean)
+      case class Rsp(data: Array[Byte], error : Boolean, id : Int)
       val pending = mutable.Queue[Rsp]()
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { pay =>
         val address = pay.address.toLong
-        def doIt() = {
+        val id = pay.id.toInt
+        def doIt() = delayed(ibusBaseLatency*10) {
           for (i <- 0 until p.logic.memWordPerLine) {
-            pending += Rsp(mem.readBytes(address + i * p.logic.bytePerMemWord, p.memDataWidth / 8), address < 0x10000000)
+            pending += Rsp(mem.readBytes(address + i * p.logic.bytePerMemWord, p.memDataWidth / 8), address < 0x10000000, id)
           }
         }
 
@@ -360,6 +362,7 @@ class TestOptions{
           val rsp = pending.dequeue()
           p.data #= rsp.data
           p.error #= rsp.error
+          p.id #= rsp.id
         }
         doIt
       }

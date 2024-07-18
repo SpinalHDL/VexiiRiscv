@@ -32,6 +32,7 @@ trait FetchL1Service{
   val invalidationRetainer = Retainer()
   val invalidationPorts = ArrayBuffer[FetchL1InvalidationBus]()
   def newInvalidationPort() = invalidationPorts.addRet(FetchL1InvalidationBus())
+  def fetchProbe : FetchProbe
 }
 
 case class LsuL1InvalidationCmd() extends Bundle //Empty for now
@@ -59,6 +60,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
                     var fetchDataWidth : Int,
                     var setCount: Int,
                     var wayCount: Int,
+                    var refillCount: Int = 1,
                     var lineSize: Int = 64,
                     var readAt: Int = 0,
                     var hitsAt: Int = 1,
@@ -75,9 +77,12 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     physicalWidth = PHYSICAL_WIDTH,
     dataWidth = memDataWidth,
     lineSize = lineSize,
+    refillCount = refillCount,
     withBackPresure = false
   )
 
+
+  override def fetchProbe: FetchProbe = during build FetchProbe()
 
   override def initHold(): Bool = logic.invalidate.firstEver || bootMemClear.mux(logic.initializer.busy, False)
 
@@ -88,6 +93,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val ts = host[TrapService]
     val ats = host[AddressTranslationService]
     val pcs = host.get[PerformanceCounterService]
+    val prefetcher = host.get[PrefetcherPlugin].map(_.io)
     val buildBefore = retains(pp.elaborationLock, ats.portsLock)
     val atsStorageLock = retains(ats.storageLock)
     val setupLock = retains(List(ts.trapLock, pcp.elaborationLock, rp.elaborationLock) ++ pcs.map(_.elaborationLock).toList)
@@ -104,7 +110,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val age = pp.getAge(ctrlAt, false)
     val trapPort = ts.newTrap(pp.getAge(ctrlAt), 0)
-    val holdPorts = (0 until HART_COUNT).map(pcp.newHoldPort(_))
 
     val events = pcs.map(p => new Area {
       val access  = p.createEventPort(PerformanceCounterService.ICACHE_ACCESS)
@@ -149,6 +154,9 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val WAYS_HITS = Payload(Vec.fill(wayCount)(Bool()))
     val WAYS_HIT = Payload(Bool())
     val HAZARD = Payload(Bool())
+    val PREFETCH = Payload(Bool())
+    val MIXED_PC = Payload(Global.PC)
+    def MIXED_PC_SOLVED = prefetcher.nonEmpty.mux(MIXED_PC, WORD_PC)
 
     val BANKS_MUXES = Payload(Vec.fill(bankCount)(Bits(cpuWordWidth bits)))
 
@@ -236,30 +244,41 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         val hartId = HART_ID()
       }
 
-      val fire = False
-      val valid = RegInit(False) clearWhen (fire)
-      val firstCycle = RegNext(False)
-      val address = KeepAttribute(Reg(UInt(PHYSICAL_WIDTH bits)))
-      val isIo = Reg(Bool())
-      val hartId = Reg(HART_ID())
-      val hadError = RegInit(False)
-      val wayToAllocate = Reg(UInt(log2Up(wayCount) bits))
+      val slots = for(slotId <- 0 until refillCount) yield new Area{
+        val id = slotId
+        val valid = RegInit(False)
+        val cmdSent = RegInit(True)
+        val address = KeepAttribute(Reg(UInt(PHYSICAL_WIDTH bits)))
+        val isIo = Reg(Bool())
+        val hartId = Reg(HART_ID())
+        val wayToAllocate = Reg(UInt(log2Up(wayCount) bits))
+        val priority = Reg(Bits(refillCount bits))
+        val askCmd = valid && !cmdSent
+      }
+
+      for(self <- slots; other <- slots; if self != other){
+        self.priority(other.id) clearWhen(!other.valid)
+      }
 
       import spinal.core.sim._
-
       val pushCounter = Reg(UInt(32 bits)) init (0) simPublic()
 
-      when(!valid) {
-        when(start.valid && invalidate.done) {
-          valid := True
-          pushCounter := pushCounter + 1
-          firstCycle := True
+      val freeOh = OHMasking.first(slots.map(!_.valid))
+
+      val hazard = slots.map(s => s.valid && s.address(lineRange) === start.address(lineRange)).orR
+      when(start.valid && invalidate.done && !hazard) {
+        slots.onMask(freeOh){ s =>
+          s.valid := True
+          s.address := start.address
+          s.hartId := start.hartId
+          s.isIo := start.isIo
+          s.wayToAllocate := start.wayToAllocate
+          s.cmdSent := False
+          s.priority := B(slots.map(_.valid))
         }
-        address := start.address
-        hartId := start.hartId
-        isIo := start.isIo
-        wayToAllocate := start.wayToAllocate
+        pushCounter := pushCounter + 1
       }
+
 
 
 //      val oldDo = !valid && start.valid && invalidate.done
@@ -269,59 +288,74 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 //      events.get.dev1 := oldDo && oldHit
 
 
-      invalidate.canStart clearWhen (valid || start.valid)
+      invalidate.canStart clearWhen (slots.map(_.valid).orR || start.valid)
 
-      val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (fire)
-      bus.cmd.valid := valid && !cmdSent
-      bus.cmd.address := address(tagRange.high downto lineRange.low) @@ U(0, lineRange.low bit)
-      bus.cmd.io := isIo
-
-      val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
-
-      for ((port, i) <- holdPorts.zipWithIndex) {
-        port := valid && hartId === i && wordIndex <= address(wordRange)
-      }
-
-      when(invalidate.done) {
-        waysWrite.mask(wayToAllocate) setWhen (firstCycle || bus.rsp.valid && bus.rsp.error)
-        waysWrite.address := address(lineRange)
-        waysWrite.tag.loaded := True
-        waysWrite.tag.error := bus.rsp.valid && bus.rsp.error
-        waysWrite.tag.address := address(tagRange)
-      }
-
-
-      for ((bank, bankId) <- banks.zipWithIndex) {
-        if (!reducedBankWidth) {
-          bank.write.valid := bus.rsp.valid && wayToAllocate === bankId
-          bank.write.address := address(lineRange) @@ wordIndex
-          bank.write.data := bus.rsp.data
-        } else {
-          val sel = U(bankId) - wayToAllocate
-          val groupSel = wayToAllocate(log2Up(bankCount) - 1 downto log2Up(bankCount / memToBankRatio))
-          val subSel = sel(log2Up(bankCount / memToBankRatio) - 1 downto 0)
-          bank.write.valid := bus.rsp.valid && groupSel === (bankId >> log2Up(bankCount / memToBankRatio))
-          bank.write.address := address(lineRange) @@ wordIndex @@ (subSel)
-          bank.write.data := bus.rsp.data.subdivideIn(bankCount / memToBankRatio slices)(subSel)
+      val onCmd = new Area{
+        val oh = B(for((self, slotId) <- slots.zipWithIndex) yield {
+          self.askCmd && slots.filter(_ != self).map(s => !s.askCmd || !s.priority(slotId)).andR
+        })
+        val reader = slots.reader(oh, bypassIfSingle = true)
+        bus.cmd.valid := oh.orR
+        bus.cmd.address := reader(_.address(tagRange.high downto lineRange.low)) @@ U(0, lineRange.low bit)
+        bus.cmd.io := reader(_.isIo)
+        bus.cmd.id := OHToUInt(oh)
+        when(bus.cmd.ready) {
+          slots.onMask(oh) { s =>
+            s.cmdSent := True
+          }
         }
       }
 
-      bus.rsp.ready := True
-      when(bus.rsp.valid) {
-        wordIndex := (wordIndex + 1).resized
-        hadError.setWhen(bus.rsp.error)
-        when(wordIndex === wordIndex.maxValue) {
-          fire := True
+
+      val onRsp = new Area{
+        val rspIdReg = RegNextWhen(bus.rsp.id, bus.rsp.valid)
+        val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
+
+        val holdHarts = waysWrite.mask.orR || slots.map(s => s.valid && s.address(lineRange) === pp.fetch(readAt)(WORD_PC)(lineRange) && !(rspIdReg === s.id && wordIndex > pp.fetch(readAt)(WORD_PC)(wordRange))).orR
+        pp.fetch(readAt).haltWhen(holdHarts)
+
+        val firstCycle = RegInit(True) clearWhen (bus.rsp.fire)
+        val reader = slots.reader(bus.rsp.id)
+        val wayToAllocate = reader(_.wayToAllocate)
+        val address = reader(_.address)
+        when(invalidate.done) {
+          waysWrite.mask(wayToAllocate) setWhen (bus.rsp.valid && (firstCycle || bus.rsp.error))
+          waysWrite.address := address(lineRange)
+          waysWrite.tag.loaded := True
+          waysWrite.tag.error := bus.rsp.valid && bus.rsp.error
+          waysWrite.tag.address := address(tagRange)
+        }
+
+
+        for ((bank, bankId) <- banks.zipWithIndex) {
+          if (!reducedBankWidth) {
+            bank.write.valid := bus.rsp.valid && wayToAllocate === bankId
+            bank.write.address := address(lineRange) @@ wordIndex
+            bank.write.data := bus.rsp.data
+          } else {
+            val sel = U(bankId) - wayToAllocate
+            val groupSel = wayToAllocate(log2Up(bankCount) - 1 downto log2Up(bankCount / memToBankRatio))
+            val subSel = sel(log2Up(bankCount / memToBankRatio) - 1 downto 0)
+            bank.write.valid := bus.rsp.valid && groupSel === (bankId >> log2Up(bankCount / memToBankRatio))
+            bank.write.address := address(lineRange) @@ wordIndex @@ (subSel)
+            bank.write.data := bus.rsp.data.subdivideIn(bankCount / memToBankRatio slices)(subSel)
+          }
+        }
+
+        bus.rsp.ready := True
+        when(bus.rsp.valid) {
+          wordIndex := (wordIndex + 1).resized
+          when(wordIndex === wordIndex.maxValue) {
+            firstCycle := True
+            slots.onSel(bus.rsp.id)(_.valid := False)
+          }
         }
       }
-
-      hadError clearWhen (fire)
     }
-
 
     val translationPort = ats.newTranslationPort(
       nodes = Seq(pp.fetch(readAt).down, pp.fetch(readAt+1).down),
-      rawAddress = Fetch.WORD_PC,
+      rawAddress = MIXED_PC_SOLVED,
       forcePhysical = pp.fetch(readAt).insert(False),
       usage = AddressTranslationPortUsage.FETCH,
       portSpec = translationPortParameter,
@@ -331,7 +365,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val cmd = new pp.Fetch(readAt) {
       val ra1 = pp.fetch(readAt + 1).up
-      val doIt = ra1.ready || !ra1.valid // Better timings than up.isReady, ra1.cancel not necessary as cancel do not collapse bubbles
+      val doIt = ra1.ready || (!ra1.valid && prefetcher.nonEmpty.mux(!ra1(PREFETCH), True)) // Better timings than up.isReady, ra1.cancel not necessary as cancel do not collapse bubbles
       for ((bank, bankId) <- banks.zipWithIndex) {
         bank.read.cmd.valid := doIt
         bank.read.cmd.payload := WORD_PC(lineRange.high downto log2Up(bankWidth / 8))
@@ -339,19 +373,31 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       for((way, wayId) <- ways.zipWithIndex) {
         way.read.cmd.valid := doIt
-        way.read.cmd.payload := WORD_PC(lineRange)
+        way.read.cmd.payload := MIXED_PC_SOLVED(lineRange)
+      }
+
+      prefetcher match {
+        case Some(prefetcher) => {
+          prefetcher.cmd.ready := down.isReady
+          PREFETCH := prefetcher.cmd.valid
+          MIXED_PC_SOLVED := PREFETCH ? prefetcher.cmd.pc | WORD_PC
+          pp.fetch(readAt).haltWhen(PREFETCH)
+
+          for (ctrlId <- readAt + 1 to ctrlAt) {
+            pp.fetch(ctrlId).up(PREFETCH).setAsReg.init(False)
+          }
+        }
+        case None =>
       }
 
       plru.read.cmd.valid := doIt
-      plru.read.cmd.payload := WORD_PC(lineRange)
+      plru.read.cmd.payload := MIXED_PC_SOLVED(lineRange)
 
       val PLRU_BYPASS_VALID = insert(plru.write.valid && plru.write.address === plru.read.cmd.payload)
       val PLRU_BYPASS_DATA = insert(plru.write.data)
 
-      val REFILL_VALID = insert(refill.valid)
-      val REFILL_ADDRESS = insert(refill.address)
-      val REFILL_WORD = insert(refill.wordIndex)
       val TAGS_UPDATE = insert(waysWrite.mask.orR)
+      val TAGS_UPDATE_ADDRESS = insert(waysWrite.address)
     }
 
     val plruBypass = new pp.Fetch(readAt + 1){
@@ -379,13 +425,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val hazard = new pp.Fetch(readAt+1) {
       import cmd._
       val pageRange = 11 downto wordRange.high + 1
-      up(HAZARD) := TAGS_UPDATE || REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
-    }
-
-    for(fetchId <- readAt + 1 until ctrlAt) new pp.Fetch(fetchId) {
-      val peristence = RegNext(down(HAZARD)) clearWhen(up.isCancel || up.isReady || !up.isValid)
-      bypass(HAZARD) := up(HAZARD) | refill.start.valid | peristence
-      assert(Global.HART_COUNT.get == 1)
+      HAZARD := TAGS_UPDATE && TAGS_UPDATE_ADDRESS === MIXED_PC_SOLVED(lineRange) // || REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
     }
 
     val hits = new pp.Fetch(hitsAt){
@@ -395,7 +435,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         val indirect = if(!withDirectHits) new Area{
           val wayTlbHits = (0 until translationPort.wayCount) map (tlbWayId => WAYS_TAGS(wayId).address === tpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && tpk.WAYS_OH(tlbWayId))
           val translatedHits = wayTlbHits.orR
-          val bypassHits = WAYS_TAGS(wayId).address === WORD_PC >> tagRange.low
+          val bypassHits = WAYS_TAGS(wayId).address === MIXED_PC_SOLVED >> tagRange.low
           WAYS_HITS(wayId) := (tpk.BYPASS_TRANSLATION ? bypassHits | translatedHits) & WAYS_TAGS(wayId).loaded
         }
       }
@@ -417,7 +457,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         val buffer = cloneOf(plru.write)
         buffer >-> plru.write
         buffer.valid := up.isValid && up.isReady
-        buffer.address := WORD_PC(lineRange)
+        buffer.address := MIXED_PC_SOLVED(lineRange)
         buffer.data := core.io.update.state
 
         refill.start.wayToAllocate := core.io.evict.id
@@ -481,11 +521,19 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       TRAP := trapPort.valid || trapSent
 
-      when(!isValid){
-        refill.start.valid := False
-      }
       when(!isValid || trapSent){
         trapPort.valid := False
+      }
+
+      when(!isValid && prefetcher.nonEmpty.mux(!PREFETCH, True)) {
+        refill.start.valid := False
+      }
+
+      val firstCycle = RegInit(True) clearWhen(isValid) setWhen(!isValid || isReady || up.isCanceling)
+      prefetcher.map{ p =>
+        p.probe.valid := isValid && firstCycle
+        p.probe.pc := WORD_PC
+        p.probe.refill := refill.start.valid
       }
 
       val onEvents = events.map( e => new Area {
@@ -496,7 +544,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       })
     }
 
-    assert(!(refill.valid && !invalidate.done))
+    assert(!(refill.slots.map(_.valid).orR && !invalidate.done))
 
     when(!invalidate.done) {
       plru.write.valid := True

@@ -150,13 +150,6 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
       }
     }
 
-    val shared = !vexiiParam.lsuL1Enable generate new Area{
-      for (vexii <- vexiis) {
-        ioBus << List(vexii.iBus, vexii.dBus)
-      }
-      if (withMem) mem.toAxi4.up << ioBus
-    }
-
     val splited = vexiiParam.lsuL1Enable generate new Area{
       val mBus = Node()
       ioBus.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.NONE)
@@ -286,7 +279,7 @@ object SocGen extends App{
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
   spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
-  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
+//  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {
     val soc = new Soc(socConfig, ClockDomain.external("system")).setDefinitionName(netlistName)
@@ -396,6 +389,8 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu
 
 --vivado-synth-directive=performanceoptimized --vivado-route-directive=aggressiveexplore
  --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128
+ --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2
+ --lsu-software-prefetch --lsu-hardware-prefetch rpt
 
 
 python3 -m litex.tools.litex_json2dts_linux build/csr.json --root-device=mmcblk0p2 > build/linux.dts
@@ -666,6 +661,11 @@ perf stat -p $! --timeout 1000 -e r12,r13,r1a,r1b,cycles,instructions,branch-mis
 perf stat -p $! --timeout 1000 -e stalled-cycles-frontend,stalled-cycles-backend,cycles,instructions
 
 
+
+perf stat -p $! --timeout 1000 -e cycles,instructions,stalled-cycles-frontend,branch-misses,branches,r12,r13
+perf stat -p $! --timeout 1000 -e cycles,instructions,stalled-cycles-backend,r1a,r1b
+
+
 r8000000000000000,r8000000000000001,r8000000000000004
 
 ~/c/libsdl2/libsdl2-2.30.2+dfsg/debian/build-tests# make -j1 check "testsuiteflags=-j1 --verbose" verbose=1 v=1 &> testlog.txt
@@ -733,6 +733,11 @@ apt-get build-dep mplayer
 cd <package-ver>
 debuild -us -uc
 
+
+systemctl --user stop pulseaudio.service pulseaudio.socket
+systemctl --user disable pulseaudio.service pulseaudio.socket
+systemctl --user mask pulseaudio.service
+/etc/asound.conf
 
 relaxed btb =>
 startup finished in 9.108s (kernel) + 1min 17.848s (userspace) = 1min 26.956s
