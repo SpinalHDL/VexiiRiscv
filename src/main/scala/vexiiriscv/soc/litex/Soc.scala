@@ -219,42 +219,42 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
 
       println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus))
 
-      def debug(that: Data) : Unit = that.addAttribute("mark_debug", "true")
-      def debug[T <: Data](that: spinal.lib.Stream[T]) : Unit = {
-        debug(that.valid)
-        debug(that.ready)
-      }
-      def debug(that: tilelink.Bus) : Unit = {
-        debug(that.a)
-        debug(that.d)
-        if(that.p.withBCE){
-          debug(that.b)
-          debug(that.c)
-          debug(that.e)
-        }
-      }
-      debug(splited.wc.l2.cache.up.bus)
-      debug(splited.wc.l2.cache.up.bus.a.address)
-      debug(splited.wc.l2.cache.down.bus)
-      for(v <- vexiis){
-        debug(v.iBus.bus)
-        debug(v.lsuL1Bus.bus)
-        debug(v.dBus.bus)
-        v.logic.core.host.services.foreach{
-          case p : FetchL1Plugin => {
-            debug(p.logic.events.get.access)
-            debug(p.logic.events.get.miss)
-            debug(p.logic.events.get.waiting)
-            debug(p.logic.refill.onRsp.holdHarts)
-            p.logic.refill.slots.foreach(s => debug(s.valid))
-          }
-          case p: DispatchPlugin => {
-            debug(p.logic.events.get.frontendStall)
-            debug(p.logic.events.get.backendStall)
-          }
-          case _ =>
-        }
-      }
+//      def debug(that: Data) : Unit = that.addAttribute("mark_debug", "true")
+//      def debug[T <: Data](that: spinal.lib.Stream[T]) : Unit = {
+//        debug(that.valid)
+//        debug(that.ready)
+//      }
+//      def debug(that: tilelink.Bus) : Unit = {
+//        debug(that.a)
+//        debug(that.d)
+//        if(that.p.withBCE){
+//          debug(that.b)
+//          debug(that.c)
+//          debug(that.e)
+//        }
+//      }
+//      debug(splited.wc.l2.cache.up.bus)
+//      debug(splited.wc.l2.cache.up.bus.a.address)
+//      debug(splited.wc.l2.cache.down.bus)
+//      for(v <- vexiis){
+//        debug(v.iBus.bus)
+//        debug(v.lsuL1Bus.bus)
+//        debug(v.dBus.bus)
+//        v.logic.core.host.services.foreach{
+//          case p : FetchL1Plugin => {
+//            debug(p.logic.events.get.access)
+//            debug(p.logic.events.get.miss)
+//            debug(p.logic.events.get.waiting)
+//            debug(p.logic.refill.onRsp.holdHarts)
+//            p.logic.refill.slots.foreach(s => debug(s.valid))
+//          }
+//          case p: DispatchPlugin => {
+//            debug(p.logic.events.get.frontendStall)
+//            debug(p.logic.events.get.backendStall)
+//          }
+//          case _ =>
+//        }
+//      }
     }
   }
 
@@ -423,9 +423,9 @@ python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu
 
 # debian 4c perf
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv --cpu-variant=debian --with-jtag-tap  --bus-standard axi-lite \
---vexii-args="--performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 2 --lsu-l1-writeback-count 2 --lsu-l1-store-buffer-slots=2 --stressed-btb --with-store-rs2-late" \
+--vexii-args="--fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2 --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128 --lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --regfile-async --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4" \
 --cpu-count=4 --with-jtag-tap  --with-video-framebuffer --l2-self-flush=40c00000,40dd4c00,1666666  --with-sdcard --with-ethernet --with-coherent-dma --l2-byte=262144  --sys-clk-freq 100000000 \
---update-repo=no --soc-json build/csr.json --build
+--update-repo=no --soc-json build/csr.json --build   --load
 
 --vivado-synth-directive=performanceoptimized --vivado-route-directive=aggressiveexplore
  --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128
