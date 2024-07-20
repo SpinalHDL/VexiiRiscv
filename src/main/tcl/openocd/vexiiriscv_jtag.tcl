@@ -18,7 +18,6 @@ for {set i 0} {$i < $cpu_count} {incr i} {
 
 for {set i 0} {$i < $cpu_count} {incr i} {
     targets $_TARGETNAME.$i
-    riscv expose_csrs 2047
     init
     halt
 }
