@@ -116,7 +116,7 @@ class PrefetchRptPlugin(sets : Int,
       val stride  = STRIDE()
       val score   = SCORE()
       val advance = ADVANCE()
-//      val missed  = Bool()
+      val missed  = Bool()
     }
     val storage = new Area {
       val ram = Mem.fill(sets)(Entry())
@@ -126,7 +126,7 @@ class PrefetchRptPlugin(sets : Int,
 
     val pip = new StagePipeline()
     val insert = new pip.Area(0){
-      arbitrateFrom(lsu.lsuCommitProbe.throwWhen(lsu.lsuCommitProbe.io || lsu.lsuCommitProbe.trap))
+      arbitrateFrom(lsu.lsuCommitProbe.throwWhen(lsu.lsuCommitProbe.io))
       PROBE := lsu.lsuCommitProbe.payload
     }
 
@@ -168,22 +168,23 @@ class PrefetchRptPlugin(sets : Int,
 
       //TODO maybe only start to realocate entries when the new one progress forward ? not sure
       //TODO on failure the score penality may need to be propotionaly reduced.
-      storage.write.valid         := isFiring && !PROBE.trap && !PROBE.prefetchFailed
+      storage.write.valid         := isFiring && !PROBE.prefetchFailed
       storage.write.address       := hashAddress(PROBE.pc)
       storage.write.data.tag      := ENTRY.tag
-      storage.write.data.address  := PROBE.address.resized
+      storage.write.data.address  := PROBE.trap.mux(ENTRY.address, PROBE.address.resized)
       storage.write.data.stride   := (ENTRY.score < scoreOffset).mux[SInt](STRIDE, ENTRY.stride)
       storage.write.data.score    := score
       storage.write.data.advance  := unfiltred.fire.mux(unfiltred.to, advanceSubed).resized
+      storage.write.data.missed   := PROBE.miss || ENTRY.missed && STRIDE_HIT
 
-      unfiltred.valid   := isFiring && (orderAsk && !PROBE.prefetchFailed/* || PROBE.prefetchFailed*/)
+      unfiltred.valid   := isFiring && orderAsk && !PROBE.prefetchFailed && storage.write.data.missed
       unfiltred.address := PROBE.address
       unfiltred.unique  := PROBE.store
       unfiltred.from    := advanceSubed+1
       unfiltred.to      := advanceAllowed.min(blockAheadMax).resized
       unfiltred.stride  := STRIDE.msb.mux(STRIDE min lsu.getBlockSize, STRIDE max lsu.getBlockSize)
 
-      //      when(PROBE.prefetchFailed){
+//      when(PROBE.prefetchFailed){
 //        order.from := 0
 //        order.to := 0
 //      }
@@ -237,58 +238,34 @@ class PrefetchRptPlugin(sets : Int,
 
 /*
 
-L 1x516s 0.60 B/cyc 6817 cyc
-L 1x512s 0.67 B/cyc 6092 cyc
-S 1x512s 0.55 B/cyc 7370 cyc
-L 1x512ms 0.66 B/cyc 6176 cyc
-S 1x512ms 0.55 B/cyc 7362 cyc
-L 1x 2.43 B/cyc 6738 cyc
-L 1x 2.55 B/cyc 6420 cyc
-L 4x 4.55 B/cyc 3594 cyc
-L 16x 3.53 B/cyc 4640 cyc
-L 16x 4.08 B/cyc 16061 cyc
-S 1x 2.63 B/cyc 6226 cyc
-S 4x 2.97 B/cyc 5514 cyc
-S 16x 3.12 B/cyc 20993 cyc
-LLS 4x 1.14 B/cyc 14323 cyc
-L 1x516s 0.62 B/cyc 6562 cyc
-L 1x512s 0.68 B/cyc 6006 cyc
-S 1x512s 0.55 B/cyc 7361 cyc
-L 1x512ms 0.67 B/cyc 6033 cyc
-S 1x512ms 0.51 B/cyc 7915 cyc
-L 1x 2.48 B/cyc 6583 cyc
-L 1x 2.54 B/cyc 6426 cyc
-L 4x 4.63 B/cyc 3536 cyc
-L 16x 3.59 B/cyc 4559 cyc
-L 16x 4.07 B/cyc 16090 cyc
-S 1x 2.63 B/cyc 6212 cyc
-S 4x 2.96 B/cyc 5527 cyc
-S 16x 2.99 B/cyc 21865 cyc
-LLS 4x 1.18 B/cyc 13827 cyc
-
-L 1x516s 0.62 B/cyc 6526 cyc
-L 1x512s 0.67 B/cyc 6035 cyc
-S 1x512s 0.55 B/cyc 7380 cyc
-L 1x512ms 0.66 B/cyc 6198 cyc
-S 1x512ms 0.55 B/cyc 7323 cyc
-L 1x 2.45 B/cyc 6679 cyc
-L 1x 2.55 B/cyc 6412 cyc
-L 4x 4.51 B/cyc 3626 cyc
-L 16x 3.55 B/cyc 4615 cyc
-L 16x 4.05 B/cyc 16156 cyc
-S 1x 2.63 B/cyc 6208 cyc
-S 4x 2.95 B/cyc 5543 cyc
-S 16x 2.89 B/cyc 22635 cyc
-LLS 4x 1.14 B/cyc 14303 cyc
-L 1x516s 0.21 B/cyc 19077 cyc
-L 1x512s 0.21 B/cyc 18980 cyc
-S 1x512s 0.50 B/cyc 8034 cyc
-L 1x512ms 0.21 B/cyc 18946 cyc
-S 1x512ms 0.50 B/cyc 8032 cyc
-L 1x 1.09 B/cyc 14920 cyc
+L 1x416s 0.67 B/cyc 6035 cyc
+L 1x512s 0.67 B/cyc 6099 cyc
+L 1x512ms 0.68 B/cyc 6020 cyc
+L 1x 2.53 B/cyc 6460 cyc
+L 1x 2.58 B/cyc 6337 cyc
+L 4x 4.75 B/cyc 3447 cyc
+L 16x 3.71 B/cyc 4408 cyc
+L 16x 3.73 B/cyc 17532 cyc
+S 1x512s 0.55 B/cyc 7379 cyc
+S 1x512ms 0.52 B/cyc 7850 cyc
+S 1x 2.63 B/cyc 6210 cyc
+S 4x 3.17 B/cyc 5163 cyc
+S 16x 3.18 B/cyc 20572 cyc
+LLS 4x 1.14 B/cyc 14352 cyc
+L 1x416s 0.21 B/cyc 19075 cyc
+L 1x512s 0.21 B/cyc 18986 cyc
+L 1x512ms 0.21 B/cyc 18951 cyc
+L 1x 1.09 B/cyc 14895 cyc
 L 1x 1.10 B/cyc 14891 cyc
-L 4x 1.38 B/cyc 11837 cyc
-L 16x 1.48 B/cyc 11055 cyc
+L 4x 1.38 B/cyc 11834 cyc
+L 16x 1.48 B/cyc 11059 cyc
+L 16x 1.48 B/cyc 44079 cyc
+S 1x512s 0.50 B/cyc 8035 cyc
+S 1x512ms 0.50 B/cyc 8036 cyc
+S 1x 2.64 B/cyc 6203 cyc
+S 4x 2.51 B/cyc 6504 cyc
+S 16x 2.61 B/cyc 25070 cyc
+LLS 4x 0.62 B/cyc 26353 cyc
 
 https://zsmith.co/bandwidth.php
 
