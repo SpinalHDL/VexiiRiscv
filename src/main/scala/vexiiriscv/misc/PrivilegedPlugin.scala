@@ -257,7 +257,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val nmip      = False
           val mprven    = True
           val cause     = RegInit(U"000")
-          val stoptime  = RegInit(False)
+          val stoptime  = RegInit(True)
           val stopcount = RegInit(False)
           val stepie    = RegInit(False) //TODO
           val ebreaku   = p.withUser generate RegInit(False)
