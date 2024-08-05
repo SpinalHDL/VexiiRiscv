@@ -18,7 +18,7 @@ case class PrefetchCmd() extends Bundle {
 case class LsuCommitProbe() extends Bundle {
   val pc = Global.PC()
   val address = LsuL1.MIXED_ADDRESS()
-  val load, store, trap, io, prefetchFailed = Bool()
+  val load, store, trap, io, prefetchFailed, miss = Bool()
 }
 
 
@@ -116,6 +116,7 @@ class PrefetchRptPlugin(sets : Int,
       val stride  = STRIDE()
       val score   = SCORE()
       val advance = ADVANCE()
+//      val missed  = Bool()
     }
     val storage = new Area {
       val ram = Mem.fill(sets)(Entry())
@@ -161,28 +162,28 @@ class PrefetchRptPlugin(sets : Int,
       sub := 0
       val score = ENTRY.score -| sub +| add //not great
 
-      val advanceSubed = (ENTRY.advance -| U(NEW_BLOCK))
+      val advanceSubed = (ENTRY.advance.andMask(!PROBE.trap) -| U(NEW_BLOCK))
       val advanceAllowed = (ENTRY.score -| scoreOffset) >> scoreShift
       val orderAsk = False
 
       //TODO maybe only start to realocate entries when the new one progress forward ? not sure
       //TODO on failure the score penality may need to be propotionaly reduced.
-      storage.write.valid   := isFiring && !PROBE.trap && !PROBE.prefetchFailed
-      storage.write.address := hashAddress(PROBE.pc)
+      storage.write.valid         := isFiring && !PROBE.trap && !PROBE.prefetchFailed
+      storage.write.address       := hashAddress(PROBE.pc)
       storage.write.data.tag      := ENTRY.tag
       storage.write.data.address  := PROBE.address.resized
       storage.write.data.stride   := (ENTRY.score < scoreOffset).mux[SInt](STRIDE, ENTRY.stride)
       storage.write.data.score    := score
       storage.write.data.advance  := unfiltred.fire.mux(unfiltred.to, advanceSubed).resized
 
-      unfiltred.valid   := isFiring && (orderAsk/* || PROBE.prefetchFailed*/)
+      unfiltred.valid   := isFiring && (orderAsk && !PROBE.prefetchFailed/* || PROBE.prefetchFailed*/)
       unfiltred.address := PROBE.address
       unfiltred.unique  := PROBE.store
-      unfiltred.from := advanceSubed+1
-      unfiltred.to := advanceAllowed.min(blockAheadMax).resized
-      unfiltred.stride := STRIDE.msb.mux(STRIDE min lsu.getBlockSize, STRIDE max lsu.getBlockSize)
+      unfiltred.from    := advanceSubed+1
+      unfiltred.to      := advanceAllowed.min(blockAheadMax).resized
+      unfiltred.stride  := STRIDE.msb.mux(STRIDE min lsu.getBlockSize, STRIDE max lsu.getBlockSize)
 
-//      when(PROBE.prefetchFailed){
+      //      when(PROBE.prefetchFailed){
 //        order.from := 0
 //        order.to := 0
 //      }
@@ -235,6 +236,35 @@ class PrefetchRptPlugin(sets : Int,
 
 
 /*
+
+L 1x516s 0.60 B/cyc 6817 cyc
+L 1x512s 0.67 B/cyc 6092 cyc
+S 1x512s 0.55 B/cyc 7370 cyc
+L 1x512ms 0.66 B/cyc 6176 cyc
+S 1x512ms 0.55 B/cyc 7362 cyc
+L 1x 2.43 B/cyc 6738 cyc
+L 1x 2.55 B/cyc 6420 cyc
+L 4x 4.55 B/cyc 3594 cyc
+L 16x 3.53 B/cyc 4640 cyc
+L 16x 4.08 B/cyc 16061 cyc
+S 1x 2.63 B/cyc 6226 cyc
+S 4x 2.97 B/cyc 5514 cyc
+S 16x 3.12 B/cyc 20993 cyc
+LLS 4x 1.14 B/cyc 14323 cyc
+L 1x516s 0.62 B/cyc 6562 cyc
+L 1x512s 0.68 B/cyc 6006 cyc
+S 1x512s 0.55 B/cyc 7361 cyc
+L 1x512ms 0.67 B/cyc 6033 cyc
+S 1x512ms 0.51 B/cyc 7915 cyc
+L 1x 2.48 B/cyc 6583 cyc
+L 1x 2.54 B/cyc 6426 cyc
+L 4x 4.63 B/cyc 3536 cyc
+L 16x 3.59 B/cyc 4559 cyc
+L 16x 4.07 B/cyc 16090 cyc
+S 1x 2.63 B/cyc 6212 cyc
+S 4x 2.96 B/cyc 5527 cyc
+S 16x 2.99 B/cyc 21865 cyc
+LLS 4x 1.18 B/cyc 13827 cyc
 
 L 1x516s 0.62 B/cyc 6526 cyc
 L 1x512s 0.67 B/cyc 6035 cyc

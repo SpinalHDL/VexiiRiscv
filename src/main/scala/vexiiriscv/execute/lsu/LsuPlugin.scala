@@ -792,6 +792,7 @@ class LsuPlugin(var layer : LaneLayer,
       commitProbe.load := l1.LOAD
       commitProbe.store := l1.STORE
       commitProbe.trap := lsuTrap
+      commitProbe.miss := l1.MISS && !l1.HAZARD && !mmuFailure
       commitProbe.io := IO
       commitProbe.prefetchFailed := FROM_PREFETCH
       commitProbe.pc := Global.PC
