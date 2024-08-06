@@ -33,6 +33,7 @@ class MulPlugin(val layer : LaneLayer,
                 var splitWidthA : Int = 17,
                 var splitWidthB : Int = 17,
                 var useRsUnsignedPlugin : Boolean = false,
+                var keepMulSrc : Boolean = false,
                 var bufferedHigh : Option[Boolean] = None) extends ExecutionUnitElementSimple(layer) with MulReuse {
   import MulPlugin._
 
@@ -96,8 +97,10 @@ class MulPlugin(val layer : LaneLayer,
         case false => {
           MUL_SRC1 := (RS1_SIGNED && rs1.msb) ## (rs1)
           MUL_SRC2 := (RS2_SIGNED && rs2.msb) ## (rs2)
-          KeepAttribute(apply(MUL_SRC1))
-          KeepAttribute(apply(MUL_SRC2))
+          if(keepMulSrc) {
+            KeepAttribute(apply(MUL_SRC1))
+            KeepAttribute(apply(MUL_SRC2))
+          }
         }
         case true => {
           MUL_SRC1 := RS1_UNSIGNED.asBits
