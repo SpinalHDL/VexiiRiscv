@@ -51,10 +51,10 @@ class PrefetchRptPlugin(sets : Int,
                         blockAheadMax: Int = 4,
                         scoreMax: Int = 31,
                         scorePass: Int = 1,
-                        scoreFail: Int = 2,
+                        scoreFailShift: Int = 1,
                         scoreConflict: Int = 2,
-                        scoreOffset: Int = 4,
-                        scoreShift: Int = 1) extends PrefetcherPlugin  with InitService {
+                        scoreOffset: Int = 3,
+                        scoreShift: Int = 0) extends PrefetcherPlugin  with InitService {
 
   override def initHold(): Bool = bootMemClear.mux(logic.initializer.busy, False)
 
@@ -202,7 +202,7 @@ class PrefetchRptPlugin(sets : Int,
         }
       } otherwise {
         when(!STRIDE_HIT){
-          sub := scoreFail
+          sub := ENTRY.score |>> scoreFailShift
           advanceSubed := 0
         } otherwise {
           when(NEW_BLOCK){
