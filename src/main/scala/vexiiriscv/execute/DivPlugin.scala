@@ -26,7 +26,7 @@ class DivPlugin(val layer : LaneLayer,
                 var relaxedInputs: Boolean,
                 var impl : (Int, Int, Boolean) => DivComp,
                 var divAt: Int = 0,
-                var writebackAt : Int = 0,
+                var writebackAt : Int = 1,
                 var radix: Int = 2,
                 var area: Boolean = true) extends ExecutionUnitElementSimple(layer) with DivReuse {
   import DivPlugin._
