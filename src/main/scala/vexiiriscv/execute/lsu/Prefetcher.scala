@@ -169,7 +169,7 @@ class PrefetchRptPlugin(sets : Int,
       sub := 0
       val score = ENTRY.score -| sub +| add //not great
 
-      val advanceSubed = (ENTRY.advance.andMask(!PROBE.trap) -| U(NEW_BLOCK))
+      val advanceSubed = (ENTRY.advance.andMask(!PROBE.miss) -| U(NEW_BLOCK))
       val advanceAllowed = (ENTRY.score -| scoreOffset) >> scoreShift
       val orderAsk = False
 
@@ -240,34 +240,20 @@ class PrefetchRptPlugin(sets : Int,
 
 /*
 
-L 1x416s 0.67 B/cyc 6035 cyc
-L 1x512s 0.67 B/cyc 6099 cyc
-L 1x512ms 0.68 B/cyc 6020 cyc
-L 1x 2.53 B/cyc 6460 cyc
-L 1x 2.58 B/cyc 6337 cyc
-L 4x 4.75 B/cyc 3447 cyc
-L 16x 3.71 B/cyc 4408 cyc
-L 16x 3.73 B/cyc 17532 cyc
-S 1x512s 0.55 B/cyc 7379 cyc
-S 1x512ms 0.52 B/cyc 7850 cyc
-S 1x 2.63 B/cyc 6210 cyc
-S 4x 3.17 B/cyc 5163 cyc
-S 16x 3.18 B/cyc 20572 cyc
-LLS 4x 1.14 B/cyc 14352 cyc
-L 1x416s 0.21 B/cyc 19075 cyc
-L 1x512s 0.21 B/cyc 18986 cyc
-L 1x512ms 0.21 B/cyc 18951 cyc
-L 1x 1.09 B/cyc 14895 cyc
-L 1x 1.10 B/cyc 14891 cyc
-L 4x 1.38 B/cyc 11834 cyc
-L 16x 1.48 B/cyc 11059 cyc
-L 16x 1.48 B/cyc 44079 cyc
-S 1x512s 0.50 B/cyc 8035 cyc
-S 1x512ms 0.50 B/cyc 8036 cyc
-S 1x 2.64 B/cyc 6203 cyc
-S 4x 2.51 B/cyc 6504 cyc
-S 16x 2.61 B/cyc 25070 cyc
-LLS 4x 0.62 B/cyc 26353 cyc
+L 1x416s 0.74 B/cyc 5513 cyc
+L 1x512s 0.77 B/cyc 5272 cyc
+L 1x512ms 0.78 B/cyc 5248 cyc
+L 1x 2.55 B/cyc 6417 cyc
+L 1x 2.60 B/cyc 6293 cyc
+L 4x 4.86 B/cyc 3368 cyc
+L 16x 5.52 B/cyc 2963 cyc
+L 16x 6.82 B/cyc 9605 cyc
+S 1x512s 0.64 B/cyc 6329 cyc
+S 1x512ms 0.65 B/cyc 6285 cyc
+S 1x 2.64 B/cyc 6202 cyc
+S 4x 3.21 B/cyc 5092 cyc
+S 16x 3.55 B/cyc 18433 cyc
+LLS 4x 1.33 B/cyc 12246 cyc
 
 https://zsmith.co/bandwidth.php
 
