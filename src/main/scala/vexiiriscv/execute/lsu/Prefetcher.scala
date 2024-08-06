@@ -43,8 +43,10 @@ class PrefetchNextLinePlugin extends PrefetcherPlugin {
 class PrefetchRptPlugin(sets : Int,
                         bootMemClear : Boolean,
                         readAt : Int = 0,
-                        tagAt: Int = 2,
+                        tagAt: Int = 1,
                         ctrlAt: Int = 2,
+                        addAt: Int = 1,
+                        prefetchAt: Int = 1,
                         tagWidth: Int = 15,
                         addressWidth: Int = 16,
                         strideWidth: Int = 12,
@@ -91,16 +93,26 @@ class PrefetchRptPlugin(sets : Int,
 
     val order = Stream(PrefetchPacked())
     val queued = order.queue(4, latency = 1).combStage()
-    val serialized = Stream(PrefetchCmd())
     val counter = Reg(ADVANCE) init(0)
     val advanceAt = (queued.from + counter)
     val done = advanceAt === queued.to
-    queued.ready := serialized.ready && done
-    serialized.valid := queued.valid
-    serialized.address := U(S(queued.address) + advanceAt.intoSInt * queued.stride)
-    serialized.unique := queued.unique
-    counter := (counter + U(serialized.fire)).andMask(!queued.ready)
-    io << serialized.stage()
+    val pip2 = new StagePipeline(){
+      node(0).arbitrateFrom(queued.forkSerial(done))
+      counter := (counter + U(node(0).isFiring)).andMask(!queued.ready)
+      val CMD = node(0).insert(queued.payload)
+      val MUL = node(0).insert(advanceAt.intoSInt * queued.stride)
+      val adder = new Area(addAt){
+        val ADDR = insert(U(S(CMD.address) + MUL))
+      }
+      val result = new Area(prefetchAt){
+        val serialized = Stream(PrefetchCmd())
+        arbitrateTo(io)
+        io.get.address := adder.ADDR
+        io.get.unique := CMD.unique
+      }
+    }
+    pip2.build()
+
 
     //Dispatch throttling to ensure some prefetching goes through when the instruction stream is very heavy in load/store
     dp.haltDispatchWhen(RegNext(!order.ready) init(False))
@@ -149,11 +161,6 @@ class PrefetchRptPlugin(sets : Int,
     val onCtrl = new pip.Area(ctrlAt){
       STRIDE_HIT := STRIDE === ENTRY.stride // may need a few additional bits from the address to avoid aliasing
 
-      val filter = new Area{
-        def sample[T <: Data](that : T) : T = RegNextWhen(that, order.fire)
-        val entryLast = sample(order.payload)
-        val hit = (entryLast.address ^ order.address) >> log2Up(lsu.getBlockSize) === 0
-      }
       val unfiltred = cloneOf(order)
       order << unfiltred //.throwWhen(filter.hit)
 
@@ -184,11 +191,6 @@ class PrefetchRptPlugin(sets : Int,
       unfiltred.to      := advanceAllowed.min(blockAheadMax).resized
       unfiltred.stride  := STRIDE.msb.mux(STRIDE min lsu.getBlockSize, STRIDE max lsu.getBlockSize)
 
-//      when(PROBE.prefetchFailed){
-//        order.from := 0
-//        order.to := 0
-//      }
-
       when(!TAG_HIT){
         when(STRIDE =/= 0) {
           when(ENTRY.score =/= 0) {
@@ -209,7 +211,7 @@ class PrefetchRptPlugin(sets : Int,
             add := scorePass
           }
         }
-        when(advanceSubed < blockAheadMax && advanceSubed < advanceAllowed /*&& !filter.hit*/){
+        when(advanceSubed < blockAheadMax && advanceSubed < advanceAllowed){
           orderAsk := True
         }
       }
