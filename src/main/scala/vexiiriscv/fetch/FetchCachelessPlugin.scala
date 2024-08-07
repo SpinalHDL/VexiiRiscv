@@ -120,7 +120,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       BUFFER_ID := buffer.reserveId
 
       val PMA_FAULT = insert(onPma.RSP.fault)
-      when(tpk.REDO || PMA_FAULT) {
+      when(tpk.HAZARD || tpk.REFILL || PMA_FAULT) {
         halted.valid := False
       }otherwise {
         when(up.isMoving) {
@@ -172,10 +172,15 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
       trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
-      when(tpk.REDO){
+      when(tpk.REFILL) {
         TRAP := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
+      }
+      when(tpk.HAZARD) {
+        TRAP := True
+        trapPort.exception := False
+        trapPort.code := TrapReason.REDO
       }
 
       TRAP.clearWhen(!isValid || haltIt)

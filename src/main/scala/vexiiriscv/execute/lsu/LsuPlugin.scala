@@ -657,10 +657,15 @@ class LsuPlugin(var layer : LaneLayer,
 
         trapPort.arg(0, 2 bits) := STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
         trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
-        when(tpk.REDO) {
+        when(tpk.REFILL) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.MMU_REFILL
+        }
+        when(tpk.HAZARD) {
+          lsuTrap := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.REDO
         }
 
         when(preCtrl.MISS_ALIGNED) {
@@ -719,7 +724,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       val mmuNeeded = FROM_LSU || FROM_PREFETCH
-      val mmuFailure = mmuPageFault || tpk.ACCESS_FAULT || tpk.REDO
+      val mmuFailure = mmuPageFault || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD
 
       val abords, skipsWrite = ArrayBuffer[Bool]()
       abords += l1.HAZARD

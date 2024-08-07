@@ -58,7 +58,8 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
       import node._
       import spec.rsp.keys._
 
-      REDO := False
+      REFILL := False
+      HAZARD := False
       TRANSLATED := spec.preAddress.resized //PC RESIZED
       ALLOW_EXECUTE := True
       ALLOW_READ := True

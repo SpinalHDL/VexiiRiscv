@@ -290,7 +290,8 @@ class MmuPlugin(var spec : MmuSpec,
 
         import ps.rsp.keys._
         when(requireMmuLockup) {
-          REDO          := !hit
+          HAZARD        := False
+          REFILL        := !hit
           TRANSLATED    := lineTranslated
           ALLOW_EXECUTE := lineAllowExecute && !(lineAllowUser && isSupervisor)
           ALLOW_READ    := lineAllowRead || status.mxr && lineAllowExecute
@@ -298,7 +299,8 @@ class MmuPlugin(var spec : MmuSpec,
           PAGE_FAULT    := lineAllowUser && isSupervisor && !status.sum || !lineAllowUser && isUser
           ACCESS_FAULT  := False
         } otherwise {
-          REDO          := False
+          HAZARD        := False
+          REFILL        := False
           TRANSLATED    := ps.preAddress.resized
           ALLOW_EXECUTE := True
           ALLOW_READ    := True
