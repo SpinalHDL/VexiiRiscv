@@ -1,6 +1,8 @@
 package vexiiriscv.scratchpad
 
 import spinal.core._
+import spinal.core.fiber.Fiber
+import spinal.core.internals.{MemTopology, PhaseContext, PhaseMemBlackboxing}
 import spinal.lib.{OHMux, StreamFifo}
 import spinal.lib.eda.bench.{AlteraStdTargets, Bench, EfinixStdTargets, Rtl, Target, XilinxStdTargets}
 import vexiiriscv.compat.MultiPortWritesSymplifier
@@ -13,12 +15,25 @@ object IntegrationSynthBench extends App{
   LutInputs.set(6)
 
   val sc = SpinalConfig()
+  sc.memBlackBoxers += new PhaseMemBlackboxing{
+    override def doBlackboxing(pc: PhaseContext, typo: MemTopology): Unit = {
+      if(typo.readsAsync.size != 0){
+        typo.mem.addAttribute("ramstyle","MLAB, no_rw_check")
+      }
+    }
+  }
   val rtls = ArrayBuffer[Rtl]()
 
   def add(paramGen : => ParamSimple, name : String) = {
     rtls += Rtl(sc.generateVerilog {
       val param = paramGen
-      Rtl.ffIo(VexiiRiscv(ParamSimple.setPma(param.plugins())).setDefinitionName(if(name.isEmpty) param.getName() else name.replace(" ", "_")))
+      val cpu = VexiiRiscv(ParamSimple.setPma(param.plugins())).setDefinitionName(if(name.isEmpty) param.getName() else name.replace(" ", "_"))
+      Fiber patch {
+        Rtl.compactInputs(cpu)
+        Rtl.ffIo(cpu)
+        Rtl.xorOutputs(cpu)
+      }
+      cpu
     })
   }
 
@@ -677,8 +692,7 @@ object IntegrationSynthBench extends App{
     withRvf = true
     withRvd = true
     fpuFmaFullAccuracy = false
-
-
+    fpuIgnoreSubnormal = false
   }
 
   def debianTweeked(name : String)(body : ParamSimple => Unit) : Unit = {
@@ -697,7 +711,13 @@ object IntegrationSynthBench extends App{
           p.probeIdWidth = log2Up(p.writebackCount)
         case _ =>
       }
-      Rtl.ffIo(VexiiRiscv(plugins).setDefinitionName(name))
+     val cpu = VexiiRiscv(plugins).setDefinitionName(name)
+      Fiber patch{
+        Rtl.compactInputs(cpu)
+        Rtl.ffIo(cpu)
+        Rtl.xorOutputs(cpu)
+      }
+      cpu
     })
   }
 
@@ -707,25 +727,43 @@ object IntegrationSynthBench extends App{
 //    param.allowBypassFrom = 100
 //  }
 //
-  debianTweeked("vexii_debian_nofpu") { param =>
-    param.withRvf = false
-    param.withRvd = false
-  }
+//  debianTweeked("vexii_debian_nofpu") { param =>
+//    param.withRvf = false
+//    param.withRvd = false
 //
+//  }
+
 //
 //  debianTweeked("vexii_debian_nobp") { param =>
 //    param.allowBypassFrom = 100
 //  }
 
-  debianTweeked("vexii_debian"){param =>
+//  debianTweeked("vexii_debian"){param =>
+//
+//  }
+//
+//  debianTweeked("vexii_debian_ignoreSubnormal") { param =>
+//    param.fpuIgnoreSubnormal = true
+//  }
+//
 
+  debianTweeked("vexii_debian_rv32_nofpu") { param =>
+    param.xlen = 32
+    param.withRvf = false
+    param.withRvd = false
+    param.withMul = false
+    param.withMmu = false
   }
 
-  debianTweeked("vexii_debian_ignoreSubnormal") { param =>
-    param.fpuIgnoreSubnormal = true
-  }
+  //
+  //  debianTweeked("vexii_debian_nobp") { param =>
+  //    param.allowBypassFrom = 100
+  //  }
 
-
+//  debianTweeked("vexii_debian_rv32") { param =>
+//    param.xlen = 32
+//    param.withRvd = false
+//  }
 
 //
 //  debianTweeked("vexii_debian_no_fpu_dual_issue") { param =>
@@ -774,14 +812,35 @@ object IntegrationSynthBench extends App{
 
 
   val targets = ArrayBuffer[Target]()
-  targets ++=  XilinxStdTargets(withFMax = false, withArea = true)
-//  targets ++= AlteraStdTargets()
-//  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
+  targets ++=  XilinxStdTargets(withFMax = true, withArea = false)
+  targets ++= AlteraStdTargets(
+    quartusCycloneIIPath = null,
+    quartusCycloneIVPath = null,
+    quartusCycloneVPath = null
+  )
+  targets ++= EfinixStdTargets(withFMax = true, withArea = false)
 
   Bench(rtls, targets)
 }
 
 /*
+
+nothing ->
+Artix 7 -> 205 Mhz 1279 LUT 1847 FF
+Agilex V -> 276 Mhz 1,212 ALMs
+vexii_debian_nofpu ->
+Artix 7 -> 160 Mhz 7432 LUT 7073 FF
+Agilex V -> 195 Mhz 6,249 ALMs
+vexii_debian ->
+Artix 7 -> 151 Mhz 12463 LUT 9974 FF
+Agilex V -> 171 Mhz 11,991 ALMs
+vexii_debian_rv32_nofpu ->
+Artix 7 -> 161 Mhz 5450 LUT 5581 FF
+Agilex V -> 199 Mhz 4,380 ALMs
+vexii_debian_rv32 ->
+Artix 7 -> 168 Mhz 8053 LUT 7019 FF
+Agilex V -> 182 Mhz 7,434 ALMs
+
 
 vexii_debian ->
 Artix 7 -> 71 Mhz 11397 LUT 7959 FF
