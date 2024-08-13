@@ -42,7 +42,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
   }
 
   def unpackingDone(at : Int) : Bool = at match {
-    case unpackAt => logic.unpackDone
+    case `unpackAt` => logic.unpackDone
     case _ => True
   }
 
