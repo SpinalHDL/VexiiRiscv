@@ -1,5 +1,12 @@
 val spinalVersion = "dev"
 val spinalHdlFromSource = sys.env.getOrElse("SPINALHDL_FROM_SOURCE", "1") == "1"
+val spinalHdlPath = new File(sys.env.getOrElse("SPINALHDL_PATH", {
+  if (new File("..").getCanonicalFile.getName == "ext" && new File("../SpinalHDL").exists()) {
+    "../SpinalHDL"
+  } else {
+    "ext/SpinalHDL"
+  }
+})).getAbsolutePath
 
 def rootGen() = {
   var ret = (project in file(".")).settings(
@@ -8,7 +15,7 @@ def rootGen() = {
       scalaVersion := "2.12.18",
       version := "2.0.0"
     )),
-    scalacOptions += s"-Xplugin:${new File(baseDirectory.value + s"/ext/SpinalHDL/idslplugin/target/scala-2.12/spinalhdl-idsl-plugin_2.12-$spinalVersion.jar")}",
+    scalacOptions += s"-Xplugin:${new File(spinalHdlPath + s"/idslplugin/target/scala-2.12/spinalhdl-idsl-plugin_2.12-$spinalVersion.jar")}",
     scalacOptions += s"-Xplugin-require:idsl-plugin",
     scalacOptions += "-language:reflectiveCalls",
     libraryDependencies ++= Seq(
@@ -32,9 +39,9 @@ def rootGen() = {
 }
 
 lazy val root = rootGen()
-lazy val spinalHdlIdslPlugin = ProjectRef(file("ext/SpinalHDL"), "idslplugin")
-lazy val spinalHdlSim = ProjectRef(file("ext/SpinalHDL"), "sim")
-lazy val spinalHdlCore = ProjectRef(file("ext/SpinalHDL"), "core")
-lazy val spinalHdlLib = ProjectRef(file("ext/SpinalHDL"), "lib")
+lazy val spinalHdlIdslPlugin = ProjectRef(file(spinalHdlPath), "idslplugin")
+lazy val spinalHdlSim = ProjectRef(file(spinalHdlPath), "sim")
+lazy val spinalHdlCore = ProjectRef(file(spinalHdlPath), "core")
+lazy val spinalHdlLib = ProjectRef(file(spinalHdlPath), "lib")
 
 fork := true
