@@ -275,8 +275,7 @@ class LsuPlugin(var layer : LaneLayer,
       val arbiter = StreamArbiterFactory().transactionLock.lowerFirst.buildOn(invalidationPorts.map(_.cmd))
       val cmdCounter = Reg(UInt(log2Up(l1.SETS) + 1 bits))
       val inflight = (addressAt+1 to ctrlAt).map(elp.execute).map(e => e(l1.SEL) && e(l1.FLUSH)).orR
-
-      val waiter = Reg(l1.WRITEBACK_BUSY.get)
+      val waiter = Reg(cloneOf(l1.WRITEBACK_BUSY.get))
 
       IDLE.whenIsActive{
         cmdCounter := 0
