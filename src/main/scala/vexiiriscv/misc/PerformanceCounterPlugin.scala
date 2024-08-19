@@ -88,7 +88,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     }
 
     val dummyCsrs = for(hpmId <- 3+additionalCounterCount to 31;
-                        csrId <- List(CSR.MHPMCOUNTER0, CSR.UHPMCOUNTER0, CSR.MHPMEVENT0) ++ (if(withHigh)List(CSR.MHPMCOUNTER0H, CSR.UHPMCOUNTER0H) else Nil)) yield csrId + hpmId
+                        csrId <- List(CSR.MHPMCOUNTER0, CSR.UHPMCOUNTER0, CSR.MHPMEVENT0) ++ (if(withHigh)List(CSR.MHPMCOUNTER0H, CSR.UHPMCOUNTER0H, CSR.MHPMEVENT0H) else Nil)) yield csrId + hpmId
     csr.allowCsr(CsrListFilter(dummyCsrs)) //As read zero
 
 
@@ -141,6 +141,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
         counter.value := counter.value + incr
       }
       csr.readWrite(CSR.MHPMEVENT0 + id, 0 -> eventId)
+      if(withHigh) csr.allowCsr(CSR.MHPMEVENT0H + id)
       val eb = CSR.MHPMEVENT0 + id
       val eo = Riscv.XLEN.get match {
         case 32 => 32
