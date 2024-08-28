@@ -1,11 +1,15 @@
 package vexiiriscv.soc.litex
 
-import spinal.core.fiber.Fiber
+import spinal.core.fiber.{Fiber, hardFork}
 import spinal.core._
 import spinal.core.blackboxByteEnables.generateUnblackboxableError
 import spinal.core.internals.MemTopology
+import spinal.core.sim.SimDataPimper
+import spinal.lib.bus.amba4.axi.sim.{Axi4ReadOnlyMonitor, Axi4ReadOnlySlaveAgent, Axi4WriteOnlyMonitor, Axi4WriteOnlySlaveAgent}
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4SpecRenamer, Axi4ToTilelinkFiber}
 import spinal.lib.bus.amba4.axilite.AxiLite4SpecRenamer
+import spinal.lib.bus.amba4.axilite.sim.{AxiLite4ReadOnlySlaveAgent, AxiLite4WriteOnlySlaveAgent}
+import spinal.lib.bus.misc.args.{PeriphSpecs, PeriphTilelinkFiber}
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
@@ -13,9 +17,11 @@ import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.eda.bench.{Bench, Rtl}
+import spinal.lib.graphic.vga.{TilelinkVgaCtrlFiber, TilelinkVgaCtrlSpec, Vga}
 import spinal.lib.misc.{PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
-import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, slave}
+import spinal.lib.sim.SparseMemory
+import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, memPimped, slave}
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
 import vexiiriscv.ParamSimple
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
@@ -25,6 +31,9 @@ import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 import vexiiriscv.soc.demo.DebugModuleSocFiber
 
+import java.awt.{Dimension, Graphics}
+import java.awt.image.BufferedImage
+import javax.swing.{JFrame, JPanel, WindowConstants}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
@@ -52,7 +61,34 @@ class SocConfig(){
   var litedramWidth = 32
   var withAxi3 = false
   var selfFlush : SelfFLush = null
-//  var sharedBusWidth = 32
+  val periph = new PeriphSpecs
+  val video = ArrayBuffer[TilelinkVgaCtrlSpec]()
+
+  def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
+    import parser._
+    vexiiParam.addOptions(parser)
+    periph.addOptions(parser)
+    TilelinkVgaCtrlSpec.addOption(parser, video)
+    opt[Int]("litedram-width") action { (v, c) => litedramWidth = v }
+    //    opt[Seq[String]]("l2-self-flush") action { (v, c) => selfFlush = coherent.SelfFLush(BigInt(v(0)), BigInt(v(1)), BigInt(v(2))) }
+    opt[Seq[String]]("l2-self-flush") action { (v, c) =>
+      selfFlush = coherent.SelfFLush(BigInt(v(0), 16), BigInt(v(1), 16), BigInt(v(2)))
+    }
+    opt[Int]("cpu-count") action { (v, c) => cpuCount = v }
+    opt[Int]("l2-bytes") action { (v, c) => l2Bytes = v }
+    opt[Int]("l2-ways") action { (v, c) => l2Ways = v }
+    opt[Unit]("with-dma") action { (v, c) => withDma = true }
+    opt[Unit]("with-axi3") action { (v, c) => withAxi3 = true }
+    opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
+    opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
+    opt[Seq[String]]("memory-region") unbounded() action { (v, c) =>
+      assert(v.length == 4, "--memory-region need 4 parameters")
+      val r = new LitexMemoryRegion(SizeMapping(BigInt(v(0)), BigInt(v(1))), v(2), v(3))
+      regions += r
+      assert(!(r.onMemory && !r.isCachable), s"Region $r isn't supported by VexiiRiscv, data cache will always cache memory")
+    }
+  }
+
   def withL2 = l2Bytes > 0
 }
 
@@ -87,6 +123,27 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
       }
     }
 
+    val video = for(spec <- c.video) yield new Area{
+      setName(spec.name)
+      val cd = ClockDomain.external(spec.name, withReset = false)
+      val resetCtrl = cd(new ResetCtrlFiber())
+      resetCtrl.addSyncRelaxedReset(ClockDomain.current.isResetActive, HIGH)
+      spec.param.dmaParam.dataWidth = mainDataWidth
+      val ctrl = new TilelinkVgaCtrlFiber(spec.param, resetCtrl.cd)
+
+      val phy = Fiber build new Area{
+        setName(spec.name)
+        val vga = ctrl.logic.ctrl.io.vga
+        vga.simPublic()
+        val vSync, hSync, colorEn = out(Bool())
+        val color = out Bits(16 bits)
+
+        vSync := vga.vSync
+        hSync := vga.hSync
+        colorEn := vga.colorEn
+        color := vga.color.asBits
+      }
+    }
 
     val peripheral = new Area {
       val bus = Node()
@@ -108,6 +165,8 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
           node.flag := port(i)
         }
       }
+
+      val fromArgs = new PeriphTilelinkFiber(periph, bus, plic)
 
       for (vexii <- vexiis) {
         vexii.bind(clint)
@@ -155,6 +214,8 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
 
     val splited = vexiiParam.lsuL1Enable generate new Area{
       val mBus = Node()
+      mBus.forceDataWidth(mainDataWidth)
+
       ioBus.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.NONE)
       if(withMem) mem.toAxi4.up << mBus
       peripheral.bus << mBus
@@ -174,6 +235,8 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
           ioBus << List(vexii.dBus)
         }
 
+        for (video <- video) cBus << video.ctrl.dma
+
         if(withDma) cBus << dma.filter.down
 
         val hub = (withCoherency && !withL2) generate new Area {
@@ -189,6 +252,7 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
           cache.parameter.cacheWays = l2Ways
           cache.parameter.cacheBytes = l2Bytes
           cache.parameter.selfFlush = selfFlush
+
           cache.up << cBus
           cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
           cache.down.setDownConnection(d = StreamPipe.S2M)
@@ -203,9 +267,7 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
 
     val patcher = Fiber build new AreaRoot {
       val mBus = withMem generate Axi4SpecRenamer(master(mem.toAxi4.down.expendId(8)))
-      if(withAxi3){
 
-      }
       val pBus = AxiLite4SpecRenamer(master(
         vexiiParam.lsuL1Enable.mux(
           peripheral.toAxiLite4.down.pipelined(
@@ -290,27 +352,9 @@ object SocGen extends App{
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
-    vexiiParam.addOptions(this)
+    socConfig.addOptions(this)
     opt[String]("netlist-directory") action { (v, c) => netlistDirectory = v }
     opt[String]("netlist-name") action { (v, c) => netlistName = v }
-    opt[Int]("litedram-width") action { (v, c) => litedramWidth = v }
-//    opt[Seq[String]]("l2-self-flush") action { (v, c) => selfFlush = coherent.SelfFLush(BigInt(v(0)), BigInt(v(1)), BigInt(v(2))) }
-    opt[Seq[String]]("l2-self-flush")  action { (v, c) =>
-      selfFlush = coherent.SelfFLush(BigInt(v(0),16), BigInt(v(1),16  ), BigInt(v(2)))
-    }
-    opt[Int]("cpu-count") action { (v, c) => cpuCount = v }
-    opt[Int]("l2-bytes") action { (v, c) => l2Bytes = v }
-    opt[Int]("l2-ways") action { (v, c) => l2Ways = v }
-    opt[Unit]("with-dma") action { (v, c) => withDma = true }
-    opt[Unit]("with-axi3") action { (v, c) => withAxi3 = true }
-    opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
-    opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
-    opt[Seq[String]]("memory-region") unbounded() action  { (v, c) =>
-      assert(v.length == 4, "--memory-region need 4 parameters")
-      val r = new LitexMemoryRegion(SizeMapping(BigInt(v(0)), BigInt(v(1))), v(2), v(3))
-      regions += r
-      assert(!(r.onMemory && !r.isCachable), s"Region $r isn't supported by VexiiRiscv, data cache will always cache memory")
-    }
     opt[Unit]("reduced-io") action { (v, c) => reducedIo = true }
   }.parse(args, Unit).nonEmpty)
 
@@ -410,6 +454,144 @@ object PythonArgsGen extends App{
 
 }
 
+object VgaDisplaySim{
+  import spinal.core.sim._
+  def apply(vga : Vga, cd : ClockDomain): Unit ={
+
+    var width = 640
+    var height = 480
+    val image = new BufferedImage(width, height, BufferedImage.TYPE_INT_BGR);
+
+    val frame = new JFrame{
+      setPreferredSize(new Dimension(800, 600));
+
+      add(new JPanel{
+        this.setPreferredSize(new Dimension(width, height))
+        override def paintComponent(g : Graphics) : Unit = {
+          g.drawImage(image, 0, 0, width*4,height*4, null)
+        }
+      })
+
+      pack();
+      setVisible(true);
+      setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+    }
+
+    var overflow = false
+    var x,y = 0
+    cd.onSamplings{
+      val vsync = vga.vSync.toBoolean
+      val hsync = vga.hSync.toBoolean
+      val colorEn = vga.colorEn.toBoolean
+      if(colorEn) {
+//        val color = vga.color.r.toInt << (16 + 8 - vga.rgbConfig.rWidth) | vga.color.g.toInt << (8 + 8 - vga.rgbConfig.gWidth) | vga.color.b.toInt << (0 + 8 - vga.rgbConfig.bWidth)
+        val color = vga.color.r.toInt << (16 + 8 - vga.rgbConfig.rWidth) | vga.color.g.toInt << (8 + 8 - vga.rgbConfig.gWidth) | vga.color.b.toInt << (0 + 8 - vga.rgbConfig.bWidth)
+        if(x < width && y < height) {
+          image.setRGB(x, y, color)
+        }
+        x+=1
+      }
+      if(!vsync){
+        y = 0
+//        for(y <- 0 until height; x <- 0 until width) image.setRGB(x,y,0)
+      }
+      if(!hsync){
+        if(x != 0){
+          y+=1
+          frame.repaint()
+        }
+        x = 0
+      }
+    }
+  }
+}
+
+object SocSim extends App{
+  val socConfig = new SocConfig()
+  import socConfig._
+
+  //  vexiiParam.fetchL1Enable = true
+  //  vexiiParam.lsuL1Enable = true
+  vexiiParam.privParam.withRdTime = true
+
+  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+    help("help").text("prints this usage text")
+    socConfig.addOptions(this)
+  }.parse(args, Unit).nonEmpty)
+
+  vexiiParam.lsuL1Coherency = vexiiParam.lsuL1Coherency || cpuCount > 1 || withDma
+
+  val spinalConfig = SpinalConfig()
+  spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
+
+  import spinal.core.sim._
+  SimConfig.withConfig(spinalConfig).withFstWave.compile(new Soc(socConfig, ClockDomain.external("system"))).doSimUntilVoid(seed=32){dut =>
+    dut.systemCd.forkStimulus(10000)
+    for(video <- dut.system.video){
+      video.cd.forkStimulus(20000)
+      VgaDisplaySim(video.ctrl.logic.ctrl.io.vga, video.resetCtrl.cd)
+    }
+    if(dut.debugReset != null)fork{
+      dut.debugReset #= true
+      dut.systemCd.waitRisingEdge(2)
+      dut.debugReset #= false
+    }
+    sleep(1)
+
+
+    val onPbus = new Area {
+      val axi = dut.system.patcher.pBus
+      new AxiLite4ReadOnlySlaveAgent(axi.ar, axi.r, dut.systemCd){
+
+      }
+      val woa = new AxiLite4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.systemCd) {
+
+      }
+    }
+
+    val onAxi = new Area{
+      val ddrMemory = SparseMemory()
+      val axi = dut.system.patcher.mBus
+      val woa = new Axi4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.systemCd) {
+        awDriver.factor = 0.9f
+        wDriver.factor = 0.9f
+        bDriver.transactionDelay = () => 1
+      }
+      var bytesAccess = 0l
+      new Axi4WriteOnlyMonitor(axi.aw, axi.w, axi.b, dut.systemCd) {
+        override def onWriteByte(address: BigInt, data: Byte, id: Int): Unit = ddrMemory.write(address.toLong, data)
+        override def onWriteStart(address: BigInt, id: Int, size: Int, len: Int, burst: Int): Unit = {
+          bytesAccess += len * (1 << size)
+        }
+      }
+      val roa = new Axi4ReadOnlySlaveAgent(axi.ar, axi.r, dut.systemCd, withReadInterleaveInBurst = false) {
+        arDriver.factor = 0.8f
+        rDriver.transactionDelay = () => simRandom.nextInt(3)
+        baseLatency = 60 * 1000
+
+        periodicaly(300*1000*1000){
+          val value = ((60 + simRandom.nextInt(3000))*1000)
+          println(s"RANDOM $value")
+          baseLatency = value
+
+//          val value = simRandom.nextFloat() * 0.8f
+//          println(s"RANDOM $value")
+//          rDriver.setFactor(value)
+        }
+
+        override def readByte(address: BigInt): Byte = {
+          bytesAccess += 1
+          ddrMemory.read(address.toLong)
+        }
+      }
+    }
+    for(y <- 0 until 640; x <- 0 until 480){
+      val color = (x & 0x1F)+((y & 0x3F) << 5)
+      onAxi.ddrMemory.write(0x40c00000 + x*2+y*2*640, color + (color << 16))
+    }
+
+  }
+}
 /*
 
 make CROSS_COMPILE=riscv-none-embed-      PLATFORM=generic      PLATFORM_RISCV_XLEN=64      PLATFORM_RISCV_ISA=rv64gc      PLATFORM_RISCV_ABI=lp64d      FW_FDT_PATH=../linux.dtb      FW_JUMP_ADDR=0x41000000       FW_JUMP_FDT_ADDR=0x46000000      -j20
