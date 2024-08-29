@@ -106,6 +106,7 @@ class ParamSimple(){
   var relaxedShift = false
   var relaxedSrc = true
   var relaxedBtb = false
+  var relaxedDiv = false
   var allowBypassFrom = 100 //100 => disabled
   var additionalPerformanceCounters = 0
   var withPerformanceCounters = false
@@ -140,6 +141,53 @@ class ParamSimple(){
   var embeddedJtagCd: ClockDomain = null
   var embeddedJtagNoTapCd: ClockDomain = null
   var bootMemClear = false
+
+  var fetchTsp = MmuStorageParameter(
+    levels = List(
+      MmuStorageLevel(
+        id = 0,
+        ways = 2,
+        depth = 32
+      ),
+      MmuStorageLevel(
+        id = 1,
+        ways = 1,
+        depth = 32
+      )
+    ),
+    priority = 0
+  )
+
+  var lsuTsp = MmuStorageParameter(
+    levels = List(
+      MmuStorageLevel(
+        id = 0,
+        ways = 3,
+        depth = 32
+      ),
+      MmuStorageLevel(
+        id = 1,
+        ways = 1,
+        depth = 32
+      )
+    ),
+    priority = 1
+  )
+
+  var fetchTpp = MmuPortParameter(
+    readAt = 1,
+    hitsAt = 1,
+    ctrlAt = 1,
+    rspAt = 1
+  )
+
+  var lsuTpp = MmuPortParameter(
+    readAt = 0,
+    hitsAt = 0,
+    ctrlAt = 1,
+    rspAt = 1
+  )
+
 
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin
@@ -293,6 +341,7 @@ class ParamSimple(){
     opt[Int]("decoder-at") action { (v, c) => decoderAt = v }
     opt[Int]("dispatcher-at") action { (v, c) => dispatcherAt = v }
     opt[Long]("reset-vector") unbounded() action { (v, c) => resetVector = v }
+    opt[Unit]("relaxed-div") action { (v, c) => relaxedDiv = true }
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
@@ -423,21 +472,7 @@ class ParamSimple(){
       forkAt = fetchForkAt,
       joinAt = fetchForkAt+1, //You can for instance allow the external memory to have more latency by changing this
       wordWidth = fetchMemDataWidth,
-      translationStorageParameter = MmuStorageParameter(
-        levels = List(
-          MmuStorageLevel(
-            id = 0,
-            ways = 2,
-            depth = 32
-          ),
-          MmuStorageLevel(
-            id = 1,
-            ways = 1,
-            depth = 32
-          )
-        ),
-        priority = 0
-      ),
+      translationStorageParameter = fetchTsp,
       translationPortParameter = withMmu match {
         case false => null
         case true => MmuPortParameter(
@@ -460,29 +495,10 @@ class ParamSimple(){
         hitsWithTranslationWays = true,
         tagsReadAsync = false,
         bootMemClear = bootMemClear,
-        translationStorageParameter = MmuStorageParameter(
-          levels = List(
-            MmuStorageLevel(
-              id = 0,
-              ways = 2,
-              depth = 32
-            ),
-            MmuStorageLevel(
-              id = 1,
-              ways = 1,
-              depth = 32
-            )
-          ),
-          priority = 0
-        ),
+        translationStorageParameter = fetchTsp,
         translationPortParameter = withMmu match {
           case false => null
-          case true => MmuPortParameter(
-            readAt = 1,
-            hitsAt = 1,
-            ctrlAt = 1,
-            rspAt = 1
-          )
+          case true => fetchTpp
         }
       )
 
@@ -550,21 +566,7 @@ class ParamSimple(){
       forkAt    = lsuForkAt+0,
       joinAt    = lsuForkAt+1,
       wbAt      = 2, //TODO
-      translationStorageParameter = MmuStorageParameter(
-        levels = List(
-          MmuStorageLevel(
-            id = 0,
-            ways = 3,
-            depth = 32
-          ),
-          MmuStorageLevel(
-            id = 1,
-            ways = 1,
-            depth = 32
-          )
-        ),
-        priority = 1
-      ),
+      translationStorageParameter = lsuTsp,
       translationPortParameter = withMmu match {
         case false => null
         case true => MmuPortParameter(
@@ -583,29 +585,10 @@ class ParamSimple(){
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
         softwarePrefetch = lsuSoftwarePrefetch,
-        translationStorageParameter = MmuStorageParameter(
-          levels = List(
-            MmuStorageLevel(
-              id = 0,
-              ways = 3,
-              depth = 32
-            ),
-            MmuStorageLevel(
-              id = 1,
-              ways = 1,
-              depth = 32
-            )
-          ),
-          priority = 1
-        ),
+        translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null
-          case true => MmuPortParameter(
-            readAt = 0,
-            hitsAt = 0,
-            ctrlAt = 1,
-            rspAt = 1
-          )
+          case true => lsuTpp
         }
       )
       plugins += new LsuL1Plugin(
@@ -638,7 +621,7 @@ class ParamSimple(){
       plugins += new RsUnsignedPlugin("lane0")
       plugins += new DivPlugin(
         layer = early0,
-        relaxedInputs = xlen == 64,
+        relaxedInputs = xlen == 64 || relaxedDiv,
         radix = divRadix,
         area  = divArea,
         impl = {

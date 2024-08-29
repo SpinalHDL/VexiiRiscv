@@ -732,7 +732,7 @@ make cross_compile=riscv-none-embed- \
 arm semihosting enable
 
 //linux ++ dual core
-make o=build/full  br2_external=../config litex_vexriscv_full_defconfig
+make O=build/full  BR2_EXTERNAL=../config litex_vexriscv_full_defconfig
 (cd build/full/ && make -j20)
 
 litex_sim --cpu-type=vexiiriscv  --cpu-variant=linux --with-sdram --sdram-data-width=64 --bus-standard axi-lite --cpu-count=1  --with-jtag-tap --sdram-init /media/data2/proj/vexii/litex/buildroot/rv32ima/images_full/boot.json
