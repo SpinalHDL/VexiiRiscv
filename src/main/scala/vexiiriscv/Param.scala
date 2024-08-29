@@ -169,8 +169,8 @@ class ParamSimple(){
     lsuMemDataWidthMin = 64
     lsuL1Sets = 64
     lsuL1Ways = 4
-    lsuL1RefillCount = 4
-    lsuL1WritebackCount = 4
+    lsuL1RefillCount = 8
+    lsuL1WritebackCount = 8
     lsuL1Coherency = false
 //    lsuStoreBufferSlots = 2
 //    lsuStoreBufferOps = 32
@@ -196,8 +196,8 @@ class ParamSimple(){
 
     withRvf = true
     withRvd = true
-    fpuIgnoreSubnormal = true
-    fpuFmaFullAccuracy = false
+//    fpuIgnoreSubnormal = true
+//    fpuFmaFullAccuracy = false
 
     withMmu = true
     privParam.withSupervisor = true
