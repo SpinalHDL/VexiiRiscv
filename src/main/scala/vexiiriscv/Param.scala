@@ -141,6 +141,7 @@ class ParamSimple(){
   var embeddedJtagCd: ClockDomain = null
   var embeddedJtagNoTapCd: ClockDomain = null
   var bootMemClear = false
+  var mulKeepSrc = false
 
   var fetchTsp = MmuStorageParameter(
     levels = List(
@@ -410,8 +411,57 @@ class ParamSimple(){
     opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
     opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true }
     opt[Unit]("with-boot-mem-init") action { (v, c) => bootMemClear = true }
-    opt[Int]("physical-width") action {(v, c) => physicalWidth = v}
+    opt[Int]("physical-width") action { (v, c) => physicalWidth = v }
+    opt[Unit]("mul-keep-src") action { (v, c) => mulKeepSrc = true }
+    opt[Unit]("mmu-sync-read") action { (v, c) =>
+      fetchTsp = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 2,
+            depth = 64
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 1,
+            depth = 64
+          )
+        ),
+        priority = 0
+      )
+
+      lsuTsp = MmuStorageParameter(
+        levels = List(
+          MmuStorageLevel(
+            id = 0,
+            ways = 2,
+            depth = 64
+          ),
+          MmuStorageLevel(
+            id = 1,
+            ways = 1,
+            depth = 64
+          )
+        ),
+        priority = 1
+      )
+
+      fetchTpp = MmuPortParameter(
+        readAt = 1,
+        hitsAt = 1,
+        ctrlAt = 1,
+        rspAt = 1
+      )
+
+      lsuTpp = MmuPortParameter(
+        readAt = 1,
+        hitsAt = 1,
+        ctrlAt = 1,
+        rspAt = 1
+      )
+    }
   }
+
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
   def pluginsArea(hartId : Int = 0) = new Area {
@@ -615,7 +665,7 @@ class ParamSimple(){
     }
 
     if(withMul) {
-      plugins += new MulPlugin(early0)
+      plugins += new MulPlugin(early0, keepMulSrc = mulKeepSrc)
     }
     if(withDiv) {
       plugins += new RsUnsignedPlugin("lane0")

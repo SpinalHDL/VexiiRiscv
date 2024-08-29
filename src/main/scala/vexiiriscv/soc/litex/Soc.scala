@@ -17,7 +17,8 @@ import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.eda.bench.{Bench, Rtl}
-import spinal.lib.graphic.vga.{TilelinkVgaCtrlFiber, TilelinkVgaCtrlSpec, Vga}
+import spinal.lib.graphic.YcbcrConfig
+import spinal.lib.graphic.vga.{TilelinkVgaCtrlFiber, TilelinkVgaCtrlSpec, Vga, VgaRgbToYcbcr, VgaYcbcrPix2}
 import spinal.lib.misc.{PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.sim.SparseMemory
@@ -131,17 +132,24 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
       spec.param.dmaParam.dataWidth = mainDataWidth
       val ctrl = new TilelinkVgaCtrlFiber(spec.param, resetCtrl.cd)
 
-      val phy = Fiber build new Area{
+      val phy = Fiber build new ClockingArea(resetCtrl.cd){
         setName(spec.name)
         val vga = ctrl.logic.ctrl.io.vga
         vga.simPublic()
-        val vSync, hSync, colorEn = out(Bool())
-        val color = out Bits(16 bits)
 
-        vSync := vga.vSync
-        hSync := vga.hSync
-        colorEn := vga.colorEn
-        color := vga.color.asBits
+        val ycbcrConfig = YcbcrConfig(8,8,8)
+        val toYcbcr = new VgaRgbToYcbcr(spec.param.rgbConfig, ycbcrConfig)
+        toYcbcr.io.up <> vga
+
+        val pix2 = new VgaYcbcrPix2(ycbcrConfig)
+        pix2.io.up <> toYcbcr.io.down
+
+        val vSync, hSync, colorEn = out(Bool())
+        val color = out Bits (16 bits)
+        vSync := pix2.io.down.vSync
+        hSync := pix2.io.down.hSync
+        colorEn := pix2.io.down.colorEn
+        color := pix2.io.down.color.asBits
       }
     }
 
@@ -460,6 +468,7 @@ object VgaDisplaySim{
 
     var width = 640
     var height = 480
+    var scale = 1
     val image = new BufferedImage(width, height, BufferedImage.TYPE_INT_BGR);
 
     val frame = new JFrame{
@@ -468,7 +477,7 @@ object VgaDisplaySim{
       add(new JPanel{
         this.setPreferredSize(new Dimension(width, height))
         override def paintComponent(g : Graphics) : Unit = {
-          g.drawImage(image, 0, 0, width*4,height*4, null)
+          g.drawImage(image, 0, 0, width*scale,height*scale, null)
         }
       })
 
@@ -569,15 +578,15 @@ object SocSim extends App{
         rDriver.transactionDelay = () => simRandom.nextInt(3)
         baseLatency = 60 * 1000
 
-        periodicaly(300*1000*1000){
-          val value = ((60 + simRandom.nextInt(3000))*1000)
-          println(s"RANDOM $value")
-          baseLatency = value
-
-//          val value = simRandom.nextFloat() * 0.8f
+//        periodicaly(300*1000*1000){
+//          val value = ((60 + simRandom.nextInt(3000))*1000)
 //          println(s"RANDOM $value")
-//          rDriver.setFactor(value)
-        }
+//          baseLatency = value
+//
+////          val value = simRandom.nextFloat() * 0.8f
+////          println(s"RANDOM $value")
+////          rDriver.setFactor(value)
+//        }
 
         override def readByte(address: BigInt): Byte = {
           bytesAccess += 1
@@ -585,10 +594,26 @@ object SocSim extends App{
         }
       }
     }
-    for(y <- 0 until 640; x <- 0 until 480){
-      val color = (x & 0x1F)+((y & 0x3F) << 5)
-      onAxi.ddrMemory.write(0x40c00000 + x*2+y*2*640, color + (color << 16))
+    for(y <- 0 until 480; x <- 0 until 640){
+      val color = (x & 0xFF) + ((y & 0xFF) << 8)// + (((x+y) & 0xFF) << 16)
+      onAxi.ddrMemory.write(0x40c00000 + x * 4 + y * 4 * 640, color)
+//      val color = (x & 0x1F)+((y & 0x3F) << 5)
+//      onAxi.ddrMemory.write(0x40c00000 + x*2+y*2*640, color + (color << 16))
     }
+
+    var cnt = 0
+    def setPix(value : Int) = {
+      onAxi.ddrMemory.write(0x40c00000 + cnt, value)
+      onAxi.ddrMemory.write(0x40c00000 + cnt + 4, value)
+      cnt += 8
+    }
+    setPix(0x00000000)
+    setPix(0x000000ff)
+    setPix(0x0000ff00)
+    setPix(0x00ff0000)
+    setPix(0x00ffffff)
+    onAxi.ddrMemory.write(0x40c00000 + cnt, 0x000000FF); cnt += 4
+    onAxi.ddrMemory.write(0x40c00000 + cnt, 0x00800080); cnt += 4
 
   }
 }
