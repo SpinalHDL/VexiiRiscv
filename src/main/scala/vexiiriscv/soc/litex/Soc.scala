@@ -274,7 +274,10 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
 
 
     val patcher = Fiber build new AreaRoot {
-      val mBus = withMem generate Axi4SpecRenamer(master(mem.toAxi4.down.expendId(8)))
+      val mBusAxi = mem.toAxi4.down.expendId(8)
+      val mBus = withMem generate Axi4SpecRenamer(master(
+        mBusAxi.pipelined(ar = StreamPipe.FULL, aw = StreamPipe.FULL, w = StreamPipe.FULL, b = StreamPipe.FULL, r = StreamPipe.FULL).pipelined(ar = StreamPipe.FULL, aw = StreamPipe.FULL, w = StreamPipe.FULL, b = StreamPipe.FULL, r = StreamPipe.FULL)
+      ))
 
       val pBus = AxiLite4SpecRenamer(master(
         vexiiParam.lsuL1Enable.mux(
@@ -370,7 +373,7 @@ object SocGen extends App{
 
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
-  spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
+//  spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
 //  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {
@@ -383,6 +386,7 @@ object SocGen extends App{
   }
 
   val cpu0 = report.toplevel.system.vexiis(0).logic.core
+//  val cpu2 = report.toplevel.system.vexiis(2).logic.core
 //  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl3_up_LsuL1_PHYSICAL_ADDRESS_lane0")
 //  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
 
@@ -419,7 +423,14 @@ object SocGen extends App{
 
 //  val from = cpu0.reflectBaseType("early0_DivPlugin_logic_processing_divRevertResult")
 //  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl2_up_early0_SrcPlugin_SRC1_lane0")
-//
+
+//  val from = cpu0.reflectBaseType("_zz_vexiis_0_logic_core_toplevel_execute_ctrl2_down_FpuUnpack_RS3_badBoxing_HIT_lane0")
+//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl3_up_FpuF2iPlugin_logic_onSetup_SHIFTED_PARTIAL_lane0")
+
+//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_FORCE_HAZARD") //That big
+//  val to = cpu0.reflectBaseType("FpuCsrPlugin_api_flags_OF")
+
+
 //  val drivers = mutable.LinkedHashSet[BaseType]()
 //  AnalysisUtils.seekNonCombDrivers(to){driver =>
 //    driver match {
@@ -466,8 +477,8 @@ object VgaDisplaySim{
   import spinal.core.sim._
   def apply(vga : Vga, cd : ClockDomain): Unit ={
 
-    var width = 640
-    var height = 480
+    var width = 800
+    var height = 600
     var scale = 1
     val image = new BufferedImage(width, height, BufferedImage.TYPE_INT_BGR);
 
@@ -594,9 +605,9 @@ object SocSim extends App{
         }
       }
     }
-    for(y <- 0 until 480; x <- 0 until 640){
+    for(y <- 0 until 600; x <- 0 until 800){
       val color = (x & 0xFF) + ((y & 0xFF) << 8)// + (((x+y) & 0xFF) << 16)
-      onAxi.ddrMemory.write(0x40c00000 + x * 4 + y * 4 * 640, color)
+      onAxi.ddrMemory.write(0x40c00000 + x * 4 + y * 4 * 800, color)
 //      val color = (x & 0x1F)+((y & 0x3F) << 5)
 //      onAxi.ddrMemory.write(0x40c00000 + x*2+y*2*640, color + (color << 16))
     }
