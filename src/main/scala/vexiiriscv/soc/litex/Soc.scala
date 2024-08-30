@@ -61,9 +61,11 @@ class SocConfig(){
   var cpuCount = 1
   var litedramWidth = 32
   var withAxi3 = false
+  var withPeripheralCd = false
   var selfFlush : SelfFLush = null
   val periph = new PeriphSpecs
   val video = ArrayBuffer[TilelinkVgaCtrlSpec]()
+  var withCpuCd = false
 
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
@@ -79,6 +81,7 @@ class SocConfig(){
     opt[Int]("l2-bytes") action { (v, c) => l2Bytes = v }
     opt[Int]("l2-ways") action { (v, c) => l2Ways = v }
     opt[Unit]("with-dma") action { (v, c) => withDma = true }
+    opt[Unit]("with-cpu-clk") action { (v, c) => withCpuCd = true }
     opt[Unit]("with-axi3") action { (v, c) => withAxi3 = true }
     opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
     opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
@@ -93,10 +96,18 @@ class SocConfig(){
   def withL2 = l2Bytes > 0
 }
 
-class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
+class Soc(c : SocConfig) extends Component {
+
   import c._
 
-  val system = systemCd on new AreaRoot {
+  val litexCd = ClockDomain.external("litex")
+  val cpuClk = withCpuCd.mux(ClockDomain.external("cpu", withReset = false), litexCd)
+  val cpuResetCtrl = cpuClk(new ResetCtrlFiber())
+  cpuResetCtrl.addAsyncReset(litexCd.isResetActive, HIGH)
+  val cpuCd = cpuResetCtrl.cd
+
+
+  val system = cpuCd on new AreaRoot {
     val mainDataWidth = vexiiParam.memDataWidth
     val withCoherency = vexiiParam.lsuL1Coherency
     val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
@@ -111,7 +122,6 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
     val ioBus = fabric.Node()
 
     val memRegions = regions.filter(e => e.onMemory && e.isCachable)
-    val axiLiteRegions = regions.filter(e => e.onPeripheral)
 
     val withMem = memRegions.nonEmpty
     val mem = withMem generate new Area {
@@ -124,20 +134,20 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
       }
     }
 
-    val video = for(spec <- c.video) yield new Area{
+    val video = for (spec <- c.video) yield new Area {
       setName(spec.name)
       val cd = ClockDomain.external(spec.name, withReset = false)
       val resetCtrl = cd(new ResetCtrlFiber())
-      resetCtrl.addSyncRelaxedReset(ClockDomain.current.isResetActive, HIGH)
+      resetCtrl.addAsyncReset(ClockDomain.current.isResetActive, HIGH)
       spec.param.dmaParam.dataWidth = mainDataWidth
       val ctrl = new TilelinkVgaCtrlFiber(spec.param, resetCtrl.cd)
 
-      val phy = Fiber build new ClockingArea(resetCtrl.cd){
+      val phy = Fiber build new ClockingArea(resetCtrl.cd) {
         setName(spec.name)
         val vga = ctrl.logic.ctrl.io.vga
         vga.simPublic()
 
-        val ycbcrConfig = YcbcrConfig(8,8,8)
+        val ycbcrConfig = YcbcrConfig(8, 8, 8)
         val toYcbcr = new VgaRgbToYcbcr(spec.param.rgbConfig, ycbcrConfig)
         toYcbcr.io.up <> vga
 
@@ -153,10 +163,10 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
       }
     }
 
-    val peripheral = new Area {
+    val peripheral = new ClockingArea(litexCd) {
       val bus = Node()
       bus << ioBus
-      if(vexiiParam.lsuL1Enable) bus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
+      if (vexiiParam.lsuL1Enable) bus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
       bus.forceDataWidth(32)
 
       val clint = new TilelinkClintFiber()
@@ -184,13 +194,14 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
       val toAxiLite4 = new fabric.AxiLite4Bridge
       toAxiLite4.up << bus
 
+      val axiLiteRegions = regions.filter(e => e.onPeripheral)
       val virtualRegions = for (region <- axiLiteRegions) yield new VirtualEndpoint(toAxiLite4.down, region.mapping) {
         if (region.isCachable) self.addTag(PMA.MAIN)
         if (region.isExecutable) self.addTag(PMA.EXECUTABLE)
       }
     }
 
-    val dma = c.withDma generate new Area {
+    val dma = c.withDma generate new ClockingArea(litexCd){
       val bus = slave(
         Axi4(
           Axi4Config(
@@ -274,12 +285,12 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
 
 
     val patcher = Fiber build new AreaRoot {
-      val mBusAxi = mem.toAxi4.down.expendId(8)
+      val mBusAxi = withMem generate mem.toAxi4.down.expendId(8)
       val mBus = withMem generate Axi4SpecRenamer(master(
-        mBusAxi.pipelined(ar = StreamPipe.FULL, aw = StreamPipe.FULL, w = StreamPipe.FULL, b = StreamPipe.FULL, r = StreamPipe.FULL).pipelined(ar = StreamPipe.FULL, aw = StreamPipe.FULL, w = StreamPipe.FULL, b = StreamPipe.FULL, r = StreamPipe.FULL)
+        mBusAxi.pipelined(ar = StreamPipe.FULL, aw = StreamPipe.FULL, w = StreamPipe.FULL, b = StreamPipe.FULL, r = StreamPipe.FULL) //(ar = StreamPipe.FULL, aw = StreamPipe.FULL, w = StreamPipe.FULL, b = StreamPipe.FULL, r = StreamPipe.FULL).pipelined(ar = StreamPipe.FULL, aw = StreamPipe.FULL, w = StreamPipe.FULL, b = StreamPipe.FULL, r = StreamPipe.FULL)
       ))
 
-      val pBus = AxiLite4SpecRenamer(master(
+      val pBus = litexCd on AxiLite4SpecRenamer(master(
         vexiiParam.lsuL1Enable.mux(
           peripheral.toAxiLite4.down.pipelined(
             ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.HALF, b = StreamPipe.HALF, r = StreamPipe.HALF
@@ -332,7 +343,7 @@ class Soc(c : SocConfig, val systemCd : ClockDomain) extends Component{
   }
 
   val debugReset = c.withDebug generate in.Bool()
-  val debug = c.withDebug generate ClockDomain(systemCd.clock, debugReset)(new DebugModuleSocFiber(withJtagInstruction) {
+  val debug = c.withDebug generate ClockDomain(cpuCd.clock, debugReset)(new DebugModuleSocFiber(withJtagInstruction) {
     out(dm.ndmreset)
     system.vexiis.foreach(bindHart)
   })
@@ -377,10 +388,10 @@ object SocGen extends App{
 //  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {
-    val soc = new Soc(socConfig, ClockDomain.external("system")).setDefinitionName(netlistName)
+    val soc = new Soc(socConfig).setDefinitionName(netlistName)
     if(reducedIo) Fiber patch{
-      Rtl.xorOutputs(soc, soc.systemCd)
-      Rtl.compactInputs(soc, soc.systemCd)
+      Rtl.xorOutputs(soc, soc.litexCd)
+      Rtl.compactInputs(soc, soc.litexCd)
     }
     soc
   }
@@ -545,15 +556,16 @@ object SocSim extends App{
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
 
   import spinal.core.sim._
-  SimConfig.withConfig(spinalConfig).withFstWave.compile(new Soc(socConfig, ClockDomain.external("system"))).doSimUntilVoid(seed=32){dut =>
-    dut.systemCd.forkStimulus(10000)
+  SimConfig.withConfig(spinalConfig).withFstWave.compile(new Soc(socConfig)).doSimUntilVoid(seed=32){dut =>
+    dut.litexCd.forkStimulus(10000)
+    if(socConfig.withCpuCd) dut.cpuClk.forkStimulus(5000)
     for(video <- dut.system.video){
       video.cd.forkStimulus(20000)
       VgaDisplaySim(video.ctrl.logic.ctrl.io.vga, video.resetCtrl.cd)
     }
     if(dut.debugReset != null)fork{
       dut.debugReset #= true
-      dut.systemCd.waitRisingEdge(2)
+      dut.cpuCd.waitRisingEdge(2)
       dut.debugReset #= false
     }
     sleep(1)
@@ -561,10 +573,10 @@ object SocSim extends App{
 
     val onPbus = new Area {
       val axi = dut.system.patcher.pBus
-      new AxiLite4ReadOnlySlaveAgent(axi.ar, axi.r, dut.systemCd){
+      new AxiLite4ReadOnlySlaveAgent(axi.ar, axi.r, dut.litexCd){
 
       }
-      val woa = new AxiLite4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.systemCd) {
+      val woa = new AxiLite4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.litexCd) {
 
       }
     }
@@ -572,19 +584,19 @@ object SocSim extends App{
     val onAxi = new Area{
       val ddrMemory = SparseMemory()
       val axi = dut.system.patcher.mBus
-      val woa = new Axi4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.systemCd) {
+      val woa = new Axi4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.cpuCd) {
         awDriver.factor = 0.9f
         wDriver.factor = 0.9f
         bDriver.transactionDelay = () => 1
       }
       var bytesAccess = 0l
-      new Axi4WriteOnlyMonitor(axi.aw, axi.w, axi.b, dut.systemCd) {
+      new Axi4WriteOnlyMonitor(axi.aw, axi.w, axi.b, dut.cpuCd) {
         override def onWriteByte(address: BigInt, data: Byte, id: Int): Unit = ddrMemory.write(address.toLong, data)
         override def onWriteStart(address: BigInt, id: Int, size: Int, len: Int, burst: Int): Unit = {
           bytesAccess += len * (1 << size)
         }
       }
-      val roa = new Axi4ReadOnlySlaveAgent(axi.ar, axi.r, dut.systemCd, withReadInterleaveInBurst = false) {
+      val roa = new Axi4ReadOnlySlaveAgent(axi.ar, axi.r, dut.cpuCd, withReadInterleaveInBurst = false) {
         arDriver.factor = 0.8f
         rDriver.transactionDelay = () => simRandom.nextInt(3)
         baseLatency = 60 * 1000
