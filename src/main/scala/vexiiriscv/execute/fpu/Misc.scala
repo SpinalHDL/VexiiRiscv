@@ -5,7 +5,7 @@ import spinal.lib.misc.pipeline.Payload
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.riscv.Riscv.XLEN
 
-object FpuUtils {
+object FpuUtils extends AreaObject {
   def rsFloatWidth = 32 + Riscv.RVD.get.toInt*32
   def rsIntWidth = Riscv.XLEN.get
   def exponentWidth = if(Riscv.RVD) 11 else 8
