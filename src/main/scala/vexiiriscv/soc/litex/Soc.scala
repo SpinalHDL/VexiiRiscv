@@ -384,7 +384,7 @@ object SocGen extends App{
 
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
-//  spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
+  spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
 //  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {
