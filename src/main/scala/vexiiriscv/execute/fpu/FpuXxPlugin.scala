@@ -10,9 +10,9 @@ import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv.Riscv.XLEN
 import vexiiriscv.riscv._
 
-
+//packAt at 1 to reduce timing presure (unpack -> pack)
 class FpuXxPlugin(val layer : LaneLayer,
-                  var packAt : Int = 0) extends FiberPlugin{
+                  var packAt : Int = 1) extends FiberPlugin{
   val p = FpuUtils
 
   val SEL = Payload(Bool())
