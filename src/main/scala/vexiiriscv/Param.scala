@@ -348,6 +348,10 @@ class ParamSimple(){
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
     opt[Unit]("relaxed-btb") action { (v, c) => relaxedBtb = true }
     opt[Unit]("stressed-btb") action { (v, c) => relaxedBtb = false }
+    opt[Unit]("stressed-div") action { (v, c) => relaxedDiv = false }
+    opt[Unit]("stressed-branch") action { (v, c) => relaxedBranch = false }
+    opt[Unit]("stressed-shift") action { (v, c) => relaxedShift = false }
+    opt[Unit]("stressed-src") action { (v, c) => relaxedSrc = false }
     opt[Unit]("with-mul") unbounded() action { (v, c) => withMul = true }
     opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
