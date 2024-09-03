@@ -112,7 +112,10 @@ class Soc(c : SocConfig) extends Component {
     val withCoherency = vexiiParam.lsuL1Coherency
     val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
     for (vexii <- vexiis) {
-      if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S_KEEP)
+      if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection { (down, up) =>
+        down.a << up.a.halfPipe().halfPipe()
+        up.d << down.d.m2sPipe()
+      }
       if (vexiiParam.lsuL1Enable) {
         vexii.lsuL1Bus.setDownConnection(a = withCoherency.mux(StreamPipe.HALF, StreamPipe.FULL), b = StreamPipe.HALF_KEEP, c = StreamPipe.FULL, d = StreamPipe.M2S_KEEP, e = StreamPipe.HALF)
         vexii.dBus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.M2S_KEEP)
@@ -217,7 +220,6 @@ class Soc(c : SocConfig) extends Component {
 
       val filter = new fabric.TransferFilter()
       filter.up << bridge.down
-      filter.down.setDownConnection(a = StreamPipe.FULL)
 
       //As litex reset will release before our one, we need to ensure that we don't eat a transaction
       Fiber build {
@@ -256,7 +258,9 @@ class Soc(c : SocConfig) extends Component {
 
         for (video <- video) cBus << video.ctrl.dma
 
-        if(withDma) cBus << dma.filter.down
+        if(withDma) {
+          (cBus << dma.filter.down).setDownConnection(a = StreamPipe.FULL)
+        }
 
         val hub = (withCoherency && !withL2) generate new Area {
           val hub = new HubFiber()
@@ -271,6 +275,7 @@ class Soc(c : SocConfig) extends Component {
           cache.parameter.cacheWays = l2Ways
           cache.parameter.cacheBytes = l2Bytes
           cache.parameter.selfFlush = selfFlush
+          cache.parameter.readProcessAt = 2+(l2Bytes >= 512*1024).toInt
 
           cache.up << cBus
           cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
@@ -352,8 +357,8 @@ class Soc(c : SocConfig) extends Component {
 
 object blackboxPolicy extends MemBlackboxingPolicy{
   override def translationInterest(topology: MemTopology): Boolean = {
-    if(topology.writes.exists(_.mask != null) && topology.mem.initialContent == null) return true
-    if (topology.readWriteSync.exists(_.mask != null) && topology.mem.initialContent == null) return true
+    if(topology.writes.exists(e => e.mask != null && e.getSymbolWidth == 8) && topology.mem.initialContent == null) return true
+    if (topology.readWriteSync.exists(e => e.mask != null && e.getSymbolWidth == 8) && topology.mem.initialContent == null) return true
     if (topology.readsAsync.size != 0 && topology.mem.initialContent == null) return true
     false
   }
@@ -440,6 +445,10 @@ object SocGen extends App{
 
 //  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_FORCE_HAZARD") //That big
 //  val to = cpu0.reflectBaseType("FpuCsrPlugin_api_flags_OF")
+
+//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_refill_slots_0_writebackHazards") //That big
+//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_refill_slots_0_cmdSent")
+
 
 
 //  val drivers = mutable.LinkedHashSet[BaseType]()
@@ -641,6 +650,7 @@ object SocSim extends App{
   }
 }
 /*
+report_path -to  VexiiRiscvLitex_44a81283d17b029c539716862d04b1a0/vexiis_3_iBus_bus_a_rValid~FF|CE -nworst 100
 
 make CROSS_COMPILE=riscv-none-embed-      PLATFORM=generic      PLATFORM_RISCV_XLEN=64      PLATFORM_RISCV_ISA=rv64gc      PLATFORM_RISCV_ABI=lp64d      FW_FDT_PATH=../linux.dtb      FW_JUMP_ADDR=0x41000000       FW_JUMP_FDT_ADDR=0x46000000      -j20
 scp build/platform/generic/firmware/fw_jump.bin root@nexys.local:/boot/opensbi.bin
