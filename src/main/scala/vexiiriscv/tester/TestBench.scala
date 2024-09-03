@@ -507,7 +507,7 @@ class TestOptions{
       val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
         driver.driver.setFactor(dbusReadyFactor)
         val checker = if (monitor.bus.p.withBCE) Checker(monitor)
-        override def checkAddress(address: Long) = address >= 0x20000000
+        override def checkAddress(address: Long) = address >= 0x20000000 || address >= 0x1000 && address < 0x2000
         override def delayOnA(a: TransactionA) = {
 //          if(a.address == 0x81820000l){
 //            println(f"miaou ${mem.readByteAsInt(0x817FFFF3l)}%x")
