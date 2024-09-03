@@ -378,7 +378,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           slot.loadedCounter := 0
           slot.victim := push.victim
           slot.dirty := push.dirty
-          slot.writebackHazards := 0
           if (withCoherency) {
             slot.c.unique := push.unique
             slot.c.data := push.data
@@ -390,16 +389,14 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       val read = new Area {
-        val arbiter = new PriorityArea(slots.map(s => (s.valid && !s.cmdSent && s.victim === 0 && s.writebackHazards === 0, s.priority)))
+        val arbiter = new PriorityArea(slots.map(s => (s.valid && !s.cmdSent && s.victim === 0, s.priority)))
 
-        val writebackHazards = Bits(writebackCount bits)
-        val writebackHazard = writebackHazards.orR
-        when(bus.read.cmd.fire || writebackHazard) {
+        when(bus.read.cmd.fire) {
           arbiter.lock := 0
         }
 
         val cmdAddress = slots.map(_.address(tagRange.high downto lineRange.low)).read(arbiter.sel) @@ U(0, lineRange.low bit)
-        bus.read.cmd.valid := arbiter.hit && !writebackHazard
+        bus.read.cmd.valid := arbiter.hit
         bus.read.cmd.id := arbiter.sel
         bus.read.cmd.address := cmdAddress
         if (withCoherency) {
@@ -407,8 +404,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           bus.read.cmd.data := slots.map(_.c.data).read(arbiter.sel)
         }
         slots.onMask(arbiter.oh) { slot =>
-          slot.writebackHazards := writebackHazards
-          slot.cmdSent setWhen (bus.read.cmd.ready && !writebackHazard)
+          slot.cmdSent setWhen (bus.read.cmd.ready)
         }
 
         val rspAddress = slots.map(_.address).read(bus.read.rsp.id)
@@ -527,11 +523,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
 
         val free = !valid
-
-        refill.read.writebackHazards(id) := valid && address(refillRange) === refill.read.cmdAddress(refillRange)
-        when(fire) {
-          refill.slots.foreach(_.writebackHazards(id) := False)
-        }
       }
 
       WRITEBACK_BUSY.set(B(slots.map(s => s.valid || s.fire)))
