@@ -166,10 +166,11 @@ class Soc(c : SocConfig) extends Component {
       }
     }
 
+    val withLowLatencyPeriph = !withMem
     val peripheral = new ClockingArea(litexCd) {
       val bus = Node()
       bus << ioBus
-      if (vexiiParam.lsuL1Enable) bus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
+      if (vexiiParam.lsuL1Enable && !withLowLatencyPeriph) bus.setDownConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
       bus.forceDataWidth(32)
 
       val clint = new TilelinkClintFiber()
@@ -296,7 +297,7 @@ class Soc(c : SocConfig) extends Component {
       ))
 
       val pBus = litexCd on AxiLite4SpecRenamer(master(
-        vexiiParam.lsuL1Enable.mux(
+        (vexiiParam.lsuL1Enable && !withLowLatencyPeriph).mux(
           peripheral.toAxiLite4.down.pipelined(
             ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.HALF, b = StreamPipe.HALF, r = StreamPipe.HALF
           ),
