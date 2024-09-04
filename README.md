@@ -2,7 +2,7 @@
 
 VexiiRiscv (Vex2Risc5) is the successor of VexRiscv. Work in progress, here are its currently implemented features :
 
-- RV32/64 I[M][A][C][S][U]
+- RV32/64 I[M][A][F][D][C][S][U][B]
 - Up to 5.24 coremark/Mhz 2.50 dhystone/Mhz (WIP)
 - In-order execution
 - early [late-alu]
