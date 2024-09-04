@@ -44,6 +44,9 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
       })
       uop.addDecoding(sel -> True, FpuCsrPlugin.DIRTY -> True)
     }
+    if(at <= pipTo){
+      uop.dontFlushFrom(pipTo)
+    }
   }
 
   val logic = during setup new Area{
@@ -72,14 +75,14 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
         }
       }
       new lane.Execute(pipTo) {
-        flagsOrInputs += FLAGS.andMask(isValid && isReady && !isCancel && Global.COMMIT)
+        flagsOrInputs += FLAGS.andMask(isValid && isReady && up(Global.COMMIT)) //Ok because uop.dontFlushFrom(pipTo)
       }
     }
 
     val afterCommit = for(spec <- specs; ats = spec.ats.zipWithIndex.filter(_._1 > pipTo); if ats.nonEmpty) yield {
       flagsOrInputs += spec.port.flags.andMask(ats.map { e =>
         val exe = lane.execute(e._1)
-        exe.isValid && exe.isReady && exe(Global.COMMIT) && spec.port.ats(e._2)
+        exe.isValid && exe.isReady && exe.up(Global.COMMIT) && spec.port.ats(e._2)
       }.orR)
     }
 
