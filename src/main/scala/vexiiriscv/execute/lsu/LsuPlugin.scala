@@ -448,6 +448,7 @@ class LsuPlugin(var layer : LaneLayer,
 
     val preCtrl = new elp.Execute(ctrlAt-1){
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
+      val IS_AMO = insert(SEL && l1.ATOMIC && l1.STORE && l1.LOAD)
     }
 
     val onPma = new elp.Execute(pmaAt){
@@ -459,15 +460,16 @@ class LsuPlugin(var layer : LaneLayer,
       io.cmd.size := l1.SIZE.asBits
       io.cmd.op(0) := l1.STORE
 
-      val CACHED = insert(cached.rsp)
-      val IO = insert(io.rsp)
+      val CACHED_RSP = insert(cached.rsp)
+      val IO_RSP = insert(io.rsp)
+      val IO = insert(CACHED_RSP.fault && !IO_RSP.fault && !FENCE && !FROM_PREFETCH)
     }
 
     val onCtrl = new elp.Execute(ctrlAt) {
       val lsuTrap = False
       val mmuPageFault = tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
 
-      val IO = insert(onPma.CACHED.fault && !onPma.IO.fault && !FENCE && !FROM_PREFETCH)
+
 
       val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
       if(Riscv.withFpu) when(FLOAT){
@@ -480,7 +482,7 @@ class LsuPlugin(var layer : LaneLayer,
       val io = new Area {
         val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False)
         val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel) init(False)
-        val doIt = isValid && l1.SEL && IO
+        val doIt = isValid && l1.SEL && onPma.IO
         val doItReg = RegNext(doIt) init(False)
 
         val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
@@ -547,13 +549,13 @@ class LsuPlugin(var layer : LaneLayer,
           isWord = l1.SIZE === 2
         )
         val aluBuffer = RegNext(alu.result)
-        val isAmo = l1.ATOMIC && l1.STORE && l1.LOAD
-        when(isAmo) {
+
+        when(preCtrl.IS_AMO) {
           writeData := aluBuffer
         }
 
         val delay = History(!elp.isFreezed(), 1 to 2)
-        val freezeIt = isValid && SEL && isAmo && delay.orR
+        val freezeIt = isValid && preCtrl.IS_AMO && delay.orR
         elp.freezeWhen(freezeIt) //Note that if the refill is faster than 2 cycle, it may create issues
 
         assert(Global.HART_COUNT.get == 1)
@@ -561,7 +563,7 @@ class LsuPlugin(var layer : LaneLayer,
           val capture = False
           val reserved = RegInit(False)
           val address = Reg(l1.PHYSICAL_ADDRESS)
-          when(!elp.isFreezed() && isValid && FROM_LSU && l1.SEL && !lsuTrap && !IO) {
+          when(!elp.isFreezed() && isValid && FROM_LSU && l1.SEL && !lsuTrap && !onPma.IO) {
             when(l1.STORE){
               reserved := False
             } elsewhen(apply(l1.ATOMIC)){
@@ -593,7 +595,7 @@ class LsuPlugin(var layer : LaneLayer,
         val tag = p2t(LsuL1.PHYSICAL_ADDRESS)
         val hits = B(storeBuffer.slots.map(s => s.valid && s.tag === tag))
         val hit = hits.orR
-        val compatibleOp = FROM_LSU && STORE && !ATOMIC && !IO
+        val compatibleOp = FROM_LSU && STORE && !ATOMIC && !onPma.IO
         val notFull = !storeBuffer.ops.full && (storeBuffer.slotsFree || hit)
         val allowed = notFull && compatibleOp
         val slotOh = hits | storeBuffer.slotsFreeFirst.andMask(!hit)
@@ -617,7 +619,7 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code.assignDontCare()
         trapPort.arg.allowOverride() := 0
 
-        val accessFault = (onPma.CACHED.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT)
+        val accessFault = (onPma.CACHED_RSP.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT)
         when(accessFault) {
           lsuTrap := True
           trapPort.exception := True
@@ -625,14 +627,14 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code(1) setWhen (STORE)
         }
 
-        val l1Failed = !onPma.CACHED.fault && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
+        val l1Failed = !onPma.CACHED_RSP.fault && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
         when(withStoreBuffer.mux((l1Failed || wb.hit) && !wb.allowed, l1Failed)) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
         }
 
-        val pmaFault = onPma.CACHED.fault && onPma.IO.fault
+        val pmaFault = onPma.CACHED_RSP.fault && onPma.IO_RSP.fault
         when(pmaFault) {
           lsuTrap := True
           trapPort.exception := True
@@ -727,7 +729,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val abords, skipsWrite = ArrayBuffer[Bool]()
       abords += l1.HAZARD
-      abords += !l1.FLUSH && onPma.CACHED.fault
+      abords += !l1.FLUSH && onPma.CACHED_RSP.fault
       abords += FROM_LSU && (!isValid || isCancel)
       abords += mmuNeeded && mmuFailure
       if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid
@@ -785,7 +787,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val hartRegulation = new L1Waiter{
         host[DispatchPlugin].haltDispatchWhen(valid)
-        when(isValid && SEL && !FROM_PREFETCH && !IO && !FENCE && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
+        when(isValid && SEL && !FROM_PREFETCH && !onPma.IO && !FENCE && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
           capture(down)
         }
         events.foreach(_.waiting setWhen(valid))
@@ -797,7 +799,7 @@ class LsuPlugin(var layer : LaneLayer,
       commitProbe.store := l1.STORE
       commitProbe.trap := lsuTrap
       commitProbe.miss := l1.MISS && !l1.HAZARD && !mmuFailure
-      commitProbe.io := IO
+      commitProbe.io := onPma.IO
       commitProbe.prefetchFailed := FROM_PREFETCH
       commitProbe.pc := Global.PC
     }
@@ -819,7 +821,7 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      val storeFire      = down.isFiring && AguPlugin.SEL && AguPlugin.STORE && !onCtrl.IO && !FROM_PREFETCH
+      val storeFire      = down.isFiring && AguPlugin.SEL && AguPlugin.STORE && !onPma.IO && !FROM_PREFETCH
       val storeBroadcast = down.isReady && l1.SEL && l1.STORE && !l1.ABORD && !l1.SKIP_WRITE && !l1.MISS && !l1.MISS_UNIQUE && !l1.HAZARD
     }
 
