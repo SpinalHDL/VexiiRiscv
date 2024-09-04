@@ -60,7 +60,7 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
     val wbPorts = mutable.LinkedHashMap[Int, Flow[Bits]]()
     val uopsAt = mutable.LinkedHashMap[Int, ArrayBuffer[UopLayerSpec]]()
     for(port <- ports; (uop, at) <- port.uopsAt) uopsAt.getOrElseUpdate(at, ArrayBuffer[UopLayerSpec]()) += uop
-    val flagsWb = ffwbp.createPort(uopsAt.keys.map(_ + latency).toList)
+    val flagsWb = ffwbp.createPort(uopsAt.toList.map(_._1 + latency))
     for((at, uops) <- uopsAt) {
       val port = wbp.createPort(at+latency).setName("FpuPackerPlugin_wb_at_" + (at+latency))
       wbPorts(at) = port
