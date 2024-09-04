@@ -3,6 +3,8 @@ package vexiiriscv.misc
 import spinal.core._
 import spinal.lib._
 
+import java.awt.Color
+import java.io.File
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
@@ -327,4 +329,54 @@ class AgedArbiter[T <: Data](ups : Seq[AgedArbiterUp[T]]) extends Area{
   val down = Flow(ups.head.payload)
   down.valid := ups.map(_.valid).orR
   down.payload := OHMux.or(oh, ports.map(_.payload))
+}
+
+
+object FloorplanDisplay extends App{
+  import java.awt.{Dimension, Graphics}
+  import java.awt.image.BufferedImage
+  import javax.swing.{JFrame, JPanel, WindowConstants}
+
+  var width = 2000
+  var height = 1400
+  var scale = 2
+  val image = new BufferedImage(width, height, BufferedImage.TYPE_INT_BGR);
+
+  val frame = new JFrame {
+    setPreferredSize(new Dimension(width, height));
+
+    add(new JPanel {
+      this.setPreferredSize(new Dimension(width, height))
+
+      override def paintComponent(g: Graphics): Unit = {
+        g.drawImage(image, 0, 0, width * scale, height * scale, null)
+      }
+    })
+
+    pack();
+    setVisible(true);
+    setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+  }
+
+  val f = new File(args(0))
+  import scala.io.Source
+  var lineId = 6
+  for(line <- Source.fromFile(f).getLines().drop(6)) {
+    lineId += 1
+    val parts = line.split("\t+")
+    val name = parts(0)
+    val x = parts(1).toInt
+    val y = parts(2).toInt
+    if(name.endsWith("~FF")) {
+      var color = Color.LIGHT_GRAY
+      if (name.contains("/vexiis_0_logic_core/")) color = Color.RED
+      if (name.contains("/vexiis_1_logic_core/")) color = Color.GREEN
+      if (name.contains("/vexiis_2_logic_core/")) color = Color.BLUE
+      if (name.contains("/vexiis_3_logic_core/")) color = Color.YELLOW
+      if (name.contains("_logic_core/") || true) image.setRGB(x, y, color.getRGB)
+    }
+  }
+
+  frame.repaint()
+
 }
