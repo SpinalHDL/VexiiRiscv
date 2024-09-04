@@ -196,32 +196,27 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
         val expZero = Bool()
         val expOne = Bool()
         val IS_SUBNORMAL = insert(expZero && !manZero)
-        val recodedExpOffset = UInt(p.exponentWidth bits)
         val recodedExpSub = SInt(p.exponentWidth + 1 bits)
-        val expRaw = UInt(p.exponentWidth bits)
 
         p.whenDouble(p.FORMAT) {
           RS_PRE_NORM.sign := f64.sign
-          expRaw := f64.exponent.resized
           RS_PRE_NORM.mantissa.raw := B(f64.mantissa)
           RS_PRE_NORM.quiet := f64.mantissa.msb
+          RS_PRE_NORM.exponent := f64.exponent.resize(p.exponentWidth) - p.exponentF64One
           manZero := f64.mantissa === 0
           expZero := f64.exponent === 0
           expOne := f64.exponent.andR
-          recodedExpOffset := p.exponentF64One
           recodedExpSub := -p.exponentF64One + 1
         } {
           RS_PRE_NORM.sign := f32.sign
-          expRaw := f32.exponent.resized
           RS_PRE_NORM.quiet := f32.mantissa.msb
           RS_PRE_NORM.mantissa.raw := B(f32.mantissa << (if (p.rvd) 29 else 0))
+          RS_PRE_NORM.exponent := f32.exponent.resize(p.exponentWidth) - p.exponentF32One
           manZero := f32.mantissa === 0
           expZero := f32.exponent === 0
           expOne := f32.exponent.andR
-          recodedExpOffset := p.exponentF32One
           recodedExpSub := -p.exponentF32One + 1
         }
-        RS_PRE_NORM.exponent := expRaw - recodedExpOffset
         RS_PRE_NORM.mode := (expOne ## expZero).mux(
           default -> FloatMode.NORMAL(),
           1 -> (manZero ? FloatMode.ZERO | FloatMode.NORMAL),
