@@ -47,7 +47,8 @@ object SrcKeys extends AreaObject {
 
 class SrcPlugin(val layer : LaneLayer,
                 var executeAt : Int,
-                var relaxedRs: Boolean) extends FiberPlugin{
+                var relaxedRs: Boolean,
+                var splitedAddSub : Boolean = false) extends FiberPlugin{
   val elaborationLock = Retainer()
   withPrefix(layer.name)
 
@@ -142,10 +143,14 @@ class SrcPlugin(val layer : LaneLayer,
 
       def ifElseMap[T](cond : Boolean)(value : T)(body : T => T) : T = if(cond) value else body(value)
 
-      val rs2Patched =  CombInit(ifElseMap(!alwaysSub)(this(SRC2))(~_))
-      if(withRevert) when(ss.REVERT){ rs2Patched :=  ~SRC2  }
-      if(has(sk.Op.SRC1)) when(ss.ZERO){ rs2Patched := 0 }
-      ADD_SUB := carryIn(SRC1 + rs2Patched)
+      val combined = !splitedAddSub generate new Area{
+        val rs2Patched =  CombInit(ifElseMap(!alwaysSub)(this(SRC2))(~_))
+        if(withRevert) when(ss.REVERT){ rs2Patched :=  ~SRC2  }
+        if(has(sk.Op.SRC1)) when(ss.ZERO){ rs2Patched := 0 }
+        ADD_SUB := carryIn(SRC1 + rs2Patched)
+      }
+
+      assert(!splitedAddSub)
 
       // SLT, SLTU, branches
       if(has(sk.Op.LESS, sk.Op.LESS_U)) {

@@ -447,8 +447,8 @@ object SocGen extends App{
 //  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_FORCE_HAZARD") //That big
 //  val to = cpu0.reflectBaseType("FpuCsrPlugin_api_flags_OF")
 
-//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_refill_slots_0_writebackHazards") //That big
-//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_refill_slots_0_cmdSent")
+//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_WAYS_HITS")
+//  val to = cpu0.reflectBaseType("TrapPlugin_logic_harts_0_trap_fsm_stateReg")
 
 
 
@@ -458,7 +458,7 @@ object SocGen extends App{
 //      case bt : BaseType => drivers += bt
 //    }
 //  }
-////  drivers.foreach(e => println(e.getName()))
+//  drivers.foreach(e => println(e.getName()))
 //  println("******")
 //  println(PathTracer.impl(from, to).report())
 }

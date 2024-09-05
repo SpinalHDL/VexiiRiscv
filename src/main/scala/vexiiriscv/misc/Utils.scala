@@ -338,18 +338,20 @@ object FloorplanDisplay extends App{
   import javax.swing.{JFrame, JPanel, WindowConstants}
 
   var width = 2000
-  var height = 1400
-  var scale = 2
+  var height = 1000
+  var scale = 1.4
   val image = new BufferedImage(width, height, BufferedImage.TYPE_INT_BGR);
 
   val frame = new JFrame {
-    setPreferredSize(new Dimension(width, height));
+    val fWidth = (width * scale).toInt
+    val hWidth = (height * scale).toInt
+    setPreferredSize(new Dimension(fWidth, hWidth));
 
     add(new JPanel {
-      this.setPreferredSize(new Dimension(width, height))
+      this.setPreferredSize(new Dimension(fWidth, hWidth))
 
       override def paintComponent(g: Graphics): Unit = {
-        g.drawImage(image, 0, 0, width * scale, height * scale, null)
+        g.drawImage(image, 0, 0, fWidth, hWidth, null)
       }
     })
 
@@ -366,14 +368,19 @@ object FloorplanDisplay extends App{
     val parts = line.split("\t+")
     val name = parts(0)
     val x = parts(1).toInt
-    val y = parts(2).toInt
+    val y = height-parts(2).toInt
     if(name.endsWith("~FF")) {
       var color = Color.LIGHT_GRAY
       if (name.contains("/vexiis_0_logic_core/")) color = Color.RED
       if (name.contains("/vexiis_1_logic_core/")) color = Color.GREEN
       if (name.contains("/vexiis_2_logic_core/")) color = Color.BLUE
       if (name.contains("/vexiis_3_logic_core/")) color = Color.YELLOW
-      if (name.contains("_logic_core/") || true) image.setRGB(x, y, color.getRGB)
+      if (name.contains("_logic_core/") || true) {
+        if(x == 369 && parts(2).toInt ==148){
+          println("hit")
+        }
+        if(y >= 0 && y < height) image.setRGB(x, y, color.getRGB)
+      }
     }
   }
 

@@ -220,7 +220,7 @@ class ParamSimple(){
     lsuL1Ways = 4
     lsuL1RefillCount = 8
     lsuL1WritebackCount = 8
-    lsuL1Coherency = false
+    lsuL1Coherency = true
 //    lsuStoreBufferSlots = 2
 //    lsuStoreBufferOps = 32
     lsuStoreBufferSlots = 4
@@ -660,8 +660,8 @@ class ParamSimple(){
 
       lsuHardwarePrefetch match {
         case "none" =>
-        case "nl" => plugins += new lsu.PrefetchNextLinePlugin
-        case "rpt" => plugins += new lsu.PrefetchRptPlugin(
+        case "nl" => plugins += new lsu.PrefetcherNextLinePlugin
+        case "rpt" => plugins += new lsu.PrefetcherRptPlugin(
           sets = 128,
           bootMemClear = bootMemClear
         )

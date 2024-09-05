@@ -26,7 +26,7 @@ abstract class PrefetcherPlugin extends FiberPlugin {
   val io = during build Stream(PrefetchCmd())
 }
 
-class PrefetchNextLinePlugin extends PrefetcherPlugin {
+class PrefetcherNextLinePlugin extends PrefetcherPlugin {
   val logic = during build new Area {
     val lsu = host[LsuService]
     val probe = lsu.lsuCommitProbe
@@ -40,23 +40,23 @@ class PrefetchNextLinePlugin extends PrefetcherPlugin {
 
 
 
-class PrefetchRptPlugin(sets : Int,
-                        bootMemClear : Boolean,
-                        readAt : Int = 0,
-                        tagAt: Int = 1,
-                        ctrlAt: Int = 2,
-                        addAt: Int = 1,
-                        prefetchAt: Int = 1,
-                        tagWidth: Int = 15,
-                        addressWidth: Int = 16,
-                        strideWidth: Int = 12,
-                        blockAheadMax: Int = 4,
-                        scoreMax: Int = 31,
-                        scorePass: Int = 1,
-                        scoreFailShift: Int = 1,
-                        scoreConflict: Int = 2,
-                        scoreOffset: Int = 3,
-                        scoreShift: Int = 0) extends PrefetcherPlugin  with InitService {
+class PrefetcherRptPlugin(sets : Int,
+                          bootMemClear : Boolean,
+                          readAt : Int = 0,
+                          tagAt: Int = 1,
+                          ctrlAt: Int = 2,
+                          addAt: Int = 1,
+                          prefetchAt: Int = 1,
+                          tagWidth: Int = 15,
+                          addressWidth: Int = 16,
+                          strideWidth: Int = 12,
+                          blockAheadMax: Int = 4,
+                          scoreMax: Int = 31,
+                          scorePass: Int = 1,
+                          scoreFailShift: Int = 1,
+                          scoreConflict: Int = 2,
+                          scoreOffset: Int = 3,
+                          scoreShift: Int = 0) extends PrefetcherPlugin  with InitService {
 
   override def initHold(): Bool = bootMemClear.mux(logic.initializer.busy, False)
 

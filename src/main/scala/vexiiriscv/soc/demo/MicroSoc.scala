@@ -106,9 +106,9 @@ object MicroSocGen extends App{
     new MicroSoc(p)
   }
 
-  val h = report.toplevel.main.cpu.logic.core.host
-  val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
-  println(path.report)
+//  val h = report.toplevel.main.cpu.logic.core.host
+//  val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
+//  println(path.report)
 }
 
 object MicroSocSynt extends App{
