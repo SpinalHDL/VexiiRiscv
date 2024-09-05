@@ -75,23 +75,25 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
         }
       }
       new lane.Execute(pipTo) {
-        flagsOrInputs += FLAGS.andMask(isValid && isReady && up(Global.COMMIT)) //Ok because uop.dontFlushFrom(pipTo)
+        flagsOrInputs += FLAGS.andMask(isValid && up(Global.COMMIT)) //Ok because uop.dontFlushFrom(pipTo)
       }
     }
 
     val afterCommit = for(spec <- specs; ats = spec.ats.zipWithIndex.filter(_._1 > pipTo); if ats.nonEmpty) yield {
       flagsOrInputs += spec.port.flags.andMask(ats.map { e =>
         val exe = lane.execute(e._1)
-        exe.isValid && exe.isReady && exe.up(Global.COMMIT) && spec.port.ats(e._2)
+        exe.isValid && exe.up(Global.COMMIT) && spec.port.ats(e._2)
       }.orR)
     }
 
     val flagsOr = flagsOrInputs.reduceBalancedTree(_ | _)
-    fcp.api.flags.NV.setWhen(flagsOr.NV)
-    fcp.api.flags.DZ.setWhen(flagsOr.DZ)
-    fcp.api.flags.OF.setWhen(flagsOr.OF)
-    fcp.api.flags.UF.setWhen(flagsOr.UF)
-    fcp.api.flags.NX.setWhen(flagsOr.NX)
+    when(!lane.isFreezed()) {
+      fcp.api.flags.NV.setWhen(flagsOr.NV)
+      fcp.api.flags.DZ.setWhen(flagsOr.DZ)
+      fcp.api.flags.OF.setWhen(flagsOr.OF)
+      fcp.api.flags.UF.setWhen(flagsOr.UF)
+      fcp.api.flags.NX.setWhen(flagsOr.NX)
+    }
     buildBefore.release()
   }
 }
