@@ -729,6 +729,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val abords, skipsWrite = ArrayBuffer[Bool]()
       abords += l1.HAZARD
+      abords += l1.FLUSH_HAZARD
       abords += !l1.FLUSH && onPma.CACHED_RSP.fault
       abords += FROM_LSU && (!isValid || isCancel)
       abords += mmuNeeded && mmuFailure
@@ -745,7 +746,7 @@ class LsuPlugin(var layer : LaneLayer,
       l1.ABORD := abords.orR
       l1.SKIP_WRITE := skipsWrite.orR
 
-      if(flusher != null) when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){
+      if(flusher != null) when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD || l1.FLUSH_HAZARD)){
         flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
       }
 
