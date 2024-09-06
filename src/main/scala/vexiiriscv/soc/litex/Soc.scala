@@ -306,6 +306,12 @@ class Soc(c : SocConfig) extends Component {
       ))
       if (c.withDma) Axi4SpecRenamer(dma.bus)
 
+      if(withCoherency && withL2){
+        for (bank <- splited.wc.l2.cache.logic.cache.cache.data.banks) {
+          bank.ram.preventAsBlackBox() // Some synthesis tools have issues inferring efficient layout when byte mask is used.
+        }
+      }
+
 
       println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus))
 
