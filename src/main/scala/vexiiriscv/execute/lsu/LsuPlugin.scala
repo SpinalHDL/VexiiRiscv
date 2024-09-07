@@ -54,7 +54,7 @@ class LsuPlugin(var layer : LaneLayer,
                 var pmaAt : Int = 1,
                 var ctrlAt: Int = 2,
                 var wbAt : Int = 2,
-                var storeRs2At : Int = 0,
+                var storeRs2At : Int = 0, //Note that currently, it only apply for integer store (not float store)
                 var storeBufferSlots : Int = 0,
                 var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuService with CmoService{
 
@@ -148,9 +148,13 @@ class LsuPlugin(var layer : LaneLayer,
 
     for(store <- frontend.writingMem ++ amos){
       val op = layer(store)
+      val isInt = store.resources.exists {
+        case RfResource(IntRegFile, RS2) => true
+        case _ => false
+      }
       op.mayFlushUpTo(ctrlAt)
       op.dontFlushFrom(ctrlAt+1)
-      op.addRsSpec(RS2, storeRs2At)
+      op.addRsSpec(RS2, isInt.mux(storeRs2At, 0)) // Only int late usage works (scheduler)
     }
 
     val FENCE = Payload(Bool())
