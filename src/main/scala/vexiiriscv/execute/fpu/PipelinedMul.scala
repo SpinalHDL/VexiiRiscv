@@ -40,8 +40,8 @@ class PipelinedMul(rsA : Stageable[UInt],
   val mul = new Area{
     import mulStage._
     splits.foreach(e => MUL_SLICES1(e.id) := (rsA(e.offsetA, e.widthA bits) * rsB(e.offsetB, e.widthB bits)))
-    KeepAttribute(mulStage(rsA))
-    KeepAttribute(mulStage(rsB))
+//    KeepAttribute(mulStage(rsA))
+//    KeepAttribute(mulStage(rsB))
   }
 
   val sum1 = new Area {
@@ -49,7 +49,7 @@ class PipelinedMul(rsA : Stageable[UInt],
     MUL_SUM1 := (if(sum1Takes != 0) splits.take(sum1Takes).map(e => (MUL_SLICES1(e.id) << e.offsetC).resize(finalWidth)).reduceBalancedTree(_ + _).resized else U(0))
     sum1Stage(MUL_SLICES2) := Vec(MUL_SLICES1.drop(sum1Takes))
 
-    KeepAttribute(sum1Stage(MUL_SLICES2))
+//    KeepAttribute(sum1Stage(MUL_SLICES2))
   }
 
   val sum2 = new Area {

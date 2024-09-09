@@ -39,8 +39,14 @@ class MulPlugin(val layer : LaneLayer,
 
 
   override def inject(src1: Bits, src2: Bits): Unit = {
-    logic.src(logic.keys.MUL_SRC1) := src1
-    logic.src(logic.keys.MUL_SRC2) := src2
+    cmdAt match {
+      case 0 =>
+        logic.src(logic.keys.MUL_SRC1) := src1
+        logic.src(logic.keys.MUL_SRC2) := src2
+      case -1 =>
+        logic.mul.bypass(logic.keys.MUL_SRC1) := src1
+        logic.mul.bypass(logic.keys.MUL_SRC2) := src2
+    }
   }
 
   override def rspAt: Int = writebackAt
@@ -51,7 +57,7 @@ class MulPlugin(val layer : LaneLayer,
     awaitBuild()
     import SrcKeys._
 
-    if (bufferedHigh == None) bufferedHigh = Some(Riscv.XLEN >= 64)
+    if (bufferedHigh == None) bufferedHigh = Some(Riscv.XLEN >= 64 || mulAt > 0)
     if (bufferedHigh.get) {
       el.setDecodingDefault(HIGH, False)
     }
@@ -91,8 +97,9 @@ class MulPlugin(val layer : LaneLayer,
     import keys._
 
     val src = new el.Execute(cmdAt) {
-      val rs1 = up(el(IntRegFile, RS1))
-      val rs2 = up(el(IntRegFile, RS2))
+      val node = (cmdAt == -1).mux(down, up)
+      val rs1 = node(el(IntRegFile, RS1))
+      val rs2 = node(el(IntRegFile, RS2))
       useRsUnsignedPlugin match {
         case false => {
           MUL_SRC1 := (RS1_SIGNED && rs1.msb) ## (rs1)

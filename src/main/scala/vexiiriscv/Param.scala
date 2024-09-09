@@ -107,6 +107,7 @@ class ParamSimple(){
   var relaxedSrc = true
   var relaxedBtb = false
   var relaxedDiv = false
+  var relaxedMulInputs = false
   var allowBypassFrom = 100 //100 => disabled
   var additionalPerformanceCounters = 0
   var withPerformanceCounters = false
@@ -343,6 +344,7 @@ class ParamSimple(){
     opt[Int]("dispatcher-at") action { (v, c) => dispatcherAt = v }
     opt[Long]("reset-vector") unbounded() action { (v, c) => resetVector = v }
     opt[Unit]("relaxed-div") action { (v, c) => relaxedDiv = true }
+    opt[Unit]("relaxed-mul-inputs") action { (v, c) => relaxedMulInputs = true }
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
@@ -669,7 +671,7 @@ class ParamSimple(){
     }
 
     if(withMul) {
-      plugins += new MulPlugin(early0, keepMulSrc = mulKeepSrc)
+      plugins += new MulPlugin(early0, keepMulSrc = mulKeepSrc, mulAt = relaxedMulInputs.toInt)
     }
     if(withDiv) {
       plugins += new RsUnsignedPlugin("lane0")
