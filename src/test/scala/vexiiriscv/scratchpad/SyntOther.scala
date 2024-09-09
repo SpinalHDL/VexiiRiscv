@@ -174,7 +174,15 @@ class EFX_COMB4(LUTMASK: Int, MODE: String) extends BlackBox {
     serOut := Delay(result.msb, 4)
   }))
 
-  val rtls = List(adder)
+
+  val ram = Rtl(SpinalVerilog(new Component {
+    val ram = Mem.fill(4*8*1024)(Bits(64 bits))
+    val write = slave(ram.writePortWithMask(8))
+    val read = slave(ram.readSyncPort())
+    ram.generateAsBlackBox()
+  }))
+
+  val rtls = List(ram)
 
   val targets = EfinixStdTargets().drop(2)
 

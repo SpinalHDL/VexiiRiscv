@@ -5,6 +5,7 @@ import spinal.lib._
 
 import java.awt.Color
 import java.io.File
+import javax.imageio.ImageIO
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
@@ -337,8 +338,8 @@ object FloorplanDisplay extends App{
   import java.awt.image.BufferedImage
   import javax.swing.{JFrame, JPanel, WindowConstants}
 
-  var width = 2000
-  var height = 1000
+  var width = 500
+  var height = 700
   var scale = 1.4
   val image = new BufferedImage(width, height, BufferedImage.TYPE_INT_BGR);
 
@@ -376,9 +377,6 @@ object FloorplanDisplay extends App{
       if (name.contains("/vexiis_2_logic_core/")) color = Color.BLUE
       if (name.contains("/vexiis_3_logic_core/")) color = Color.YELLOW
       if (name.contains("_logic_core/") || true) {
-        if(x == 369 && parts(2).toInt ==148){
-          println("hit")
-        }
         if(y >= 0 && y < height) image.setRGB(x, y, color.getRGB)
       }
     }
@@ -386,4 +384,5 @@ object FloorplanDisplay extends App{
 
   frame.repaint()
 
+  ImageIO.write(image, "png", new File("floorplan.png"))
 }

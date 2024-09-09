@@ -841,7 +841,7 @@ weston --use-pixman
 https://www.brendangregg.com/perf.html
 perf stat  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 perf record md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
-perf record -f 99 -g  -e cpu-clock  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp
+perf record -g  -e cpu-clock  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp
 
 perf report
 perf report --stdio
@@ -913,6 +913,13 @@ node-store-misses or cpu/node-store-misses/
 node-prefetches or cpu/node-prefetches/
 node-prefetch-misses or cpu/node-prefetch-misses/
 
+bluetooth modem
+nmcli connection show
+nmcli connection up "abcd"
+
+pulseaudio --dump-resample-methods
+nano /etc/pulse/daemon.conf
+pacmd list-sink-inputs
 
 
 bluetooth :
