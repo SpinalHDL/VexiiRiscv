@@ -18,10 +18,36 @@ import scala.concurrent.ExecutionContext
 import scala.reflect.io.Path.jfile2path
 import scala.util.Random
 
+
+class RegressionSingleConfig(){
+  var riscvTest = true
+  var riscvArchTest = true
+  var buildroot = true
+  var freertosCount = 1
+  var regular = true
+  var benchmark = true
+  var jtag = true
+
+  def fromEnv(): this.type = {
+    freertosCount = sys.env.getOrElse("VEXIIRISCV_REGRESSION_FREERTOS_COUNT", "1").toInt
+    buildroot = sys.env.getOrElse("VEXIIRISCV_REGRESSION_BUILDROOT_ENABLED", "1").toInt.toBoolean
+    this
+  }
+
+  def disableAll(): Unit = {
+    riscvTest = false
+    riscvArchTest = false
+    buildroot = false
+    freertosCount = 0
+    regular = false
+    benchmark = false
+    jtag = false
+  }
+}
+
 class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
                        dutArgs : Seq[String] = Nil,
-                       freertosCount : Int = sys.env.getOrElse("VEXIIRISCV_REGRESSION_FREERTOS_COUNT", "1").toInt,
-                       withBuildroot: Boolean = sys.env.getOrElse("VEXIIRISCV_REGRESSION_BUILDROOT_ENABLED", "1").toInt.toBoolean) {
+                       config : RegressionSingleConfig) {
   val dut = compiled.dut
   val xlen = dut.database(Riscv.XLEN)
   val priv = dut.host.get[PrivilegedPlugin]
@@ -134,11 +160,14 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val rvtd = riscvTests.filter { t => val n = t.getName; n.startsWith(s"rv${xlen}ud-p-") && !n.contains(".") && !rejectedTests.contains(n) }
 
   val riscvTestsFrom2, riscvTestsFromStart = ArrayBuffer[File]()
-  riscvTestsFrom2 ++= rvti
-  if(rvm) riscvTestsFrom2 ++= rvtm
-  if (rva) riscvTestsFrom2 ++= rvta
-  if (rvf) riscvTestsFromStart ++= rvtf
-  if (rvd) riscvTestsFromStart ++= rvtd
+
+  if(config.riscvTest) {
+    riscvTestsFrom2 ++= rvti
+    if (rvm) riscvTestsFrom2 ++= rvtm
+    if (rva) riscvTestsFrom2 ++= rvta
+    if (rvf) riscvTestsFromStart ++= rvtf
+    if (rvd) riscvTestsFromStart ++= rvtd
+  }
 
 
 
@@ -254,13 +283,15 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.name("riscv-tests/" + elf.getName)
   }
 
-  if(rva){
-    val args = newArgs()
-    args.loadElf(new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc"))
-    args.failAfter(1000000)
-    args.startSymbol("test_2")
-    args.passSymbol("test_5")
-    args.name(s"riscv-tests/rv${xlen}ua-p-lrsc")
+  if(config.riscvTest) {
+    if (rva) {
+      val args = newArgs()
+      args.loadElf(new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc"))
+      args.failAfter(1000000)
+      args.startSymbol("test_2")
+      args.passSymbol("test_5")
+      args.name(s"riscv-tests/rv${xlen}ua-p-lrsc")
+    }
   }
 
 
@@ -279,15 +310,17 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     }
   }
 
-  doArchTest("I")
-  doArchTest("Zifencei")
-  doArchTest("privilege")
-  if (rvm) doArchTest("M")
-  if (rvc) doArchTest("C")
-  if (rvzba) doArchTest("B", Seq("add", "slli"))
-  if (rvzbb) doArchTest("B", Seq("and", "clz", "cpop", "ctz", "max", "min", "or", "rev", "rol", "ror", "sext", "xnor", "zext"))
-  if (rvzbc) doArchTest("B", Seq("mul"))
-  if (rvzbs) doArchTest("B", Seq("bclr", "bext", "binv", "bset"))
+  if(config.riscvArchTest) {
+    doArchTest("I")
+    doArchTest("Zifencei")
+    doArchTest("privilege")
+    if (rvm) doArchTest("M")
+    if (rvc) doArchTest("C")
+    if (rvzba) doArchTest("B", Seq("add", "slli"))
+    if (rvzbb) doArchTest("B", Seq("and", "clz", "cpop", "ctz", "max", "min", "or", "rev", "rol", "ror", "sext", "xnor", "zext"))
+    if (rvzbc) doArchTest("B", Seq("mul"))
+    if (rvzbs) doArchTest("B", Seq("bclr", "bext", "binv", "bset"))
+  }
 
   val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")
 
@@ -320,7 +353,8 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
   if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
-  for(name <- regulars){
+
+  if(config.regular) for(name <- regulars){
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
     args.failAfter(300000000)
@@ -328,7 +362,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   }
 
   val benchmarks = ArrayBuffer("dhrystone_vexii", "coremark_vexii")
-  for (name <- benchmarks) {
+  if(config.benchmark) for (name <- benchmarks) {
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
     args.failAfter(300000000)
@@ -343,14 +377,14 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     "QueueSet", "recmutex", "semtest", "TaskNotify", "dynamic",
     "GenQTest", "PollQ", "QueueOverwrite", "QueueSetPolling", "test1"
   )
-  if(rvm) for(name <- freertos.take(freertosCount)){
+  if(rvm) for(name <- freertos.take(config.freertosCount)){
     val args = newArgs()
     args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${arch + (arch.endsWith("im").mux("a",""))}/freertosDemo.elf"))
     args.failAfter(300000000)
     args.name(s"freertos/$name")
   }
 
-  if(withBuildroot && rvm && rva && mmu.nonEmpty) priv.filter(_.p.withSupervisor).foreach{ _ =>
+  if(config.buildroot && rvm && rva && mmu.nonEmpty) priv.filter(_.p.withSupervisor).foreach{ _ =>
     val path = s"ext/NaxSoftware/buildroot/images/$archLinux"
     val args = newArgs()
     args.failAfter(10000000000l)
@@ -383,16 +417,19 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.fsmSuccess()
   }
 
-  dut.host.get[EmbeddedRiscvJtag].foreach{p =>
-    val args = newArgs()
-    args.loadElf(new File(nsf, s"baremetal/debugger/build/$arch/debugger.elf"))
-    args.failAfter(100000000)
-    args.name(s"regular/debugger")
-    args.args += "--jtag-remote"
-    args.noRvlsCheck()
-    args.noProbe()
-    args.args ++= List("--spawn-process", s"openocd -f src/main/tcl/openocd/vexiiriscv_sim.tcl -f ${new File(nsf, s"baremetal/debugger/tcl/test.tcl")}")
+  if(config.jtag){
+    dut.host.get[EmbeddedRiscvJtag].foreach { p =>
+      val args = newArgs()
+      args.loadElf(new File(nsf, s"baremetal/debugger/build/$arch/debugger.elf"))
+      args.failAfter(100000000)
+      args.name(s"regular/debugger")
+      args.args += "--jtag-remote"
+      args.noRvlsCheck()
+      args.noProbe()
+      args.args ++= List("--spawn-process", s"openocd -f src/main/tcl/openocd/vexiiriscv_sim.tcl -f ${new File(nsf, s"baremetal/debugger/tcl/test.tcl")}")
+    }
   }
+
 
   implicit val ec = ExecutionContext.global
   val jobs = ArrayBuffer[AsyncJob]()
@@ -445,12 +482,12 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 }
 
 object RegressionSingle extends App{
-  def test(name : String, plugins : => Seq[Hostable], dutArgs : Seq[String]): Unit = {
+  def test(name : String, plugins : => Seq[Hostable], dutArgs : Seq[String], config : RegressionSingleConfig): Unit = {
     val simConfig = SpinalSimConfig()
     simConfig.withFstWave
     simConfig.setTestPath("regression/$COMPILED_tests/$TEST")
     val compiled = SpinalConfig.synchronized(simConfig.compile(VexiiRiscv(plugins).setDefinitionName(s"VexiiRiscv_$name")))
-    val regression = new RegressionSingle(compiled, dutArgs)
+    val regression = new RegressionSingle(compiled, dutArgs, config)
     println("*" * 80)
     val fails = regression.jobs.filter(_.failed)
     if (fails.isEmpty) {
@@ -465,8 +502,8 @@ object RegressionSingle extends App{
     throw new Exception()
   }
 
-  def test(ps : ParamSimple, dutArgs : Seq[String] = Nil): Unit = {
-    test(ps.getName().hashCode.abs.toString, TestBench.paramToPlugins(ps), dutArgs)
+  def test(ps : ParamSimple, dutArgs : Seq[String], config : RegressionSingleConfig): Unit = {
+    test(ps.hashCode().toString, TestBench.paramToPlugins(ps), dutArgs, config)
   }
 
   def test(args : String) : Unit = test(args.split(" "))
@@ -476,7 +513,7 @@ object RegressionSingle extends App{
       help("help").text("prints this usage text")
       param.addOptions(this)
     }.parse(args, Unit).nonEmpty)
-    test(param, args)
+    test(param, args, new RegressionSingleConfig().fromEnv())
   }
 
   test(args)
@@ -502,7 +539,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     if(testsAdded.contains(paramName)) return
     testsAdded += paramName
     testMp(paramName) {
-      RegressionSingle.test(param, args)
+      RegressionSingle.test(param, args, new RegressionSingleConfig().fromEnv())
     }
   }
 

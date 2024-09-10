@@ -7,6 +7,7 @@ import spinal.lib.{OHMux, StreamFifo}
 import spinal.lib.eda.bench.{AlteraStdTargets, Bench, EfinixStdTargets, Rtl, Target, XilinxStdTargets}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.execute.lsu.LsuL1Plugin
+import vexiiriscv.tester.{RegressionSingle, RegressionSingleConfig}
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 
 import scala.collection.mutable.ArrayBuffer
@@ -24,6 +25,8 @@ object IntegrationSynthBench extends App{
   }
   val rtls = ArrayBuffer[Rtl]()
 
+  val perfReport = ArrayBuffer[String]()
+
   def add(paramGen : => ParamSimple, name : String) = {
     rtls += Rtl(sc.generateVerilog {
       val param = paramGen
@@ -35,6 +38,19 @@ object IntegrationSynthBench extends App{
       }
       cpu
     })
+
+    val config = new RegressionSingleConfig()
+    config.disableAll()
+    config.benchmark = true
+    val pg = paramGen
+    RegressionSingle.test(pg, Nil, config)
+    val path = s"regression/VexiiRiscv_${pg.hashCode().toString}_tests"
+    val dhrystoneLog = scala.io.Source.fromFile(path + "/benchmark/dhrystone_vexii/stdout.log").mkString
+    val dhrystone = "DMIPS per Mhz:                              ([^\\s]+)".r.findAllMatchIn(dhrystoneLog).next().group(1)
+    val coremarkLog = scala.io.Source.fromFile(path + "/benchmark/coremark_vexii/stdout.log").mkString
+    val coremark = "([^\\s]+) Coremark\\/MHz".r.findAllMatchIn(coremarkLog).next().group(1)
+
+    perfReport += s"$name :\n- $dhrystone Dhrystone/MHz $coremark Coremark/MHz"
   }
 
   def add(postfix: String)(body : ParamSimple => Unit) : Unit = {
@@ -46,11 +62,92 @@ object IntegrationSynthBench extends App{
     }, postfix)
   }
 
-//  add("nothing") { p =>
+  def defaultOn(p : ParamSimple): Unit = {
+    p.regFileSync = false
+  }
+//  add("rv32i_noBypass") { p =>
+//    defaultOn(p)
+//    p.relaxedBranch = true
+//  }
 //
+//  add("rv32i") { p =>
+//    defaultOn(p)
+//    p.allowBypassFrom = 0
+//    p.relaxedBranch = true
+//  }
+//
+//  add("rv64i") { p =>
+//    defaultOn(p)
+//    p.xlen = 64
+//    p.allowBypassFrom = 0
+//    p.relaxedBranch = true
+//  }
+//
+//  add("rv32im") { p =>
+//    defaultOn(p)
+//    p.allowBypassFrom = 0
+//    p.relaxedBranch = true
+//    p.withRvm()
+//  }
+//
+//  add("rv32im branchPredict") { p =>
+//    defaultOn(p)
+//    p.allowBypassFrom = 0
+//    p.relaxedBranch = true
+//    p.relaxedBtb = true
+//    p.fetchForkAt = 1
+//    p.withRvm()
+//    p.withBranchPredicton()
 //  }
 
-//  add("debug") { p =>
+  add("rv32im branchPredict cached8k8k") { p =>
+    defaultOn(p)
+    p.allowBypassFrom = 0
+    p.relaxedBranch = true
+    p.relaxedBtb = true
+    p.withRvm()
+    p.withCaches()
+    p.withBranchPredicton()
+  }
+
+//  add("rv32im branchPredict cached8k8k ipcMax lateAlu") { p =>
+//    defaultOn(p)
+//    p.allowBypassFrom = 0
+//    p.relaxedBranch = false
+//    p.relaxedBtb = false
+//    p.divRadix = 4
+//    p.withLateAlu = true
+//    p.storeRs2Late = true
+//    p.withRvm()
+//    p.withBranchPredicton()
+//    p.withCaches()
+//  }
+
+  add("cached branchPredict cached8k8k linux mmuSync") { p =>
+    defaultOn(p)
+    p.allowBypassFrom = 0
+    p.relaxedBranch = true
+    p.relaxedBtb = true
+    p.withRvm()
+    p.withCaches()
+    p.withLinux()
+    p.withMmuSyncRead()
+    p.withBranchPredicton()
+  }
+
+  add("cached branchPredict cached8k8k linux mmuAsync") { p =>
+    defaultOn(p)
+    p.allowBypassFrom = 0
+    p.relaxedBranch = true
+    p.relaxedBtb = true
+    p.withRvm()
+    p.withCaches()
+    p.withLinux()
+    p.withBranchPredicton()
+  }
+
+
+  //  add("debug") { p =>
 //    p.privParam.withDebug = true
 //  }
 //  add("debug instr") { p =>
@@ -747,13 +844,13 @@ object IntegrationSynthBench extends App{
 //  }
 //
 
-  debianTweeked("vexii_debian_rv32_nofpu") { param =>
-    param.xlen = 32
-    param.withRvf = false
-    param.withRvd = false
-    param.withMul = false
-    param.withMmu = false
-  }
+//  debianTweeked("vexii_debian_rv32_nofpu") { param =>
+//    param.xlen = 32
+//    param.withRvf = false
+//    param.withRvd = false
+//    param.withMul = false
+//    param.withMmu = false
+//  }
 
   //
   //  debianTweeked("vexii_debian_nobp") { param =>
@@ -815,12 +912,14 @@ object IntegrationSynthBench extends App{
   targets ++=  XilinxStdTargets(withFMax = true, withArea = false)
   targets ++= AlteraStdTargets(
     quartusCycloneIIPath = null,
-    quartusCycloneIVPath = null,
-    quartusCycloneVPath = null
+//    quartusCycloneIVPath = null,
+//    quartusCycloneVPath = null
   )
   targets ++= EfinixStdTargets(withFMax = true, withArea = false)
 
   Bench(rtls, targets)
+
+  println(perfReport.mkString("\n"))
 }
 
 /*

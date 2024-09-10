@@ -7,6 +7,7 @@ import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.cpu.riscv.debug.DebugTransportModuleParameter
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.system.tag.{PmaRegion, PmaRegionImpl}
+import spinal.lib.tools.binarySystem.BytesToLiteral
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
@@ -19,7 +20,9 @@ import vexiiriscv.riscv.{FloatRegFile, IntRegFile}
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
+import java.security.MessageDigest
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Random
 
 object ParamSimple{
 
@@ -221,7 +224,7 @@ class ParamSimple(){
     lsuL1Ways = 4
     lsuL1RefillCount = 8
     lsuL1WritebackCount = 8
-    lsuL1Coherency = true
+//    lsuL1Coherency = true
 //    lsuStoreBufferSlots = 2
 //    lsuStoreBufferOps = 32
     lsuStoreBufferSlots = 4
@@ -294,6 +297,103 @@ class ParamSimple(){
 //    divRadix = 2
 //    divArea = true
 //    lsuForkAt = 1
+  }
+
+
+  def withRvm(): Unit = {
+    withMul = true
+    withDiv = true
+  }
+
+  def withBranchPredicton(): Unit = {
+    withBtb = true
+    withGShare = true
+    withRas = true
+  }
+
+  def withCaches(): Unit = {
+    fetchL1Enable = true
+    fetchL1Sets = 64
+    fetchL1Ways = 2
+
+    lsuL1Enable = true
+    lsuL1Sets = 64
+    lsuL1Ways = 2
+
+    withLsuBypass = true
+  }
+
+  def withLinux(): Unit = {
+    privParam.withSupervisor = true
+    privParam.withUser = true;
+    withMmu = true
+  }
+
+  def withMmuSyncRead(): Unit = {
+    fetchTsp = MmuStorageParameter(
+      levels = List(
+        MmuStorageLevel(
+          id = 0,
+          ways = 2,
+          depth = 64
+        ),
+        MmuStorageLevel(
+          id = 1,
+          ways = 1,
+          depth = 64
+        )
+      ),
+      priority = 0
+    )
+
+    lsuTsp = MmuStorageParameter(
+      levels = List(
+        MmuStorageLevel(
+          id = 0,
+          ways = 2,
+          depth = 64
+        ),
+        MmuStorageLevel(
+          id = 1,
+          ways = 1,
+          depth = 64
+        )
+      ),
+      priority = 1
+    )
+
+    fetchTpp = MmuPortParameter(
+      readAt = 1,
+      hitsAt = 1,
+      ctrlAt = 1,
+      rspAt = 1
+    )
+
+    lsuTpp = MmuPortParameter(
+      readAt = 1,
+      hitsAt = 1,
+      ctrlAt = 1,
+      rspAt = 1
+    )
+  }
+
+  override def hashCode() = {
+    var hash = 0
+    val md = new StringBuilder()
+    var rand = new Random(0)
+    for(f <- this.getClass.getDeclaredFields){
+      val o = f.get(this)
+      if(o != null) o.asInstanceOf[Any] match {
+        case e: Boolean => md ++= s" $e"
+        case e: Int => md ++= s" $e"
+        case e: Long => md ++= s" $e"
+        case e: BigInt => md ++= s" $e"
+        case e: String => md ++= s" $e"
+        case e : Product => md ++= s" $e"
+        case e => println(s"$e"); ???
+      }
+    }
+    Math.abs(md.toString.hashCode())
   }
 
 
@@ -420,54 +520,9 @@ class ParamSimple(){
     opt[Int]("physical-width") action { (v, c) => physicalWidth = v }
     opt[Unit]("mul-keep-src") action { (v, c) => mulKeepSrc = true }
     opt[Unit]("mmu-sync-read") action { (v, c) =>
-      fetchTsp = MmuStorageParameter(
-        levels = List(
-          MmuStorageLevel(
-            id = 0,
-            ways = 2,
-            depth = 64
-          ),
-          MmuStorageLevel(
-            id = 1,
-            ways = 1,
-            depth = 64
-          )
-        ),
-        priority = 0
-      )
-
-      lsuTsp = MmuStorageParameter(
-        levels = List(
-          MmuStorageLevel(
-            id = 0,
-            ways = 2,
-            depth = 64
-          ),
-          MmuStorageLevel(
-            id = 1,
-            ways = 1,
-            depth = 64
-          )
-        ),
-        priority = 1
-      )
-
-      fetchTpp = MmuPortParameter(
-        readAt = 1,
-        hitsAt = 1,
-        ctrlAt = 1,
-        rspAt = 1
-      )
-
-      lsuTpp = MmuPortParameter(
-        readAt = 1,
-        hitsAt = 1,
-        ctrlAt = 1,
-        rspAt = 1
-      )
+      withMmuSyncRead()
     }
   }
-
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
   def pluginsArea(hartId : Int = 0) = new Area {
