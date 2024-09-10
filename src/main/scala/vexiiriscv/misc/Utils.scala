@@ -340,7 +340,7 @@ object FloorplanDisplay extends App{
 
   var width = 500
   var height = 700
-  var scale = 1.4
+  var scale = 1.0
   val image = new BufferedImage(width, height, BufferedImage.TYPE_INT_BGR);
 
   val frame = new JFrame {
@@ -369,7 +369,7 @@ object FloorplanDisplay extends App{
     val parts = line.split("\t+")
     val name = parts(0)
     val x = parts(1).toInt
-    val y = height-parts(2).toInt
+    val y = parts(2).toInt
     if(name.endsWith("~FF")) {
       var color = Color.LIGHT_GRAY
       if (name.contains("/vexiis_0_logic_core/")) color = Color.RED

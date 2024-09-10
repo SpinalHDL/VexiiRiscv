@@ -277,6 +277,8 @@ class Soc(c : SocConfig) extends Component {
           cache.parameter.cacheBytes = l2Bytes
           cache.parameter.selfFlush = selfFlush
           cache.parameter.readProcessAt = 2+(l2Bytes >= 512*1024).toInt
+//          cache.parameter.generalSlotCount = 12
+//          cache.parameter.downPendingMax = 8
 
           cache.up << cBus
           cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
@@ -453,8 +455,9 @@ object SocGen extends App{
 //  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_FORCE_HAZARD") //That big
 //  val to = cpu0.reflectBaseType("FpuCsrPlugin_api_flags_OF")
 
-//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_WAYS_HITS")
-//  val to = cpu0.reflectBaseType("TrapPlugin_logic_harts_0_trap_fsm_stateReg")
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl4_up_LsuPlugin_logic_onPma_IO_lane0")
+//  val to = cpu0.reflectBaseType("CsrAccessPlugin_bus_write_halt")
+//  val to = cpu0.reflectBaseType("FpuCsrPlugin_api_flags_NX")
 
 
 

@@ -182,7 +182,14 @@ class EFX_COMB4(LUTMASK: Int, MODE: String) extends BlackBox {
     ram.generateAsBlackBox()
   }))
 
-  val rtls = List(ram)
+  val floor = Rtl(SpinalVerilog(new Component {
+    val a,b,c,d = in UInt(8 bits)
+    val x = out(RegNext(a ^ b))
+    val y = out(RegNext(a + c))
+    val z = out(RegNext(a & d))
+  }))
+
+  val rtls = List(floor)
 
   val targets = EfinixStdTargets().drop(2)
 
