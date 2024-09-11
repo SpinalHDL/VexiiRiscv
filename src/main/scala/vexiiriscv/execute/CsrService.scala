@@ -87,6 +87,7 @@ trait CsrService {
   val isReadingHartIdCsrMap = mutable.LinkedHashMap[(Int, Any), Bool]()
   val onWritingHartIdMap = mutable.LinkedHashMap[Int, Bool]()
   val trapNextOnWrite = mutable.LinkedHashSet[Any]()
+  def waitElaborationDone() : Unit
 
   val bus = Handle[CsrBus]
 

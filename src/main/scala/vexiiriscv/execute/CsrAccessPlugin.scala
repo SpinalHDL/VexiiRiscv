@@ -38,6 +38,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
   import CsrFsm._
   
   override val bus = during build CsrBus().setup()
+  override def waitElaborationDone(): Unit = logic.get
 
   val logic = during setup new Area {
     val elp = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)

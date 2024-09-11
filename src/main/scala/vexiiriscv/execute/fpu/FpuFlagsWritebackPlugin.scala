@@ -86,7 +86,10 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
       }.orR)
     }
 
+    buildBefore.release()
+
     val flagsOr = flagsOrInputs.reduceBalancedTree(_ | _)
+    cp.waitElaborationDone() //Ensure that CSR flags set is done last. This relax timings
     when(!lane.isFreezed()) {
       fcp.api.flags.NV.setWhen(flagsOr.NV)
       fcp.api.flags.DZ.setWhen(flagsOr.DZ)
@@ -94,6 +97,5 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
       fcp.api.flags.UF.setWhen(flagsOr.UF)
       fcp.api.flags.NX.setWhen(flagsOr.NX)
     }
-    buildBefore.release()
   }
 }
