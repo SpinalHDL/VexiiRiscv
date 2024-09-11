@@ -278,20 +278,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val cRead = withCoherency generate new Read(mem)
     }
 
-    val initializer = new Area {
-      val counter = Reg(UInt(log2Up(linePerWay) + 1 bits)) init (0)
-      val done = counter.msb
-      when(!done) {
-        counter := counter + 1
-        waysWrite.mask.setAll()
-        waysWrite.address := counter.resized
-        waysWrite.tag.loaded := False
-      }
-      shared.write.valid := !done
-      shared.write.address := counter.resized
-      shared.write.data.clearAll()
-    }
-
     class PriorityArea(slots: Seq[(Bool, Bits)]) extends Area {
       val slotsWithId = slots.zipWithIndex.map(e => (e._1._1, e._1._2, e._2))
       val hits = B(slots.map(_._1))
@@ -351,14 +337,15 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val free = B(OHMasking.first(slots.map(_.free)))
       val full = slots.map(!_.free).andR
 
-      val push = Flow(new Bundle {
+      case class Push() extends Bundle {
         val address = UInt(postTranslationWidth bits)
         val way = UInt(log2Up(wayCount) bits)
         val victim = Bits(writebackCount bits)
         val dirty = Bool()
         val unique = Bool()
         val data = Bool()
-      })
+      }
+      val push = Flow(Push())
 
       import spinal.core.sim._
 
@@ -531,13 +518,15 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val free = B(OHMasking.first(slots.map(_.free)))
       val full = slots.map(!_.free).andR
 
-      val push = Flow(new Bundle {
+      case class Push() extends Bundle {
         val address = UInt(postTranslationWidth bits)
         val way = UInt(log2Up(wayCount) bits)
 
         //TtoB TtoN BtoN
         val c = withCoherency generate CoherencyWb()
-      }).setIdle()
+      }
+
+      val push = Flow(Push()).setIdle()
 
       for (slot <- slots) when(push.valid) {
         when(free(slot.id)) {
@@ -797,7 +786,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           core.io.update.id.assignDontCare()
         }
 
-        val reservation = tagsWriteArbiter.create(2)
+        val wayWriteReservation = tagsWriteArbiter.create(2)
         val bankWriteReservation = bankWriteArbiter.create(2)
         val refillWayWithoutUpdate = CombInit(plruLogic.core.io.evict.id)
 //        val refillWayWithoutUpdate = CounterFreeRun(BigInt(ways.size)).value
@@ -821,7 +810,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val storeHazard = STORE && !PREFETCH  && !bankWriteReservation.win
 //        val storeHazard = False
 //        lane.freezeWhen(SEL && STORE && !FLUSH && !PREFETCH && !bankWriteReservation.win)
-        val flushHazard = FLUSH && !reservation.win
+        val flushHazard = FLUSH && !wayWriteReservation.win
         val coherencyHazard = False
         if(!withCoherency) HAZARD_FORCED := False
 
@@ -842,8 +831,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           e.loadMiss   := e.loadAccess && !HAZARD && MISS
         }
 
-        val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard
-        val canFlush = reservation.win && !writeback.full && !refill.slots.map(_.valid).orR && !writebackHazard
+        val canRefill = wayWriteReservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard
+        val canFlush = wayWriteReservation.win && !writeback.full && !refill.slots.map(_.valid).orR && !writebackHazard
         val needFlushs = CombInit(loadedDirties)
         val needFlushOh = OHMasking.firstV2(needFlushs)
         val needFlushSel = OHToUInt(needFlushOh)
@@ -862,14 +851,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))
 
         val targetWay = askUpgrade.mux(wayId, refillWayWithoutUpdate)
-        val allowSideEffects = !ABORD && !lane.isFreezed()
 
         when(SEL) {
           assert(CountOne(WAYS_HITS) <= 1, "Multiple way hit ???")
         }
 
         val doRefillPush = doRefill || doUpgrade
-        refill.push.valid := allowSideEffects && doRefillPush
+        refill.push.valid := doRefillPush
         refill.push.address := PHYSICAL_ADDRESS
         refill.push.unique := NEED_UNIQUE
         refill.push.data := askRefill
@@ -888,11 +876,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           assert(CountOne(Cat(askRefill, doUpgrade, doFlush)) < 2)
         }
 
-        when(SEL) {
-          shared.write.address := MIXED_ADDRESS(lineRange)
-          shared.write.data.plru := plruLogic.core.io.update.state
-          shared.write.data.dirty := (SHARED.dirty | WAYS_HITS.andMask(doWrite)) & ~(UIntToOh(refillWayWithoutUpdate).andMask(doRefill) | needFlushOh.andMask(doFlush))
-        }
+        shared.write.valid := False
+        shared.write.address := MIXED_ADDRESS(lineRange)
+        shared.write.data.plru := plruLogic.core.io.update.state
+        shared.write.data.dirty := (SHARED.dirty | WAYS_HITS.andMask(doWrite)) & ~(UIntToOh(refillWayWithoutUpdate).andMask(doRefill) | needFlushOh.andMask(doFlush))
 
         when(bankWriteReservation.win) {
           banksWrite.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
@@ -900,7 +887,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           banksWrite.writeMask := 0
           banksWrite.writeMask.subdivideIn(cpuWordWidth / 8 bits)(PHYSICAL_ADDRESS(bankWordToCpuWordRange)) := MASK
           for ((bank, bankId) <- banks.zipWithIndex) when(WAYS_HITS(bankId)) {
-            banksWrite.mask(bankId) := bankId === bankHitId && allowSideEffects && doWrite
+            banksWrite.mask(bankId) := bankId === bankHitId && doWrite
 //            bank.write.valid := bankId === bankHitId && allowSideEffects
 //            bank.write.address := PHYSICAL_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
 //            bank.write.data.subdivideIn(cpuWordWidth bits).foreach(_ := WRITE_DATA)
@@ -909,22 +896,23 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           }
         }
 
+
         FLUSH_HIT := needFlushs.orR
         when(doFlush) {
-          reservation.takeIt()
+          wayWriteReservation.takeIt()
 
           val reader = this (WAYS_TAGS).reader(needFlushSel)
           val tag = reader(_.address)
 
-          shared.write.valid := allowSideEffects
+          shared.write.valid := True
 
-          waysWrite.mask := needFlushOh.andMask(allowSideEffects)
+          waysWrite.mask := needFlushOh
           waysWrite.address := MIXED_ADDRESS(lineRange)
           waysWrite.tag.loaded := True
           waysWrite.tag.address := tag
           waysWrite.tag.fault := reader(_.fault)
 
-          writeback.push.valid := allowSideEffects
+          writeback.push.valid := True
           writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low
           writeback.push.way := needFlushSel
 
@@ -949,7 +937,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
 
         when(doRefill) {
-          writeback.push.valid := refillWayNeedWriteback && allowSideEffects
+          writeback.push.valid := refillWayNeedWriteback
           writeback.push.address := (WAYS_TAGS(targetWay).address @@ MIXED_ADDRESS(lineRange)) << lineRange.low
           writeback.push.way := targetWay
           if (withCoherency) {
@@ -960,12 +948,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             writeback.push.c.release := True
           }
 
-          shared.write.valid := allowSideEffects
+          shared.write.valid := True
           plruLogic.core.io.update.id := targetWay
         }
-        
+
         when(SEL && !HAZARD && !MISS) {
-          shared.write.valid := allowSideEffects
+          shared.write.valid := True
           plruLogic.core.io.update.id := wayId
         }
 
@@ -984,6 +972,19 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           }
         }
         READ_DATA := BYPASSED_DATA
+
+        val preventSideEffects = ABORD || lane.isFreezed()
+        when(preventSideEffects) {
+          shared.write.valid := False
+          refill.push.valid := False
+          writeback.push.valid := False
+          when(bankWriteReservation.win){
+            banksWrite.writeMask := 0
+          }
+          when(wayWriteReservation.win){
+            waysWrite.mask := 0
+          }
+        }
       }
     }
 
@@ -998,7 +999,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         ALLOW_UNIQUE := cmd.allowUnique
         ALLOW_SHARED := cmd.allowShared
         ALLOW_PROBE_DATA := cmd.getDirtyData
-        FORCE_HAZARD := !initializer.done
+        FORCE_HAZARD := False
         arbitrateFrom(cmd)
       }
 
@@ -1150,6 +1151,21 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             dst.bypass(HAZARD_FORCED) := True
           }
         }
+      }
+    }
+
+    val initializer = new Area {
+      val counter = Reg(UInt(log2Up(linePerWay) + 1 bits)) init (0)
+      val done = counter.msb
+      when(!done) {
+        counter := counter + 1
+        waysWrite.mask.setAll()
+        waysWrite.address := counter.resized
+        waysWrite.tag.loaded := False
+        shared.write.valid := True
+        shared.write.address := counter.resized
+        shared.write.data.clearAll()
+        if (withCoherency) c.onInsert(c.FORCE_HAZARD) := True
       }
     }
 
