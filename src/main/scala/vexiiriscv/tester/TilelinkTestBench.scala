@@ -208,8 +208,8 @@ object TlTbSim extends App{
 
 
   DualSimTracer.withCb(compiled, window = 200000 * 10000l, seed = 42, dualSimEnable = dualSim){ (dut, onTrace) =>
-    val fr = getForbiddenRandom()
-    val fri = fr.get()
+//    val fr = getForbiddenRandom()
+//    val fri = fr.get()
     dut.cd100.forkStimulus()
     dut.asyncReset #= true
     delayed(100 ns)(dut.asyncReset #= false)
