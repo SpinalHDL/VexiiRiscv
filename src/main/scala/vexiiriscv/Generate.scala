@@ -89,8 +89,6 @@ object GenerateTilelink extends App {
       if(sei != null) cpu.priv.get.sei << sei; in(sei.flag)
     }
   }
-
-  println("asd")
 }
 
 
