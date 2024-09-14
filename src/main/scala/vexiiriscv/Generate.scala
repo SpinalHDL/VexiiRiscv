@@ -5,7 +5,7 @@ import spinal.lib.LatencyAnalysis
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.misc.{InterruptNode, PathTracer}
-import spinal.lib.system.tag.{PmaRegion, PmaRegionImpl}
+import spinal.lib.system.tag.{MemoryEndpoint, PMA, PmaRegion, PmaRegionImpl, VirtualEndpoint}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin}
 import vexiiriscv.execute.{CsrRamPlugin, ExecuteLanePlugin, SrcPlugin}
@@ -53,7 +53,6 @@ object GenerateTilelink extends App {
 
   val report = sc.generateVerilog {
     val plugins = param.plugins()
-    ParamSimple.setPma(plugins, regions)
     import spinal.lib.bus.tilelink._
     import spinal.lib.bus.tilelink.fabric._
     new Component {
@@ -66,10 +65,21 @@ object GenerateTilelink extends App {
           addressWidth = param.physicalWidth
         )
       )
+
+      // Custom memory mapping
+      val tags = mem.node.spinalTags.filter(!_.isInstanceOf[MemoryEndpoint])
+      mem.node.spinalTags.clear()
+      mem.node.spinalTags ++= tags
+      val virtualRegions = for (region <- regions) yield new VirtualEndpoint(mem.node, region.mapping) {
+        if (region.isMain) self.addTag(PMA.MAIN)
+        if (region.isExecutable) self.addTag(PMA.EXECUTABLE)
+      }
+
       mem.node << cpu.iBus
       mem.node << cpu.dBus
       if(cpu.lsuL1Bus != null) mem.node << cpu.lsuL1Bus
 
+      // Bind interrupts
       val mti, msi, mei = InterruptNode.master()
       cpu.priv.get.mti << mti; in(mti.flag)
       cpu.priv.get.msi << msi; in(msi.flag)
@@ -79,6 +89,8 @@ object GenerateTilelink extends App {
       if(sei != null) cpu.priv.get.sei << sei; in(sei.flag)
     }
   }
+
+  println("asd")
 }
 
 
