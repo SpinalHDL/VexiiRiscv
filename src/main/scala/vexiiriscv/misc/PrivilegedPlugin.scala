@@ -95,11 +95,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
   val api = during build new Area{
     val lsuTriggerBus = new LsuTriggerBus(p.debugTriggers)
-    val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
+    val harts = for(_ <- 0 until HART_COUNT) yield new Area{
       val allowInterrupts      = True
       val allowException       = True
       val allowEbreakException = True
       val fpuEnable = False
+      val hartId = (hartIds == null) generate in(UInt(32 bits))
     }
   }
 
@@ -492,7 +493,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         api.read(U(p.vendorId), CSR.MVENDORID) // MRO Vendor ID.
         api.read(U(p.archId), CSR.MARCHID) // MRO Architecture ID.
         api.read(U(p.impId), CSR.MIMPID) // MRO Implementation ID.
-        api.read(U(hartIds(hartId)), CSR.MHARTID) // MRO Hardware thread ID.Machine Trap Setup
+        hartIds match {
+          case null => {
+            assert(HART_COUNT.get == 1)
+            api.read(PrivilegedPlugin.this.api.harts(hartId).hartId, CSR.MHARTID)
+          }
+          case _ => api.read(U(hartIds(hartId)), CSR.MHARTID) // MRO Hardware thread ID.Machine Trap Setup
+        }
+
         val misaExt = misaIds.map(1l << _).reduce(_ | _)
         val misaMxl = XLEN.get match {
           case 32 => BigInt(1) << XLEN.get - 2

@@ -1,6 +1,7 @@
 package vexiiriscv
 
 import spinal.core._
+import spinal.core.fiber.Fiber
 import spinal.lib.LatencyAnalysis
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
@@ -11,6 +12,7 @@ import vexiiriscv.decode.{Decode, DecodePipelinePlugin}
 import vexiiriscv.execute.{CsrRamPlugin, ExecuteLanePlugin, SrcPlugin}
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch._
+import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.prediction.BtbPlugin
 import vexiiriscv.regfile.RegFilePlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
@@ -87,6 +89,12 @@ object GenerateTilelink extends App {
 
       val sei = (cpu.priv.get.sei != null) generate InterruptNode.master()
       if(sei != null) cpu.priv.get.sei << sei; in(sei.flag)
+
+      val patcher = Fiber build new AreaRoot {
+        val hartId = param.withHartIdInput generate plugins.collectFirst{
+          case p : PrivilegedPlugin => p.api.harts(0).hartId.toIo
+        }
+      }
     }
   }
 }
