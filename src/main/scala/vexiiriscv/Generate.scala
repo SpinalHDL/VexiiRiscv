@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib.LatencyAnalysis
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
-import spinal.lib.misc.PathTracer
+import spinal.lib.misc.{InterruptNode, PathTracer}
 import spinal.lib.system.tag.{PmaRegion, PmaRegionImpl}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin}
@@ -13,6 +13,7 @@ import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch._
 import vexiiriscv.prediction.BtbPlugin
 import vexiiriscv.regfile.RegFilePlugin
+import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -37,6 +38,48 @@ object Generate extends App {
 }
 
 
+object GenerateTilelink extends App {
+  val param = new ParamSimple()
+  val sc = SpinalConfig()
+  val regions = ArrayBuffer[PmaRegion]()
+
+  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+    help("help").text("prints this usage text")
+    param.addOptions(this)
+    ParamSimple.addptionRegion(this, regions)
+  }.parse(args, Unit).nonEmpty)
+
+  if(regions.isEmpty) regions ++= ParamSimple.defaultPma
+
+  val report = sc.generateVerilog {
+    val plugins = param.plugins()
+    ParamSimple.setPma(plugins, regions)
+    import spinal.lib.bus.tilelink._
+    import spinal.lib.bus.tilelink.fabric._
+    new Component {
+      setDefinitionName("VexiiRiscvTilelink")
+      val cpu = new TilelinkVexiiRiscvFiber(plugins)
+      val mem = new SlaveBus(
+        M2sSupport(
+          transfers = M2sTransfers.all,
+          dataWidth = param.xlen,
+          addressWidth = param.physicalWidth
+        )
+      )
+      mem.node << cpu.iBus
+      mem.node << cpu.dBus
+      if(cpu.lsuL1Bus != null) mem.node << cpu.lsuL1Bus
+
+      val mti, msi, mei = InterruptNode.master()
+      cpu.priv.get.mti << mti; in(mti.flag)
+      cpu.priv.get.msi << msi; in(msi.flag)
+      cpu.priv.get.mei << mei; in(mei.flag)
+
+      val sei = (cpu.priv.get.sei != null) generate InterruptNode.master()
+      if(sei != null) cpu.priv.get.sei << sei; in(sei.flag)
+    }
+  }
+}
 
 
 object GeneratTweeked extends App {
