@@ -102,6 +102,7 @@ class ParamSimple(){
   var fpuIgnoreSubnormal = false
   var withRvd = false
   var withRvZb = false
+  var withWhiteboxerOutputs = false
   var privParam = PrivilegedParam.base
   var lsuForkAt = 0
   var lsuPmaAt = 0
@@ -225,7 +226,7 @@ class ParamSimple(){
     lsuL1Ways = 4
     lsuL1RefillCount = 8
     lsuL1WritebackCount = 8
-//    lsuL1Coherency = true
+    lsuL1Coherency = true
 //    lsuStoreBufferSlots = 2
 //    lsuStoreBufferOps = 32
     lsuStoreBufferSlots = 4
@@ -462,6 +463,7 @@ class ParamSimple(){
     opt[Unit]("with-rvd") action { (v, c) => withRvd = true; withRvf = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
+    opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
     opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuFmaFullAccuracy = false }
     opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
@@ -840,7 +842,9 @@ class ParamSimple(){
       //      plugins += new execute.fpu.FpuEmbedded()
     }
 
-    plugins += new WhiteboxerPlugin()
+    plugins += new WhiteboxerPlugin(
+      withOutputs = withWhiteboxerOutputs
+    )
   }
 }
 

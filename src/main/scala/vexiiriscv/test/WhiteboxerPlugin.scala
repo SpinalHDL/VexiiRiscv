@@ -5,7 +5,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
-import vexiiriscv.Global.{HART_COUNT, TRAP}
+import vexiiriscv.Global.{COMMIT, HART_COUNT, TRAP}
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu._
@@ -18,7 +18,7 @@ import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
 
 import scala.collection.mutable.ArrayBuffer
 
-class WhiteboxerPlugin extends FiberPlugin{
+class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
 
   val logic = during setup new Logic()
   class Logic extends Area{
@@ -26,7 +26,11 @@ class WhiteboxerPlugin extends FiberPlugin{
     val buildBefore = retains(pbp.elaborationLock)
     awaitBuild()
 
-    def wrap[T <: Data](that: T): T = CombInit(that).simPublic
+    def wrap[T <: Data](that: T): T = {
+      val buffered = CombInit(that).simPublic
+      if(withOutputs) out(buffered)
+      buffered
+    }
 
     val fpp = host[FetchPipelinePlugin]
     val dpp = host[DecodePipelinePlugin]
@@ -103,6 +107,23 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val completions = new Area {
       val ports = host.list[CompletionService].flatMap(cp => cp.getCompletions().map(wrap))
+    }
+
+    val commits = new Area {
+      var lanes = host.list[ExecuteLaneService]
+      val trapAt = host[TrapPlugin].trapAt
+      val ctrls = lanes.map(_.execute(trapAt))
+      case class Commits() extends Bundle{
+        val pc = Global.PC()
+        val age = Execute.LANE_AGE()
+      }
+      val ports = for(i <- 0 until ctrls.size) yield new Area{
+        val oh = ctrls.map(ctrl => ctrl.down.isFiring && ctrl.down(COMMIT) && ctrl.down(Execute.LANE_AGE) === i)
+        val reader = ctrls.reader(oh)
+        val valid = wrap(oh.orR)
+        val pc = wrap(reader(_(Global.PC)))
+        val uop = wrap(reader(_(Decode.UOP)))
+      }
     }
 
     val reschedules = new Area {

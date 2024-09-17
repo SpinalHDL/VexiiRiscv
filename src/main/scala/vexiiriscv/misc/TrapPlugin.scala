@@ -95,7 +95,7 @@ object TrapArg{
 
 
 //TODO ensure that CSR stored in ram are properly masked on read (mtval ... )
-class TrapPlugin(trapAt : Int) extends FiberPlugin with TrapService {
+class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
   override def trapHandelingAt: Int = trapAt
 
   def askWake(hartId : Int) = api.harts(hartId).askWake := True
