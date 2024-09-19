@@ -1,12 +1,6 @@
 val spinalVersion = "dev"
 val spinalHdlFromSource = sys.env.getOrElse("SPINALHDL_FROM_SOURCE", "1") == "1"
-val spinalHdlPath = new File(sys.env.getOrElse("SPINALHDL_PATH", {
-  if (new File("..").getCanonicalFile.getName == "ext" && new File("../SpinalHDL").exists()) {
-    "../SpinalHDL"
-  } else {
-    "ext/SpinalHDL"
-  }
-})).getAbsolutePath
+val spinalHdlPath = new File(sys.env.getOrElse("SPINALHDL_PATH", "ext/SpinalHDL")).getAbsolutePath
 
 def rootGen() = {
   var ret = (project in file(".")).settings(
@@ -33,7 +27,7 @@ def rootGen() = {
     name := "VexiiRiscv"
   )
   if(spinalHdlFromSource){
-    ret = ret.dependsOn(spinalHdlIdslPlugin, spinalHdlSim,spinalHdlCore,spinalHdlLib)
+    ret = ret.dependsOn(spinalHdlIdslPlugin, spinalHdlSim, spinalHdlCore, spinalHdlLib)
   }
   ret
 }
