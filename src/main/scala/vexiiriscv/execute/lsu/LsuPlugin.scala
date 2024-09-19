@@ -475,7 +475,8 @@ class LsuPlugin(var layer : LaneLayer,
 
 
 
-      val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
+      val writeData = Bits(Riscv.LSLEN bits)
+      writeData := elp(IntRegFile, riscv.RS2).resized
       if(Riscv.withFpu) when(FLOAT){
         val value = elp(FloatRegFile, riscv.RS2)
         writeData(value.bitsRange) := value
@@ -522,7 +523,7 @@ class LsuPlugin(var layer : LaneLayer,
           val srcZipped = splited.zipWithIndex.filter { case (v, b) => b % (wordBytes / srcSize) == i }
           val src = srcZipped.map(_._1)
           val range = log2Up(wordBytes) - 1 downto log2Up(wordBytes) - log2Up(srcSize)
-          val sel = srcp.ADD_SUB(range).asUInt
+          val sel = l1.MIXED_ADDRESS(range)
           shited(i * 8, 8 bits) := src.read(sel)
         }
         val RESULT = insert(shited)
@@ -544,7 +545,7 @@ class LsuPlugin(var layer : LaneLayer,
         l1.lockPort.address := 0
       }
       val rva = Riscv.RVA.get generate new Area {
-        val srcBuffer = RegNext[Bits](loadData.RESULT)
+        val srcBuffer = RegNext[Bits](loadData.RESULT.resize(XLEN bits))
         val alu = new AtomicAlu(
           op = UOP(29, 3 bits),
           swap = UOP(27),
@@ -555,7 +556,7 @@ class LsuPlugin(var layer : LaneLayer,
         val aluBuffer = RegNext(alu.result)
 
         when(preCtrl.IS_AMO) {
-          writeData := aluBuffer
+          writeData(aluBuffer.bitsRange) := aluBuffer
         }
 
         val delay = History(!elp.isFreezed(), 1 to 2)
@@ -772,7 +773,7 @@ class LsuPlugin(var layer : LaneLayer,
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp
         rsp.valid    := l1.SEL && FROM_ACCESS && !elp.isFreezed()
-        rsp.data     := l1.READ_DATA
+        rsp.data     := loadData.RESULT.resized //loadData.RESULT instead of l1.READ_DATA (because it rv32fd
         rsp.error    := l1.FAULT
         rsp.redo     := traps.l1Failed
         rsp.waitSlot := 0
@@ -811,7 +812,7 @@ class LsuPlugin(var layer : LaneLayer,
 
     val onWb = new elp.Execute(wbAt){
       iwb.valid := SEL && !FLOAT
-      iwb.payload := onCtrl.loadData.RESULT
+      iwb.payload := onCtrl.loadData.RESULT.resized
 
       if (withRva) when(l1.ATOMIC && !l1.LOAD) {
         iwb.payload(0) := onCtrl.SC_MISS
@@ -820,7 +821,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       fpwb.foreach{p =>
         p.valid := SEL && FLOAT
-        p.payload := onCtrl.loadData.RESULT
+        p.payload := onCtrl.loadData.RESULT.resized
         if(Riscv.RVD) when(SIZE === 2) {
           p.payload(63 downto 32).setAll()
         }

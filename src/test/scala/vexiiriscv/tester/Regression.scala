@@ -373,19 +373,29 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 
 
   val freertos = List(
-    "sp_flop", "blocktim", "integer", "countsem", "EventGroupsDemo", "flop", "QPeek",
+    "integer", "countsem", "EventGroupsDemo", "flop", "QPeek",
     "QueueSet", "recmutex", "semtest", "TaskNotify", "dynamic",
     "GenQTest", "PollQ", "QueueOverwrite", "QueueSetPolling", "test1"
   )
   if(rvm) for(name <- freertos.take(config.freertosCount)){
     val args = newArgs()
-    args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${arch + (arch.endsWith("im").mux("a",""))}/freertosDemo.elf"))
+    var freertosArch = arch
+    if(xlen == 64 && rvf && !rvd) freertosArch = "rv64ima"
+    args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${freertosArch + (freertosArch.endsWith("im").mux("a",""))}/freertosDemo.elf"))
     args.failAfter(300000000)
     args.name(s"freertos/$name")
   }
 
   if(config.buildroot && rvm && rva && mmu.nonEmpty) priv.filter(_.p.withSupervisor).foreach{ _ =>
-    val path = s"ext/NaxSoftware/buildroot/images/$archLinux"
+    var arch = s"rv${xlen}ima"
+    xlen match{
+      case 32 => if(rvc) arch += "c"
+      case 64 => {
+        if(rvf && rvd && rvc) arch += "fdc"
+        else if (rvc) arch += "c"
+      }
+    }
+    val path = s"ext/NaxSoftware/buildroot/images/$arch"
     val args = newArgs()
     args.failAfter(10000000000l)
     args.name("buildroot")

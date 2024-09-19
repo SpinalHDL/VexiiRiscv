@@ -1,6 +1,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
+import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 import vexiiriscv.execute.RsUnsignedPlugin._
@@ -20,6 +21,8 @@ trait DivReuse{
   def divInject(layer : LaneLayer, at : Int, a : UInt, b : UInt, iterations : UInt) : Unit
   def divRsp : DivRsp
   def divRadix : Int
+  def divInjectWidth(a : Int, b : Int, iterations : Int)
+  val divRetainer = Retainer()
 }
 
 class DivPlugin(val layer : LaneLayer,
@@ -46,6 +49,16 @@ class DivPlugin(val layer : LaneLayer,
 
   override def divRsp: DivRsp = logic.processing.div.io.rsp
   override def divRadix: Int = radix
+
+  override def divInjectWidth(a: Int, b: Int, result: Int): Unit = {
+    injectApi.a = injectApi.a max a
+    injectApi.b = injectApi.b max b
+    injectApi.result = injectApi.result max result
+  }
+
+  val injectApi = new Area {
+    var a, b, result = 0
+  }
 
   val logic = during setup new Logic {
     awaitBuild()
@@ -74,15 +87,18 @@ class DivPlugin(val layer : LaneLayer,
     }
 
     uopRetainer.release()
+    divRetainer.await()
 
     val processing = new el.Execute(divAt) {
-      val div = impl(Riscv.XLEN, radix, area)
+      val abWidthRaw = Riscv.XLEN.get max injectApi.a max injectApi.b
+      val abWidth = (abWidthRaw+4-1)/4*4
+      val div = impl(abWidth, radix, area)
 
       val divRevertResult = RegNext((RS1_REVERT ^ (RS2_REVERT && !REM)) && !(RS2_FORMATED === 0 && RS2_SIGNED && !REM)) //RS2_SIGNED == RS1_SIGNED anyway
 
       val cmdSent = RegInit(False) setWhen (div.io.cmd.fire) clearWhen (isReady)
       val request = isValid && SEL
-      val a, b = UInt(Riscv.XLEN bits)
+      val a, b = UInt(abWidth bits)
       a := RS1_UNSIGNED.resized
       b := RS2_UNSIGNED.resized
       div.io.cmd.valid := request && !cmdSent
@@ -103,7 +119,7 @@ class DivPlugin(val layer : LaneLayer,
       val freeze = request && !div.io.rsp.valid & !unscheduleRequest
       el.freezeWhen(freeze)
 
-      val selected = REM ? div.io.rsp.remain otherwise div.io.rsp.result
+      val selected = REM ? div.io.rsp.remain.resize(XLEN) otherwise div.io.rsp.result.resize(XLEN)
 
       def twoComplement(that: Bits, enable: Bool): UInt = (Mux(enable, ~that, that).asUInt + enable.asUInt)
       DIV_RESULT := twoComplement(B(selected), divRevertResult).asBits.resized

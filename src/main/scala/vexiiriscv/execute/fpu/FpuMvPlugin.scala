@@ -53,10 +53,12 @@ class FpuMvPlugin(val layer : LaneLayer,
 
     add(Rvfd.FMV_W_X, f32, SEL_FLOAT -> True)
     add(Rvfd.FMV_X_W, f32, SEL_INT   -> True)
-    if (Riscv.RVD && Riscv.XLEN.get == 64) {
-      add(Rvfd.FMV_D_X, f64, SEL_FLOAT -> True)
-      add(Rvfd.FMV_X_D, f64, SEL_INT   -> True)
+    if (Riscv.XLEN.get == 64) {
       iwbp.signExtend(iwb, layer(Rvfd.FMV_X_W), 32)
+      if (Riscv.RVD) {
+        add(Rvfd.FMV_D_X, f64, SEL_FLOAT -> True)
+        add(Rvfd.FMV_X_D, f64, SEL_INT -> True)
+      }
     }
 
     uopLock.release()
@@ -70,7 +72,10 @@ class FpuMvPlugin(val layer : LaneLayer,
       fwb.valid := SEL_FLOAT
       fwb.payload(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
       if(Riscv.RVD.get) {
-        fwb.payload(63 downto 32) := muxDouble(FORMAT)(up(layer.lane(IntRegFile, RS1))(63 downto 32))(B"xFFFFFFFF")
+        fwb.payload(63 downto 32) := (Riscv.XLEN.get == 32).mux(
+          B"xFFFFFFFF",
+          muxDouble(FORMAT)(up(layer.lane(IntRegFile, RS1))(63 downto 32))(B"xFFFFFFFF")
+        )
       }
     }
 

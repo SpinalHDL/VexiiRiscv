@@ -709,7 +709,7 @@ class ParamSimple(){
       plugins += new LsuL1Plugin(
         lane           = lane0,
         memDataWidth   = lsuMemDataWidth,
-        cpuDataWidth   = xlen,
+        cpuDataWidth   = xlen max withRvd.mux(64, 0),
         refillCount    = lsuL1RefillCount,
         writebackCount = lsuL1WritebackCount,
         setCount       = lsuL1Sets,

@@ -7,6 +7,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv.riscv.{IntRegFile, RS1, RS2, Riscv, Rvi}
 import Riscv._
 import RsUnsignedPlugin._
+import spinal.core.fiber.Retainer
 import vexiiriscv.misc.{AdderAggregator, MulSpliter}
 
 import scala.collection.mutable.ArrayBuffer
@@ -21,6 +22,8 @@ trait MulReuse{
   def inject(a : Bits, b : Bits) : Unit
   def rspAt : Int
   def rsp : Bits
+  def injectWidth(a : Int, b : Int, result : Int) : Unit
+  val mulLock = Retainer()
 }
 
 class MulPlugin(val layer : LaneLayer,
@@ -51,6 +54,14 @@ class MulPlugin(val layer : LaneLayer,
 
   override def rspAt: Int = writebackAt
   override def rsp: Bits = logic.writeback.result.asBits
+  override def injectWidth(a: Int, b: Int, result : Int): Unit = {
+    injectApi.a = injectApi.a max a
+    injectApi.b = injectApi.b max b
+    injectApi.result = injectApi.result max result
+  }
+  val injectApi = new Area{
+    var a,b,result = 0
+  }
 
   val logic = during setup new Logic {
     if(Riscv.RVM.isEmpty) Riscv.RVM.set(true)
@@ -87,9 +98,9 @@ class MulPlugin(val layer : LaneLayer,
       }
     }
     uopRetainer.release()
-
-    val finalWidth = XLEN*2
-    val SRC_WIDTH = XLEN.get + (!useRsUnsignedPlugin).toInt
+    mulLock.await()
+    val finalWidth = XLEN*2 max injectApi.result
+    val SRC_WIDTH = (XLEN.get + (!useRsUnsignedPlugin).toInt) max injectApi.a max injectApi.b
     val keys = new AreaRoot{
       val MUL_SRC1 = Payload(Bits(SRC_WIDTH bits))
       val MUL_SRC2 = Payload(Bits(SRC_WIDTH bits))
@@ -102,8 +113,8 @@ class MulPlugin(val layer : LaneLayer,
       val rs2 = node(el(IntRegFile, RS2))
       useRsUnsignedPlugin match {
         case false => {
-          MUL_SRC1 := (RS1_SIGNED && rs1.msb) ## (rs1)
-          MUL_SRC2 := (RS2_SIGNED && rs2.msb) ## (rs2)
+          MUL_SRC1 := ((RS1_SIGNED && rs1.msb) ## (rs1)).asSInt.resize(SRC_WIDTH).asBits
+          MUL_SRC2 := ((RS2_SIGNED && rs2.msb) ## (rs2)).asSInt.resize(SRC_WIDTH).asBits
           if(keepMulSrc) {
             KeepAttribute(apply(MUL_SRC1))
             KeepAttribute(apply(MUL_SRC2))

@@ -21,8 +21,9 @@ class FpuDivPlugin(val layer : LaneLayer,
     val fpp = host[FpuPackerPlugin]
     val dr  = host[DivReuse]
     val buildBefore = retains(layer.lane.pipelineLock)
-    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock)
+    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock, dr.divRetainer)
     awaitBuild()
+    dr.divInjectWidth(p.unpackedConfig.mantissaWidth+1, p.unpackedConfig.mantissaWidth+1, p.unpackedConfig.mantissaWidth+1)
 
     val packParam = FloatUnpackedParam(
       exponentMax   = p.unpackedConfig.exponentMax-p.unpackedConfig.exponentMin,

@@ -30,8 +30,9 @@ class FpuMulPlugin(val layer : LaneLayer,
     val fasp = host[FpuAddSharedPlugin]
     val mp  = host[MulReuse]
     val buildBefore = retains(layer.lane.pipelineLock)
-    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock)
+    val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock, mp.mulLock)
     awaitBuild()
+    mp.injectWidth(p.unpackedConfig.mantissaWidth + 2, p.unpackedConfig.mantissaWidth + 2, 2 * (p.unpackedConfig.mantissaWidth + 2))
 
     val packParam = FloatUnpackedParam(
       exponentMax   = p.unpackedConfig.exponentMax * 2 + 1,
@@ -117,7 +118,6 @@ class FpuMulPlugin(val layer : LaneLayer,
       val m1 = B"1" ## RS1_FP.mantissa.raw.asUInt
       val m2 = B"1" ## RS2_FP.mantissa.raw.asUInt
       when(SEL) {
-        assert(!(Riscv.RVD && XLEN.get == 32))
         mp.inject(m1.resized, m2.resized)
       }
     }
