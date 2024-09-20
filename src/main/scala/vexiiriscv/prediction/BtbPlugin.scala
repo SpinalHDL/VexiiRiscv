@@ -279,6 +279,7 @@ class BtbPlugin(var sets : Int,
       when(busy) {
         counter := counter + 1
         onLearn.port.valid := True
+        onLearn.port.mask.setAll
         onLearn.port.address := counter.resized
         for (data <- onLearn.port.data) {
           data.hash.setAll
