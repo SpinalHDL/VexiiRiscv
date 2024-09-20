@@ -44,9 +44,11 @@ object GenerateTilelink extends App {
   val param = new ParamSimple()
   val sc = SpinalConfig()
   val regions = ArrayBuffer[PmaRegion]()
+  var tlSinkWidth = 0
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
+    opt[Int]("tl-sink-width") action { (v, c) => tlSinkWidth = v }
     param.addOptions(this)
     ParamSimple.addptionRegion(this, regions)
   }.parse(args, Unit).nonEmpty)
@@ -65,6 +67,15 @@ object GenerateTilelink extends App {
           transfers = M2sTransfers.all,
           dataWidth = param.xlen,
           addressWidth = param.physicalWidth
+        ),
+        S2mParameters(
+          List(
+            S2mAgent(
+              name = null,
+              sinkId = SizeMapping(0, 1 << tlSinkWidth),
+              emits = S2mTransfers(probe = SizeRange(0x40))
+            )
+          )
         )
       )
 
