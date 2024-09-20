@@ -163,6 +163,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val banks = for (id <- 0 until bankCount) yield new Area {
       val mem = Mem(Bits(bankWidth bits), bankWordCount)
+      if(bootMemClear) mem.randBoot()
       val write = mem.writePort
       val read = new Area {
         val cmd = Flow(mem.addressType)
@@ -182,6 +183,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     }
     val ways = for (id <- 0 until wayCount) yield new Area {
       val mem = Mem.fill(linePerWay)(Tag())
+      if(bootMemClear) mem.randBoot()
       mem.write(waysWrite.address, waysWrite.tag, waysWrite.mask(id))
       val read = new Area {
         val cmd = Flow(mem.addressType)
