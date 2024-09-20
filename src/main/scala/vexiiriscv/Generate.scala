@@ -108,6 +108,13 @@ object GenerateTilelink extends App {
       }
     }
   }
+
+  for(m <- report.toplevel.mem.node.m2s.parameters.masters){
+    println(m.name)
+    for(source <- m.mapping){
+      println(s"- ${source.id} ${source.emits}")
+    }
+  }
 }
 
 
