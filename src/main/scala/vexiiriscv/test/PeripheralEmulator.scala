@@ -26,11 +26,12 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   val RANDOM = 0xA8
   var cmp = 0l
 
-  if(mei != null) mei #= false
-  if(sei != null) sei #= false
-  if(mti != null) {
+  if (mei != null) mei #= false
+  if (sei != null) sei #= false
+  if (msi != null) msi #= false
+  if (mti != null) {
     mti #= false
-    cd.onSamplings{
+    cd.onSamplings {
       mti #= cmp < getClintTime()
     }
   }

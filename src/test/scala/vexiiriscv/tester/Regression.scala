@@ -494,6 +494,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 object RegressionSingle extends App{
   def test(name : String, plugins : => Seq[Hostable], dutArgs : Seq[String], config : RegressionSingleConfig): Unit = {
     val simConfig = SpinalSimConfig()
+//    simConfig.withIVerilog
     simConfig.withFstWave
     simConfig.setTestPath("regression/$COMPILED_tests/$TEST")
     val compiled = SpinalConfig.synchronized(simConfig.compile(VexiiRiscv(plugins).setDefinitionName(s"VexiiRiscv_$name")))
@@ -568,6 +569,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   def addDims(name: String)(poses: Dimensions*) = dimensions += new Dimensions(name) {
     override def getRandomPosition(random: Random): String = poses.randomPick(random).getRandomPosition(random)
   }
+
 
 
   addDim("lanes", List(1, 2).map(v => s"--lanes $v --decoders $v"))

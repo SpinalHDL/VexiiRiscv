@@ -783,7 +783,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val plruLogic = new Area {
           val core = new Plru(wayCount, false)
           core.io.context.state := SHARED.plru
-          core.io.update.id.assignDontCare()
         }
 
         val wayWriteReservation = tagsWriteArbiter.create(2)
@@ -855,6 +854,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         when(SEL) {
           assert(CountOne(WAYS_HITS) <= 1, "Multiple way hit ???")
         }
+
+        plruLogic.core.io.update.id := wayId
 
         val doRefillPush = doRefill || doUpgrade
         refill.push.valid := doRefillPush
@@ -954,7 +955,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         when(SEL && !HAZARD && !MISS) {
           shared.write.valid := True
-          plruLogic.core.io.update.id := wayId
         }
 
         BYPASSED_DATA := MUXED_DATA

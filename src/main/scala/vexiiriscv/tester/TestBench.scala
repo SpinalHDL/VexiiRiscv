@@ -627,6 +627,8 @@ object TestBench extends App{
 //    genConfig.includeSimulation
 
     val simConfig = SpinalSimConfig()
+//    simConfig.withIVerilog
+//    simConfig.withVcdWave
     simConfig.withFstWave
     simConfig.withTestFolder
     simConfig.withConfig(genConfig)

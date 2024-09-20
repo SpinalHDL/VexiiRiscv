@@ -275,8 +275,8 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
       val fsmCmd = unpacker.arbiter.io.inputs(fsmPortId)
       val fsmRsp = unpacker.results(fsmPortId)
       val clear = isReady
-      val asked = RegInit(False) setWhen (fsmCmd.ready || isCancel) clearWhen (clear)
-      val served = RegInit(False) setWhen (fsmRsp.valid || isCancel) clearWhen (clear)
+      val asked = RegInit(False) setWhen (fsmCmd.ready) clearWhen (clear)
+      val served = RegInit(False) setWhen (fsmRsp.valid) clearWhen (clear)
       val fsmResult = fsmRsp.toReg
 
       fsmCmd.valid := isValid && SEL_I2F && unpackDone && !asked

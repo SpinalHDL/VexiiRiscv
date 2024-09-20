@@ -82,7 +82,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
     val withCsr = host.get[CsrAccessPlugin].nonEmpty
     val csr = withCsr.option(new Area {
       val p = host[CsrAccessPlugin].logic
-      val port = Verilator.public(Flow(new Bundle {
+      val access = (Flow(new Bundle {
         val hartId = Global.HART_ID()
         val uopId = Decode.UOP_ID()
         val address = UInt(12 bits)
@@ -91,14 +91,15 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
         val writeDone = Bool()
         val readDone = Bool()
       }))
-      port.valid := p.fsm.regs.fire
-      port.uopId := p.fsm.regs.uopId
-      port.hartId := p.fsm.regs.hartId
-      port.address := U(p.fsm.regs.uop)(Const.csrRange)
-      port.write := p.fsm.regs.onWriteBits
-      port.read := p.fsm.regs.csrValue
-      port.writeDone := p.fsm.regs.write
-      port.readDone := p.fsm.regs.read
+      access.valid := p.fsm.regs.fire
+      access.uopId := p.fsm.regs.uopId
+      access.hartId := p.fsm.regs.hartId
+      access.address := U(p.fsm.regs.uop)(Const.csrRange)
+      access.write := p.fsm.regs.onWriteBits
+      access.read := p.fsm.regs.csrValue
+      access.writeDone := p.fsm.regs.write
+      access.readDone := p.fsm.regs.read
+      val port = wrap(access)
     })
 
     val rfWrites = new Area {

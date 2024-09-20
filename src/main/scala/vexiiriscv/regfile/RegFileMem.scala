@@ -71,11 +71,13 @@ class RegFileMem(rfpp : RegFilePortParam,
     assert(!asyncReadBySyncReadRevertedClk)
     val logic = new RamAsyncMwMux(Bits(rfpp.dataWidth bits), 1 << rfpp.addressWidth, writesParameter.size, readsParameter.size)
     logic.io <> conv
+    logic.location.ram.foreach(_.randBoot())
   }
 
   val asSyncDp = (asMem == null && syncRead) generate {
     assert(!asyncReadBySyncReadRevertedClk)
     val logic = new RamSyncMwMux(Bits(rfpp.dataWidth bits), 1 << rfpp.addressWidth, writesParameter.size, readsParameter.size)
+    logic.location.ram.foreach(_.randBoot())
     logic.io <> conv
   }
 }
