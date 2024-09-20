@@ -65,7 +65,7 @@ object GenerateTilelink extends App {
       val mem = new SlaveBus(
         M2sSupport(
           transfers = M2sTransfers.all,
-          dataWidth = param.xlen,
+          dataWidth = param.memDataWidth,
           addressWidth = param.physicalWidth
         ),
         S2mParameters(
