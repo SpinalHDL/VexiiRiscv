@@ -162,7 +162,7 @@ class MmuPlugin(var spec : MmuSpec,
 
     PHYSICAL_WIDTH.set(physicalWidth)
     VIRTUAL_WIDTH.set(spec.virtualWidth)
-    MIXED_WIDTH.set(VIRTUAL_WIDTH.get + (VIRTUAL_WIDTH < XLEN).toInt)
+    MIXED_WIDTH.set(VIRTUAL_WIDTH.get)
     PC_WIDTH.set(MIXED_WIDTH)
     TVAL_WIDTH.set(MIXED_WIDTH)
     assert(VIRTUAL_WIDTH.get == XLEN.get || XLEN.get > VIRTUAL_WIDTH.get && VIRTUAL_WIDTH.get > physicalWidth)
