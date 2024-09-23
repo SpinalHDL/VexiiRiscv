@@ -236,6 +236,7 @@ class BtbPlugin(var sets : Int,
       flushPort.hartId := HART_ID
 
       pcPort.valid := doIt
+      pcPort.fault := False
       pcPort.pc := pcTarget << Fetch.SLICE_RANGE_LOW
 
       WORD_JUMPED := needIt

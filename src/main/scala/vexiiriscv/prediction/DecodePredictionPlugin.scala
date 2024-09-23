@@ -65,6 +65,7 @@ class DecodePredictionPlugin(var decodeAt: Int,
 
         val pcPort = pcPorts(slotId)
         pcPort.valid := fixIt
+        pcPort.fault := False
         pcPort.pc := PC
         pcPort.laneAge := slotId
 

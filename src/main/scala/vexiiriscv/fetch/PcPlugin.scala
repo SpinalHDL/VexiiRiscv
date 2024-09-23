@@ -25,7 +25,9 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
     logic.harts.foreach { h =>
       val pc = (value & h.self.state.maxValue)
       h.self.state #= pc
-      h.output.payload #= pc
+      h.self.fault #= false
+      h.output.pc #= pc
+      h.output.fault #= false
     }
   }
 
@@ -48,10 +50,11 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
       val self = new Area {
         val id = Reg(Fetch.ID) init(0)
         val flow = newJumpInterface(-1, laneAgeWidth = 0, aggregationPriority = 0)
-        val increment = RegInit(False)
+        val increment, fault = RegInit(False)
         val state = Reg(PC) init (resetVector) simPublic()
         val pc = state + U(WORD_BYTES).andMask(increment)
         flow.valid := True
+        flow.fault := fault
         flow.pc := pc
         flow.hartId := hartId
       }
@@ -70,13 +73,16 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
 
         val grouped = sortedByPriority.groupByLinked(_.aggregationPriority).toList.sortBy(_._1).map(_._2)
         var target = PC()
+        var fault = Bool()
         for (group <- grouped) {
           val indexes = group.map(e => sortedByPriority.indexOf(e))
           val goh = indexes.map(i => oh(i))
-          val mux = OhMux.or(goh, group.map(_.bus.pc))
-          if (group == grouped.head) target := mux else when(goh.orR) {
+          val muxPc = OhMux.or(goh, group.map(_.bus.pc))
+          val muxFault = OhMux.or(goh, group.map(_.bus.fault))
+          if (group == grouped.head) {target := muxPc; fault := muxFault} else when(goh.orR) {
             KeepAttribute(target)
-            target \= mux
+            target \= muxPc
+            fault \= muxFault
           }
         }
       }
@@ -85,13 +91,19 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
       val holdReg = RegNext(holdComb) init(True)
 
       // Stream of PC for the given hart
-      val output = Stream(PC).simPublic()
+      val output = Stream(new Bundle{
+        val pc = PC()
+        val fault = Bool()
+      }).simPublic()
+
       output.valid := !holdReg
-      output.payload := aggregator.target
-      output.payload(SLICE_RANGE_LOW - 1 downto 0) := 0
+      output.fault := aggregator.fault
+      output.pc := aggregator.target
+      output.pc(SLICE_RANGE_LOW - 1 downto 0) := 0
 
       // Update the hart PC state
-      self.state := output.payload
+      self.state := output.pc
+      self.fault := output.fault
       self.increment := False
       when(output.fire) {
         self.increment := True
@@ -104,7 +116,8 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
     val inject = new injectStage.Area {
       valid := harts(0).output.valid
       harts(0).output.ready := ready
-      Fetch.WORD_PC := harts(0).output.payload
+      Fetch.WORD_PC := harts(0).output.pc
+      Fetch.PC_FAULT := harts(0).output.fault
       HART_ID := 0
 
       Fetch.ID.assignDontCare()

@@ -11,6 +11,7 @@ import vexiiriscv.memory.AddressTranslationService
 import scala.collection.mutable.ArrayBuffer
 
 case class JumpCmd(laneAgeWidth : Int) extends Bundle{
+  val fault = Bool()
   val pc = PC()
   val hartId = HART_ID()
   val laneAge = UInt(laneAgeWidth bits)

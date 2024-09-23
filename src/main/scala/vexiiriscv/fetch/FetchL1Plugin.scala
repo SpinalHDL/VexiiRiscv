@@ -480,7 +480,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       trapPort.arg.allowOverride() := 0
 
       val allowRefill = !WAYS_HIT && !HAZARD
-
       when(!WAYS_HIT || HAZARD) {
         trapPort.valid := True
         trapPort.exception := False
@@ -511,15 +510,27 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
       trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REFILL) {
+        allowRefill := False
         trapPort.valid := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
       }
       when(tpk.HAZARD) {
+        allowRefill := False
         trapPort.valid := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
       }
+      when(Fetch.PC_FAULT) {
+        allowRefill := False
+        trapPort.valid := True
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
+        when(!tpk.BYPASS_TRANSLATION){
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT
+        }
+      }
+
 
       refill.start.valid := allowRefill && !trapSent
       refill.start.address := tpk.TRANSLATED

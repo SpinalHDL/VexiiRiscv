@@ -40,6 +40,7 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
     ).rsp
   }
 
+  override def getSignExtension(kind: AddressTranslationPortUsage, rawAddress: UInt): Bool = False
 
   val logic = during build new Area {
     PHYSICAL_WIDTH.set(physicalWidth)
@@ -65,7 +66,8 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
       ALLOW_READ := True
       ALLOW_WRITE := True
       PAGE_FAULT := False
-      ACCESS_FAULT := False
+      ACCESS_FAULT := spec.preAddress.drop(physicalWidth) =/= 0
+      BYPASS_TRANSLATION := True
     }
   }
 }

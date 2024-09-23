@@ -10,7 +10,7 @@ import vexiiriscv._
 import Global._
 import spinal.lib.misc.pipeline.{NodeBaseApi, Payload}
 import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamService}
-import vexiiriscv.memory.AddressTranslationPortUsage.LOAD_STORE
+import vexiiriscv.memory.AddressTranslationPortUsage.{FETCH, LOAD_STORE}
 import vexiiriscv.misc.{PerformanceCounterService, PipelineBuilderPlugin, PrivilegedPlugin, TrapReason}
 import vexiiriscv.riscv.CSR
 import vexiiriscv.riscv.Riscv._
@@ -131,6 +131,19 @@ class MmuPlugin(var spec : MmuSpec,
     ).rsp
   }
 
+  val api = during build new Area{
+    val fetchTranslationEnable = Bool()
+    val lsuTranslationEnable = Bool()
+  }
+
+  override def getSignExtension(kind: AddressTranslationPortUsage, rawAddress: UInt): Bool = {
+    val translationEnable = kind match {
+      case AddressTranslationPortUsage.FETCH => api.fetchTranslationEnable
+      case AddressTranslationPortUsage.LOAD_STORE => api.lsuTranslationEnable
+    }
+    translationEnable.mux(rawAddress(MIXED_WIDTH-1), False)
+  }
+
   val logic = during setup new Area{
     val priv = host[PrivilegedPlugin]
     val csr = host[CsrAccessPlugin]
@@ -241,6 +254,20 @@ class MmuPlugin(var spec : MmuSpec,
       }
     }
 
+    assert(HART_COUNT.get == 1)
+    val isMachine = priv.getPrivilege(0) === U"11"
+    val isSupervisor = priv.getPrivilege(0) === U"01"
+    val isUser = priv.getPrivilege(0) === U"00"
+
+    api.fetchTranslationEnable := satp.mode === spec.satpMode
+    api.fetchTranslationEnable clearWhen(isMachine)
+
+    api.lsuTranslationEnable := satp.mode === spec.satpMode
+    api.lsuTranslationEnable clearWhen(!status.mprv && isMachine)
+    when(isMachine) {
+      api.lsuTranslationEnable clearWhen (!status.mprv || priv.logic.harts(0).m.status.mpp === 3)
+    }
+
 
     val portSpecsSorted = portSpecs.sortBy(_.ss.p.priority).reverse
     val ports = for(ps <- portSpecsSorted) yield new Composite(ps.rsp, "logic", false){
@@ -272,20 +299,10 @@ class MmuPlugin(var spec : MmuSpec,
         val lineAllowUser    = entriesMux(_.allowUser)
         val lineTranslated   = entriesMux(_.physicalAddressFrom(ps.preAddress))
 
-        val requireMmuLockup  = satp.mode === spec.satpMode
-
-        assert(HART_COUNT.get == 1)
-        val isMachine = priv.getPrivilege(0) === U"11"
-        val isSupervisor = priv.getPrivilege(0) === U"01"
-        val isUser = priv.getPrivilege(0) === U"00"
-        requireMmuLockup clearWhen(!status.mprv && isMachine)
-        when(isMachine) {
-          if (ps.usage == LOAD_STORE) {
-            requireMmuLockup clearWhen (!status.mprv || priv.logic.harts(0).m.status.mpp === 3)
-          } else {
-            requireMmuLockup := False
-          }
-        }
+        val requireMmuLockup  = CombInit(ps.usage match {
+          case LOAD_STORE => api.lsuTranslationEnable
+          case FETCH => api.fetchTranslationEnable
+        })
         requireMmuLockup clearWhen(ps.forcePhysical)
 
         import ps.rsp.keys._

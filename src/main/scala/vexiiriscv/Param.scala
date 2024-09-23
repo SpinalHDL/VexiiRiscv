@@ -258,12 +258,12 @@ class ParamSimple(){
     privParam.withSupervisor = true
     privParam.withUser = true
     xlen = 64
-    physicalWidth = 38
+//    physicalWidth = 38
 
 
     privParam.withDebug = true
-    privParam.debugTriggers = 4
-    privParam.debugTriggersLsu = true
+//    privParam.debugTriggers = 4
+//    privParam.debugTriggersLsu = true
     embeddedJtagTap = true
 
 

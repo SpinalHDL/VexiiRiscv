@@ -288,6 +288,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
         val pcPort = pcs.newJumpInterface(Ages.TRAP, 0, 0)
         pcPort.valid := False
+        pcPort.fault := False
         pcPort.hartId := hartId
         pcPort.pc.assignDontCare()
         val fsm = new StateMachine {

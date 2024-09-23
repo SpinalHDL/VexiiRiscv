@@ -193,6 +193,7 @@ class LsuPlugin(var layer : LaneLayer,
     val FROM_WB = Payload(Bool())
     val FORCE_PHYSICAL = Payload(Bool())
     val FROM_PREFETCH = Payload(Bool())
+    val MMU_FAILURE, MMU_PAGE_FAULT = Payload(Bool())
 
     class L1Waiter extends Area {
       val refill = Reg(l1.WAIT_REFILL)
@@ -467,13 +468,14 @@ class LsuPlugin(var layer : LaneLayer,
       val CACHED_RSP = insert(cached.rsp)
       val IO_RSP = insert(io.rsp)
       val IO = insert(CACHED_RSP.fault && !IO_RSP.fault && !FENCE && !FROM_PREFETCH)
+      val addressExtension = ats.getSignExtension(AddressTranslationPortUsage.LOAD_STORE, srcp.ADD_SUB.asUInt)
+      val FROM_LSU_MSB_FAILED = insert(FROM_LSU && srcp.ADD_SUB.dropLow(Global.MIXED_WIDTH).asBools.map(_ =/= addressExtension).orR)
+      MMU_PAGE_FAULT := tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
+      MMU_FAILURE := MMU_PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD || FROM_LSU_MSB_FAILED
     }
 
     val onCtrl = new elp.Execute(ctrlAt) {
       val lsuTrap = False
-      val mmuPageFault = tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
-
-
 
       val writeData = Bits(Riscv.LSLEN bits)
       writeData := elp(IntRegFile, riscv.RS2).resized
@@ -647,7 +649,7 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code(1) setWhen (STORE)
         }
 
-        when(mmuPageFault) {
+        when(MMU_PAGE_FAULT) {
           lsuTrap := True
           trapPort.exception := True
           trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
@@ -673,7 +675,13 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
         }
-
+        when(onPma.FROM_LSU_MSB_FAILED){
+          lsuTrap := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+          trapPort.code(1) setWhen (STORE)
+          trapPort.code(3) setWhen (!tpk.BYPASS_TRANSLATION)
+        }
         when(preCtrl.MISS_ALIGNED) {
           lsuTrap := True
           trapPort.exception := True
@@ -730,14 +738,13 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       val mmuNeeded = FROM_LSU || FROM_PREFETCH
-      val mmuFailure = mmuPageFault || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD
 
       val abords, skipsWrite = ArrayBuffer[Bool]()
       abords += l1.HAZARD
       abords += l1.FLUSH_HAZARD
       abords += !l1.FLUSH && onPma.CACHED_RSP.fault
       abords += FROM_LSU && (!isValid || isCancel)
-      abords += mmuNeeded && mmuFailure
+      abords += mmuNeeded && MMU_FAILURE
       if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
@@ -804,7 +811,7 @@ class LsuPlugin(var layer : LaneLayer,
       commitProbe.load := l1.LOAD
       commitProbe.store := l1.STORE
       commitProbe.trap := lsuTrap
-      commitProbe.miss := l1.MISS && !l1.HAZARD && !mmuFailure
+      commitProbe.miss := l1.MISS && !l1.HAZARD && !MMU_FAILURE
       commitProbe.io := onPma.IO
       commitProbe.prefetchFailed := FROM_PREFETCH
       commitProbe.pc := Global.PC

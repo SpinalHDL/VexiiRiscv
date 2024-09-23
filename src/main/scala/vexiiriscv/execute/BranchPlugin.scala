@@ -15,6 +15,7 @@ import spinal.core.fiber.Handle
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
 import vexiiriscv.misc.{PerformanceCounterService, TrapService}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
 import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, LearnSource, Prediction}
@@ -166,11 +167,14 @@ class BranchPlugin(val layer : LaneLayer,
         val BAD_TARGET = insert(Prediction.ALIGNED_JUMPED_PC =/= PC_TRUE)
         val REAL_TARGET = insert(COND.mux[UInt](PC_TRUE, PC_FALSE))
       }
+
+      val expectedMsb = host[AddressTranslationService].getSignExtension(AddressTranslationPortUsage.FETCH, srcp.SRC1.asUInt)
+      val MSB_FAILED = insert(BRANCH_CTRL === BranchCtrlEnum.JALR && srcp.SRC1.dropLow(MIXED_WIDTH).asBools.map(_ =/= expectedMsb).orR)
     }
 
     val jumpLogic = new el.Execute(jumpAt) {
       val wrongCond = withBtb.mux[Bool](Prediction.ALIGNED_JUMPED =/= alu.COND     , alu.COND )
-      val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond)
+      val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond) || alu.MSB_FAILED
       val doIt = isValid && SEL && needFix
       val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, PC_TRUE)
 
@@ -207,6 +211,7 @@ class BranchPlugin(val layer : LaneLayer,
       }
 
       pcPort.valid := doIt
+      pcPort.fault := alu.MSB_FAILED
       pcPort.pc := pcTarget
       pcPort.laneAge := Execute.LANE_AGE
 

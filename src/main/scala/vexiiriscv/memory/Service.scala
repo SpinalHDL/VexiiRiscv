@@ -46,6 +46,7 @@ trait AddressTranslationService extends Area {
   def newStorage(pAny: Any, pmuEventId : Int): Any
   def getStorageId(s : Any) : Int
   def getStorageIdWidth() : Int
+  def getSignExtension(kind : AddressTranslationPortUsage, rawAddress : UInt) : Bool
 
   val regionRetainer = Retainer()
 
