@@ -320,9 +320,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         }
         val stoptime = out(RegNext(debugMode && dcsr.stoptime) init(False))
 
+        val noTrigger = (p.debugTriggers == 0) generate new Area {
+          cap.allowCsr(CSR.TSELECT)
+        }
         val trigger = (p.debugTriggers > 0) generate new Area {
           val tselect = new Area {
-            val index = Reg(UInt(log2Up(p.debugTriggers) bits))
+            val index = Reg(UInt(log2Up(p.debugTriggers) bits)) init(0)
             api.readWrite(index, CSR.TSELECT)
 
             val outOfRange = if (isPow2(p.debugTriggers)) False else index < p.debugTriggers
