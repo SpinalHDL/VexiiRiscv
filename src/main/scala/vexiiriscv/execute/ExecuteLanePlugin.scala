@@ -12,7 +12,7 @@ import vexiiriscv.Global.{COMMIT, TRAP}
 import vexiiriscv.decode.Decode
 import vexiiriscv.misc.{CtrlPipelinePlugin, InflightService, PipelineService, TrapService}
 import vexiiriscv.regfile.RegfileService
-import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
+import vexiiriscv.riscv.{IntRegFile, MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
 import vexiiriscv.schedule.{Ages, DispatchPlugin, FlushCmd, ReschedulePlugin}
 
 import scala.collection.mutable
@@ -182,8 +182,17 @@ class ExecuteLanePlugin(override val laneName : String,
         }
         bypassEnables.msb := True
         val sel = OHMasking.firstV2(bypassEnables)
-        dataCtrl(payload) := OHMux.or(sel, bypassSorted.map(b => b.eu.ctrl(b.nodeId)(b.payload)) :+ port.data, true)
-
+        val datas = bypassSorted.map(b => b.eu.ctrl(b.nodeId)(b.payload))
+        if(spec.rf == IntRegFile && bypassSorted.size > 2) { //This optimize the int ALU bypass, trying to keep it as short as possible by merging it last
+          val tmp = OHMux.or(sel.dropLow(1), datas.tail :+ port.data, true)
+          KeepAttribute(tmp)  // Hurt me no more
+          dataCtrl(payload) := tmp
+          when(sel.lsb) {
+            tmp := datas.head
+          }
+        } else {
+          dataCtrl(payload) := OHMux.or(sel, datas :+ port.data, true)
+        }
 
         //Update the RSx values along the pipeline
         val along = new Area {
