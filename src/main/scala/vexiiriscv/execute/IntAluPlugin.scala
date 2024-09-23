@@ -5,7 +5,7 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import spinal.lib.Flow
+import spinal.lib.{Flow, KeepAttribute}
 import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.decode._
@@ -14,10 +14,7 @@ import vexiiriscv.riscv.{Riscv, Rvi}
 
 object IntAluPlugin extends AreaObject {
   val AluBitwiseCtrlEnum = new SpinalEnum(binarySequential) {
-    val XOR, OR, AND = newElement()
-  }
-  val AluCtrlEnum = new SpinalEnum(binarySequential) {
-    val ADD_SUB, SLT_SLTU, BITWISE = newElement()
+    val XOR, OR, AND, ZERO = newElement()
   }
 }
 
@@ -27,14 +24,13 @@ class IntAluPlugin(var layer: LaneLayer,
   import IntAluPlugin._
 
   val ALU_BITWISE_CTRL = Payload(AluBitwiseCtrlEnum())
-  val ALU_CTRL = Payload(AluCtrlEnum())
+  val ALU_ADD_SUB, ALU_SLTX = Payload(Bool())
   val ALU_RESULT = Payload(Bits(Riscv.XLEN bits))
 
   val logic = during setup new Logic{
     awaitBuild()
     import SrcKeys._
 
-    val ace = AluCtrlEnum
     val abce = AluBitwiseCtrlEnum
 
     val wb = newWriteback(ifp, formatAt)
@@ -43,28 +39,28 @@ class IntAluPlugin(var layer: LaneLayer,
       case None => false
     })
 
-    add(Rvi.ADD ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
-    add(Rvi.SUB ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB )
-    add(Rvi.SLT ).srcs(Op.LESS  , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.SLT_SLTU)
-    add(Rvi.SLTU).srcs(Op.LESS_U, SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.SLT_SLTU)
-    add(Rvi.XOR ).srcs(           SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.XOR )
-    add(Rvi.OR  ).srcs(           SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.OR  )
-    add(Rvi.AND ).srcs(           SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.AND )
+    add(Rvi.ADD ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> True , ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.ZERO )
+    add(Rvi.SUB ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> True , ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.ZERO )
+    add(Rvi.SLT ).srcs(Op.LESS  , SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> False, ALU_SLTX -> True , ALU_BITWISE_CTRL -> abce.ZERO )
+    add(Rvi.SLTU).srcs(Op.LESS_U, SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> False, ALU_SLTX -> True , ALU_BITWISE_CTRL -> abce.ZERO )
+    add(Rvi.XOR ).srcs(           SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> False, ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.XOR )
+    add(Rvi.OR  ).srcs(           SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> False, ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.OR  )
+    add(Rvi.AND ).srcs(           SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> False, ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.AND )
 
-    add(Rvi.ADDI ).srcs(Op.ADD   , SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.ADD_SUB )
-    add(Rvi.SLTI ).srcs(Op.LESS  , SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.SLT_SLTU)
-    add(Rvi.SLTIU).srcs(Op.LESS_U, SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.SLT_SLTU)
-    add(Rvi.XORI ).srcs(           SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.XOR )
-    add(    ORI  ).srcs(           SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.OR  )
-    add(Rvi.ANDI ).srcs(           SRC1.RF, SRC2.I).decode(ALU_CTRL -> ace.BITWISE , ALU_BITWISE_CTRL -> abce.AND )
+    add(Rvi.ADDI ).srcs(Op.ADD   , SRC1.RF, SRC2.I).decode(ALU_ADD_SUB -> True , ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.ZERO)
+    add(Rvi.SLTI ).srcs(Op.LESS  , SRC1.RF, SRC2.I).decode(ALU_ADD_SUB -> False, ALU_SLTX -> True , ALU_BITWISE_CTRL -> abce.ZERO)
+    add(Rvi.SLTIU).srcs(Op.LESS_U, SRC1.RF, SRC2.I).decode(ALU_ADD_SUB -> False, ALU_SLTX -> True , ALU_BITWISE_CTRL -> abce.ZERO)
+    add(Rvi.XORI ).srcs(           SRC1.RF, SRC2.I).decode(ALU_ADD_SUB -> False, ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.XOR )
+    add(    ORI  ).srcs(           SRC1.RF, SRC2.I).decode(ALU_ADD_SUB -> False, ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.OR  )
+    add(Rvi.ANDI ).srcs(           SRC1.RF, SRC2.I).decode(ALU_ADD_SUB -> False, ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.AND )
 
-    add(Rvi.LUI  ).srcs(Op.SRC1, SRC1.U         ).decode(ALU_CTRL -> ace.ADD_SUB)
-    add(Rvi.AUIPC).srcs(Op.ADD , SRC1.U, SRC2.PC).decode(ALU_CTRL -> ace.ADD_SUB)
+    add(Rvi.LUI  ).srcs(Op.SRC1, SRC1.U         ).decode(ALU_ADD_SUB -> True, ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.ZERO)
+    add(Rvi.AUIPC).srcs(Op.ADD , SRC1.U, SRC2.PC).decode(ALU_ADD_SUB -> True, ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.ZERO)
 
     if(Riscv.XLEN.get == 64){
-      add(Rvi.ADDW ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB)
-      add(Rvi.SUBW ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_CTRL -> ace.ADD_SUB)
-      add(Rvi.ADDIW).srcs(Op.ADD   , SRC1.RF, SRC2.I ).decode(ALU_CTRL -> ace.ADD_SUB)
+      add(Rvi.ADDW ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> True, ALU_SLTX -> False,  ALU_BITWISE_CTRL -> abce.ZERO)
+      add(Rvi.SUBW ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> True, ALU_SLTX -> False,  ALU_BITWISE_CTRL -> abce.ZERO)
+      add(Rvi.ADDIW).srcs(Op.ADD   , SRC1.RF, SRC2.I ).decode(ALU_ADD_SUB -> True, ALU_SLTX -> False,  ALU_BITWISE_CTRL -> abce.ZERO)
 
       for(op <- List(Rvi.ADDW, Rvi.SUBW, Rvi.ADDIW)){
         ifp.signExtend(wb, layer(op), 32)
@@ -79,15 +75,12 @@ class IntAluPlugin(var layer: LaneLayer,
       val bitwise = ALU_BITWISE_CTRL.mux(
         AluBitwiseCtrlEnum.AND  -> (srcp.SRC1 & srcp.SRC2),
         AluBitwiseCtrlEnum.OR   -> (srcp.SRC1 | srcp.SRC2),
-        AluBitwiseCtrlEnum.XOR  -> (srcp.SRC1 ^ srcp.SRC2)
+        AluBitwiseCtrlEnum.XOR  -> (srcp.SRC1 ^ srcp.SRC2),
+        AluBitwiseCtrlEnum.ZERO -> S(0, Riscv.XLEN bits)
       )
+      KeepAttribute(bitwise)
 
-      val result = ALU_CTRL.mux(
-        AluCtrlEnum.BITWISE  -> bitwise,
-        AluCtrlEnum.SLT_SLTU -> S(U(srcp.LESS, Riscv.XLEN bits)),
-        AluCtrlEnum.ADD_SUB  -> this(srcp.ADD_SUB)
-      )
-
+      val result = bitwise | srcp.ADD_SUB.andMask(ALU_ADD_SUB) | S(U(srcp.LESS, Riscv.XLEN bits)).andMask(ALU_SLTX)
       ALU_RESULT := result.asBits
     }
 
