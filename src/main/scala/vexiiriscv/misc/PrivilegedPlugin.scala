@@ -454,8 +454,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 //                  when(tdata1.matcher === 4 || tdata1.matcher === 5) {
 //                    cpuMasked(15 downto 0) := cpu.subdivideIn(2 slices)(U(tdata1.matcher.lsb)) & value(31 downto 16)
 //                  }
-                  val maskHits = (~((B(cpuMasked) & mask) ^ (value & mask))).subdivideIn(2 slices).map(_.andR)
-                  val maskHit = maskHits.andR
+                  val maskHit = (~((B(cpuMasked) & mask) ^ (value & mask))).andR
 
                   val ok = tdata1.matcher.mux(
                     0 -> maskHit,
