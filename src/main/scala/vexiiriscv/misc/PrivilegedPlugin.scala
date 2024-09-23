@@ -29,7 +29,7 @@ object PrivilegedParam{
     withRdTime     = false,
     withDebug      = false,
     vendorId       = 0,
-    archId         = 5, //As spike
+    archId         = 46, //As spike
     impId          = 0,
     debugTriggers  = 0,
     debugTriggersLsu = false
