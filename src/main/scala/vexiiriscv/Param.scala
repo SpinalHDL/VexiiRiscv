@@ -262,8 +262,8 @@ class ParamSimple(){
 
 
     privParam.withDebug = true
-//    privParam.debugTriggers = 4
-//    privParam.debugTriggersLsu = true
+    privParam.debugTriggers = 4
+    privParam.debugTriggersLsu = true
     embeddedJtagTap = true
 
 

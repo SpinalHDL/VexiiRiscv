@@ -462,6 +462,8 @@ object SocGen extends App{
 //  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_HIT_DIRTY") //That big
 //  val to = cpu0.reflectBaseType("PrivilegedPlugin_logic_harts_0_debug_dcsr_stepLogic_stepped")
 
+//  val from = cpu0.reflectBaseType("early0_SrcPlugin_logic_addsub_combined_rs2Patched") //That big
+//  val to = cpu0.reflectBaseType("toplevel_execute_ctrl2_up_early0_SrcPlugin_SRC2_lane0")
 
 
 //  val drivers = mutable.LinkedHashSet[BaseType]()
