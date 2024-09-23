@@ -11,7 +11,9 @@ import vexiiriscv.riscv.Riscv.RVC
 import vexiiriscv.riscv._
 
 
-class FpuClassPlugin(val layer : LaneLayer, var wbAt : Int = 0) extends FiberPlugin{
+class FpuClassPlugin(val layer : LaneLayer,
+                     var wbAt : Int = 1 //Relax int ALU
+                    ) extends FiberPlugin{
   val p = FpuUtils
   val SEL = Payload(Bool())
 

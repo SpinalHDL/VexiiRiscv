@@ -12,7 +12,7 @@ import vexiiriscv.riscv._
 
 
 class FpuMvPlugin(val layer : LaneLayer,
-                   var intWbAt: Int = 0,
+                   var intWbAt: Int = 1, //Relax int ALU
                    var floatWbAt: Int = 0) extends FiberPlugin{
   val p = FpuUtils
 

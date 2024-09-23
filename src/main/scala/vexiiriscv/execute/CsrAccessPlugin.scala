@@ -11,7 +11,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, UOP, rfaKeys}
 import vexiiriscv.misc.{TrapReason, TrapService}
 import vexiiriscv.regfile.RegfileService
-import vexiiriscv.riscv.{CSR, Const, IMM, IntRegFile, RD, RS1, Rvi}
+import vexiiriscv.riscv.{CSR, Const, IMM, IntRegFile, RD, RS1, Riscv, Rvi}
 
 import scala.collection.mutable.ArrayBuffer
 import vexiiriscv.riscv.Riscv._
@@ -24,10 +24,12 @@ object CsrFsm{
 class CsrAccessPlugin(val layer : LaneLayer,
                       writeBackKey : Any,
                       integrated : Boolean = true,
-                      injectAt : Int = 0) extends FiberPlugin with CsrService with CompletionService {
+                      injectAt : Int = 0,
+                      wbAt : Int = 1) extends FiberPlugin with CsrService with CompletionService {
   override def getCompletions(): Seq[Flow[CompletionPayload]] = if(!integrated) Seq(logic.fsm.completion) else Nil
 
   val SEL = Payload(Bool())
+  val TO_RF = Payload(Bits(Riscv.XLEN bits))
   val CSR_IMM = Payload(Bool())
   val CSR_MASK = Payload(Bool())
   val CSR_CLEAR = Payload(Bool())
@@ -64,7 +66,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
     add(Rvi.CSRRSI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> False)
     add(Rvi.CSRRCI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> True)
 
-    val wbWi = integrated generate iwb.access(injectAt)
+    val wbWi = integrated generate iwb.access(wbAt)
     for(op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI).map(layer(_))){
       op.dontFlushFrom(injectAt)
       op.mayFlushUpTo(injectAt)
@@ -375,9 +377,10 @@ class CsrAccessPlugin(val layer : LaneLayer,
       completion.trap := inject(Global.TRAP)
       completion.commit := inject(Global.COMMIT)
 
+
       integrated match {
         case true => {
-          wbWi.valid := inject(SEL)
+          wbWi.valid := elp.execute(wbAt)(SEL)
           wbWi.payload := regs.csrValue
         }
         case false =>{
