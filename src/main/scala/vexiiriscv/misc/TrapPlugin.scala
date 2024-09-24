@@ -78,13 +78,13 @@ case class TrapPending() extends Bundle{
 object TrapReason{
   val INTERRUPT = 0
   val PRIV_RET = 1
-  val REDO = 2
-  val NEXT = 3
-  val FENCE_I = 4
-  val SFENCE_VMA = 5
-  val MMU_REFILL = 6
-  val WFI = 7
-  val DEBUG_TRIGGER = 8
+  val FENCE_I = 2
+  val DEBUG_TRIGGER = CSR.MCAUSE_ENUM.BREAKPOINT // Need to match to reduce hardware
+  val REDO = 4
+  val NEXT = 5
+  val SFENCE_VMA = 6
+  val MMU_REFILL = 7
+  val WFI = 8
 }
 
 object TrapArg{
@@ -355,7 +355,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               buffer.sampleIt := True
               goto(PROCESS)
             }
-            if (priv.p.withDebug) when(!csr.debug.running && csr.debug.doResume) {
+            if (priv.p.withDebug) when(!csr.hartRunning && csr.debug.doResume) {
               goto(DPC_READ)
             }
           }
@@ -375,15 +375,27 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           if (fl1p.nonEmpty) fetchL1Invalidate(hartId).cmd.valid := False
           if (lsu.nonEmpty) lsuL1Invalidate(hartId).cmd.valid := False
           val trapEnterDebug = RegInit(False)
+          val triggerEbreak = (priv.p.debugTriggers == 0).mux(False, !pending.state.exception && pending.state.code === TrapReason.DEBUG_TRIGGER && csr.trigger.slots.reader(pending.state.tval.asUInt.resized)(_.tdata1.doEbreak))
+          val triggerEbreakReg = Reg(Bool())
           PROCESS.whenIsActive{
+            triggerEbreakReg := triggerEbreak
+            if(priv.p.debugTriggers > 0 ) {
+              pending.state.exception setWhen(triggerEbreak) //Patch to reduce logic in next stages
+              when(!pending.state.exception && pending.state.code === TrapReason.DEBUG_TRIGGER) {
+                csr.trigger.slots.onSel(U(pending.state.tval).resized) { slot =>
+                  slot.tdata1.hit := True
+                }
+              }
+            }
+
             trapEnterDebug := False
             if(hp.nonEmpty) historyPort.valid := True
-            when(pending.state.exception || buffer.trap.interrupt) {
+            when(pending.state.exception || triggerEbreak || buffer.trap.interrupt) {
               goto(TRAP_TVAL)
               if(priv.p.withDebug){
-                when(!csr.debug.debugMode) {
+                when(!csr.debugMode) {
                   val doIt = False
-                  when(pending.state.exception && exception.code === CSR.MCAUSE_ENUM.BREAKPOINT) {
+                  when(pending.state.exception && exception.code === CSR.MCAUSE_ENUM.BREAKPOINT || triggerEbreak) {
                     doIt setWhen(csr.privilege === 3 && csr.debug.dcsr.ebreakm)
                     if (priv.p.withUser) doIt setWhen (csr.privilege === 0 && csr.debug.dcsr.ebreaku)
                     if (priv.p.withSupervisor) doIt setWhen (csr.privilege === 1 && csr.debug.dcsr.ebreaks)
@@ -447,9 +459,6 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                   }
                 }
                 if(priv.p.debugTriggers > 0 ) is(TrapReason.DEBUG_TRIGGER) {
-                  csr.debug.trigger.slots.onSel(U(pending.state.tval).resized){slot =>
-                    slot.tdata1.hit := True
-                  }
                   trapEnterDebug := True
                   goto(TRAP_EPC)
                 }
@@ -503,6 +512,9 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               csr.s.tval.getAddress()
             )
             crsPorts.write.data := Global.expendPc(buffer.trap.tval.asUInt, XLEN).asBits
+            when(triggerEbreakReg){
+              crsPorts.write.data := Global.expendPc(pending.pc, XLEN).asBits
+            }
             when(crsPorts.write.ready) {
               goto(TRAP_EPC)
             }
@@ -572,8 +584,8 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
             csr.debug.bus.exception := False
             csr.debug.bus.ebreak := False
             ENTER_DEBUG.whenIsActive{
-              csr.debug.running := False
-              when(!csr.debug.debugMode) {
+              csr.hartRunning := False
+              when(!csr.debugMode) {
                 csr.debug.dcsr.cause := 0
                 when(csr.debug.dcsr.step){ csr.debug.dcsr.cause := 4 }
                 when(csr.debug.bus.haltReq) { csr.debug.dcsr.cause := 3 }
@@ -599,7 +611,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               pcPort.valid := True
               pcPort.pc := U(readed).resized //PC RESIZED
               csr.privilege := csr.debug.dcsr.prv
-              csr.debug.running := True
+              csr.hartRunning := True
               csr.debug.bus.resume.rsp.valid := True
               goto(RUNNING)
             }
