@@ -23,7 +23,12 @@ class FpuDivPlugin(val layer : LaneLayer,
     val buildBefore = retains(layer.lane.pipelineLock)
     val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock, dr.divRetainer)
     awaitBuild()
-    dr.divInjectWidth(p.unpackedConfig.mantissaWidth+1, p.unpackedConfig.mantissaWidth+1, p.unpackedConfig.mantissaWidth+1)
+    val internalMantissaSize = p.mantissaWidth
+    val bitsNeeded = 1+internalMantissaSize+2+1
+    val interations = 1+(bitsNeeded-1 + (log2Up(dr.divRadix)-1)) / log2Up(dr.divRadix)
+    val pickAt = (log2Up(dr.divRadix) - ((bitsNeeded-1) % log2Up(dr.divRadix))) % log2Up(dr.divRadix)
+    val dw = bitsNeeded + pickAt
+    dr.divInjectWidth(dw,dw,dw)
 
     val packParam = FloatUnpackedParam(
       exponentMax   = p.unpackedConfig.exponentMax-p.unpackedConfig.exponentMin,
@@ -54,11 +59,7 @@ class FpuDivPlugin(val layer : LaneLayer,
 
     val RS1_FP = fup(RS1)
     val RS2_FP = fup(RS2)
-    val internalMantissaSize = p.mantissaWidth
-    val bitsNeeded = 1+internalMantissaSize+2+1
-    val interations = 1+(bitsNeeded-1 + (log2Up(dr.divRadix)-1)) / log2Up(dr.divRadix)
-    val pickAt = (log2Up(dr.divRadix) - ((bitsNeeded-1) % log2Up(dr.divRadix))) % log2Up(dr.divRadix)
-    
+
     val onExecute = new layer.Execute(exeAt) {
       when(isValid && SEL && fup.unpackingDone(exeAt)) {
         dr.divInject(layer, exeAt, U(B"1" ## RS1_FP.mantissa.raw), U(B"1" ## RS2_FP.mantissa.raw), interations-1)

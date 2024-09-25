@@ -91,7 +91,11 @@ class DivPlugin(val layer : LaneLayer,
 
     val processing = new el.Execute(divAt) {
       val abWidthRaw = Riscv.XLEN.get max injectApi.a max injectApi.b
-      val abWidth = (abWidthRaw+4-1)/4*4
+      val widthRound = radix match {
+        case 2 => 4
+        case 4 => 8
+      }
+      val abWidth = (abWidthRaw+widthRound-1) & ~(widthRound-1)
       val div = impl(abWidth, radix, area)
 
       val divRevertResult = RegNext((RS1_REVERT ^ (RS2_REVERT && !REM)) && !(RS2_FORMATED === 0 && RS2_SIGNED && !REM)) //RS2_SIGNED == RS1_SIGNED anyway

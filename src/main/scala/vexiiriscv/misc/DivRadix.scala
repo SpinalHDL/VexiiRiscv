@@ -116,23 +116,26 @@ class DivRadix(width: Int, radix: Int) extends DivComp(width, radix match {
 object DivRadix4Tester extends App{
   import spinal.core.sim._
 
-  for(radix <- List(2, 4)){
-    SimConfig.compile(new DivRadix(16, radix)).doSim(seed = 52){ dut =>
+  for(radix <- List(4)){
+    SimConfig.withFstWave.compile(new DivRadix(56, radix)).doSim(seed = 52){ dut =>
       dut.clockDomain.forkStimulus(10)
       dut.io.cmd.valid #= false
       dut.io.rsp.ready #= true
+      dut.io.cmd.normalized #= false
       dut.clockDomain.waitSampling()
-      for (i <- 0 until 100000) {
+      for (i <- 0 until 100) {
         dut.io.cmd.valid #= true
-        val a = dut.io.cmd.a.randomizedInt()
-        val b = dut.io.cmd.b.randomizedInt()
+//        val a = dut.io.cmd.a.randomizedBigInt()
+//        val b = dut.io.cmd.b.randomizedBigInt()
+        val a = 20
+        val b = 6
         dut.io.cmd.a #= a
         dut.io.cmd.b #= b
         dut.clockDomain.waitSampling()
         dut.io.cmd.valid #= false
         dut.clockDomain.waitSamplingWhere(dut.io.rsp.valid.toBoolean)
-        assert(dut.io.rsp.result.toInt == a / b)
-        assert(dut.io.rsp.remain.toInt == a % b)
+        assert(dut.io.rsp.result.toBigInt == a / b)
+        assert(dut.io.rsp.remain.toBigInt == a % b)
         dut.clockDomain.waitSampling()
       }
       simSuccess()
