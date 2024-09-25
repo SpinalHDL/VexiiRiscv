@@ -117,7 +117,7 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
     )
 
     val onPack = new pip.Area(packAt) {
-      val mask = inserter.GROUP_OH.andMask(isValid)
+      val mask = (inserter.GROUP_OH & uopsAt.map(e => lane.execute(e._1+packAt).isValid).asBits)
 
       packPort.cmd.at             := mask
       packPort.cmd.value.mode     := adder.result.RESULT.mode

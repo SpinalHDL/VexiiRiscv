@@ -97,7 +97,7 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       Decode.UOP_ID := reader(_.uopId)
       valid := reader.oh.orR
       val GROUP_OH = Payload(Bits(uopsAt.size bits))
-      assert(CountOne(GROUP_OH) <= 1)
+      assert(CountOne(GROUP_OH) <= 1, "Packing GROUP_OH failure")
       for((at, sel) <- (uopsAt.keys, GROUP_OH.asBools).zipped){
         sel := (for(port <- ports; (portAt, i) <- port.cmd.ats.zipWithIndex; if portAt == at) yield port.cmd.at(i)).orR
       }
