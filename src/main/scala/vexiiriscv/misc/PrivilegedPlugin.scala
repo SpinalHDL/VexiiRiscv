@@ -548,6 +548,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")
           if (p.withSupervisor) readWrite(22 -> tsr, 20 -> tvm)
           if (p.withUser) readWrite(21 -> tw)
+
+          cap.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUS)) // Status can have various side effect on the MMU and FPU
         }
 
         val cause = new api.Csr(CSR.MCAUSE) {
@@ -604,6 +606,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             api.readWrite(offset, 8 -> spp, 5 -> spie, 1 -> sie)
           }
           if (XLEN.get == 64) api.read(CSR.SSTATUS, 32 -> U"10")
+          cap.trapNextOnWrite += CsrListFilter(List(CSR.SSTATUS))
         }
 
         val ip = new Area {

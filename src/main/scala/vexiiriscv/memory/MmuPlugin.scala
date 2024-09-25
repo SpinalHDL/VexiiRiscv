@@ -216,8 +216,6 @@ class MmuPlugin(var spec : MmuSpec,
       }
     }
 
-    csr.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUS, CSR.SSTATUS))
-
     csrLock.release()
     portsLock.await()
 
