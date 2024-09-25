@@ -197,7 +197,7 @@ class ParamSimple(){
 
 
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
-  def lsuMemDataWidth = xlen max lsuMemDataWidthMin
+  def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
 
   //  Debug modifiers
