@@ -26,7 +26,7 @@ import scala.util.Random
 
 object ParamSimple{
 
-  def addptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
+  def addOptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
     import parser._
     opt[Map[String, String]]("region") unbounded() action { (v, c) =>
       regions += PmaRegionImpl(

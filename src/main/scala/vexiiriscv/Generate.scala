@@ -27,7 +27,7 @@ object Generate extends App {
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
     param.addOptions(this)
-    ParamSimple.addptionRegion(this, regions)
+    ParamSimple.addOptionRegion(this, regions)
   }.parse(args, Unit).nonEmpty)
 
   if(regions.isEmpty) regions ++= ParamSimple.defaultPma
@@ -50,7 +50,7 @@ object GenerateTilelink extends App {
     help("help").text("prints this usage text")
     opt[Int]("tl-sink-width") action { (v, c) => tlSinkWidth = v }
     param.addOptions(this)
-    ParamSimple.addptionRegion(this, regions)
+    ParamSimple.addOptionRegion(this, regions)
   }.parse(args, Unit).nonEmpty)
 
   if(regions.isEmpty) regions ++= ParamSimple.defaultPma
