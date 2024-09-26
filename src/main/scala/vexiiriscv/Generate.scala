@@ -101,12 +101,18 @@ object GenerateTilelink extends App {
       val sei = (cpu.priv.get.sei != null) generate InterruptNode.master()
       if(sei != null) cpu.priv.get.sei << sei; in(sei.flag)
 
-      val patcher = Fiber build new AreaRoot {
+      val patcher = Fiber patch new AreaRoot {
         val hartId = param.withHartIdInput generate plugins.collectFirst{
           case p : PrivilegedPlugin => p.api.harts(0).hartId.toIo
         }
+
+        val memA = mem.node.bus.a
+        out(memA.compliantMask()).setName(memA.mask.getName())
+        memA.mask.setName(memA.mask.getName()+"_non_compliant")
+        memA.mask.setAsDirectionLess()
       }
     }
+
   }
 
   for(m <- report.toplevel.mem.node.m2s.parameters.masters){
