@@ -634,7 +634,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
             pcPort.pc := U(readed).resized //PC RESIZED
 
             csr.privilege := pending.xret.targetPrivilege
-            csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege < 3)
+            csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege =/= 3)
             switch(pending.state.arg(1 downto 0)) {
               is(3) {
                 if(priv.p.withUser) csr.m.status.mpp := 0
