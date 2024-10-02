@@ -13,6 +13,7 @@ jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0x10002FFF
 set _TARGETNAME $_CHIPNAME.cpu
 
 target create $_TARGETNAME.0 riscv -chain-position $_TARGETNAME
+poll_period 400
 
 init
 halt
