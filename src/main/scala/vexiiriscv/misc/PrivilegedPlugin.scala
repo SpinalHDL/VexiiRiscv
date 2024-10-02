@@ -324,6 +324,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
       val noTrigger = (p.debugTriggers == 0) generate new Area {
         cap.allowCsr(CSR.TSELECT)
+        cap.allowCsr(CSR.TDATA1)
+        cap.allowCsr(CSR.TDATA2)
       }
       val trigger = (p.debugTriggers > 0) generate new Area {
         val tselect = new Area {
