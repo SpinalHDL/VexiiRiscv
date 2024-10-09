@@ -15,7 +15,7 @@ import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
 import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
-import spinal.lib.com.eth.sg.{MacSgFiber, MacSgFiberSpec}
+import spinal.lib.com.eth.sg.{MacSgFiber, MacSgFiberSpec, MacSgParam}
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.eda.bench.{Bench, Rtl}
 import spinal.lib.graphic.YcbcrConfig
@@ -253,15 +253,24 @@ class Soc(c : SocConfig) extends Component {
       rxResetCtrl.addAsyncReset(ClockDomain.current.isResetActive, HIGH)
 
       spec.txDmaParam.dataWidth = mainDataWidth
+      spec.rxDmaParam.dataWidth = mainDataWidth
       val fiber = new MacSgFiber(
-        phyParam = spec.phyParam,
-        txDmaParam = spec.txDmaParam,
+        p = new MacSgParam(
+          phyParam = spec.phyParam,
+          txDmaParam = spec.txDmaParam,
+          txBufferBytes = 2048,
+          rxDmaParam = spec.rxDmaParam,
+          rxBufferBytes = 64,
+          rxUpsizedBytes = 2
+        ),
         txCd = txResetCtrl.cd,
         rxCd = rxResetCtrl.cd
       )
       fiber.ctrl at spec.ctrlAddress of ioBus
       peripheral.plic.mapUpInterrupt(spec.txInterruptId, fiber.txInterrupt)
+      peripheral.plic.mapUpInterrupt(spec.rxInterruptId, fiber.rxInterrupt)
       dmaFilter.up << fiber.txMem
+      dmaFilter.up << fiber.rxMem
 
       hardFork(fiber.logic.phy.setName(spec.name))
     }
@@ -621,15 +630,24 @@ object SocSim extends App{
 
   import spinal.core.sim._
   SimConfig.withConfig(spinalConfig).withFstWave.compile(new Soc(socConfig)).doSimUntilVoid(seed=32){dut =>
-    dut.litexCd.forkStimulus(10000)
+    disableSimWave()
+    dut.litexCd.withSyncReset().forkStimulus(10000)
     if(socConfig.withCpuCd) dut.cpuClk.forkStimulus(5000)
     for(video <- dut.system.video){
       video.cd.forkStimulus(20000)
       VgaDisplaySim(video.ctrl.logic.ctrl.io.vga, video.resetCtrl.cd)
     }
     for(mac <- dut.system.macSg){
-      mac.txCd.forkStimulus(20000)
-      mac.rxCd.forkStimulus(20000)
+//      mac.txCd.forkStimulus(20000)
+//      mac.rxCd.forkStimulus(20000)
+      mac.txCd.forkStimulus(7000)
+      mac.rxCd.forkStimulus(7000)
+      val phy = mac.fiber.logic.phy
+      phy.rx.ctl #= 0
+      mac.txCd.onSamplings {
+        phy.rx.d #= phy.tx.d.toInt
+        phy.rx.ctl #= phy.tx.ctl.toInt
+      }
     }
     if(dut.debugReset != null)fork{
       dut.debugReset #= true
@@ -637,7 +655,7 @@ object SocSim extends App{
       dut.debugReset #= false
     }
     sleep(1)
-
+//    dut.cpuCd.waitRisingEdge(4)
 
     val onPbus = new Area {
       val axi = dut.system.patcher.pBus
@@ -645,7 +663,12 @@ object SocSim extends App{
 
       }
       val woa = new AxiLite4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.litexCd) {
-
+        override def onWrite(addr: BigInt, data: BigInt, strb: BigInt) = {
+          super.onWrite(addr, data, strb)
+          if(addr == 0xf0001000l){
+            print(data.toChar)
+          }
+        }
       }
     }
 

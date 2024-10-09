@@ -59,10 +59,10 @@ class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area with
       val up = clint.createPort(pp.hartIds(0))
       priv.mti << up.mti
       priv.msi << up.msi
-      DataCc(up.stoptime, priv.stoptime.clockDomain(RegNext(priv.stoptime)), initValue = U(0, 64 bits))
+      DataCc(up.stoptime, priv.stoptime.clockDomain(RegNext(priv.stoptime)))(False)
       val time = priv.plugin.p.withRdTime generate new Area{
         val timeBuffer = priv.rdtime.clockDomain(Reg(UInt(64 bits)))
-        DataCc(timeBuffer, clint.time)
+        DataCc(timeBuffer, clint.time)(U(0, 64 bits))
         priv.rdtime := timeBuffer
       }
     }
