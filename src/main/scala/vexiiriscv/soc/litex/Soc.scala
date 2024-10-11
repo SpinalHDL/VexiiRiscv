@@ -28,6 +28,7 @@ import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTa
 import vexiiriscv.ParamSimple
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
 import vexiiriscv.fetch.FetchL1Plugin
+import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.prediction.GSharePlugin
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
@@ -260,7 +261,7 @@ class Soc(c : SocConfig) extends Component {
           txDmaParam = spec.txDmaParam,
           txBufferBytes = 2048,
           rxDmaParam = spec.rxDmaParam,
-          rxBufferBytes = 64,
+          rxBufferBytes = 2048,
           rxUpsizedBytes = 2
         ),
         txCd = txResetCtrl.cd,
@@ -357,6 +358,13 @@ class Soc(c : SocConfig) extends Component {
         }
       }
 
+      val debug = out(Bits(8 bits))
+      debug := 0
+      debug(1 downto 0) := Delay(vexiis(0).logic.core.host[PrivilegedPlugin].logic.harts(0).privilege.pull.asBits,3)
+      if(withMem){
+        debug(2) := mem.toAxi4.up.bus.a.fire
+        debug(3) := mem.toAxi4.up.bus.d.fire
+      }
 
       println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus))
 
