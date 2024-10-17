@@ -6,6 +6,9 @@ import spinal.lib.sim.SparseMemory
 
 import java.io.File
 import java.nio.file.Files
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+import scala.io.Source
 
 class Elf(val f : File, addressWidth : Int){
   val fBytes = Files.readAllBytes(f.toPath)
@@ -134,4 +137,76 @@ object ElfTest extends App{
   }
   val a = elf.getSymbolAddress("_start")
   println(a)
+}
+
+object ElfMapper extends App{
+  import net.fornwall.jelf._
+  val elf = new Elf(new File("/media/data2/proj/vexii/litex/buildroot/buildroot/build/rv32ima/build/linux-custom/vmlinux"), 32)
+  val mapping = mutable.HashMap[Long, ElfSymbol]()
+
+  def mapSymbol(s : ElfSymbol): Unit = {
+    val base = s.st_value
+    val size = s.st_size
+//    println(f"${base}%08x ${size}%08x ${s.getName}")
+    for(i <- 0 until size.toInt){
+      mapping((base + i) & 0xFFFFFFFFl) = s
+    }
+  }
+  var sh = elf.elf.getDynamicSymbolTableSection
+  if (sh != null) {
+    val numSymbols = sh.symbols.length
+    var i = 0
+    while ( {
+      i < numSymbols
+    }) {
+      var symbol = sh.symbols(i)
+      mapSymbol(symbol)
+      i += 1
+    }
+  }
+  // Check symbol table for symbol name.
+  sh = elf.elf.getSymbolTableSection
+  if (sh != null) {
+    val numSymbols = sh.symbols.length
+    var i = 0
+    while ( {
+      i < numSymbols
+    }) {
+      var symbol = sh.symbols(i)
+      mapSymbol(symbol)
+      i += 1
+    }
+  }
+
+  val source = Source.fromFile("/media/data2/proj/vexii/VexiiRiscv/src/main/tcl/openocd/trace.out")
+  val matched = mutable.LinkedHashMap[ElfSymbol, Ctx]();
+  class Ctx(){
+    var counter = 0
+    var hits = mutable.HashMap[Long, Int]()
+  }
+  var unknown = 0l
+  for (line <- source.getLines()) {
+    val splits = line.split(" ")
+    val pc = BigInt(splits(0), 16).toLong
+    mapping.get(pc) match {
+      case Some(s) => {
+        val sCtx = matched.getOrElseUpdate(s, new Ctx())
+        sCtx.hits(pc) = sCtx.hits.getOrElse(pc, 0) + 1
+        sCtx.counter += 1
+      }
+      case None => unknown += 1 //println(":(")
+    }
+  }
+
+  val sorted = matched.toArray.sortBy(_._2.counter)
+  println("######################")
+  for((s, ctx) <- sorted){
+    println(s"${s.getName} got ${ctx.counter}")
+//    for((pc, cnt) <- ctx.hits.toArray.sortBy(_._2)){
+    for((pc, cnt) <- ctx.hits.toArray.sortBy(_._1)){
+//      println(f"- ${pc}%08x got ${cnt}")
+    }
+  }
+  println(s"Unkown -> $unknown")
+  source.close()
 }
