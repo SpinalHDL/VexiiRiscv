@@ -16,6 +16,7 @@ import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
 import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.eth.sg.{MacSgFiber, MacSgFiberSpec, MacSgParam}
+import spinal.lib.com.jtag.sim.JtagRemote
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.eda.bench.{Bench, Rtl}
 import spinal.lib.graphic.YcbcrConfig
@@ -27,7 +28,7 @@ import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, maste
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
 import vexiiriscv.ParamSimple
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
-import vexiiriscv.fetch.FetchL1Plugin
+import vexiiriscv.fetch.{FetchL1Plugin, FetchPipelinePlugin, PcPlugin}
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.prediction.GSharePlugin
 import vexiiriscv.schedule.DispatchPlugin
@@ -259,7 +260,7 @@ class Soc(c : SocConfig) extends Component {
         p = new MacSgParam(
           phyParam = spec.phyParam,
           txDmaParam = spec.txDmaParam,
-          txBufferBytes = 2048,
+          txBufferBytes = 1024*16,
           rxDmaParam = spec.rxDmaParam,
           rxBufferBytes = 2048,
           rxUpsizedBytes = 2
@@ -412,6 +413,12 @@ class Soc(c : SocConfig) extends Component {
     out(dm.ndmreset)
     system.vexiis.foreach(bindHart)
   })
+
+  //TODO REMOVE
+//  debug.dm.p.probeWidth = 32
+//  val globalPatcher = Fiber build new AreaRoot {
+//    debug.tap.logic.logic.jtagLogic.rework(debug.tap.logic.logic.jtagLogic.probe.input := system.vexiis(0).logic.core.host[PcPlugin].logic.harts(0).self.pc.pull.asBits.resized)
+//  }
 }
 
 
@@ -640,6 +647,8 @@ object SocSim extends App{
   SimConfig.withConfig(spinalConfig).withFstWave.compile(new Soc(socConfig)).doSimUntilVoid(seed=32){dut =>
     disableSimWave()
     dut.litexCd.withSyncReset().forkStimulus(10000)
+
+    if(withJtagTap)  spinal.lib.com.jtag.sim.JtagRemote(dut.debug.tap.jtag, 10000*4)
     if(socConfig.withCpuCd) dut.cpuClk.forkStimulus(5000)
     for(video <- dut.system.video){
       video.cd.forkStimulus(20000)
