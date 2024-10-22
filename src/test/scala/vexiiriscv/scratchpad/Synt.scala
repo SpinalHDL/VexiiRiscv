@@ -39,18 +39,17 @@ object IntegrationSynthBench extends App{
       cpu
     })
 
-    val config = new RegressionSingleConfig()
-    config.disableAll()
-    config.benchmark = true
-    val pg = paramGen
-    RegressionSingle.test(pg, Nil, config)
-    val path = s"regression/VexiiRiscv_${pg.hashCode().toString}_tests"
-    val dhrystoneLog = scala.io.Source.fromFile(path + "/benchmark/dhrystone_vexii/stdout.log").mkString
-    val dhrystone = "DMIPS per Mhz:                              ([^\\s]+)".r.findAllMatchIn(dhrystoneLog).next().group(1)
-    val coremarkLog = scala.io.Source.fromFile(path + "/benchmark/coremark_vexii/stdout.log").mkString
-    val coremark = "([^\\s]+) Coremark\\/MHz".r.findAllMatchIn(coremarkLog).next().group(1)
-
-    perfReport += s"$name :\n- $dhrystone Dhrystone/MHz $coremark Coremark/MHz"
+//    val config = new RegressionSingleConfig()
+//    config.disableAll()
+//    config.benchmark = true
+//    val pg = paramGen
+//    RegressionSingle.test(pg, Nil, config)
+//    val path = s"regression/VexiiRiscv_${pg.hashCode().toString}_tests"
+//    val dhrystoneLog = scala.io.Source.fromFile(path + "/benchmark/dhrystone_vexii/stdout.log").mkString
+//    val dhrystone = "DMIPS per Mhz:                              ([^\\s]+)".r.findAllMatchIn(dhrystoneLog).next().group(1)
+//    val coremarkLog = scala.io.Source.fromFile(path + "/benchmark/coremark_vexii/stdout.log").mkString
+//    val coremark = "([^\\s]+) Coremark\\/MHz".r.findAllMatchIn(coremarkLog).next().group(1)
+//    perfReport += s"$name :\n- $dhrystone Dhrystone/MHz $coremark Coremark/MHz"
   }
 
   def add(postfix: String)(body : ParamSimple => Unit) : Unit = {

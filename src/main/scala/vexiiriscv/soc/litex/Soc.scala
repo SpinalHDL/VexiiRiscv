@@ -273,6 +273,7 @@ class Soc(c : SocConfig) extends Component {
       peripheral.plic.mapUpInterrupt(spec.rxInterruptId, fiber.rxInterrupt)
       dmaFilter.up << fiber.txMem
       dmaFilter.up << fiber.rxMem
+      dmaFilter.down.setDownConnection(a = StreamPipe.M2S, d = StreamPipe.M2S)
 
       hardFork(fiber.logic.phy.setName(spec.name))
     }
@@ -361,11 +362,14 @@ class Soc(c : SocConfig) extends Component {
 
       val debug = out(Bits(8 bits))
       debug := 0
-      debug(1 downto 0) := Delay(vexiis(0).logic.core.host[PrivilegedPlugin].logic.harts(0).privilege.pull.asBits,3)
-      if(withMem){
-        debug(2) := mem.toAxi4.up.bus.a.fire
-        debug(3) := mem.toAxi4.up.bus.d.fire
-      }
+//      for((vexii, i) <- vexiis.zipWithIndex){
+//        debug(i) := vexii.logic.core.host[PrivilegedPlugin].logic.harts(0).int.s.external.pull()
+//      }
+//      debug(1 downto 0) := Delay(vexiis(0).logic.core.host[PrivilegedPlugin].logic.harts(0).privilege.pull.asBits,3)
+//      if(withMem){
+//        debug(2) := mem.toAxi4.up.bus.a.fire
+//        debug(3) := mem.toAxi4.up.bus.d.fire
+//      }
 
       println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus))
 
@@ -414,7 +418,7 @@ class Soc(c : SocConfig) extends Component {
     system.vexiis.foreach(bindHart)
   })
 
-  //TODO REMOVE
+
 //  debug.dm.p.probeWidth = 32
 //  val globalPatcher = Fiber build new AreaRoot {
 //    debug.tap.logic.logic.jtagLogic.rework(debug.tap.logic.logic.jtagLogic.probe.input := system.vexiis(0).logic.core.host[PcPlugin].logic.harts(0).self.pc.pull.asBits.resized)
@@ -890,11 +894,11 @@ make platform_riscv_xlen=64 platform_riscv_abi=lp64d platform_riscv_isa=rv64gc c
 
 git clone https://github.com/dolu1990/opensbi.git --branch upstream
 cd opensbi
-make cross_compile=riscv-none-embed- \
-     platform=generic \
-     fw_fdt_path=../linux.dtb \
-     fw_jump_addr=0x41000000  \
-     fw_jump_fdt_addr=0x46000000 \
+make CROSS_COMPILE=riscv-none-embed- \
+     PLATFORM=generic \
+     FW_FDT_PATH=../linux.dtb \
+     FW_JUMP_ADDR=0x41000000  \
+     FW_JUMP_FDT_ADDR=0x46000000 \
      -j20
 
 arm semihosting enable
