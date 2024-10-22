@@ -15,18 +15,21 @@ import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
 import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
+import spinal.lib.com.eth.sg.{MacSgFiber, MacSgFiberSpec, MacSgParam}
+import spinal.lib.com.jtag.sim.JtagRemote
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.eda.bench.{Bench, Rtl}
 import spinal.lib.graphic.YcbcrConfig
 import spinal.lib.graphic.vga.{TilelinkVgaCtrlFiber, TilelinkVgaCtrlSpec, Vga, VgaRgbToYcbcr, VgaYcbcrPix2}
-import spinal.lib.misc.{PathTracer, TilelinkClintFiber}
+import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.sim.SparseMemory
 import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, memPimped, slave}
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
 import vexiiriscv.ParamSimple
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
-import vexiiriscv.fetch.FetchL1Plugin
+import vexiiriscv.fetch.{FetchL1Plugin, FetchPipelinePlugin, PcPlugin}
+import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.prediction.GSharePlugin
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
@@ -34,6 +37,7 @@ import vexiiriscv.soc.demo.DebugModuleSocFiber
 
 import java.awt.{Dimension, Graphics}
 import java.awt.image.BufferedImage
+import java.io.File
 import javax.swing.{JFrame, JPanel, WindowConstants}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -65,6 +69,7 @@ class SocConfig(){
   var selfFlush : SelfFLush = null
   val periph = new PeriphSpecs
   val video = ArrayBuffer[TilelinkVgaCtrlSpec]()
+  val macSg = ArrayBuffer[MacSgFiberSpec]()
   var withCpuCd = false
 
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
@@ -72,6 +77,7 @@ class SocConfig(){
     vexiiParam.addOptions(parser)
     periph.addOptions(parser)
     TilelinkVgaCtrlSpec.addOption(parser, video)
+    MacSgFiberSpec.addOption(parser, macSg)
     opt[Int]("litedram-width") action { (v, c) => litedramWidth = v }
     //    opt[Seq[String]]("l2-self-flush") action { (v, c) => selfFlush = coherent.SelfFLush(BigInt(v(0)), BigInt(v(1)), BigInt(v(2))) }
     opt[Seq[String]]("l2-self-flush") action { (v, c) =>
@@ -166,6 +172,7 @@ class Soc(c : SocConfig) extends Component {
       }
     }
 
+
     val withLowLatencyPeriph = !withMem
     val peripheral = new ClockingArea(litexCd) {
       val bus = Node()
@@ -234,6 +241,44 @@ class Soc(c : SocConfig) extends Component {
       }
     }
 
+    val dmaFilter = (c.macSg.nonEmpty) generate new fabric.TransferFilter()
+
+
+    val macSg = for (spec <- c.macSg) yield new Area {
+      setName(spec.name)
+      val txCd = ClockDomain.external(spec.name + "_tx_ref", withReset = false)
+      val txResetCtrl = txCd(new ResetCtrlFiber())
+      txResetCtrl.addAsyncReset(ClockDomain.current.isResetActive, HIGH)
+
+      val rxCd = ClockDomain.external(spec.name + "_rx", withReset = false)
+      val rxResetCtrl = rxCd(new ResetCtrlFiber())
+      rxResetCtrl.addAsyncReset(ClockDomain.current.isResetActive, HIGH)
+
+      spec.txDmaParam.dataWidth = mainDataWidth
+      spec.rxDmaParam.dataWidth = mainDataWidth
+      val fiber = new MacSgFiber(
+        p = new MacSgParam(
+          phyParam = spec.phyParam,
+          txDmaParam = spec.txDmaParam,
+          txBufferBytes = 1024*16,
+          rxDmaParam = spec.rxDmaParam,
+          rxBufferBytes = 2048,
+          rxUpsizedBytes = 2
+        ),
+        txCd = txResetCtrl.cd,
+        rxCd = rxResetCtrl.cd
+      )
+      fiber.ctrl at spec.ctrlAddress of ioBus
+      peripheral.plic.mapUpInterrupt(spec.txInterruptId, fiber.txInterrupt)
+      peripheral.plic.mapUpInterrupt(spec.rxInterruptId, fiber.rxInterrupt)
+      dmaFilter.up << fiber.txMem
+      dmaFilter.up << fiber.rxMem
+      dmaFilter.down.setDownConnection(a = StreamPipe.M2S, d = StreamPipe.M2S)
+
+      hardFork(fiber.logic.phy.setName(spec.name))
+    }
+
+
     val splited = vexiiParam.lsuL1Enable generate new Area{
       val mBus = Node()
       mBus.forceDataWidth(mainDataWidth)
@@ -258,6 +303,7 @@ class Soc(c : SocConfig) extends Component {
         }
 
         for (video <- video) cBus << video.ctrl.dma
+        if(dmaFilter != null) cBus << dmaFilter.down
 
         if(withDma) {
           (cBus << dma.filter.down).setDownConnection(a = StreamPipe.FULL)
@@ -314,6 +360,16 @@ class Soc(c : SocConfig) extends Component {
         }
       }
 
+      val debug = out(Bits(8 bits))
+      debug := 0
+//      for((vexii, i) <- vexiis.zipWithIndex){
+//        debug(i) := vexii.logic.core.host[PrivilegedPlugin].logic.harts(0).int.s.external.pull()
+//      }
+//      debug(1 downto 0) := Delay(vexiis(0).logic.core.host[PrivilegedPlugin].logic.harts(0).privilege.pull.asBits,3)
+//      if(withMem){
+//        debug(2) := mem.toAxi4.up.bus.a.fire
+//        debug(3) := mem.toAxi4.up.bus.d.fire
+//      }
 
       println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus))
 
@@ -361,6 +417,12 @@ class Soc(c : SocConfig) extends Component {
     out(dm.ndmreset)
     system.vexiis.foreach(bindHart)
   })
+
+
+//  debug.dm.p.probeWidth = 32
+//  val globalPatcher = Fiber build new AreaRoot {
+//    debug.tap.logic.logic.jtagLogic.rework(debug.tap.logic.logic.jtagLogic.probe.input := system.vexiis(0).logic.core.host[PcPlugin].logic.harts(0).self.pc.pull.asBits.resized)
+//  }
 }
 
 
@@ -561,6 +623,10 @@ object VgaDisplaySim{
   }
 }
 
+
+/*
+--mmu-sync-read --with-mul --with-div --allow-bypass-from=0 --performance-counters=0 --fetch-l1 --fetch-l1-ways=2 --lsu-l1 --lsu-l1-ways=2 --with-lsu-bypass --relaxed-branch --with-rva --with-supervisor --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-ways=4 --lsu-l1-mem-data-width-min=64 --xlen=32 --fma-reduced-accuracy --fpu-ignore-subnormal --with-btb --with-ras --with-gshare --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2 --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128 --lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4 --relaxed-div --reset-vector 2147483648 --cpu-count=1 --l2-bytes=524288 --l2-ways=4 --litedram-width=128 --memory-region=0,131072,rxc,p --memory-region=268435456,8192,rwxc,p --memory-region=3758096384,1048576,rw,p --memory-region=2147483648,1073741824,rwxc,m --memory-region=4026531840,65536,rw,p --with-jtag-tap --lsu-l1-coherency --mac-sg name=eth,address=0xF1000000,txIrq=40,rxIrq=41 --load-elf /media/data2/proj/vexii/VexiiRiscv/ext/NaxSoftware/baremetal/macSg/build/rv32ima/macSg.elf
+ */
 object SocSim extends App{
   val socConfig = new SocConfig()
   import socConfig._
@@ -568,9 +634,11 @@ object SocSim extends App{
   //  vexiiParam.fetchL1Enable = true
   //  vexiiParam.lsuL1Enable = true
   vexiiParam.privParam.withRdTime = true
+  val elfs = ArrayBuffer[File]();
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
+    opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
     socConfig.addOptions(this)
   }.parse(args, Unit).nonEmpty)
 
@@ -581,11 +649,26 @@ object SocSim extends App{
 
   import spinal.core.sim._
   SimConfig.withConfig(spinalConfig).withFstWave.compile(new Soc(socConfig)).doSimUntilVoid(seed=32){dut =>
-    dut.litexCd.forkStimulus(10000)
+    disableSimWave()
+    dut.litexCd.withSyncReset().forkStimulus(10000)
+
+    if(withJtagTap)  spinal.lib.com.jtag.sim.JtagRemote(dut.debug.tap.jtag, 10000*4)
     if(socConfig.withCpuCd) dut.cpuClk.forkStimulus(5000)
     for(video <- dut.system.video){
       video.cd.forkStimulus(20000)
       VgaDisplaySim(video.ctrl.logic.ctrl.io.vga, video.resetCtrl.cd)
+    }
+    for(mac <- dut.system.macSg){
+//      mac.txCd.forkStimulus(20000)
+//      mac.rxCd.forkStimulus(20000)
+      mac.txCd.forkStimulus(7000)
+      mac.rxCd.forkStimulus(7000)
+      val phy = mac.fiber.logic.phy
+      phy.rx.ctl #= 0
+      mac.txCd.onSamplings {
+        phy.rx.d #= phy.tx.d.toInt
+        phy.rx.ctl #= phy.tx.ctl.toInt
+      }
     }
     if(dut.debugReset != null)fork{
       dut.debugReset #= true
@@ -593,7 +676,7 @@ object SocSim extends App{
       dut.debugReset #= false
     }
     sleep(1)
-
+//    dut.cpuCd.waitRisingEdge(4)
 
     val onPbus = new Area {
       val axi = dut.system.patcher.pBus
@@ -601,12 +684,21 @@ object SocSim extends App{
 
       }
       val woa = new AxiLite4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.litexCd) {
-
+        override def onWrite(addr: BigInt, data: BigInt, strb: BigInt) = {
+          super.onWrite(addr, data, strb)
+          if(addr == 0xf0001000l){
+            print(data.toChar)
+          }
+        }
       }
     }
 
     val onAxi = new Area{
       val ddrMemory = SparseMemory()
+      for (file <- elfs) {
+        val elf = new Elf(file, socConfig.vexiiParam.xlen)
+        elf.load(ddrMemory, 0)
+      }
       val axi = dut.system.patcher.mBus
       val woa = new Axi4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.cpuCd) {
         awDriver.factor = 0.9f
@@ -741,6 +833,13 @@ litex_sim --cpu-type=vexiiriscv  --with-sdram --sdram-data-width=64  \
 /media/data2/proj/upstream/openocd_riscv_up/src/openocd -f ft2232h_breakout.cfg -f vexiiriscv_jtag.tcl -c "load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/rootfs.cpio 0x40000000" -c exit
 (* mark_debug = "true" *)
 
+/media/data2/proj/upstream/openocd_riscv_up/src/openocd \
+-f ft2232h_breakout.cfg  \
+-f vexiiriscv_jtag.tcl \
+-c "load_image /media/data2/proj/vexii/VexiiRiscv/ext/NaxSoftware/baremetal/macSg/build/rv32ima/macSg.bin 0x40000000" \
+-c "reg pc 0x40000000" \
+-c "resume"
+
 // minimal linux
 python3 -m litex_boards.targets.digilent_nexys_video --cpu-type=vexiiriscv  --vexii-args="--allow-bypass-from=0 --debug-privileged --with-mul --with-div --with-rva --with-supervisor --performance-counters 0" --with-jtag-tap  --load
 load_image /media/data2/proj/vexii/litex/buildroot/rv32ima/images/image 0x40000000
@@ -795,11 +894,11 @@ make platform_riscv_xlen=64 platform_riscv_abi=lp64d platform_riscv_isa=rv64gc c
 
 git clone https://github.com/dolu1990/opensbi.git --branch upstream
 cd opensbi
-make cross_compile=riscv-none-embed- \
-     platform=generic \
-     fw_fdt_path=../linux.dtb \
-     fw_jump_addr=0x41000000  \
-     fw_jump_fdt_addr=0x46000000 \
+make CROSS_COMPILE=riscv-none-embed- \
+     PLATFORM=generic \
+     FW_FDT_PATH=../linux.dtb \
+     FW_JUMP_ADDR=0x41000000  \
+     FW_JUMP_FDT_ADDR=0x46000000 \
      -j20
 
 arm semihosting enable
@@ -953,6 +1052,8 @@ pulseaudio-module-bluetooth naaaaa
 
 mpg123 -a bluealsa mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 --sbc-quality=low
+
+ffplay  -f v4l2 -framerate 10 -video_size 160x120  /dev/video0
 
 
 perf stat -p $! --timeout 1000 -e branch-misses,branches,l1-dcache-loads,l1-dcache-load-misses,l1-icache-loads,l1-icache-load-misses,cycles,instructions
