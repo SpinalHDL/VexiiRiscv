@@ -14,7 +14,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.UOP
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, TrapArg, TrapReason, TrapService}
-import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
+import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
 import vexiiriscv.{Global, riscv}
@@ -478,10 +478,10 @@ class LsuPlugin(var layer : LaneLayer,
       val lsuTrap = False
 
       val writeData = Bits(Riscv.LSLEN bits)
-      writeData := elp(IntRegFile, riscv.RS2).resized
+      writeData.assignDontCare()
+      writeData(0, XLEN bits) := up(elp(IntRegFile, riscv.RS2))
       if(Riscv.withFpu) when(FLOAT){
-        val value = elp(FloatRegFile, riscv.RS2)
-        writeData(value.bitsRange) := value
+        writeData(0, FLEN bits) := up(elp(FloatRegFile, riscv.RS2))
       }
 
       val scMiss = Bool()

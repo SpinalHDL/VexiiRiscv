@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.{Global, riscv}
-import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
+import vexiiriscv.riscv.{CSR, Const, FloatRegFile, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
 import spinal.core.fiber.{Handle, Retainer}
 import spinal.core.sim.SimDataPimper
@@ -12,7 +12,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, TrapArg, TrapReason, TrapService}
-import vexiiriscv.riscv.Riscv.{LSLEN, XLEN}
+import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT_WIDTH, UOP}
@@ -52,13 +52,14 @@ class LsuCachelessPlugin(var layer : LaneLayer,
   val logic = during setup new Area{
     val elp = host.find[ExecuteLanePlugin](_ == layer.lane)
     val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
+    val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host[AddressTranslationService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
     val buildBefore = retains(elp.pipelineLock, ats.portsLock)
     val atsStorageLock = retains(ats.storageLock)
-    val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock)
+    val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))
     awaitBuild()
     Riscv.RVA.set(withAmo)
 
@@ -69,22 +70,33 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(forkAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
-    // IntFormatPlugin specification
     val iwb = ifp.access(wbAt)
+    val fpwb = fpwbp.map(_.createPort(wbAt))
     val amos = Riscv.RVA.get.option(frontend.amos.uops).toList.flatten
     for(load <- frontend.writingRf ++ amos){
-      val spec = Rvi.loadSpec(load)
       val op = layer(load)
-      ifp.addMicroOp(iwb, op)
-      spec.signed match {
-        case false => ifp.zeroExtend(iwb, op, spec.width)
-        case true  => ifp.signExtend(iwb, op, spec.width)
+
+      Rvi.loadSpec.get(load) match {
+        case Some(spec) =>
+          ifp.addMicroOp(iwb, op)
+          spec.signed match {
+            case false => ifp.zeroExtend(iwb, op, spec.width)
+            case true  => ifp.signExtend(iwb, op, spec.width)
+          }
+        case None =>
       }
+
       op.mayFlushUpTo(forkAt) // page fault / trap
       withSpeculativeLoadFlush match {
         case true =>
         case false => op.dontFlushFrom(forkAt + 1)
       }
+    }
+
+    fpwbp.foreach(_.addMicroOp(fpwb.get, layer, frontend.writeRfFloat))
+    for(fp <- frontend.writeRfFloat) {
+      val spec = layer(fp)
+      spec.setCompletion(wbAt)
     }
 
     for(store <- frontend.writingMem ++ amos){
@@ -118,7 +130,12 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     accessRetainer.await()
 
     val onFirst = new elp.Execute(0){
-      val WRITE_DATA = insert(up(elp(IntRegFile, riscv.RS2))) //Workaround for op.addRsSpec(RS2, 0) (TODO)
+      val WRITE_DATA = Payload(Bits(LSLEN bits))
+      WRITE_DATA.assignDontCare()
+      WRITE_DATA(0, XLEN bits) := up(elp(IntRegFile, riscv.RS2)) //Workaround for op.addRsSpec(RS2, 0) (TODO) ?
+      if(Riscv.withFpu) when(FLOAT){
+        WRITE_DATA(0, FLEN bits) := up(elp(FloatRegFile, riscv.RS2))
+      }
     }
 
     val onAddress = new addressCtrl.Area{
@@ -361,12 +378,20 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         rspShifted(i * 8, 8 bits) := src.read(sel)
       }
 
-      iwb.valid := SEL
-      iwb.payload := rspShifted
+      iwb.valid := SEL && !FLOAT
+      iwb.payload := rspShifted.resized
 
       if (withAmo) when(ATOMIC && !LOAD) {
         iwb.payload(0) := onJoin.SC_MISS
         iwb.payload(7 downto 1) := 0
+      }
+
+      fpwb.foreach{p =>
+        p.valid := SEL && FLOAT
+        p.payload := rspShifted.resized
+        if(Riscv.RVD) when(SIZE === 2) {
+          p.payload(63 downto 32).setAll()
+        }
       }
     }
 

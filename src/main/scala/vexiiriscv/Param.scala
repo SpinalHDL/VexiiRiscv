@@ -458,6 +458,7 @@ class ParamSimple(){
     opt[Unit]("stressed-src") action { (v, c) => relaxedSrc = false }
     opt[Unit]("with-mul") unbounded() action { (v, c) => withMul = true }
     opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
+    opt[Unit]("with-rvm") action { (v, c) => withMul = true; withDiv = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
     opt[Unit]("with-rvf") action { (v, c) => withRvf = true }
     opt[Unit]("with-rvd") action { (v, c) => withRvd = true; withRvf = true }
