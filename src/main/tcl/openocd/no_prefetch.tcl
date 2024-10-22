@@ -1,7 +1,11 @@
+for {set i 0} {$i < $cpu_count} {incr i} {
+    targets $_TARGETNAME.$i
+    halt
+}
 
 for {set i 0} {$i < $cpu_count} {incr i} {
     targets $_TARGETNAME.$i
-    reg 2112 0x3
+    reg 2112 0x2
 }
 
 for {set i 0} {$i < $cpu_count} {incr i} {
@@ -9,4 +13,4 @@ for {set i 0} {$i < $cpu_count} {incr i} {
     resume
 }
 
-exit
+

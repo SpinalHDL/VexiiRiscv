@@ -39,7 +39,7 @@ class PrefetcherNextLinePlugin(lineSize : Int) extends PrefetcherPlugin{
 
     val probeAddressNext = KeepAttribute(io.probe.pc + lineSize)
     val address = Reg(Global.PC)
-    val addressHit = address === io.probe.pc
+    val addressHit = address.dropLow(log2Up(lineSize)) === io.probe.pc.dropLow(log2Up(lineSize))
 
     val unbuffered = Stream(PrefetchCmd())
     unbuffered.valid := False
