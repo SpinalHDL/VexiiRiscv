@@ -18,7 +18,7 @@ import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent}
 import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
 import spinal.lib.cpu.riscv.RiscvHart
-import spinal.lib.cpu.riscv.debug.DebugModuleFiber
+import spinal.lib.cpu.riscv.debug.{DebugModuleFiber, DebugModuleSocFiber}
 import spinal.lib.eda.bench.Rtl
 import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
@@ -29,7 +29,6 @@ import vexiiriscv.ParamSimple
 import vexiiriscv.execute.SrcPlugin
 import vexiiriscv.misc.TrapPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
-import vexiiriscv.soc.demo.DebugModuleSocFiber
 import vexiiriscv.soc.demo.MicroSocSim.args
 import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 
@@ -58,7 +57,7 @@ class TlTbTop(p : TlTbParam) extends Component {
   val debugResetCtrl = cd100(new ResetCtrlFiber().addAsyncReset(asyncReset, HIGH))
   val mainResetCtrl  = cd100(new ResetCtrlFiber().addAsyncReset(debugResetCtrl))
 
-  val debug = p.withDebug generate debugResetCtrl.cd(new DebugModuleSocFiber(p.withJtagInstruction){
+  val debug = p.withDebug generate debugResetCtrl.cd(new DebugModuleSocFiber(p.withJtagTap, p.withJtagInstruction){
     mainResetCtrl.addSyncRelaxedReset(dm.ndmreset, HIGH)
   })
 

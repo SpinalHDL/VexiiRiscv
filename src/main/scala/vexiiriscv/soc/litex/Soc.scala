@@ -17,7 +17,7 @@ import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.eth.sg.{MacSgFiber, MacSgFiberSpec, MacSgParam}
 import spinal.lib.com.jtag.sim.JtagRemote
-import spinal.lib.cpu.riscv.debug.DebugModuleFiber
+import spinal.lib.cpu.riscv.debug.{DebugModuleFiber, DebugModuleSocFiber}
 import spinal.lib.eda.bench.{Bench, Rtl}
 import spinal.lib.graphic.YcbcrConfig
 import spinal.lib.graphic.vga.{TilelinkVgaCtrlFiber, TilelinkVgaCtrlSpec, Vga, VgaRgbToYcbcr, VgaYcbcrPix2}
@@ -34,7 +34,6 @@ import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.prediction.GSharePlugin
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
-import vexiiriscv.soc.demo.DebugModuleSocFiber
 
 import java.awt.{Dimension, Graphics}
 import java.awt.image.BufferedImage
@@ -421,7 +420,7 @@ class Soc(c : SocConfig) extends Component {
   }
 
   val debugReset = c.withDebug generate in.Bool()
-  val debug = c.withDebug generate ClockDomain(cpuCd.clock, debugReset)(new DebugModuleSocFiber(withJtagInstruction) {
+  val debug = c.withDebug generate ClockDomain(cpuCd.clock, debugReset)(new DebugModuleSocFiber(withJtagTap, withJtagInstruction) {
     out(dm.ndmreset)
     system.vexiis.foreach(bindHart)
   })
