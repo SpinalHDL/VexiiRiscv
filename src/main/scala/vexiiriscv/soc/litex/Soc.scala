@@ -28,6 +28,7 @@ import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, maste
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
 import vexiiriscv.ParamSimple
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
+import vexiiriscv.execute.lsu.LsuL1Plugin
 import vexiiriscv.fetch.{FetchL1Plugin, FetchPipelinePlugin, PcPlugin}
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.prediction.GSharePlugin
@@ -362,6 +363,13 @@ class Soc(c : SocConfig) extends Component {
 
       val debug = out(Bits(8 bits))
       debug := 0
+//      Fiber patch new Area {
+//        debug(3 downto 0) := B(vexiis(0).logic.core.host[LsuL1Plugin].logic.refill.slots.map(!_.free.pull()))
+//        debug(4) := mem.toAxi4.up.bus.a.fire
+//        debug(5) := mem.toAxi4.up.bus.d.fire
+//        debug(6) := mem.toAxi4.up.bus.a.valid
+//        debug(7) := mem.toAxi4.up.bus.d.valid
+//      }
 //      for((vexii, i) <- vexiis.zipWithIndex){
 //        debug(i) := vexii.logic.core.host[PrivilegedPlugin].logic.harts(0).int.s.external.pull()
 //      }
@@ -371,7 +379,7 @@ class Soc(c : SocConfig) extends Component {
 //        debug(3) := mem.toAxi4.up.bus.d.fire
 //      }
 
-      println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus))
+      println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus).mkString("\n"))
 
 //      def debug(that: Data) : Unit = that.addAttribute("mark_debug", "true")
 //      def debug[T <: Data](that: spinal.lib.Stream[T]) : Unit = {
