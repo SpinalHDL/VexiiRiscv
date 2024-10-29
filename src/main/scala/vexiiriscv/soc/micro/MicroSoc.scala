@@ -1,11 +1,12 @@
 package vexiiriscv.soc.micro
 
 import spinal.core._
+import spinal.core.fiber.Fiber
 import spinal.lib._
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.uart.TilelinkUartFiber
-import spinal.lib.misc.TilelinkClintFiber
+import spinal.lib.misc.{Elf, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 
@@ -59,6 +60,10 @@ class MicroSoc(p : MicroSocParam) extends Component {
 
       val cpuPlic = cpu.bind(plic)
       val cpuClint = cpu.bind(clint)
+    }
+
+    val patcher = Fiber patch new Area{
+      p.ramElf.foreach(new Elf(_, p.vexii.xlen).init(ram.thread.logic.mem, 0x80000000l))
     }
   }
 }

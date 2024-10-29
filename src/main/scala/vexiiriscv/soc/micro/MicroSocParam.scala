@@ -3,9 +3,12 @@ package vexiiriscv.soc.micro
 import spinal.core._
 import vexiiriscv.ParamSimple
 
+import java.io.File
+
 // This class will carry all the parameter of the SoC
 class MicroSocParam {
   var ramBytes = 16 KiB
+  var ramElf = Option.empty[File]
   val vexii = new ParamSimple()
   var demoPeripheral = Option.empty[PeripheralDemoParam]
   val socCtrl = new SocCtrlParam()
@@ -22,6 +25,7 @@ class MicroSocParam {
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
     opt[Int]("ram-bytes") action { (v, c) => ramBytes = v }
+    opt[String]("ram-elf") action { (v, c) => ramElf = Some(new File(v)) }
     opt[Map[String, String]]("demo-peripheral") action { (v, c) => demoPeripheral = Some(new PeripheralDemoParam(
       ledCount = v.getOrElse("leds", "8").toInt,
       buttonCount = v.getOrElse("buttons", "8").toInt

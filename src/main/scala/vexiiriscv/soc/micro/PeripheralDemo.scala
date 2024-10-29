@@ -68,7 +68,7 @@ class PeripheralDemo(p : PeripheralDemoParam, busParameter : BusParameter) exten
 // - Instantiate our PeripheralDemo component
 // - Bind things together
 // - Export the PeripheralDemo.io.led to the toplevel of our SoC (so we don't have to do it manually later on)
-case class PeripheralDemoFiber(p : PeripheralDemoParam) extends Area{
+class PeripheralDemoFiber(p : PeripheralDemoParam) extends Area{
   val node = tilelink.fabric.Node.slave()
   val interrupt = InterruptNode.master()
 
