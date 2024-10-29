@@ -1,60 +1,13 @@
 package vexiiriscv.soc.demo
 
-import rvls.spinal.RvlsBackend
 import spinal.core._
-import spinal.core.sim._
-import spinal.core.fiber._
-import spinal.lib.{ResetCtrlFiber, StreamPipe}
-import spinal.lib.bus.misc.SizeMapping
+import spinal.lib._
 import spinal.lib.bus.tilelink
-import spinal.lib.bus.tilelink._
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.uart.TilelinkUartFiber
-import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
-import spinal.lib.cpu.riscv.RiscvHart
-import spinal.lib.cpu.riscv.debug.{DebugModuleFiber, DebugModuleSocFiber}
-import spinal.lib.eda.bench.Rtl
-import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
+import spinal.lib.misc.TilelinkClintFiber
 import spinal.lib.misc.plic.TilelinkPlicFiber
-import spinal.lib.system.tag.PMA
-import vexiiriscv.ParamSimple
-import vexiiriscv.execute.SrcPlugin
-import vexiiriscv.misc.TrapPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
-import vexiiriscv.test.VexiiRiscvProbe
-
-import java.io.File
-import scala.collection.mutable.ArrayBuffer
-
-// This class will carry all the parameter of the SoC
-class MicroSocParam {
-  var ramBytes = 16 KiB
-  val vexii = new ParamSimple()
-  var demoPeripheral = Option.empty[PeripheralDemoParam]
-  val socCtrl = new SocCtrlParam()
-
-  // Provide some sane default
-  vexii.fetchForkAt = 1
-  vexii.lsuPmaAt = 1
-  vexii.lsuForkAt = 1
-  vexii.relaxedBranch = true
-  socCtrl.withJtagTap = true
-
-  // This is a command line parser utility, so you can customize the SoC using command line arguments to feed parameters
-  def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
-    import parser._
-    vexii.addOptions(parser)
-    socCtrl.addOptions(parser)
-    opt[Int]("ram-bytes") action { (v, c) => ramBytes = v }
-    opt[Int]("demo-peripheral") action { (v, c) => demoPeripheral = Some(new PeripheralDemoParam(
-      ledWidth = v
-    ))}
-  }
-
-  def legalize(): Unit = {
-    vexii.privParam.withDebug = socCtrl.withDebug
-  }
-}
 
 
 // Lets define our SoC toplevel
@@ -109,107 +62,3 @@ class MicroSoc(p : MicroSocParam) extends Component {
     }
   }
 }
-
-object MicroSocGen extends App{
-  val p = new MicroSocParam()
-
-  assert(new scopt.OptionParser[Unit]("MicroSoc") {
-    p.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
-  p.legalize()
-
-  val report = SpinalVerilog(new MicroSoc(p))
-}
-
-object MicroSocSynt extends App{
-  import spinal.lib.eda.bench._
-  val rtls = ArrayBuffer[Rtl]()
-  rtls += Rtl(SpinalVerilog{
-    val p = new MicroSocParam()
-    new MicroSoc(p) {
-      socCtrl.systemClk.setName("clk")
-      setDefinitionName("MicroSoc")
-    }
-  })
-
-  val targets = ArrayBuffer[Target]()
-  //  targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
-  //  targets ++= AlteraStdTargets()
-  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
-
-  Bench(rtls, targets)
-}
-
-/**
- * To connect with openocd jtag :
- * - src/openocd -f $VEXIIRISCV/src/main/tcl/openocd/vexiiriscv_sim.tcl
- */
-
-object MicroSocSim extends App{
-  var traceKonata = false
-  var withRvlsCheck = false
-  var elf: File = null
-  val sim = SimConfig
-  sim.withTimeSpec(1 ns, 1 ps)
-  val p = new MicroSocParam()
-
-  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
-    help("help").text("prints this usage text")
-    opt[String]("load-elf") action { (v, c) => elf = new File(v) }
-    opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
-    opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true }
-    p.addOptions(this)
-    sim.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
-
-
-  sim.compile(new MicroSoc(p){
-    Fiber patch{
-      system.ram.thread.logic.mem.simPublic()
-    }
-  }).doSimUntilVoid("test", seed = 42){dut =>
-    dut.socCtrl.systemClkCd.forkStimulus()
-    dut.socCtrl.asyncReset #= true
-    delayed(100 ns)(dut.socCtrl.asyncReset #= false)
-
-    val uartBaudPeriod = hzToLong(115200 Hz)
-    val uartTx = UartDecoder(
-      uartPin = dut.system.peripheral.uart.logic.uart.txd,
-      baudPeriod = uartBaudPeriod
-    )
-    val uartRx = UartEncoder(
-      uartPin = dut.system.peripheral.uart.logic.uart.rxd,
-      baudPeriod = uartBaudPeriod
-    )
-
-    val konata = traceKonata.option(
-      new vexiiriscv.test.konata.Backend(new File(currentTestPath, "konata.log")).spinalSimFlusher(hzToLong(1000 Hz))
-    )
-    val probe = new VexiiRiscvProbe(
-      cpu = dut.system.cpu.logic.core,
-      kb = konata
-    )
-
-    if (withRvlsCheck) probe.add(new RvlsBackend(new File(currentTestPath)).spinalSimFlusher(hzToLong(1000 Hz)))
-
-    probe.autoRegions()
-
-    if(p.socCtrl.withJtagTap) {
-      probe.checkLiveness = false
-      spinal.lib.com.jtag.sim.JtagRemote(dut.socCtrl.debugModule.tap.jtag, hzToLong(p.socCtrl.systemFrequency)*4)
-    }
-
-
-    if(elf != null) {
-      new Elf(elf, p.vexii.xlen).load(dut.system.ram.thread.logic.mem, 0x80000000l)
-      probe.backends.foreach(_.loadElf(0, elf))
-    }
-  }
-}
-
-
-
-
-//  val h = report.toplevel.main.cpu.logic.core.host
-//  val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
-//  println(path.report)
