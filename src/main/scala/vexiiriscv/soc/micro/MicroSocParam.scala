@@ -22,8 +22,9 @@ class MicroSocParam {
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
     opt[Int]("ram-bytes") action { (v, c) => ramBytes = v }
-    opt[Int]("demo-peripheral") action { (v, c) => demoPeripheral = Some(new PeripheralDemoParam(
-      ledWidth = v
+    opt[Map[String, String]]("demo-peripheral") action { (v, c) => demoPeripheral = Some(new PeripheralDemoParam(
+      ledCount = v.getOrElse("leds", "8").toInt,
+      buttonCount = v.getOrElse("buttons", "8").toInt
     ))}
 
     socCtrl.addOptions(parser)

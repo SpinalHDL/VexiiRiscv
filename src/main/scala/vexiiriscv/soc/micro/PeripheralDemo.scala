@@ -24,18 +24,20 @@ object PeripheralDemo{
 
 // This class will carry most parameters related to our peripheral.
 // It doesn't include the tilelink bus parameter, as those are toplevel negotiation related, and so, not really user related
-class PeripheralDemoParam(val ledWidth : Int)
+class PeripheralDemoParam(val ledCount : Int, val buttonCount : Int)
 
 // In this demo, the peripheral will :
 // - Implement a tilelink slave interface to provide access to its functionalities
-// - Output a LED bus
-// - Output an interrupt when the LED bus is assigned with a few specific values (for the demo)
+// - Output a leds bus
+// - Input a buttons bus
+// - Output an interrupt which is function of the buttons
 // PeripheralDemo will be a pure SpinalHDL Component which define hardware explicitly. No Fiber yet.
 class PeripheralDemo(p : PeripheralDemoParam, busParameter : BusParameter) extends Component{
   //Let's define all our input / output / busses
   val io = new Bundle{
     val bus = slave(tilelink.Bus(busParameter))
-    val led = out Bits(p.ledWidth bits)
+    val leds = out Bits(p.ledCount bits)
+    val buttons = in Bits(p.buttonCount bits)
     val interrupt = out Bool()
   }
 
@@ -43,28 +45,20 @@ class PeripheralDemo(p : PeripheralDemoParam, busParameter : BusParameter) exten
   val mapper = new tilelink.SlaveFactory(io.bus, allowBurst = false)
 
   // Create a register at address 0x00 that we can read and write. That register is assigned to the io.led
-  val ledReg = mapper.driveAndRead(io.led, address = 0x00) init(0)
+  val ledReg = mapper.driveAndRead(io.leds, address = 0x00) init(0)
 
-  // Here we will handle all our interrupt logic.
+  // Add a BufferCC which read the io.buttons to allow getting the buttons value without metastable issues
+  val buttonsCc = BufferCC(io.buttons)
+
+  // Make the io.buttons readable by the io.bus at address 0x04
+  mapper.read(buttonsCc, address = 0x04)
+
+
+  // Here we will handle all interrupt logic.
   // val interrupts = new Area { ... } create a namespace for all the contained hardware
   val interrupts = new Area{
-    // This will collect all the interrupt generated, for a later aggregation.
-    val sources = ArrayBuffer[Bool]()
-
-    // Instead of implementing each interrupt by hand each time, we put in place a tool to easily generate one.
-    def createInterrupt(value : Bool, id : Int) = new Area{
-      val enable = mapper.createReadAndWrite(Bool(), address = 0x10, bitOffset = id) init(False)
-      val pending = mapper.read(value, address = 0x14, bitOffset = id)
-      val interrupt = enable && pending
-      sources += interrupt
-    }
-
-    // Let's use that tool to define a few interrupts sources
-    val onLedCleared = createInterrupt(ledReg.norR, 0)
-    val onLedSet = createInterrupt(ledReg.andR, 1)
-
-    // Now that all the interrupts are defined, we can drive the io.interrupt by aggregating all the interrupt registred in sources
-    io.interrupt := sources.orR
+    val enables = mapper.createReadAndWrite(Bits(p.buttonCount bits), address = 0x10)
+    io.interrupt := (enables & io.buttons) =/= 0
   }
 }
 
@@ -78,7 +72,7 @@ case class PeripheralDemoFiber(p : PeripheralDemoParam) extends Area{
   val node = tilelink.fabric.Node.slave()
   val interrupt = InterruptNode.master()
 
-  // Here we define a elaboration thread which will start to run once the build phase (of the Fiber eco system) is reached
+  // Here we define an elaboration thread which will start to run once the build phase (of the Fiber ecosystem) is reached
   val logic = Fiber build new Area{
     // Let's handle the tilelink bus parameter negotiation
     // m2s are general requests negotiation (get, put, acquire, ..)
@@ -92,7 +86,42 @@ case class PeripheralDemoFiber(p : PeripheralDemoParam) extends Area{
     core.io.bus <> node.bus
     core.io.interrupt <> interrupt.flag
 
-    // Let export the core.io.led as io of the toplevel.
-    val led = core.io.led.toIo()
+    // Let export the leds and buttons of the PeripheralDemo to the toplevel io.
+    val leds = core.io.leds.toIo()
+    val buttons = core.io.buttons.toIo()
   }
 }
+
+// To explain a bit more about the Fiber ecosystem, when you design a SoC toplevel,
+// and you use "advanced" memory buses (ex: Tilelink, AXI, ...), a few parameters of the memory buses around the
+// SoC need to be negotiated/propagated. For instance:
+// - What data width do I need in my interconnect
+// - What AXI4 ID width do I need
+// - How many master agent are connected to my L2 cache
+// - What kind of memory request should I be able to handle
+// - ...
+//
+// The Fiber framework allows to solve this kind of engineering in a very distributed/decentralized way.
+// The main idea is to have multiple hardware elaboration threads which can wait on each others and exchange values.
+// Here is an example :
+//
+//  class Toplevel extends Component {
+//    val dataWidth = Handle[Int]() // Handle allows to exchange values between thread
+//    val peripheral = Fiber build new Area {  //Here we create a new elaboration thread
+//      val bus = Bits(dataWidth.get bits) // dataWidth.get will block the thread until dataWidth is loaded with a value
+//    }
+//
+//    val cpu = Fiber build new Area { //Here we create a new elaboration thread
+//      dataWidth.load(32) //Here we provide a value to dataWidth, which will unblock the peripheral thread
+//    }
+//  }
+//
+// And so, The PeripheralDemoFiber's node (tilelink.fabric.Node) provide 4 Handle to exchange values :
+// - node.m2s.proposed  : Which come from the memory masters, and will propose a given data width, address width and a few other things
+// - node.m2s.supported : Which come from our peripheral, to tell what is actually supported, as a subset of what is proposed.
+// - node.m2s.parameter : Which is the final set of parameters for our memory bus.
+// - node.bus : Which is the bus hardware instance (the actual wires)
+//
+// So it goes : master -> m2s.proposed -> slave -> m2s.supported -> m2s.parameter -> m2s.bus
+// There is also a node.s2m, but let's not care about it.
+

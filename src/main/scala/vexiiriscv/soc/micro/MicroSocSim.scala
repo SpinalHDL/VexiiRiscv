@@ -20,6 +20,7 @@ object MicroSocSim extends App{
   var withRvlsCheck = false
   var elf: File = null
   val sim = SimConfig
+  var speedPrinterPeriod = Option.empty[Double]
   sim.withTimeSpec(1 ns, 1 ps)
   val p = new MicroSocParam()
 
@@ -28,6 +29,7 @@ object MicroSocSim extends App{
     opt[String]("load-elf") action { (v, c) => elf = new File(v) }
     opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true }
+    opt[Double]("speed-printer") action { (v, c) => speedPrinterPeriod = Some(v) }
     sim.addOptions(this)
     p.addOptions(this)
   }.parse(args, Unit).nonEmpty)
@@ -42,6 +44,8 @@ object MicroSocSim extends App{
     dut.socCtrl.systemClkCd.forkStimulus()
     dut.socCtrl.asyncReset #= true
     delayed(100 ns)(dut.socCtrl.asyncReset #= false)
+
+    speedPrinterPeriod.foreach(SimSpeedPrinter(dut.socCtrl.systemClkCd, _))
 
     val uartBaudPeriod = hzToLong(115200 Hz)
     val uartTx = UartDecoder(
