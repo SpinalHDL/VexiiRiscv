@@ -16,6 +16,7 @@ class MicroSocParam {
   vexii.lsuForkAt = 1
   vexii.relaxedBranch = true
   socCtrl.withJtagTap = true
+  legalize()
 
   // This is a command line parser utility, so you can customize the SoC using command line arguments to feed parameters
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
