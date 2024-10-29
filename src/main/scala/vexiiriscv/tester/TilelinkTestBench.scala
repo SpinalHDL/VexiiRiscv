@@ -29,7 +29,7 @@ import vexiiriscv.ParamSimple
 import vexiiriscv.execute.SrcPlugin
 import vexiiriscv.misc.TrapPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
-import vexiiriscv.soc.demo.MicroSocSim.args
+import vexiiriscv.soc.micro.MicroSocSim.args
 import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 
 import java.io.File

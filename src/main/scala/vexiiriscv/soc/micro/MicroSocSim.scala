@@ -1,4 +1,4 @@
-package vexiiriscv.soc.demo
+package vexiiriscv.soc.micro
 
 import rvls.spinal.RvlsBackend
 import spinal.core._

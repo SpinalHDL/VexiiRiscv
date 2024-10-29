@@ -1,4 +1,4 @@
-package vexiiriscv.soc.demo
+package vexiiriscv.soc.micro
 
 import spinal.core._
 import scala.collection.mutable.ArrayBuffer
