@@ -11,7 +11,7 @@ class SocCtrlParam{
   var systemFrequency = 100 MHz
   def withDebug = withJtagTap ||  withJtagInstruction
 
-  def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
+  def addOptions(parser: scopt.OptionParser[Unit]) = {
     import parser._
     opt[Int]("system-frequency") action { (v, c) => systemFrequency = v Hz }
     opt[Boolean]("jtag-tap") action { (v, c) => withJtagTap = v  }

@@ -20,12 +20,13 @@ class MicroSocParam {
   // This is a command line parser utility, so you can customize the SoC using command line arguments to feed parameters
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
-    vexii.addOptions(parser)
-    socCtrl.addOptions(parser)
     opt[Int]("ram-bytes") action { (v, c) => ramBytes = v }
     opt[Int]("demo-peripheral") action { (v, c) => demoPeripheral = Some(new PeripheralDemoParam(
       ledWidth = v
     ))}
+
+    socCtrl.addOptions(parser)
+    vexii.addOptions(parser)
   }
 
   // After modifying the attributes of this class, you need to call the legalize function to check / fix it is fine.

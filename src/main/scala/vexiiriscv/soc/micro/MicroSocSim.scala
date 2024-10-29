@@ -28,9 +28,10 @@ object MicroSocSim extends App{
     opt[String]("load-elf") action { (v, c) => elf = new File(v) }
     opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true }
-    p.addOptions(this)
     sim.addOptions(this)
+    p.addOptions(this)
   }.parse(args, Unit).nonEmpty)
+  p.legalize()
 
 
   sim.compile(new MicroSoc(p){

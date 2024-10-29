@@ -437,7 +437,7 @@ class ParamSimple(){
     r.mkString("_")
   }
 
-  def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
+  def addOptions(parser: scopt.OptionParser[Unit]) = {
     import parser._
     opt[Int]("xlen") action { (v, c) => xlen = v }
     opt[Int]("decoders") action { (v, c) => decoders = v }

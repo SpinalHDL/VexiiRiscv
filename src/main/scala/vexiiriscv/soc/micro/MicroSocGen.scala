@@ -1,7 +1,6 @@
 package vexiiriscv.soc.micro
 
 import spinal.core._
-import scala.collection.mutable.ArrayBuffer
 
 
 object MicroSocGen extends App{
@@ -14,26 +13,6 @@ object MicroSocGen extends App{
 
   val report = SpinalVerilog(new MicroSoc(p))
 }
-
-object MicroSocSynt extends App{
-  import spinal.lib.eda.bench._
-  val rtls = ArrayBuffer[Rtl]()
-  rtls += Rtl(SpinalVerilog{
-    val p = new MicroSocParam()
-    new MicroSoc(p) {
-      socCtrl.systemClk.setName("clk")
-      setDefinitionName("MicroSoc")
-    }
-  })
-
-  val targets = ArrayBuffer[Target]()
-  //  targets ++=  XilinxStdTargets(withFMax = true, withArea = true)
-  //  targets ++= AlteraStdTargets()
-  targets ++= EfinixStdTargets(withFMax = true, withArea = true)
-
-  Bench(rtls, targets)
-}
-
 
 
 
