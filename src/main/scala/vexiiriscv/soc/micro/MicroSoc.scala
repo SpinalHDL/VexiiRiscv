@@ -5,9 +5,12 @@ import spinal.core.fiber.Fiber
 import spinal.lib._
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.fabric.Node
+import spinal.lib.com.spi.ddr.{SpiXdrMasterCtrl, SpiXdrParameter}
+import spinal.lib.com.spi.xdr.TilelinkSpiXdrMasterFiber
 import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.misc.{Elf, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
+import spinal.lib.system.tag.MemoryConnection
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 
 
@@ -53,9 +56,18 @@ class MicroSoc(p : MicroSocParam) extends Component {
       uart.node at 0x10001000 of bus32
       plic.mapUpInterrupt(1, uart.interrupt)
 
+      val spi = new TilelinkSpiXdrMasterFiber(SpiXdrMasterCtrl.MemoryMappingParameters(
+        SpiXdrMasterCtrl.Parameters(8, 12, SpiXdrParameter(2, 2, 1)).addFullDuplex(0,1,false),
+        xipEnableInit = true,
+        xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 6)
+      ))
+      plic.mapUpInterrupt(2, spi.interrupt)
+      spi.ctrl at 0x10002000 of bus32
+      spi.xip at 0x20000000 of bus32
+
       val demo = p.demoPeripheral.map(new PeripheralDemoFiber(_){
-        node at 0x10002000 of bus32
-        plic.mapUpInterrupt(2, interrupt)
+        node at 0x10003000 of bus32
+        plic.mapUpInterrupt(3, interrupt)
       })
 
       val cpuPlic = cpu.bind(plic)
@@ -64,6 +76,7 @@ class MicroSoc(p : MicroSocParam) extends Component {
 
     val patcher = Fiber patch new Area{
       p.ramElf.foreach(new Elf(_, p.vexii.xlen).init(ram.thread.logic.mem, 0x80000000l))
+      println(MemoryConnection.getMemoryTransfers(cpu.dBus).mkString("\n"))
     }
   }
 }

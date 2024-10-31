@@ -67,6 +67,25 @@ class Elf(val f : File, addressWidth : Int){
     initContent
   }
 
+  def load(func : (Long, Byte) => Unit) : Unit = {
+    foreachSection { section =>
+      if ((section.header.sh_flags & ElfSectionHeader.FLAG_ALLOC) != 0) {
+        val data = getData(section)
+        val memoryAddress = (section.header.sh_addr) & ((BigInt(1) << addressWidth) - 1).toLong
+        for((byte, i) <- data.zipWithIndex){
+          func(memoryAddress+i, byte)
+        }
+      }
+    }
+  }
+
+  def loadArray(array : Array[Byte], offset : Long, allowOverflow: Boolean = false) : Unit = {
+    load{(address, data) =>
+      if(address > offset && address  < offset + array.size) array(address - offset toInt) = data
+      else assert(!allowOverflow)
+    }
+  }
+
   def init[T <: Data](ram: Mem[T], offset: BigInt, allowOverflow: Boolean = false): Unit = {
     val initContent = getMemInit(ram, offset, allowOverflow)
     ram.initBigInt(initContent)
