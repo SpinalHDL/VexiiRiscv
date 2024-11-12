@@ -82,7 +82,7 @@ class Elf(val f : File, addressWidth : Int){
   def loadArray(array : Array[Byte], offset : Long, allowOverflow: Boolean = false) : Unit = {
     load{(address, data) =>
       if(address > offset && address  < offset + array.size) array(address - offset toInt) = data
-      else assert(!allowOverflow)
+      else assert(allowOverflow)
     }
   }
 
