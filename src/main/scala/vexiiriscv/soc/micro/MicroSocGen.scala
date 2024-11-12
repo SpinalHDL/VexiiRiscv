@@ -43,7 +43,7 @@ object Bsp{
       }
     }
 
-    headerWriter.close
+    headerWriter.close()
   }
 }
 

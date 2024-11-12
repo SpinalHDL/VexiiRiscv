@@ -58,7 +58,7 @@ object MicroSocSim extends App{
       baudPeriod = uartBaudPeriod
     )
 
-    val flash = new FlashModel(dut.system.peripheral.spi.logic.spi, dut.socCtrl.system.cd)
+    val spiFlash = p.withSpiFlash generate new FlashModel(dut.system.peripheral.spiFlash.logic.spi, dut.socCtrl.system.cd)
 
     val konata = traceKonata.option(
       new vexiiriscv.test.konata.Backend(new File(currentTestPath, "konata.log")).spinalSimFlusher(hzToLong(1000 Hz))
@@ -81,7 +81,7 @@ object MicroSocSim extends App{
     if(elfFile != null) {
       val elf = new Elf(elfFile, p.vexii.xlen)
       elf.load(dut.system.ram.thread.logic.mem, 0x80000000l, true)
-      elf.loadArray(flash.content, 0x20000000l, true)
+      if(p.withSpiFlash) elf.loadArray(spiFlash.content, 0x20000000l, true)
       probe.backends.foreach(_.loadElf(0, elfFile))
     }
   }

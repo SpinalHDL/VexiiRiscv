@@ -3,7 +3,9 @@ package vexiiriscv.soc.micro
 import spinal.core._
 import spinal.core.fiber.Fiber
 import spinal.lib._
+import spinal.lib.bus.amba3.apb.Apb3
 import spinal.lib.bus.tilelink
+import spinal.lib.bus.tilelink.{M2sSupport, M2sTransfers}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.spi.ddr.{SpiXdrMasterCtrl, SpiXdrParameter}
 import spinal.lib.com.spi.xdr.TilelinkSpiXdrMasterFiber
@@ -56,22 +58,25 @@ class MicroSoc(p : MicroSocParam) extends Component {
       uart.node at 0x10001000 of bus32
       plic.mapUpInterrupt(1, uart.interrupt)
 
-      val spi = new TilelinkSpiXdrMasterFiber(SpiXdrMasterCtrl.MemoryMappingParameters(
+      val spiFlash = p.withSpiFlash generate new TilelinkSpiXdrMasterFiber(SpiXdrMasterCtrl.MemoryMappingParameters(
         SpiXdrMasterCtrl.Parameters(8, 12, SpiXdrParameter(2, 2, 1)).addFullDuplex(0,1,false),
         xipEnableInit = true,
         xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 6)
-      ))
-      plic.mapUpInterrupt(2, spi.interrupt)
-      spi.ctrl at 0x10002000 of bus32
-      spi.xip at 0x20000000 of bus32
+      )){
+        plic.mapUpInterrupt(2, interrupt)
+        ctrl at 0x10002000 of bus32
+        xip at 0x20000000 of bus32
+      }
+
 
       val demo = p.demoPeripheral.map(new PeripheralDemoFiber(_){
         node at 0x10003000 of bus32
         plic.mapUpInterrupt(3, interrupt)
       })
 
-      val cpuPlic = cpu.bind(plic)
-      val cpuClint = cpu.bind(clint)
+      // Let's connect a few of the CPU interfaces to their respective peripherals
+      val cpuPlic = cpu.bind(plic) // External interrupts connection
+      val cpuClint = cpu.bind(clint) // Timer interrupt + time reference + stop time connection
     }
 
     val patcher = Fiber patch new Area{
