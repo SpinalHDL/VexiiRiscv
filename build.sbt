@@ -1,5 +1,6 @@
 val spinalVersion = "dev"
 val spinalHdlFromSource = sys.env.getOrElse("SPINALHDL_FROM_SOURCE", "1") == "1"
+val spinalHdlPathEnabled = sys.env.contains("SPINALHDL_PATH")
 val spinalHdlPath = sys.env.getOrElse("SPINALHDL_PATH", "./ext/SpinalHDL")
 
 def rootGen() = {
@@ -9,7 +10,7 @@ def rootGen() = {
       scalaVersion := "2.12.18",
       version := "2.0.0"
     )),
-    scalacOptions += s"-Xplugin:${new File(baseDirectory.value.getAbsolutePath + s"/ext/SpinalHDL/idslplugin/target/scala-2.12/spinalhdl-idsl-plugin_2.12-$spinalVersion.jar")}",
+    scalacOptions += s"-Xplugin:${new File((if(spinalHdlPathEnabled) spinalHdlPath else baseDirectory.value.getAbsolutePath + s"/ext/SpinalHDL") + s"/idslplugin/target/scala-2.12/spinalhdl-idsl-plugin_2.12-$spinalVersion.jar")}",
     scalacOptions += s"-Xplugin-require:idsl-plugin",
     scalacOptions += "-language:reflectiveCalls",
     libraryDependencies ++= Seq(
