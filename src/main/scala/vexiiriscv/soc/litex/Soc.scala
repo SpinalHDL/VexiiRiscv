@@ -1,9 +1,10 @@
 package vexiiriscv.soc.litex
 
 import spinal.core.fiber.{Fiber, hardFork}
+import spinal.lib._
 import spinal.core._
 import spinal.core.blackboxByteEnables.generateUnblackboxableError
-import spinal.core.internals.MemTopology
+import spinal.core.internals.{MemTopology, PhaseContext, PhaseNetlist}
 import spinal.core.sim.SimDataPimper
 import spinal.lib.bus.amba4.axi.sim.{Axi4ReadOnlyMonitor, Axi4ReadOnlySlaveAgent, Axi4WriteOnlyMonitor, Axi4WriteOnlySlaveAgent}
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4SpecRenamer, Axi4ToTilelinkFiber}
@@ -24,16 +25,18 @@ import spinal.lib.graphic.vga.{TilelinkVgaCtrlFiber, TilelinkVgaCtrlSpec, Vga, V
 import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.sim.SparseMemory
-import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, memPimped, slave}
+import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, memPimped, slave, traversableOncePimped}
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
-import vexiiriscv.ParamSimple
+import vexiiriscv.{Global, ParamSimple}
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
+import vexiiriscv.execute.ExecuteLanePlugin
 import vexiiriscv.execute.lsu.LsuL1Plugin
-import vexiiriscv.fetch.{FetchL1Plugin, FetchPipelinePlugin, PcPlugin}
-import vexiiriscv.misc.PrivilegedPlugin
+import vexiiriscv.fetch.{Fetch, FetchL1Plugin, FetchPipelinePlugin, PcPlugin}
+import vexiiriscv.misc.{PrivilegedPlugin, TrapPlugin}
 import vexiiriscv.prediction.GSharePlugin
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
+import vexiiriscv.test.WhiteboxerPlugin
 
 import java.awt.{Dimension, Graphics}
 import java.awt.image.BufferedImage
@@ -109,6 +112,7 @@ class Soc(c : SocConfig) extends Component {
   val litexCd = ClockDomain.external("litex")
   val cpuClk = withCpuCd.mux(ClockDomain.external("cpu", withReset = false), litexCd)
   val cpuResetCtrl = cpuClk(new ResetCtrlFiber())
+  cpuResetCtrl.holdCycles = 50000000*5
   cpuResetCtrl.addAsyncReset(litexCd.isResetActive, HIGH)
   val cpuCd = cpuResetCtrl.cd
 
@@ -360,14 +364,73 @@ class Soc(c : SocConfig) extends Component {
         }
       }
 
-      val debug = out(Bits(8 bits))
-      debug := 0
-//      Fiber patch new Area {
+      val debugIn = Bits(8 bits)
+      val debug = out(Delay(debugIn, 2))
+      debugIn := 0
+//      Fiber patch new AreaRoot {
+//        if(withCoherency && vexiiParam.lsuL1Enable) {
+//          val cBus = splited.wc.cBus.bus
+//          debugIn(0) := cBus.a.valid
+//          debugIn(1) := cBus.a.fire
+//          debugIn(2) := cBus.b.valid
+//          debugIn(3) := cBus.b.fire
+//          debugIn(4) := cBus.c.valid
+//          debugIn(5) := cBus.c.fire
+//          debugIn(6) := cBus.d.valid
+//          debugIn(7) := cBus.d.fire
+//        }
+//
+//        def toOut[T <: Data](that : T) = out(Delay(that.pull(),2))
+//        val cpu = vexiis(0).logic.core
+//        val wb = cpu.host[WhiteboxerPlugin]
+//        val commit = wb.logic.commits.ports(0)
+//        val commitvalid = toOut(commit.valid)
+//        val commitPc    = toOut(commit.pc)
+//        val commitUop   = toOut(commit.uop)
+//
+//        val trap = wb.logic.trap.ports(0)
+//        val trapValid = toOut(trap.valid)
+//        val trapInterrupt = toOut(trap.interrupt)
+//        val trapCause = toOut(trap.cause)
+//        val trappedPc = toOut(cpu.host[TrapPlugin].logic.harts(0).trap.pending.pc)
+//
+//        val dispatch = cpu.host[DispatchPlugin]
+//        val cand = dispatch.logic.candidates(0)
+//        val candValid = toOut(cand.ctx.valid)
+//        val candUop = toOut(cand.ctx.uop)
+//        val candPc = toOut(cand.ctx.hm(Global.PC))
+//        val candTrap = toOut(cand.ctx.hm(Global.TRAP))
+//
+//        val fetch = cpu.host[FetchPipelinePlugin].fetch(2)
+//
+//        val fetchValid = toOut(fetch.isValid)
+//        val fetchReady = toOut(fetch.isReady)
+//        val fetchWord = toOut(fetch(Fetch.WORD))
+//        val fetchPc = toOut(fetch(Fetch.WORD_PC))
+//
+//        val tp = cpu.host[TrapPlugin].logic.harts(0)
+//        val tpPcPort = cpu.database.on(toOut(tp.trap.pcPort))
+//        val tpTriggerValid = toOut(tp.trap.trigger.valid)
+//        val tpPendingCode = toOut(tp.trap.pending.state.code)
+//        val tpPendingException = toOut(tp.trap.pending.state.exception)
+//
+//        val exe = cpu.host[ExecuteLanePlugin]
+//        val executesUpValid = toOut((0 to 3).map(id => exe.ctrl(id).up.valid.pull()).asBits)
+//        val executesDownValid = toOut((0 to 3).map(id => exe.ctrl(id).down.valid.pull()).asBits)
+//        val executesCancel = toOut((0 to 3).map(id => exe.ctrl(id).up.isCancel.pull()).asBits)
+//        val executesTrap = toOut((0 to 3).map(id => exe.ctrl(id).down(Global.TRAP).pull()).asBits)
+//        val executesFreeze = toOut(exe.isFreezed())
+//
+//        val xxValid0 = toOut(cpu.reflectBaseType("toplevel_execute_ctrl0_down_LANE_SEL_lane0"))
+//        val xxReady0 = toOut(cpu.reflectBaseType("toplevel_execute_ctrl0_down_isReady"))
+//        val xxValid1 = toOut(cpu.reflectBaseType("toplevel_execute_ctrl1_up_LANE_SEL_lane0"))
+//        val xxReset = toOut(cpu.rework(cpu.clockDomain.readResetWire))
+
 //        debug(3 downto 0) := B(vexiis(0).logic.core.host[LsuL1Plugin].logic.refill.slots.map(!_.free.pull()))
-//        debug(4) := mem.toAxi4.up.bus.a.fire
-//        debug(5) := mem.toAxi4.up.bus.d.fire
-//        debug(6) := mem.toAxi4.up.bus.a.valid
-//        debug(7) := mem.toAxi4.up.bus.d.valid
+//        debugIn(4) := mem.toAxi4.up.bus.a.fire
+//        debugIn(5) := mem.toAxi4.up.bus.d.fire
+//        debugIn(6) := mem.toAxi4.up.bus.a.valid
+//        debugIn(7) := mem.toAxi4.up.bus.d.valid
 //      }
 //      for((vexii, i) <- vexiis.zipWithIndex){
 //        debug(i) := vexii.logic.core.host[PrivilegedPlugin].logic.harts(0).int.s.external.pull()
@@ -468,6 +531,16 @@ object SocGen extends App{
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
   spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
+  spinalConfig.dontCareGenAsZero = true
+  spinalConfig.addTransformationPhase(new PhaseNetlist {
+    override def impl(pc: PhaseContext) = {
+      pc.walkDeclarations{
+        case bt : BaseType if bt.isReg && !bt.hasInit && bt.clockDomain.canInit => bt.component.rework(bt.init(bt.getZero))
+        case _ =>
+      }
+    }
+
+  })
 //  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {

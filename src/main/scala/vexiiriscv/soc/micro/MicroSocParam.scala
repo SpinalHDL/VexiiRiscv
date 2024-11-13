@@ -12,6 +12,7 @@ class MicroSocParam {
   val vexii = new ParamSimple()
   var demoPeripheral = Option.empty[PeripheralDemoParam]
   val socCtrl = new SocCtrlParam()
+  var withSpiFlash = false
 
   // Provide some sane default
   vexii.fetchForkAt = 1
@@ -26,6 +27,7 @@ class MicroSocParam {
     import parser._
     opt[Int]("ram-bytes") action { (v, c) => ramBytes = v }
     opt[String]("ram-elf") action { (v, c) => ramElf = Some(new File(v)) }
+    opt[Boolean]("spi-flash") action { (v, c) => withSpiFlash = v  }
     opt[Map[String, String]]("demo-peripheral") action { (v, c) => demoPeripheral = Some(new PeripheralDemoParam(
       ledCount = v.getOrElse("leds", "8").toInt,
       buttonCount = v.getOrElse("buttons", "8").toInt

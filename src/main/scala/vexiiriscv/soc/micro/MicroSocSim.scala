@@ -4,6 +4,7 @@ import rvls.spinal.RvlsBackend
 import spinal.core._
 import spinal.core.sim._
 import spinal.core.fiber._
+import spinal.lib.com.spi.sim.FlashModel
 import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
 import spinal.lib.misc.Elf
 import vexiiriscv.test.VexiiRiscvProbe
@@ -18,7 +19,7 @@ import java.io.File
 object MicroSocSim extends App{
   var traceKonata = false
   var withRvlsCheck = false
-  var elf: File = null
+  var elfFile: File = null
   val sim = SimConfig
   var speedPrinterPeriod = Option.empty[Double]
   sim.withTimeSpec(1 ns, 1 ps)
@@ -26,7 +27,7 @@ object MicroSocSim extends App{
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
-    opt[String]("load-elf") action { (v, c) => elf = new File(v) }
+    opt[String]("load-elf") action { (v, c) => elfFile = new File(v) }
     opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true }
     opt[Double]("speed-printer") action { (v, c) => speedPrinterPeriod = Some(v) }
@@ -35,12 +36,12 @@ object MicroSocSim extends App{
   }.parse(args, Unit).nonEmpty)
   p.legalize()
 
-
-  sim.compile(new MicroSoc(p){
+  class MicroSocSim extends MicroSoc(p){
     Fiber patch{
       system.ram.thread.logic.mem.simPublic()
     }
-  }).doSimUntilVoid("test", seed = 42){dut =>
+  }
+  sim.compile(new MicroSocSim).doSimUntilVoid("test", seed = 42){dut =>
     dut.socCtrl.systemClkCd.forkStimulus()
     dut.socCtrl.asyncReset #= true
     delayed(100 ns)(dut.socCtrl.asyncReset #= false)
@@ -56,6 +57,8 @@ object MicroSocSim extends App{
       uartPin = dut.system.peripheral.uart.logic.uart.rxd,
       baudPeriod = uartBaudPeriod
     )
+
+    val spiFlash = p.withSpiFlash generate new FlashModel(dut.system.peripheral.spiFlash.logic.spi, dut.socCtrl.system.cd)
 
     val konata = traceKonata.option(
       new vexiiriscv.test.konata.Backend(new File(currentTestPath, "konata.log")).spinalSimFlusher(hzToLong(1000 Hz))
@@ -75,9 +78,11 @@ object MicroSocSim extends App{
     }
 
 
-    if(elf != null) {
-      new Elf(elf, p.vexii.xlen).load(dut.system.ram.thread.logic.mem, 0x80000000l)
-      probe.backends.foreach(_.loadElf(0, elf))
+    if(elfFile != null) {
+      val elf = new Elf(elfFile, p.vexii.xlen)
+      elf.load(dut.system.ram.thread.logic.mem, 0x80000000l, true)
+      if(p.withSpiFlash) elf.loadArray(spiFlash.content, 0x20000000l, true)
+      probe.backends.foreach(_.loadElf(0, elfFile))
     }
   }
 }
