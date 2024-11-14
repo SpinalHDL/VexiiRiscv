@@ -2,7 +2,7 @@ package vexiiriscv
 
 import spinal.core._
 import spinal.core.fiber.Fiber
-import spinal.lib.LatencyAnalysis
+import spinal.lib.{AnalysisUtils, LatencyAnalysis}
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.misc.{InterruptNode, PathTracer}
@@ -23,10 +23,12 @@ object Generate extends App {
   val param = new ParamSimple()
   val sc = SpinalConfig()
   val regions = ArrayBuffer[PmaRegion]()
+  val analysis = new AnalysisUtils
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
     param.addOptions(this)
+    analysis.addOption(this)
     ParamSimple.addOptionRegion(this, regions)
   }.parse(args, Unit).nonEmpty)
 
@@ -37,6 +39,8 @@ object Generate extends App {
     ParamSimple.setPma(plugins, regions)
     VexiiRiscv(plugins)
   }
+
+  analysis.report(report)
 }
 
 
