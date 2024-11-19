@@ -10,7 +10,7 @@ import spinal.lib.bus.amba4.axilite.{AxiLite4Config, AxiLite4ReadOnly}
 import spinal.lib.bus.bmb.{Bmb, BmbAccessParameter, BmbParameter, BmbSourceParameter}
 import spinal.lib.bus.tilelink.{M2sSupport, SizeRange}
 import spinal.lib.misc.Plru
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort, PmpService}
 import vexiiriscv.misc._
 import vexiiriscv._
 import vexiiriscv.Global._
@@ -56,6 +56,7 @@ trait LsuL1Service{
 
 class FetchL1Plugin(var translationStorageParameter: Any,
                     var translationPortParameter: Any,
+                    var pmpPortParameter : Any,
                     var memDataWidth : Int,
                     var fetchDataWidth : Int,
                     var setCount: Int,
@@ -92,9 +93,10 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val rp = host[ReschedulePlugin]
     val ts = host[TrapService]
     val ats = host[AddressTranslationService]
+    val ps = host[PmpService]
     val pcs = host.get[PerformanceCounterService]
     val prefetcher = host.get[PrefetcherPlugin].map(_.io)
-    val buildBefore = retains(pp.elaborationLock, ats.portsLock)
+    val buildBefore = retains(pp.elaborationLock, ats.portsLock, ps.portsLock)
     val atsStorageLock = retains(ats.storageLock)
     val setupLock = retains(List(ts.trapLock, pcp.elaborationLock, rp.elaborationLock) ++ pcs.map(_.elaborationLock).toList)
     awaitBuild()
@@ -365,6 +367,16 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     )
     val tpk = translationPort.keys
 
+    val pmpPort = ps.createPmpPort(
+      nodes = List.tabulate(ctrlAt+1)(pp.fetch(_).down),
+      physicalAddress = tpk.TRANSLATED,
+      read = _ => False,
+      write = _ => False,
+      execute = _ => True,
+      portSpec = pmpPortParameter,
+      storageSpec = null
+    )
+
     val cmd = new pp.Fetch(readAt) {
       val ra1 = pp.fetch(readAt + 1).up
       val doIt = ra1.ready || (!ra1.valid && prefetcher.nonEmpty.mux(!ra1(PREFETCH), True)) // Better timings than up.isReady, ra1.cancel not necessary as cancel do not collapse bubbles
@@ -486,7 +498,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         trapPort.code := TrapReason.REDO
       }
 
-      when(dataAccessFault || pmaPort.rsp.fault) {
+      when(dataAccessFault || pmaPort.rsp.fault || pmpPort.ACCESS_FAULT) {
         allowRefill := False
         trapPort.valid := True
         trapPort.exception := True
