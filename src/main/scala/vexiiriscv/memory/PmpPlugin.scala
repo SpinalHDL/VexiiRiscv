@@ -11,22 +11,27 @@ import vexiiriscv.riscv.{CSR, Riscv}
 
 import scala.collection.mutable.ArrayBuffer
 
+// Here are some good Spike implementation references :
+// - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
+// - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/csrs.cc#L183
+// - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
+
 case class PmpStorageParameter(slots : Int)
 case class PmpPortParameter(var napotMatchAt : Int,
                             var napotHitsAt : Int,
                             var torCmpAt : Int,
                             var torHitsAt : Int,
                             var hitsAt : Int,
-                            var rspAt : Int){
+                            var rspAt : Int)
 
-}
 
-//ref :
-// https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
-// https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/csrs.cc#L183
-// https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
+case class PmpParam(
+  var pmpSize: Int,
+  var granularity: Int,
+  var withTor: Boolean = true,
+  var withNapot: Boolean = true
+)
 
-case class PmpParam(var pmpSize : Int, var granularity : Int)
 class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
   import p._
 
@@ -37,12 +42,11 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
 
   case class PortSpec(stages: Seq[NodeBaseApi],
                       physicalAddress: Payload[UInt],
+                      forceCheck: NodeBaseApi => Bool,
                       read: NodeBaseApi => Bool,
                       write: NodeBaseApi => Bool,
                       execute: NodeBaseApi => Bool,
-//                      usage : AddressTranslationPortUsage,
                       pp: PmpPortParameter,
-//                      ss : StorageSpec,
                       rsp : PmpRsp){
     val permStage = stages(0)
     val napotMatchStage = stages(pp.napotMatchAt)
@@ -54,47 +58,27 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
   }
   val portSpecs = ArrayBuffer[PortSpec]()
 
-//  case class StorageSpec(p: PmpStorageParameter) extends Nameable
-//  val storageSpecs = ArrayBuffer[StorageSpec]()
-
-//  override def newStorage(pAny: Any) : Any = {
-//    val p = pAny.asInstanceOf[PmpStorageParameter]
-//    storageSpecs.addRet(StorageSpec(p))
-//    null
-//  }
-
-//  override def getStorageId(s: Any): Int = storageSpecs.indexOf(s)
-//  override def getStorageIdWidth(): Int = {
-//    storageLock.await()
-//    log2Up(storageSpecs.size)
-//  }
-
   override def createPmpPort(nodes: Seq[NodeBaseApi],
                              physicalAddress: Payload[UInt],
+                             forceCheck: NodeBaseApi => Bool,
                              read: NodeBaseApi => Bool,
                              write: NodeBaseApi => Bool,
                              execute: NodeBaseApi => Bool,
                              portSpec: Any,
                              storageSpec: Any): PmpRsp = {
     val pp = portSpec.asInstanceOf[PmpPortParameter]
-//    val ss = storageSpec.asInstanceOf[StorageSpec]
     portSpecs.addRet(
       new PortSpec(
         stages          = nodes,
         physicalAddress = physicalAddress,
+        forceCheck      = forceCheck,
         read            = read,
         write           = write,
         execute         = execute,
         pp              = pp,
-//        ss              = ss,
         rsp             = new PmpRsp()
       )
     ).rsp
-  }
-
-  val api = during build new Area{
-    val fetchTranslationEnable = Bool()
-    val lsuTranslationEnable = Bool()
   }
 
   val logic = during setup new Area{
@@ -107,6 +91,8 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
 
     awaitBuild()
 
+    if(Riscv.XLEN.get == 64) assert(granularity >= 8)
+
     case class Cfg() extends Bundle{
       val kind = Bits(2 bits)
       val read, write, execute = Bool()
@@ -115,36 +101,54 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
 
     val pRange = Global.PHYSICAL_WIDTH-1 downto granularityWidth
     val entries = for(i <- 0 until pmpSize) yield new Area{
-      val address = Reg(UInt(Global.PHYSICAL_WIDTH.get + 2 - granularityWidth bits)) init(0)
-      val cfg = Reg(Cfg()).initZero()
+      val isLocked = Bool()
+      val address = Reg(UInt(Global.PHYSICAL_WIDTH.get - granularityWidth bits))
+      val cfg = Reg(Cfg())
       val cfgNext = CombInit(cfg)
-      when(!cfg.locked) {
+      when(!isLocked) {
         cfg := cfgNext
         cfg.write clearWhen (!cfgNext.read)
+        if(!p.withTor) when(cfgNext.kind === 1) {cfg.kind := 0}
+      }
+
+      if(i == 0){
+        assert(p.withNapot)
+        address.init(address.getAllTrue)
+        cfg.read init(True)
+        cfg.write init(True)
+        cfg.execute init(True)
+        cfg.kind init(3)
+        cfg.locked init(False)
+      } else {
+        address.init(0)
+        cfg.initZero()
       }
 
 
-      import cfg._
-
-      val isNapot = RegNext(kind(1))  //TODO
-      val isTor = RegNext(kind === 1)  //TODO
-
-      val napot = RegNext(Napot(address.asBits).orMask(!kind(0)))
-      val mask = napot
+      val isNapot = RegNext(cfgNext.kind(1))
+      val isTor = RegNext(cfgNext.kind === 1)
+      val napot = Napot(address.dropHigh(1))
+      if(granularity == 4) when(!cfgNext.kind(0)){ napot.setAll() }
+      val mask = RegNext(napot)
 
       val (cfgId, cfgOffset) = Riscv.XLEN.get match{
         case 32 => (i/4, i%4*8)
         case 64 => (i/8*2, i%8/8)
       }
 
-      csr.writeCancel(CSR.PMPADDR + i, locked)
-      csr.readWrite(address, CSR.PMPADDR + i, Math.max(0, granularityWidth - 2))
-      csr.read(CSR.PMPCFG + cfgId,  0+cfgOffset -> read, 1+cfgOffset -> write, 2+cfgOffset -> execute, 3+cfgOffset -> kind, 7+cfgOffset -> locked)
+      csr.writeCancel(CSR.PMPADDR + i, cfg.locked)
+      csr.readWrite(address, CSR.PMPADDR + i, granularityWidth-2)
+      if(granularity > 4 && p.withNapot) csr.read(U(granularityWidth-2 bits, default -> isNapot), CSR.PMPADDR + i) //WTF
+      csr.read(CSR.PMPCFG + cfgId,  0+cfgOffset -> cfg.read, 1+cfgOffset -> cfg.write, 2+cfgOffset -> cfg.execute, 3+cfgOffset -> cfg.kind, 7+cfgOffset -> cfg.locked)
       csr.write(CSR.PMPCFG + cfgId,  0+cfgOffset -> cfgNext.read, 1+cfgOffset -> cfgNext.write, 2+cfgOffset -> cfgNext.execute, 3+cfgOffset -> cfgNext.kind, 7+cfgOffset -> cfgNext.locked)
-      //TODO use ram
     }
 
-    csr.onDecode(CsrListFilter((0 to 63).map(_ + CSR.PMPADDR) ++ (0 to 15).filter(i => Riscv.XLEN.get == 32 || (i % 2) == 0).map(_ + CSR.PMPCFG))) {
+    for(i <- 0 until pmpSize; self = entries(i)) {
+      self.isLocked := self.cfg.locked || (i+1 != pmpSize).mux(entries(i+1).isLocked && entries(i+1).isTor , False)
+    }
+
+    val allFilter = CsrListFilter((0 to 63).map(_ + CSR.PMPADDR) ++ (0 to 15).filter(i => Riscv.XLEN.get == 32 || (i % 2) == 0).map(_ + CSR.PMPCFG))
+    if(p.pmpSize > 0) csr.onDecode(allFilter) {
       when(csr.bus.decode.write) {
         csr.bus.decode.doTrap(TrapReason.NEXT)
       }
@@ -156,33 +160,42 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
     portsLock.await()
 
     val isMachine = priv.isMachine(0)
+    val checkInstruction = !isMachine
+    val checkData = !isMachine || priv.logic.harts(0).m.status.mprv && priv.logic.harts(0).m.status.mpp =/= 3
+
     val ports = for(ps <- portSpecs) yield new Composite(ps.rsp, "logic", false){
       import ps._
+      val portCheckData = checkData || ps.forceCheck(permStage)
       val torCmpAddress = torCmpStage(ps.physicalAddress) >> granularityWidth
       val TOR_SMALLER = new Array[Payload[Bool]](p.pmpSize)
       val onEntries = for((e, id) <- entries.zipWithIndex) yield new Area{
-        val NAPOT_MATCH = napotMatchStage.insert(((e.address << granularityWidth)(pRange) ^ napotMatchStage(ps.physicalAddress)(pRange)).asBits & e.mask.resized)
-        val NAPOT_HIT = napotHitsStage.insert(napotHitsStage(NAPOT_MATCH) === 0)
-        val TOR_BIGGER = torCmpStage.insert(e.address > torCmpAddress)
-        val TOR_HIT = { import torHitsStage._ ; insert(TOR_BIGGER && (id != 0).mux(!TOR_SMALLER(id-1), True))}
-        val HIT_ANY = { import hitsStage._ ; insert(e.isNapot && NAPOT_HIT || e.isTor && TOR_HIT) }
+        val napot = p.withNapot generate new Area {
+          val MATCH = napotMatchStage.insert(((e.address << granularityWidth)(pRange) ^ napotMatchStage(ps.physicalAddress)(pRange)).asBits & e.mask)
+          val HIT = napotHitsStage.insert(napotHitsStage(MATCH) === 0)
+        }
+        val tor = p.withTor generate new Area{
+          val BIGGER = torCmpStage.insert(e.address > torCmpAddress)
+          val HIT = { import torHitsStage._ ; insert(BIGGER && (id != 0).mux(!TOR_SMALLER(id-1), True))}
+          TOR_SMALLER(id) = BIGGER
+        }
+        val HIT_ANY = { import hitsStage._ ; insert(p.withNapot.mux(e.isNapot && napot.HIT, False) || p.withTor.mux(e.isTor && tor.HIT, False)) }
 
         val bypass = False // isMachine && !e.locked
-        val normalRwx = (!ps.read(permStage) || e.cfg.read) && (!ps.write(permStage) || e.cfg.write) && (!ps.execute(permStage) || e.cfg.execute)
-        val PERM_OK = { import permStage._ ; insert(bypass || normalRwx) } //TODO check rv64 fit in
-
-        TOR_SMALLER(id) = TOR_BIGGER
+        val normalRwx = (!ps.read(permStage) || e.cfg.read || !checkInstruction) &&
+                        (((!ps.write(permStage) || e.cfg.write) && (!ps.execute(permStage) || e.cfg.execute)) || !portCheckData)
+        val PERM_OK = { import permStage._ ; insert(bypass || normalRwx) }
       }
+      val NEED_HIT = permStage.insert(checkInstruction && ps.execute(permStage) || portCheckData && (ps.read(permStage) || ps.write(permStage)))
 
-      val onCtrl = new Area{
+      val onCtrl = (p.pmpSize > 0) generate new Area{
         import ps.rspStage._
-
         val hits = Cat(onEntries.map(e => ps.rspStage(e.HIT_ANY)))
         val oh = OHMasking.firstV2(hits)
         val reader = onEntries.reader(oh)
 
-        rsp.ACCESS_FAULT := !isMachine && !(reader(e => ps.rspStage(e.PERM_OK)))
+        rsp.ACCESS_FAULT := NEED_HIT && !(reader(e => ps.rspStage(e.PERM_OK)))
       }
+      if(p.pmpSize == 0) ps.rspStage(rsp.ACCESS_FAULT) := False
     }
 
 
