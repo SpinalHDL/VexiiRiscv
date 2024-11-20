@@ -100,12 +100,13 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
     }
 
     val pRange = Global.PHYSICAL_WIDTH-1 downto granularityWidth
+    val extraBit = granularity > 4
     val entries = for(i <- 0 until pmpSize) yield new Area{
       val isLocked = Bool()
-      val address = Reg(UInt(Global.PHYSICAL_WIDTH.get - granularityWidth bits))
+      val address = Reg(UInt(Global.PHYSICAL_WIDTH.get - granularityWidth + extraBit.toInt bits))
       val cfg = Reg(Cfg())
       val cfgNext = CombInit(cfg)
-      when(!isLocked) {
+      when(!cfg.locked) {
         cfg := cfgNext
         cfg.write clearWhen (!cfgNext.read)
         if(!p.withTor) when(cfgNext.kind === 1) {cfg.kind := 0}
@@ -125,9 +126,9 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
       }
 
 
-      val isNapot = RegNext(cfgNext.kind(1))
-      val isTor = RegNext(cfgNext.kind === 1)
-      val napot = Napot(address.dropHigh(1))
+      val isNapot = RegNext(cfg.kind(1))
+      val isTor = RegNext(cfg.kind === 1)
+      val napot = Napot(address.dropHigh(1)).dropLow(extraBit.toInt) //TODO drop high ?
       if(granularity == 4) when(!cfgNext.kind(0)){ napot.setAll() }
       val mask = RegNext(napot)
 
@@ -136,15 +137,16 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
         case 64 => (i/8*2, i%8/8)
       }
 
-      csr.writeCancel(CSR.PMPADDR + i, cfg.locked)
-      csr.readWrite(address, CSR.PMPADDR + i, granularityWidth-2)
-      if(granularity > 4 && p.withNapot) csr.read(U(granularityWidth-2 bits, default -> isNapot), CSR.PMPADDR + i) //WTF
+      csr.writeCancel(CSR.PMPADDR + i, isLocked)
+      csr.read(address(address.bitsRange.drop(1)), CSR.PMPADDR + i, granularityWidth-2)
+      csr.write(address(address.bitsRange), CSR.PMPADDR + i, granularityWidth-2-extraBit.toInt)
+      if(granularity > 4 && p.withNapot) csr.read(U(granularityWidth-2 bits, default -> isNapot, granularityWidth-3 -> (address.lsb && isNapot)), CSR.PMPADDR + i) //WTF
       csr.read(CSR.PMPCFG + cfgId,  0+cfgOffset -> cfg.read, 1+cfgOffset -> cfg.write, 2+cfgOffset -> cfg.execute, 3+cfgOffset -> cfg.kind, 7+cfgOffset -> cfg.locked)
       csr.write(CSR.PMPCFG + cfgId,  0+cfgOffset -> cfgNext.read, 1+cfgOffset -> cfgNext.write, 2+cfgOffset -> cfgNext.execute, 3+cfgOffset -> cfgNext.kind, 7+cfgOffset -> cfgNext.locked)
     }
 
     for(i <- 0 until pmpSize; self = entries(i)) {
-      self.isLocked := self.cfg.locked || (i+1 != pmpSize).mux(entries(i+1).isLocked && entries(i+1).isTor , False)
+      self.isLocked := self.cfg.locked || (i+1 != pmpSize).mux(entries(i+1).cfg.locked && entries(i+1).isTor , False)
     }
 
     val allFilter = CsrListFilter((0 to 63).map(_ + CSR.PMPADDR) ++ (0 to 15).filter(i => Riscv.XLEN.get == 32 || (i % 2) == 0).map(_ + CSR.PMPCFG))
@@ -170,11 +172,11 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
       val TOR_SMALLER = new Array[Payload[Bool]](p.pmpSize)
       val onEntries = for((e, id) <- entries.zipWithIndex) yield new Area{
         val napot = p.withNapot generate new Area {
-          val MATCH = napotMatchStage.insert(((e.address << granularityWidth)(pRange) ^ napotMatchStage(ps.physicalAddress)(pRange)).asBits & e.mask)
+          val MATCH = napotMatchStage.insert(((e.address.dropLow(extraBit.toInt).asUInt << granularityWidth)(pRange) ^ napotMatchStage(ps.physicalAddress)(pRange)).asBits & e.mask)
           val HIT = napotHitsStage.insert(napotHitsStage(MATCH) === 0)
         }
         val tor = p.withTor generate new Area{
-          val BIGGER = torCmpStage.insert(e.address > torCmpAddress)
+          val BIGGER = torCmpStage.insert((e.address >> extraBit.toInt) > torCmpAddress)
           val HIT = { import torHitsStage._ ; insert(BIGGER && (id != 0).mux(!TOR_SMALLER(id-1), True))}
           TOR_SMALLER(id) = BIGGER
         }

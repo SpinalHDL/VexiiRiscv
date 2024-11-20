@@ -370,6 +370,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val pmpPort = ps.createPmpPort(
       nodes = List.tabulate(ctrlAt+1)(pp.fetch(_).down),
       physicalAddress = tpk.TRANSLATED,
+      forceCheck = _ => False,
       read = _ => False,
       write = _ => False,
       execute = _ => True,

@@ -167,7 +167,9 @@ class ParamSimple(){
 
   var pmpParam = new PmpParam(
     pmpSize = 0,
-    granularity = 4
+    granularity = 4096,
+    withTor = true,
+    withNapot = true
   )
 
   var fetchPmpParam = new PmpPortParameter(
@@ -550,6 +552,7 @@ class ParamSimple(){
     opt[Unit]("mmu-sync-read") action { (v, c) => withMmuSyncRead() }
     opt[Int]("pmp-size") action { (v, c) => pmpParam.pmpSize = v }
     opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
+    opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
   }
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
