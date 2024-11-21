@@ -32,7 +32,7 @@ case class PmpParam(
   var withNapot: Boolean = true
 )
 
-class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
+class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
   import p._
 
   override def getPmpNum(): Int = p.pmpSize
@@ -134,7 +134,7 @@ class PmpPlugin(p : PmpParam) extends FiberPlugin with PmpService{
 
       val (cfgId, cfgOffset) = Riscv.XLEN.get match{
         case 32 => (i/4, i%4*8)
-        case 64 => (i/8*2, i%8/8)
+        case 64 => (i/8*2, i%8*8)
       }
 
       csr.writeCancel(CSR.PMPADDR + i, isLocked)
