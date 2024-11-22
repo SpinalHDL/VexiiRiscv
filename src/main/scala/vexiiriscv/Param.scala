@@ -172,7 +172,25 @@ class ParamSimple(){
     withNapot = true
   )
 
-  var fetchPmpParam = new PmpPortParameter(
+  var fetchNoL1PmpParam = new PmpPortParameter(
+    napotMatchAt = 0,
+    napotHitsAt = 1,
+    torCmpAt = 0,
+    torHitsAt = 1,
+    hitsAt = 1,
+    rspAt = 1
+  )
+
+  var lsuNoL1PmpParam = new PmpPortParameter(
+    napotMatchAt = 0,
+    napotHitsAt = 0,
+    torCmpAt = 0,
+    torHitsAt = 0,
+    hitsAt = 0,
+    rspAt = 0
+  )
+
+  var fetchL1PmpParam = new PmpPortParameter(
     napotMatchAt = 1,
     napotHitsAt = 1,
     torCmpAt = 1,
@@ -181,7 +199,7 @@ class ParamSimple(){
     rspAt = 2
   )
 
-  var lsuPmpParam = new PmpPortParameter(
+  var lsuL1PmpParam = new PmpPortParameter(
     napotMatchAt = 1,
     napotHitsAt = 1,
     torCmpAt = 1,
@@ -497,6 +515,7 @@ class ParamSimple(){
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
     opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
+    opt[Unit]("without-mmu") action { (v, c) => withMmu = false }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
     opt[Unit]("without-div") action { (v, c) => withDiv = false }
     opt[Unit]("with-mul") action { (v, c) => withMul = true }
@@ -616,6 +635,7 @@ class ParamSimple(){
       forkAt = fetchForkAt,
       joinAt = fetchForkAt+1, //You can for instance allow the external memory to have more latency by changing this
       wordWidth = fetchMemDataWidth,
+      pmpPortParameter = fetchNoL1PmpParam,
       translationStorageParameter = fetchTsp,
       translationPortParameter = withMmu match {
         case false => null
@@ -644,7 +664,7 @@ class ParamSimple(){
           case false => null
           case true => fetchTpp
         },
-        pmpPortParameter = fetchPmpParam
+        pmpPortParameter = fetchL1PmpParam
       )
 
       fetchL1Prefetch match {
@@ -711,6 +731,7 @@ class ParamSimple(){
       forkAt    = lsuForkAt+0,
       joinAt    = lsuForkAt+1,
       wbAt      = 2, //TODO
+      pmpPortParameter = lsuNoL1PmpParam,
       translationStorageParameter = lsuTsp,
       translationPortParameter = withMmu match {
         case false => null
@@ -730,7 +751,7 @@ class ParamSimple(){
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
         softwarePrefetch = lsuSoftwarePrefetch,
-        pmpPortParameter = fetchPmpParam,
+        pmpPortParameter = fetchL1PmpParam,
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null

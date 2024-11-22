@@ -10,7 +10,7 @@ import spinal.core.fiber.{Handle, Retainer}
 import spinal.core.sim.SimDataPimper
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
@@ -27,6 +27,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing if any plugin doesn't flush from the first cycle after !freeze
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
+                         var pmpPortParameter : Any,
                          var addressAt: Int = 0,
                          var triggerAt: Int = 0,
                          var pmaAt : Int = 0,
@@ -55,9 +56,10 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host[AddressTranslationService]
+    val ps = host[PmpService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
-    val buildBefore = retains(elp.pipelineLock, ats.portsLock)
+    val buildBefore = retains(elp.pipelineLock, ats.portsLock, ps.portsLock)
     val atsStorageLock = retains(ats.storageLock)
     val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))
     awaitBuild()
@@ -138,6 +140,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
     }
 
+
+
     val onAddress = new addressCtrl.Area{
       val RAW_ADDRESS = insert(srcp.ADD_SUB.asUInt)
 
@@ -152,6 +156,16 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && RAW_ADDRESS(i - 1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
     }
     val tpk = onAddress.translationPort.keys
+    val pmpPort = ps.createPmpPort(
+      nodes = List.tabulate(forkAt+1)(elp.execute(_).down),
+      physicalAddress = tpk.TRANSLATED,
+      forceCheck = _ => False,
+      read = _(LOAD),
+      write = _(STORE),
+      execute = _ => False,
+      portSpec = pmpPortParameter,
+      storageSpec = null
+    )
 
     val onPma = new elp.Execute(pmaAt){
       val port = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN / 8)).map(1 << _), List(PmaLoad, PmaStore))
@@ -233,7 +247,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         trapPort.code := TrapReason.REDO
       }
 
-      when(tpk.ACCESS_FAULT || onPma.RSP.fault) {
+      when(tpk.ACCESS_FAULT || onPma.RSP.fault || pmpPort.ACCESS_FAULT) {
         skip := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT

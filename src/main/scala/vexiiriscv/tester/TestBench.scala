@@ -219,6 +219,7 @@ class TestOptions{
     probe.enabled = withProbe
     probe.trace = false
 
+//    delayed(1000){ simFailure() }
     // Things to enable when we want to collect traces
     val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath(), "tracer.log")))
     onTrace {
