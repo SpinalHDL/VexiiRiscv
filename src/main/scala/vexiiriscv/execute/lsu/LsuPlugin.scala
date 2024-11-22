@@ -756,12 +756,12 @@ class LsuPlugin(var layer : LaneLayer,
       abords += !l1.FLUSH && onPma.CACHED_RSP.fault
       abords += FROM_LSU && (!isValid || isCancel)
       abords += mmuNeeded && MMU_FAILURE
-      if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid
+      if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid || wb.selfHazard
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
       skipsWrite += l1.FAULT || pmpPort.ACCESS_FAULT
       skipsWrite += preCtrl.MISS_ALIGNED
-      skipsWrite += FROM_LSU && onTrigger.HIT
+      skipsWrite += FROM_LSU && (onTrigger.HIT || pmpPort.ACCESS_FAULT)
       skipsWrite += FROM_PREFETCH
       if(Riscv.RVA) skipsWrite += l1.ATOMIC && !l1.LOAD && scMiss
       if (withStoreBuffer) skipsWrite += wb.selfHazard || !FROM_WB && wb.hit
