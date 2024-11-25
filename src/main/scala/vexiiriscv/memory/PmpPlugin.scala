@@ -91,7 +91,11 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
 
     awaitBuild()
 
-    if(Riscv.XLEN.get == 64) assert(granularity >= 8)
+    if(Riscv.XLEN.get == 64) assert(
+      granularity >= 8,
+      """VexiiRiscv RV64 doesn't support granularity smaller than 8 bytes, as durring 8 bytes accesses,
+        | it would need to check that the upper 4 bytes of access are contained in the pmp regions aswell""".stripMargin
+    )
 
     case class Cfg() extends Bundle{
       val kind = Bits(2 bits)
@@ -100,12 +104,16 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
     }
 
     val pRange = Global.PHYSICAL_WIDTH-1 downto granularityWidth
+    // This is a tricky thing, basicaly the granularity doesn't affect TOR and NAPOT csr in the same way.
+    // In particular the granularityWidth-2 bit
     val extraBit = granularity > 4
+
+    // Generate all the PMP entries storage + CSR mapping
     val entries = for(i <- 0 until pmpSize) yield new Area{
       val isLocked = Bool()
       val address = Reg(UInt(Global.PHYSICAL_WIDTH.get - granularityWidth + extraBit.toInt bits))
       val cfg = Reg(Cfg())
-      val cfgNext = CombInit(cfg)
+      val cfgNext = CombInit(cfg) // This allows to handle WARL (Write Any, Read Legal) on the CSRs
       when(!cfg.locked) {
         cfg := cfgNext
         cfg.write clearWhen (!cfgNext.read)
@@ -114,6 +122,8 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
       }
 
       if(i == 0){
+        // Allows software which is unaware of the PMP but uses the supervisor/user modes
+        // to get access to all the memory by default after reset
         assert(p.withNapot)
         address.init(address.getAllTrue)
         cfg.read init(True)
@@ -183,10 +193,9 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
         }
         val HIT_ANY = { import hitsStage._ ; insert(p.withNapot.mux(e.isNapot && napot.HIT, False) || p.withTor.mux(e.isTor && tor.HIT, False)) }
 
-        val bypass = False // isMachine && !e.locked
         val normalRwx = (!ps.read(permStage) || e.cfg.read || !checkInstruction) &&
                         (((!ps.write(permStage) || e.cfg.write) && (!ps.execute(permStage) || e.cfg.execute)) || !portCheckData)
-        val PERM_OK = { import permStage._ ; insert(bypass || normalRwx) }
+        val PERM_OK = permStage.insert(normalRwx)
       }
       val NEED_HIT = permStage.insert(checkInstruction && ps.execute(permStage) || portCheckData && (ps.read(permStage) || ps.write(permStage)))
 
