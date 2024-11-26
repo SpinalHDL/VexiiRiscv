@@ -523,6 +523,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val sd = False
           val tsr, tvm = p.withSupervisor generate RegInit(False)
           val tw = p.withUser.mux(RegInit(False), False)
+          val mprv = RegInit(False) clearWhen(xretAwayFromMachine)
 
           if (RVF) {
             fpuEnable(hartId) setWhen (fs =/= 0)
@@ -545,6 +546,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             }
           }
           read(XLEN - 1 -> sd)
+          readWrite(17 -> mprv)
           if (withFs) readWrite(13 -> fs)
           if (p.withUser && XLEN.get == 64) read(32 -> U"10")
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")

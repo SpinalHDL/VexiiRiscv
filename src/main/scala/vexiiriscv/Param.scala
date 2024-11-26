@@ -13,7 +13,7 @@ import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PrefetcherNextLinePlugin}
-import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter}
+import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.riscv.{FloatRegFile, IntRegFile}
@@ -163,6 +163,49 @@ class ParamSimple(){
       )
     ),
     priority = 0
+  )
+
+  var pmpParam = new PmpParam(
+    pmpSize = 0,
+    granularity = 4096,
+    withTor = true,
+    withNapot = true
+  )
+
+  var fetchNoL1PmpParam = new PmpPortParameter(
+    napotMatchAt = 0,
+    napotHitsAt = 1,
+    torCmpAt = 0,
+    torHitsAt = 1,
+    hitsAt = 1,
+    rspAt = 1
+  )
+
+  var lsuNoL1PmpParam = new PmpPortParameter(
+    napotMatchAt = 0,
+    napotHitsAt = 0,
+    torCmpAt = 0,
+    torHitsAt = 0,
+    hitsAt = 0,
+    rspAt = 0
+  )
+
+  var fetchL1PmpParam = new PmpPortParameter(
+    napotMatchAt = 1,
+    napotHitsAt = 1,
+    torCmpAt = 1,
+    torHitsAt = 2,
+    hitsAt = 2,
+    rspAt = 2
+  )
+
+  var lsuL1PmpParam = new PmpPortParameter(
+    napotMatchAt = 1,
+    napotHitsAt = 1,
+    torCmpAt = 1,
+    torHitsAt = 2,
+    hitsAt = 2,
+    rspAt = 2
   )
 
   var lsuTsp = MmuStorageParameter(
@@ -472,6 +515,7 @@ class ParamSimple(){
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
     opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
+    opt[Unit]("without-mmu") action { (v, c) => withMmu = false }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
     opt[Unit]("without-div") action { (v, c) => withDiv = false }
     opt[Unit]("with-mul") action { (v, c) => withMul = true }
@@ -524,9 +568,10 @@ class ParamSimple(){
     opt[Unit]("with-boot-mem-init") action { (v, c) => bootMemClear = true }
     opt[Int]("physical-width") action { (v, c) => physicalWidth = v }
     opt[Unit]("mul-keep-src") action { (v, c) => mulKeepSrc = true }
-    opt[Unit]("mmu-sync-read") action { (v, c) =>
-      withMmuSyncRead()
-    }
+    opt[Unit]("mmu-sync-read") action { (v, c) => withMmuSyncRead() }
+    opt[Int]("pmp-size") action { (v, c) => pmpParam.pmpSize = v }
+    opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
+    opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
   }
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
@@ -544,6 +589,8 @@ class ParamSimple(){
         physicalWidth = physicalWidth
       )
     }
+
+    plugins += new PmpPlugin(pmpParam)
 
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
@@ -588,6 +635,7 @@ class ParamSimple(){
       forkAt = fetchForkAt,
       joinAt = fetchForkAt+1, //You can for instance allow the external memory to have more latency by changing this
       wordWidth = fetchMemDataWidth,
+      pmpPortParameter = fetchNoL1PmpParam,
       translationStorageParameter = fetchTsp,
       translationPortParameter = withMmu match {
         case false => null
@@ -615,7 +663,8 @@ class ParamSimple(){
         translationPortParameter = withMmu match {
           case false => null
           case true => fetchTpp
-        }
+        },
+        pmpPortParameter = fetchL1PmpParam
       )
 
       fetchL1Prefetch match {
@@ -682,6 +731,7 @@ class ParamSimple(){
       forkAt    = lsuForkAt+0,
       joinAt    = lsuForkAt+1,
       wbAt      = 2, //TODO
+      pmpPortParameter = lsuNoL1PmpParam,
       translationStorageParameter = lsuTsp,
       translationPortParameter = withMmu match {
         case false => null
@@ -701,6 +751,7 @@ class ParamSimple(){
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
         softwarePrefetch = lsuSoftwarePrefetch,
+        pmpPortParameter = fetchL1PmpParam,
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null

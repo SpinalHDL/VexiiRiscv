@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.{AsyncJob, MultithreadedFunSuite}
-import vexiiriscv.memory.MmuPlugin
+import vexiiriscv.memory.{MmuPlugin, PmpPlugin}
 import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.{Global, ParamSimple, VexiiRiscv}
@@ -52,6 +52,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val xlen = dut.database(Riscv.XLEN)
   val priv = dut.host.get[PrivilegedPlugin]
   val mmu = dut.host.get[MmuPlugin]
+  val pmp = dut.host.get[PmpPlugin]
 
   val rvm = dut.database(Riscv.RVM)
   val rvc = dut.database(Riscv.RVC)
@@ -351,6 +352,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
   if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
+  if(pmp.get.p.pmpSize > 4 && priv.get.p.withSupervisor) regulars ++= List(s"pmp")
 
   if(config.regular) for(name <- regulars){
     val args = newArgs()
@@ -627,6 +629,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       return List("", "--with-rvf", "--with-rvf --with-rvd").randomPick(random)
     }
   }
+  addDim("pmp", List("", "--pmp-size=8"))
 
 
 //  addTest(default)

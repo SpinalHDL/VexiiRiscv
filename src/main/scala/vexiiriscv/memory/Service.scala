@@ -79,6 +79,24 @@ class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) e
   }
 }
 
+trait PmpService extends Area {
+  val portsLock = Retainer()
+  def createPmpPort(nodes: Seq[NodeBaseApi],
+                    physicalAddress: Payload[UInt],
+                    forceCheck: NodeBaseApi => Bool,
+                    read: NodeBaseApi => Bool,
+                    write: NodeBaseApi => Bool,
+                    execute: NodeBaseApi => Bool,
+                    portSpec: Any,
+                    storageSpec: Any): PmpRsp
+  def getPmpNum() : Int
+}
+
+class PmpRsp extends Area{
+  val ACCESS_FAULT = Payload(Bool())
+}
+
+
 
 trait DBusAccessService{
   def accessRefillCount : Int

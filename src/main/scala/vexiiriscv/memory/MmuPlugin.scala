@@ -198,11 +198,9 @@ class MmuPlugin(var spec : MmuSpec,
     val status = new Area{
       val mxr  = RegInit(False)
       val sum  = RegInit(False)
-      val mprv = RegInit(False) clearWhen(priv.hart(0).xretAwayFromMachine)
     }
 
     for(offset <- List(CSR.MSTATUS, CSR.SSTATUS)) csr.readWrite(offset, 19 -> status.mxr, 18 -> status.sum)
-    csr.readWrite(CSR.MSTATUS, 17 -> status.mprv)
 
     csr.readWrite(CSR.SATP, satp.modeOffset -> satp.mode/*, 22 -> satp.asid*/, 0 -> satp.ppn)
     val satpModeWrite = csr.bus.write.bits(satp.modeOffset, satp.modeWidth bits)
@@ -256,14 +254,15 @@ class MmuPlugin(var spec : MmuSpec,
     val isMachine = priv.getPrivilege(0) === U"11"
     val isSupervisor = priv.getPrivilege(0) === U"01"
     val isUser = priv.getPrivilege(0) === U"00"
+    def mprv = priv.logic.harts(0).m.status.mprv
 
     api.fetchTranslationEnable := satp.mode === spec.satpMode
     api.fetchTranslationEnable clearWhen(isMachine)
 
     api.lsuTranslationEnable := satp.mode === spec.satpMode
-    api.lsuTranslationEnable clearWhen(!status.mprv && isMachine)
+    api.lsuTranslationEnable clearWhen(!mprv && isMachine)
     when(isMachine) {
-      api.lsuTranslationEnable clearWhen (!status.mprv || priv.logic.harts(0).m.status.mpp === 3)
+      api.lsuTranslationEnable clearWhen (!mprv || priv.logic.harts(0).m.status.mpp === 3)
     }
 
 

@@ -12,7 +12,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.UOP
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import vexiiriscv.riscv._
@@ -48,6 +48,7 @@ class LsuPlugin(var layer : LaneLayer,
                 var withRva : Boolean,
                 var translationStorageParameter: Any,
                 var translationPortParameter: Any,
+                var pmpPortParameter : Any,
                 var softwarePrefetch: Boolean,
                 var addressAt: Int = 0,
                 var triggerAt : Int = 1,
@@ -95,12 +96,13 @@ class LsuPlugin(var layer : LaneLayer,
     val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host[AddressTranslationService]
+    val ps = host[PmpService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
     val pcs = host.get[PerformanceCounterService]
     val hp = host.get[PrefetcherPlugin]
     val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
-    val buildBefore = retains(elp.pipelineLock, ats.portsLock)
+    val buildBefore = retains(elp.pipelineLock, ats.portsLock, ps.portsLock)
     val earlyLock = retains(List(ats.storageLock) ++ pcs.map(_.elaborationLock).toList)
     val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))
     awaitBuild()
@@ -437,7 +439,16 @@ class LsuPlugin(var layer : LaneLayer,
 
     val tpk = onAddress0.translationPort.keys
 
-
+    val pmpPort = ps.createPmpPort(
+      nodes = List.tabulate(ctrlAt+1)(elp.execute(_).down),
+      physicalAddress = tpk.TRANSLATED,
+      forceCheck = _(FROM_ACCESS),
+      read = _(LOAD),
+      write = _(STORE),
+      execute = _ => False,
+      portSpec = pmpPortParameter,
+      storageSpec = null
+    )
 
     val onAddress1 = new elp.Execute(addressAt+1) {
       l1.PHYSICAL_ADDRESS := tpk.TRANSLATED
@@ -626,7 +637,7 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code.assignDontCare()
         trapPort.arg.allowOverride() := 0
 
-        val accessFault = (onPma.CACHED_RSP.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT)
+        val accessFault = (onPma.CACHED_RSP.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT) || pmpPort.ACCESS_FAULT
         when(accessFault) {
           lsuTrap := True
           trapPort.exception := True
@@ -745,12 +756,12 @@ class LsuPlugin(var layer : LaneLayer,
       abords += !l1.FLUSH && onPma.CACHED_RSP.fault
       abords += FROM_LSU && (!isValid || isCancel)
       abords += mmuNeeded && MMU_FAILURE
-      if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid
+      if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid || wb.selfHazard
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
-      skipsWrite += l1.FAULT
+      skipsWrite += l1.FAULT || pmpPort.ACCESS_FAULT
       skipsWrite += preCtrl.MISS_ALIGNED
-      skipsWrite += FROM_LSU && onTrigger.HIT
+      skipsWrite += FROM_LSU && (onTrigger.HIT || pmpPort.ACCESS_FAULT)
       skipsWrite += FROM_PREFETCH
       if(Riscv.RVA) skipsWrite += l1.ATOMIC && !l1.LOAD && scMiss
       if (withStoreBuffer) skipsWrite += wb.selfHazard || !FROM_WB && wb.hit
@@ -776,12 +787,13 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
+      //TODO what happen if used for IO access ?
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp
         rsp.valid    := l1.SEL && FROM_ACCESS && !elp.isFreezed()
-        rsp.data     := loadData.RESULT.resized //loadData.RESULT instead of l1.READ_DATA (because it rv32fd
-        rsp.error    := l1.FAULT
+        rsp.data     := loadData.RESULT.resized //loadData.RESULT instead of l1.READ_DATA (because it rv32fd)
+        rsp.error    := l1.FAULT || pmpPort.ACCESS_FAULT
         rsp.redo     := traps.l1Failed
         rsp.waitSlot := 0
         rsp.waitAny  := False //TODO

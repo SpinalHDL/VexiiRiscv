@@ -10,6 +10,7 @@ import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.FetchPipelinePlugin
+import vexiiriscv.memory.{PmpPlugin, PmpService}
 import vexiiriscv.misc.PrivilegedPlugin
 import vexiiriscv.riscv.FloatRegFile
 //import vexiiriscv.execute.LsuCachelessPlugin
@@ -185,7 +186,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         if (get(Riscv.RVZbc)) isa += "_zbc"
         if (get(Riscv.RVZbs)) isa += "_zbs"
         tracer.newCpuMemoryView(hartId, 16, 1 << Decode.STORE_ID_WIDTH)
-        tracer.newCpu(hartId, isa, csrp, 63, hartId)
+        tracer.newCpu(hartId, isa, csrp, get(Global.PHYSICAL_WIDTH), cpu.host.get[PmpService].map(_.getPmpNum).getOrElse(0),  hartId)
         val pc = if(xlen == 32) 0x80000000l else 0x80000000l
         tracer.setPc(hartId, pc)
       }

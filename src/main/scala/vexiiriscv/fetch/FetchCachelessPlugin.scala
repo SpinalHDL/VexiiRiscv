@@ -12,7 +12,7 @@ import spinal.lib.bus.tilelink.DebugId
 import spinal.lib.system.tag.{MappedTransfers, PmaRegion}
 import vexiiriscv._
 import vexiiriscv.Global._
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort, PmpService}
 import vexiiriscv.misc.{PerformanceCounterService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.CSR
 
@@ -27,6 +27,7 @@ object FetchCachelessPlugin{
 class FetchCachelessPlugin(var wordWidth : Int,
                            var translationStorageParameter: Any,
                            var translationPortParameter: Any,
+                           var pmpPortParameter : Any,
                            var addressAt: Int = 0,
                            var pmaAt: Int = 0,
                            var forkAt : Int = 0,
@@ -36,9 +37,10 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
   val logic = during setup new Area{
     val pp = host[FetchPipelinePlugin]
+    val ps = host[PmpService]
     val ts = host[TrapService]
     val ats = host[AddressTranslationService]
-    val buildBefore = retains(pp.elaborationLock, ats.portsLock)
+    val buildBefore = retains(pp.elaborationLock, ats.portsLock, ps.portsLock)
     val atsStorageLock = retains(ats.storageLock)
     val trapLock =  ts.trapLock()
     awaitBuild()
@@ -92,6 +94,17 @@ class FetchCachelessPlugin(var wordWidth : Int,
       )
     }
     val tpk = onAddress.translationPort.keys
+
+    val pmpPort = ps.createPmpPort(
+      nodes = List.tabulate(joinAt+1)(pp.fetch(_).down),
+      physicalAddress = tpk.TRANSLATED,
+      forceCheck = _ => False,
+      read = _ => False,
+      write = _ => False,
+      execute = _ => True,
+      portSpec = pmpPortParameter,
+      storageSpec = null
+    )
 
     val onPma = new pp.Fetch(pmaAt) {
       val port = new PmaPort(Global.PHYSICAL_WIDTH, List(Fetch.WORD_WIDTH / 8), List(PmaLoad))
@@ -152,7 +165,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      when(rsp.error || fork.PMA_FAULT){
+      when(rsp.error || fork.PMA_FAULT || pmpPort.ACCESS_FAULT){
         TRAP := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
