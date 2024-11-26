@@ -443,8 +443,8 @@ class LsuPlugin(var layer : LaneLayer,
       nodes = List.tabulate(ctrlAt+1)(elp.execute(_).down),
       physicalAddress = tpk.TRANSLATED,
       forceCheck = _(FROM_ACCESS),
-      read = _(LOAD),
-      write = _(STORE),
+      read = _(l1.LOAD),
+      write = _(l1.STORE),
       execute = _ => False,
       portSpec = pmpPortParameter,
       storageSpec = null
@@ -613,7 +613,7 @@ class LsuPlugin(var layer : LaneLayer,
         val tag = p2t(LsuL1.PHYSICAL_ADDRESS)
         val hits = B(storeBuffer.slots.map(s => s.valid && s.tag === tag))
         val hit = hits.orR
-        val compatibleOp = FROM_LSU && STORE && !ATOMIC && !onPma.IO
+        val compatibleOp = FROM_LSU && l1.STORE && !ATOMIC && !onPma.IO
         val notFull = !storeBuffer.ops.full && (storeBuffer.slotsFree || hit)
         val allowed = notFull && compatibleOp
         val slotOh = hits | storeBuffer.slotsFreeFirst.andMask(!hit)
@@ -642,7 +642,7 @@ class LsuPlugin(var layer : LaneLayer,
           lsuTrap := True
           trapPort.exception := True
           trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-          trapPort.code(1) setWhen (STORE)
+          trapPort.code(1) setWhen (l1.STORE)
         }
 
         val l1Failed = !onPma.CACHED_RSP.fault && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
@@ -657,24 +657,24 @@ class LsuPlugin(var layer : LaneLayer,
           lsuTrap := True
           trapPort.exception := True
           trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-          trapPort.code(1) setWhen (STORE)
+          trapPort.code(1) setWhen (l1.STORE)
         }
 
         when(MMU_PAGE_FAULT) {
           lsuTrap := True
           trapPort.exception := True
           trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
-          trapPort.code(1) setWhen (STORE)
+          trapPort.code(1) setWhen (l1.STORE)
         }
 
         when(tpk.ACCESS_FAULT) {
           lsuTrap := True
           trapPort.exception := True
           trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-          trapPort.code(1) setWhen (STORE)
+          trapPort.code(1) setWhen (l1.STORE)
         }
 
-        trapPort.arg(0, 2 bits) := STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
+        trapPort.arg(0, 2 bits) := l1.STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
         trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
         when(tpk.REFILL) {
           lsuTrap := True
@@ -696,7 +696,7 @@ class LsuPlugin(var layer : LaneLayer,
         when(preCtrl.MISS_ALIGNED) {
           lsuTrap := True
           trapPort.exception := True
-          trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(preCtrl.MISS_ALIGNED).resized
+          trapPort.code := l1.STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(preCtrl.MISS_ALIGNED).resized
         }
 
         val triggerId = B(OHToUInt(onTrigger.HITS))
@@ -759,7 +759,7 @@ class LsuPlugin(var layer : LaneLayer,
       if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid || wb.selfHazard
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
-      skipsWrite += l1.FAULT || pmpPort.ACCESS_FAULT
+      skipsWrite += l1.FAULT
       skipsWrite += preCtrl.MISS_ALIGNED
       skipsWrite += FROM_LSU && (onTrigger.HIT || pmpPort.ACCESS_FAULT)
       skipsWrite += FROM_PREFETCH
@@ -812,7 +812,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val hartRegulation = new L1Waiter{
         host[DispatchPlugin].haltDispatchWhen(valid)
-        when(isValid && SEL && !FROM_PREFETCH && !onPma.IO && !FENCE && withStoreBuffer.mux(LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
+        when(isValid && SEL && !FROM_PREFETCH && !onPma.IO && !FENCE && withStoreBuffer.mux(l1.LOAD, True) && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)){
           capture(down)
         }
         events.foreach(_.waiting setWhen(valid))
@@ -846,7 +846,7 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      val storeFire      = down.isFiring && AguPlugin.SEL && AguPlugin.STORE && !onPma.IO && !FROM_PREFETCH
+      val storeFire      = down.isFiring && AguPlugin.SEL && l1.STORE && !onPma.IO && !FROM_PREFETCH
       val storeBroadcast = down.isReady && l1.SEL && l1.STORE && !l1.ABORD && !l1.SKIP_WRITE && !l1.MISS && !l1.MISS_UNIQUE && !l1.HAZARD
     }
 
