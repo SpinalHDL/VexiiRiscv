@@ -11,6 +11,7 @@ import spinal.lib.tools.binarySystem.BytesToLiteral
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
+import vexiiriscv.execute.cfu.{CfuBusParameter, CfuPlugin, CfuPluginEncoding}
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PrefetcherNextLinePlugin}
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter}
@@ -148,6 +149,7 @@ class ParamSimple(){
   var embeddedJtagNoTapCd: ClockDomain = null
   var bootMemClear = false
   var mulKeepSrc = false
+  var withCfu = false
 
   var fetchTsp = MmuStorageParameter(
     levels = List(
@@ -261,7 +263,7 @@ class ParamSimple(){
     fetchL1Ways = 4
     fetchL1ReducedBank = true
     fetchMemDataWidthMin = 64
-    fetchL1RefillCount = 2
+    fetchL1RefillCount = 3
     fetchL1Prefetch = "nl"
     lsuL1Enable = true
     lsuMemDataWidthMin = 64
@@ -572,6 +574,7 @@ class ParamSimple(){
     opt[Int]("pmp-size") action { (v, c) => pmpParam.pmpSize = v }
     opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
+    opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
   }
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
@@ -721,6 +724,41 @@ class ParamSimple(){
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin(lane0)
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
+    if(withCfu) plugins += new CfuPlugin(
+      layer = early0,
+      forkAt = 0,
+      joinAt = 2,
+      allowZeroLatency = true,
+      encodings = List(
+        CfuPluginEncoding (
+          instruction = M"-------------------------0001011",
+          functionId = List(14 downto 12),
+          input2Kind = CfuPlugin.Input2Kind.RS
+        ),
+        CfuPluginEncoding (
+          instruction = M"-------------------------0101011",
+          functionId = List(14 downto 12),
+          input2Kind = CfuPlugin.Input2Kind.IMM_I
+        )
+      ),
+      busParameter = CfuBusParameter(
+        CFU_VERSION = 0,
+        CFU_INTERFACE_ID_W = 0,
+        CFU_FUNCTION_ID_W = 3,
+        CFU_REORDER_ID_W = 0,
+        CFU_REQ_RESP_ID_W = 0,
+        CFU_INPUTS = 2,
+        CFU_INPUT_DATA_W = xlen,
+        CFU_OUTPUTS = 1,
+        CFU_OUTPUT_DATA_W = xlen,
+        CFU_FLOW_REQ_READY_ALWAYS = false,
+        CFU_FLOW_RESP_READY_ALWAYS = false,
+        CFU_WITH_STATUS = true,
+        CFU_RAW_INSN_W = 32,
+        CFU_CFU_ID_W = 4,
+        CFU_STATE_INDEX_NUM = 5
+      )
+    )
     if(withRvZb) plugins ++= ZbPlugin.make(early0, formatAt=0)
     if(!lsuL1Enable) plugins += new LsuCachelessPlugin(
       layer     = early0,

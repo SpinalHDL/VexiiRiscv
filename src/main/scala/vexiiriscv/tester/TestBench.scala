@@ -14,6 +14,7 @@ import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
 import vexiiriscv._
+import vexiiriscv.execute.cfu.{CfuPlugin, CfuRsp}
 import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
 import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
@@ -548,6 +549,43 @@ class TestOptions{
       }
       case _ =>
     }
+
+    val cfu = dut.host.get[CfuPlugin] map (p => new Area{
+      val bus = p.logic.bus
+      var maxPending = 3
+      val rspQueue = mutable.Queue[CfuRsp => Unit]()
+      val cmdMonitor = StreamMonitor(bus.cmd, cd){ i =>
+        val result = (i.inputs(0).toLong + i.inputs(1).toLong + i.function_id.toLong) & 0xFFFFFFFFl
+        val id = i.request_id.toInt
+        rspQueue += { o =>
+          o.outputs(0) #= result
+          o.response_id #= id
+          o.status #= 0
+          if(simRandom.nextInt(100) < 10){
+            maxPending = simRandom.nextInt(5)+1
+          }
+        }
+      }
+      val rspDriver = StreamDriver(bus.rsp, cd) { p =>
+        if(rspQueue.isEmpty) false else {
+          rspQueue.dequeue().apply(p)
+          true
+        }
+      }
+      var readyOk = true
+      cd.onSamplings{
+        readyOk = simRandom.nextBoolean()
+//        rspDriver.setFactor(1.0f)
+      }
+      var ready = bus.cmd.ready.toBoolean
+      sim.forkSensitive {
+        val readyNew = readyOk && rspQueue.size - bus.rsp.ready.toInt < maxPending
+        if(readyNew != ready) {
+          bus.cmd.ready #= readyNew
+          ready = readyNew
+        }
+      }
+    })
 
     spawnProcess.foreach{ v =>
       delayed(10000){

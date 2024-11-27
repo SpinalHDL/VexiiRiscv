@@ -4,6 +4,7 @@ import spinal.core.fiber.{Handle, Retainer}
 import spinal.core._
 import spinal.lib._
 import vexiiriscv.Global
+import vexiiriscv.misc.TrapReason
 import vexiiriscv.riscv.Riscv
 
 import scala.collection.mutable
@@ -96,6 +97,13 @@ trait CsrService {
   def onReadToWrite (csrFilter : Any)(body : => Unit) = spec += CsrOnReadToWrite(csrFilter, () => body)
   def onWrite(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = spec += CsrOnWrite(csrFilter, onlyOnFire, () => body)
   def allowCsr(csrFilter : Any) = onDecode(csrFilter){}
+  def flushOnWrite(csrFilter : Any): Unit = {
+    onDecode(csrFilter) {
+      when(bus.decode.write) {
+        bus.decode.doTrap(TrapReason.NEXT)
+      }
+    }
+  }
 
   def readingCsr(csrFilter : Any): Bool = {
     isReadingCsrMap.getOrElseUpdate(csrFilter, spec.addRet(CsrIsReadingCsr(csrFilter, Bool())).asInstanceOf[CsrIsReadingCsr]).value

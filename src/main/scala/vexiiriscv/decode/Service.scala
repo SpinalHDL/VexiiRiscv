@@ -10,6 +10,8 @@ import vexiiriscv.riscv.{MicroOp, RegfileSpec, RfRead}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+class DecodingCtx(val node : NodeBaseApi, val legal : Bool)
+
 trait DecoderService {
   val elaborationLock = Retainer()
   val decodingLock = Retainer()
@@ -18,6 +20,8 @@ trait DecoderService {
   def addMicroOpDecoding[T <: BaseType](microOp: MicroOp, key : Payload[T], value: T) : Unit = addMicroOpDecoding(microOp, DecodeList(key -> value))
   def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType)
   def addMicroOpDecodingDefault(key : Payload[_ <: BaseType], value : BaseType) : Unit
+//  def addMicroOpEnable(uop : MicroOp, enable : Bool)
+  def addDecodingLogic(body : DecodingCtx => Unit)
 }
 
 

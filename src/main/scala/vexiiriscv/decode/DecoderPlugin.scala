@@ -47,7 +47,10 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     host.list[ExecuteLaneService].flatMap(_.getUops().flatMap(_.keysMasked))
   }
 
-
+  val decodingLogics = ArrayBuffer[DecodingCtx => Unit]()
+  override def addDecodingLogic(body : DecodingCtx => Unit): Unit = {
+    decodingLogics += body
+  }
 
   val logic = during setup new Area{
     val dpp = host[DecodePipelinePlugin]
@@ -175,6 +178,9 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
           LEGAL := False
         }
       }
+
+      val decodingCtx = new DecodingCtx(this.down, LEGAL)
+      decodingLogics.foreach(_(decodingCtx))
 
       val interruptPending = interrupt.buffered(Global.HART_ID)
       val trapPort = ts.newTrap(dpp.getAge(decodeAt), Decode.LANES)
