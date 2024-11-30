@@ -25,6 +25,20 @@ A roadmap is available here :
 
 - https://github.com/SpinalHDL/VexiiRiscv/issues/1
 
+# TL;DR Getting started
+
+The quickest way for getting started is to pull the Docker image with all the dependencies installed
+
+    docker pull leviathanch/vexiiriscv
+
+Then you can directly get the most recent Verilog code by running
+
+    git clone --recursive https://github.com/SpinalHDL/VexiiRiscv.git
+    cd VexiiRiscv
+    docker run -v `pwd`:/work -it leviathanch/vexiiriscv
+    sbt "Test/runMain vexiiriscv.Generate"
+
+
 # Rebuild the Docker container
 
 In case you wanna rebuild leviathan's Docker container you can run
