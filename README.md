@@ -38,6 +38,12 @@ Then you can directly get the most recent Verilog code by running
     docker run -v `pwd`:/work -it leviathanch/vexiiriscv
     sbt "Test/runMain vexiiriscv.Generate"
 
+After running the generation command you'll find a file named "VexiiRiscv.v" in the root
+of the repository folder, which you can drag into your Quartus or whatever.
+We decided to not start covering FPGAs because there's just too many, so it's up to you
+to define your pin configuration for your specific FPGA
+
+If you want to know what else you can do with sbt, please refer to the complete documentation.
 
 # Rebuild the Docker container
 
