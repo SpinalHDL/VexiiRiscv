@@ -24,3 +24,9 @@ Here is the online documentation :
 A roadmap is available here : 
 
 - https://github.com/SpinalHDL/VexiiRiscv/issues/1
+
+# Rebuild the Docker container
+
+In case you wanna rebuild leviathan's Docker container you can run
+
+    docker build . -f docker/Dockerfile -t vexiiriscv --progress=plain
