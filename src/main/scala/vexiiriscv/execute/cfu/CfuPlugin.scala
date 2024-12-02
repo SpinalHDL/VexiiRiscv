@@ -220,15 +220,13 @@ class CfuPlugin(val layer : LaneLayer,
       bus.cmd.reorder_id := 0
       bus.cmd.request_id := 0
       bus.cmd.raw_insn   := Decode.UOP.resized
-      if(p.CFU_INPUTS >= 1) bus.cmd.inputs(0) := layer.lane(IntRegFile, RS1)
+      if(p.CFU_INPUTS >= 1) bus.cmd.inputs(0) := up(layer.lane(IntRegFile, RS1))
       if(p.CFU_INPUTS >= 2)  bus.cmd.inputs(1) := CFU_INPUT_2_KIND.mux[Bits](
-        CfuPlugin.Input2Kind.RS -> layer.lane(IntRegFile, RS2),
+        CfuPlugin.Input2Kind.RS -> up(layer.lane(IntRegFile, RS2)),
         CfuPlugin.Input2Kind.IMM_I -> IMM(Decode.UOP).h_sext.asBits
       )
     }
     val onJoin = new layer.Execute(joinAt) {
-      //If the CFU interface can produce a result combinatorialy and the fork stage isn't the same than the join stage
-      //Then it is required to add a buffer on rsp to not propagate the fork stage ready := False in the CPU pipeline.
       val busRspStream = bus.rsp.toFlow.toStream
       val rsp = busRspStream.queueLowLatency(
         size = joinAt-forkAt+1,
