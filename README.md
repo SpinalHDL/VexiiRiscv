@@ -29,19 +29,14 @@ A roadmap is available here :
 
 The quickest way for getting started is to pull the Docker image with all the dependencies installed
 
-    docker pull leviathanch/vexiiriscv
+Please refer to the self contained tutorial for a comprehensive step by step instruction manual with
+screenshots: https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Tutorial/index.html
 
-Then you can directly get the most recent Verilog code by running
-
-    git clone --recursive https://github.com/SpinalHDL/VexiiRiscv.git
-    cd VexiiRiscv
-    docker run -v `pwd`:/work -it leviathanch/vexiiriscv
-    sbt "Test/runMain vexiiriscv.Generate"
-
-After running the generation command you'll find a file named "VexiiRiscv.v" in the root
+After running the generation you'll find a file named "VexiiRiscv.v" in the root
 of the repository folder, which you can drag into your Quartus or whatever.
-We decided to not start covering FPGAs because there's just too many, so it's up to you
-to define your pin configuration for your specific FPGA
+
+We decided to not start covering FPGA boards because there's just too many, so it's up to you
+to define your pin configuration for your specific FPGA board
 
 If you want to know what else you can do with sbt, please refer to the complete documentation.
 
