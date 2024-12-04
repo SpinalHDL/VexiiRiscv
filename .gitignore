@@ -63,3 +63,6 @@ regression/
 tmp/
 /archive.tar.gz
 *.out32
+
+vnc_done
+docker_xfce4.lop
