@@ -54,9 +54,9 @@ RUN rm -rf verilator
 WORKDIR /root
 RUN git clone https://github.com/serge1/ELFIO.git
 WORKDIR ELFIO
-RUN git checkout d251da09a07dff40af0b63b8f6c8ae71d2d1938d # Avoid C++17
-RUN chmod 0644 -R elfio
-RUN cp -R elfio /usr/include
+RUN git checkout d251da09a07dff40af0b63b8f6c8ae71d2d1938d
+RUN mkdir -p /usr/include && cp -r elfio /usr/include/elfio
+RUN chown ubuntu -R /usr/include/elfio && chmod 0777 -R /usr/include/elfio
 WORKDIR /root
 RUN rm -rf ELFIO
 
@@ -64,6 +64,8 @@ WORKDIR /root
 RUN rm /root/sbt.asc
 ENV DISPLAY=:1
 
+COPY docker/fix_fesvr.patch /home/ubuntu/fix_fesvr.patch
+RUN chown ubuntu /home/ubuntu/fix_fesvr.patch
 COPY docker/setup_userspace.sh /home/ubuntu/setup_userspace.sh
 COPY docker/fix_userid.sh /root/fix_userid.sh
 COPY docker/init_graphics.sh /home/ubuntu/init_graphics.sh
@@ -76,6 +78,7 @@ RUN chmod 0777 /home/ubuntu/setup_userspace.sh \
     /home/ubuntu/init_graphics.sh
 
 RUN gosu ubuntu /home/ubuntu/setup_userspace.sh
+RUN cd /home/ubuntu/VexiiRiscv/ext/riscv-isa-sim/build && make install
 
 WORKDIR /root
 RUN bash /root/setup_intellij.sh
