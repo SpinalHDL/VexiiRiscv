@@ -187,7 +187,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         bus.running := hartRunning
         bus.halted := !hartRunning
-        bus.unavailable := BufferCC(ClockDomain.current.isResetActive)
+        bus.unavailable := BufferCC.withTag(ClockDomain.current.isResetActive)
 
         when(debugMode) {
           inhibateInterrupts(hartId)
