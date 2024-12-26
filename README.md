@@ -24,3 +24,24 @@ Here is the online documentation :
 A roadmap is available here : 
 
 - https://github.com/SpinalHDL/VexiiRiscv/issues/1
+
+# TL;DR Getting started
+
+The quickest way for getting started is to pull the Docker image with all the dependencies installed
+
+Please refer to the self contained tutorial for a comprehensive step by step instruction manual with
+screenshots: https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Tutorial/index.html
+
+After running the generation you'll find a file named "VexiiRiscv.v" in the root
+of the repository folder, which you can drag into your Quartus or whatever.
+
+We decided to not start covering FPGA boards because there's just too many, so it's up to you
+to define your pin configuration for your specific FPGA board
+
+If you want to know what else you can do with sbt, please refer to the complete documentation.
+
+# Rebuild the Docker container
+
+In case you wanna rebuild leviathan's Docker container you can run
+
+    docker build . -f docker/Dockerfile -t vexiiriscv --progress=plain
