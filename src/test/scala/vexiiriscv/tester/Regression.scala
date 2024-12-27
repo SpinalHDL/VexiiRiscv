@@ -27,6 +27,10 @@ class RegressionSingleConfig(){
   var regular = true
   var benchmark = true
   var jtag = true
+  var traceWave = false
+  var traceKonata = false
+  var traceRvlsLog = false
+  var traceSpikeLog = false
 
   def fromEnv(): this.type = {
     freertosCount = sys.env.getOrElse("VEXIIRISCV_REGRESSION_FREERTOS_COUNT", "1").toInt
@@ -119,6 +123,10 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 
   def newTest() = {
     val t = new TestOptions()
+    t.traceWave = config.traceWave
+    t.traceKonata = config.traceKonata
+    t.traceRvlsLog = config.traceRvlsLog
+    t.traceSpikeLog = config.traceSpikeLog
     tests += t
     t
   }
@@ -521,11 +529,17 @@ object RegressionSingle extends App{
   def test(args : String) : Unit = test(args.split(" "))
   def test(args : Seq[String]): Unit = {
     val param = new ParamSimple()
+    var config = new RegressionSingleConfig()
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
       help("help").text("prints this usage text")
+      opt[Unit]("with-wave") action { (v, c) => config.traceWave = true }
+      opt[Unit]("with-konata") action { (v, c) => config.traceKonata = true }
+      opt[Unit]("with-rvls-log") action { (v, c) => config.traceRvlsLog = true }
+      opt[Unit]("with-spike-log") action { (v, c) => config.traceSpikeLog = true }
+      opt[Unit]("trace-all") action { (v, c) => config.traceRvlsLog = true; config.traceKonata = true; config.traceWave = true; config.traceSpikeLog = true }
       param.addOptions(this)
     }.parse(args, Unit).nonEmpty)
-    test(param, args, new RegressionSingleConfig().fromEnv())
+    test(param, args, config.fromEnv())
   }
 
   try {
