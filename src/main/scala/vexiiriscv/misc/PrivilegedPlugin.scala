@@ -28,6 +28,7 @@ object PrivilegedParam{
     withUserTrap   = false,
     withRdTime     = false,
     withDebug      = false,
+    mstatusFsInit  = 0,
     vendorId       = 0,
     archId         = 46, //As spike
     impId          = 0,
@@ -53,6 +54,7 @@ case class PrivilegedParam(var withSupervisor : Boolean,
                            var withUserTrap: Boolean,
                            var withRdTime : Boolean,
                            var withDebug: Boolean,
+                           var mstatusFsInit : Int,
                            var debugTriggers : Int,
                            var debugTriggersLsu : Boolean,
                            var vendorId: Int,
@@ -519,7 +521,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val status = new api.Csr(CSR.MSTATUS) {
           val mie, mpie = RegInit(False)
           val mpp = p.withUser.mux(RegInit(U"00"), U"11")
-          val fs = withFs generate RegInit(U"00")
+          val fs = withFs generate RegInit(U(p.mstatusFsInit, 2 bits))
           val sd = False
           val tsr, tvm = p.withSupervisor generate RegInit(False)
           val tw = p.withUser.mux(RegInit(False), False)
