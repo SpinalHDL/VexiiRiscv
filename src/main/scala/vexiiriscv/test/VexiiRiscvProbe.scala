@@ -99,6 +99,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     if(withRvls) rvls.jni.Frontend.deleteDisassemble(disass)
   }
 
+  def clearStats(): Unit = {
+    for (hart <- harts) {
+      hart.jbStats.clear()
+      hart.branchStats.clear()
+      hart.commits = 0
+    }
+    statsCycleOffset = cycle
+  }
+
+  var statsCycleOffset = 0l
   def getStats(): String = {
     val str = new StringBuilder()
     str ++= "### Stats ###\n"
@@ -119,8 +129,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     }
 
     def cycleRatio(times: Long) = {
-      val rate = (1000f * times / cycle).toInt
-      f"${times}%7d / ${cycle}%7d ${rate / 10}%3d.${rate % 10}%%"
+      val rate = (1000f * times / (cycle-statsCycleOffset)).toInt
+      f"${times}%7d / ${cycle-statsCycleOffset}%7d ${rate / 10}%3d.${rate % 10}%%"
     }
 
     for ((hw, i) <- wbp.perf.dispatchFeedCounters.zipWithIndex) {
@@ -144,6 +154,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     var count = 0l
     var failed = 0l
     var taken = 0l
+
+    def clear(): Unit = {
+      count = 0
+      failed = 0
+      taken = 0
+    }
 
     override def toString(): String ={
       val rate = (1000f*failed/count).toInt
