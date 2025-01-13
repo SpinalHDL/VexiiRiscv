@@ -61,6 +61,9 @@ jobs:
 
       - name: Install uncached tools
         run: source .github/workflows/tools.sh && install_uncached
+        
+      - name: Get SpinalHDL
+        run: git clone https://github.com/SpinalHDL/SpinalHDL.git --branch timing-extract ../SpinalHDL
 
       - name: Compile
         run: sbt clean compile
