@@ -525,6 +525,7 @@ class ParamSimple(){
     opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
+    opt[Unit]("without-ras") action { (v, c) => withRas = false }
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0; storeRs2Late = true }
     opt[Unit]("with-store-rs2-late") action { (v, c) => storeRs2Late = true }
     opt[Int]("btb-sets") action { (v, c) => btbSets = v }
@@ -556,6 +557,7 @@ class ParamSimple(){
     opt[Int]("lsu-l1-mem-data-width-min") unbounded() action { (v, c) => lsuMemDataWidthMin = v }
     opt[Unit]("lsu-l1-coherency") action { (v, c) => lsuL1Coherency = true}
     opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
+    opt[Unit]("without-lsu-bypass") action { (v, c) => withLsuBypass = false }
     opt[Unit]("with-iterative-shift") action { (v, c) => withIterativeShift = true }
     opt[Int]("div-radix") action { (v, c) => divRadix = v }
     opt[String]("div-impl") action { (v, c) => divImpl = v }
