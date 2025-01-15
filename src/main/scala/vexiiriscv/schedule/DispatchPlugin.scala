@@ -23,6 +23,8 @@ import scala.collection.mutable.ArrayBuffer
  * - Figuring out on which execution lane they could be scheduled (checking for dependencies). If none, then wait for some.
  * - Issue instructions on execution lanes
  *
+ * It is likely one of the hardest plugin to read, as it does a lot of elaboration time analysis to generate the "right" hadware
+ *
  * How to check if a instruction can schedule :
  * - If one of the pipeline which implement its micro op is free
  * - There is no inflight non-bypassed RF write to one of the source operand
@@ -212,8 +214,8 @@ class DispatchPlugin(var dispatchAt : Int,
 
     val rdKeys = Decode.rfaKeys.get(RD)
     assert(Global.HART_COUNT.get == 1, "need to implement write to write RD hazard for stuff which can be schedule in same cycle")
-//    assert(rdKeys.rfMapping.size == 1, "Need to check RFID usage and missing usage kinda everywhere, also the BYPASS signal should be set high for all stages after the writeback for the given RF")
 
+    // To improve performance, the dispatch plugin supports an internal buffer of instruction (slots)
     val slotsCount = if(withBuffer) Decode.LANES-1 else 0
     val slots = for(slotId <- 0 until slotsCount) yield new Area {
       val ctx = Reg(MicroOpCtx())
@@ -223,16 +225,18 @@ class DispatchPlugin(var dispatchAt : Int,
       trapPendings(hartId) := slots.map(s => s.ctx.valid && s.ctx.hm(TRAP)).orR
     }
 
+    // Candidates is an array of ordred instruction which are ready/waiting to be issued.
+    // This is the main interferace through which this plugin work
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
       val cancel = Bool()
 
-      val rsHazards = Bits(lanesLayers.size bits)
-      val reservationHazards = Bits(lanesLayers.size bits)
-      val flushHazards = Bool() //Pessimistic, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
-      val fenceOlderHazards = Bool()
-      val age = Execute.LANE_AGE()
+      val rsHazards = Bits(lanesLayers.size bits) // Hazard on register sources
+      val reservationHazards = Bits(lanesLayers.size bits) // Instruction have the ability to reserve shared ressources (ex floating point rounding unit). This specifies if the given instruction has hazard for that.
+      val flushHazards = Bool() // Instruction can specifie that they can't be flushed past a given point in the pipeline. This check that schedulability condition. Implemented in a pessimistic way, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
+      val fenceOlderHazards = Bool() // Instruction can ask that all the side effects of older instruction should be applied before being scheduled.
+      val age = Execute.LANE_AGE() // For instruction being issued the same cycle, this specifies their relative age. (lowest => oldest)
       val moving = !ctx.valid || fire || cancel
     }
     dpRetains.release()
@@ -247,6 +251,7 @@ class DispatchPlugin(var dispatchAt : Int,
       bypassedSpecs.getOrElseUpdate(el -> at, BypassedSpec(el, at, Payload(Bool()).setName("BYPASSED_AT_" + at))).value
     }
 
+    // Generate the register source hazards for every candidates
     val rsHazardChecker = for(c <- candidates) yield new Area {
       val onLl = for(hc <- hcs) yield new Area{
         val onRs = for(rs <- hc.onRs) yield new Area{
@@ -278,6 +283,8 @@ class DispatchPlugin(var dispatchAt : Int,
       }
     }
 
+
+    // Generate the reservation hazards for every candidates
     val reservationChecker = for (c <- candidates) yield new Area {
       val onLl = for ((ll, llId) <- lanesLayers.zipWithIndex) yield new Area {
         val res = for (resSpec <- reservationSpecs.values; if resSpec.sels.contains(ll); (selfAt, selfSel) <- resSpec.sels(ll)) yield new Area {
@@ -299,8 +306,8 @@ class DispatchPlugin(var dispatchAt : Int,
       mayFlushSpecs.getOrElseUpdate(el -> at, MayFlushSpec(el, at, Payload(Bool()).setName("MAY_FLUSH_PRECISE_" + at))).value
     }
 
-    val flushChecker = for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
-      val c = candidates(cId)
+    // Generate the flush hazards for every candidates
+    val flushChecker = for ((c, cId) <- candidates.zipWithIndex) yield new Area {
       val executeCheck = for (elp <- eus) yield new Area {
         val ctrlRange = dontFlushFromMin+1 to eusFlushHazardUpTo(elp)
         val hits = for(from <- ctrlRange) yield {
@@ -334,6 +341,7 @@ class DispatchPlugin(var dispatchAt : Int,
       }
     }
 
+    // Generate the older instruction fence hazards for every candidates
     val fenceChecker = new Area{
       val olderInflights = B(for(hartId <- 0 until Global.HART_COUNT) yield host.list[InflightService].map(_.hasInflight(hartId)).orR)
       for (cId <- 0 until slotsCount + Decode.LANES) yield new Area {
@@ -344,8 +352,7 @@ class DispatchPlugin(var dispatchAt : Int,
       }
     }
 
-
-
+    // Directly drive some of the candidates from the decode pipeline (no flip flop involved)
     dispatchCtrl.link.down.ready := True
     val feeds = for(lane <- 0 until Decode.LANES) yield new dispatchCtrl.LaneArea(lane){
       val c = candidates(slotsCount + lane)
@@ -372,6 +379,7 @@ class DispatchPlugin(var dispatchAt : Int,
       c.cancel := rp.isFlushedAt(dpp.getAge(dispatchAt + 1, false), s.ctx.hartId, 0).getOrElse(False)
     }
 
+    // Drive some of the candidates from the slots flip flop
     val slotsFeeds = (slotsCount != 0) generate new Area {
       val upCand = candidates.drop(slotsCount)
       val slotCand = candidates.take(slotsCount)
@@ -389,7 +397,7 @@ class DispatchPlugin(var dispatchAt : Int,
       }
     }
 
-
+    // Figure out which candidate select which execution lane to be scheduled.
     val scheduler = new Area {
       val eusFree = Array.fill(candidates.size + 1)(Bits(eus.size bits))
       val hartFree = Array.fill(candidates.size + 1)(Bits(Global.HART_COUNT bits))
@@ -417,6 +425,7 @@ class DispatchPlugin(var dispatchAt : Int,
       }
     }
 
+    // Drive the execution lanes from the choices made by the scheduler above.
     val inserter = for ((eu, id) <- eus.zipWithIndex; insertNode = eu.ctrl(0).up) yield new Area {
       import insertNode._
       val oh = B(scheduler.arbiters.map(l => l.doIt && l.eusOh(id)))
@@ -439,14 +448,7 @@ class DispatchPlugin(var dispatchAt : Int,
       val layer = layersOfInterest.map(e => B(eu.getLayerId(e._1), log2Up(eu.getLayers().size) bits) -> layerOhUnfiltred(e._2))
       eu.LAYER_SEL := OHMux.or(layer.map(_._2).asBits(), layer.map(_._1), true)
     }
-
-
-//    for(c <- candidates){
-//      c.rsHazards.removeAssignments().clearAll()
-//      c.flushHazards.removeAssignments().clearAll()
-//      c.fenceOlderHazards.removeAssignments().clearAll()
-//    }
-
+    
     val events = pcs map(pcs => new Area {
       val frontendStall = pcs.createEventPort(PerformanceCounterService.STALLED_CYCLES_FRONTEND, candidates.map(_.ctx.valid).norR)
       val backendStall = pcs.createEventPort(PerformanceCounterService.STALLED_CYCLES_BACKEND, candidates.map(_.ctx.valid).orR && candidates.map(_.fire).norR)
