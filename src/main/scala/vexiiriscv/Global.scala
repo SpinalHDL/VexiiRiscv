@@ -6,7 +6,16 @@ import spinal.lib.misc.pipeline.Payload
 import vexiiriscv.fetch.Fetch
 
 /**
- * Define global variables for plugin to share in very non-verbose ways
+ * Define global variables for plugin to share in non-verbose ways
+ *
+ * A few notes about physical/virtual/mixed addresses, as they are a tricky thing if you try to scrap away any unecessary bit :
+ * In RISC-V, the addresses manipulated by the CPU before the MMU can be physical or virtual.
+ * The thing is that Physical addresses are unsigned, while virtual addresses are signed (so sign extended to XLEN).
+ * So let's say you have :
+ * - 32 bits physical address width
+ * - 39 bits virtual address width
+ * Then, addresses in the CPU before the MMU (mixed addresses) need to have 40 bits (39 bits + 1 bit of sign extension), that allow for instance :
+ * - physical address trap at 0x40_0000_0000 to be stored in let's say MEPC to store that address while avoiding the sign extension
  */
 object Global extends AreaRoot{
   val PHYSICAL_WIDTH   = blocking[Int]
@@ -24,8 +33,6 @@ object Global extends AreaRoot{
     pc.resize(width bits)
   )
 
-
-  val VIRTUAL_ADDRESS = Payload(UInt(VIRTUAL_WIDTH bits))
   val MIXED_ADDRESS = Payload(UInt(MIXED_WIDTH bits))
   val PHYSICAL_ADDRESS = Payload(UInt(PHYSICAL_WIDTH bits))
   val PC = Payload(UInt(PC_WIDTH bits))

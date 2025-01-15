@@ -13,6 +13,10 @@ object VexiiRiscv{
   }
 }
 
+/**
+ * This is the VexiiRiscv toplevel, it doesn't define/generate any hardware by itself,
+ * it is just a framework to register/execute plugins and bind a database to share global variables
+ */
 class VexiiRiscv extends Component{
   val database = new Database
   val host = database on (new PluginHost)

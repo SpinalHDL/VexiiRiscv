@@ -26,7 +26,6 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
 
 object ParamSimple{
-
   def addOptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
     import parser._
     opt[Map[String, String]]("region") unbounded() action { (v, c) =>
@@ -74,6 +73,15 @@ object ParamSimple{
   }
 }
 
+
+/**
+ * ParamSimple is a data class which can be used to generate a collection of properly configured plugins for VexiiRiscv.
+ * - you create an instance of ParamSimple
+ * - you configure it
+ * - you ask it to provide the list of VexiiRiscv plugins
+ * - you instanciate VexiiRiscv with that list of plugin
+ * - Thenthen you should get a functional VexiiRiscv.
+ */
 class ParamSimple(){
   var xlen = 32
   var withRvc = false
@@ -1044,14 +1052,4 @@ lane micro op spec
   - dontFlushFrom
  */
 
-
-
-object OptionToPython extends App{
-  new scopt.OptionParser[Unit]("lol"){
-    new ParamSimple().addOptions(this)
-    for(o <- options){
-      println(o.name)
-    }
-  }
-}
 
