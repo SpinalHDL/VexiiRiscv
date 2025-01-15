@@ -23,7 +23,7 @@ import vexiiriscv.schedule.ReschedulePlugin
 
 import scala.collection.mutable.ArrayBuffer
 
-case class FetchL1InvalidationCmd() extends Bundle //Empty for now
+case class FetchL1InvalidationCmd() extends Bundle //Empty for now, as we flush the whole instruction cache
 case class FetchL1InvalidationBus() extends Bundle {
   val cmd = Stream(FetchL1InvalidationCmd())
 }
@@ -32,9 +32,9 @@ trait FetchL1Service{
   val invalidationRetainer = Retainer()
   val invalidationPorts = ArrayBuffer[FetchL1InvalidationBus]()
   def newInvalidationPort() = invalidationPorts.addRet(FetchL1InvalidationBus())
-  def fetchProbe : FetchProbe
 }
 
+// Implement and bind a instruction L1 cache to the CPU
 class FetchL1Plugin(var translationStorageParameter: Any,
                     var translationPortParameter: Any,
                     var pmpPortParameter : Any,
@@ -63,12 +63,10 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     withBackPresure = false
   )
 
-
-  override def fetchProbe: FetchProbe = during build FetchProbe()
-
   override def initHold(): Bool = logic.invalidate.firstEver || bootMemClear.mux(logic.initializer.busy, False)
 
   val logic = during setup new Area{
+    // * Plugins interlocking *
     val pp = host[FetchPipelinePlugin]
     val pcp = host[PcService]
     val rp = host[ReschedulePlugin]
@@ -82,6 +80,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val setupLock = retains(List(ts.trapLock, pcp.elaborationLock, rp.elaborationLock) ++ pcs.map(_.elaborationLock).toList)
     awaitBuild()
 
+    // * Plugins interfaces *
     Fetch.WORD_WIDTH.set(fetchDataWidth)
 
     val bus = master(FetchL1Bus(
@@ -98,12 +97,11 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       val access  = p.createEventPort(PerformanceCounterService.ICACHE_ACCESS)
       val miss    = p.createEventPort(PerformanceCounterService.ICACHE_MISS)
       val waiting = p.createEventPort(PerformanceCounterService.ICACHE_WAITING)
-//      val dev0 = p.createEventPort(PerformanceCounterService.DEV)
-//      val dev1 = p.createEventPort(PerformanceCounterService.DEV+1)
     })
 
     setupLock.release()
 
+    // * Parameter processing *
     val cacheSize = wayCount*setCount*lineSize
     val cpuWordWidth = fetchDataWidth
     val bytePerMemWord = memDataWidth / 8
@@ -125,7 +123,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val memToBankRatio = bankWidth * bankCount / memDataWidth
     val bankWord = HardType(Bits(bankWidth bits))
 
-
+    // * Hardware generation *
     case class Tag() extends Bundle {
       val loaded = Bool()
       val error = Bool()
@@ -263,15 +261,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         }
         pushCounter := pushCounter + 1
       }
-
-
-
-//      val oldDo = !valid && start.valid && invalidate.done
-//      val oldAddress = RegNextWhen(start.address, oldDo)
-//      val oldHit = ((oldAddress + lineSize) ^ start.address) >> log2Up(lineSize) === 0
-//      events.get.dev0 := oldDo
-//      events.get.dev1 := oldDo && oldHit
-
 
       invalidate.canStart clearWhen (slots.map(_.valid).orR || start.valid)
 
