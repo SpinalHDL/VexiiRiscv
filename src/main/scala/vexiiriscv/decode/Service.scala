@@ -20,7 +20,6 @@ trait DecoderService {
   def addMicroOpDecoding[T <: BaseType](microOp: MicroOp, key : Payload[T], value: T) : Unit = addMicroOpDecoding(microOp, DecodeList(key -> value))
   def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType)
   def addMicroOpDecodingDefault(key : Payload[_ <: BaseType], value : BaseType) : Unit
-//  def addMicroOpEnable(uop : MicroOp, enable : Bool)
   def addDecodingLogic(body : DecodingCtx => Unit)
 }
 
