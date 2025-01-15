@@ -35,25 +35,6 @@ trait FetchL1Service{
   def fetchProbe : FetchProbe
 }
 
-case class LsuL1InvalidationCmd() extends Bundle //Empty for now
-case class LsuL1InvalidationBus() extends Bundle {
-  val cmd = Stream(LsuL1InvalidationCmd())
-}
-trait LsuService{
-  val invalidationRetainer = Retainer()
-  val invalidationPorts = ArrayBuffer[LsuL1InvalidationBus]()
-  def newInvalidationPort() = invalidationPorts.addRet(LsuL1InvalidationBus())
-  def lsuCommitProbe : Flow[LsuCommitProbe]
-  def getBlockSize : Int
-}
-
-trait LsuL1Service{
-  def withCoherency : Boolean
-  val regions = Handle[ArrayBuffer[PmaRegion]]()
-}
-
-
-
 class FetchL1Plugin(var translationStorageParameter: Any,
                     var translationPortParameter: Any,
                     var pmpPortParameter : Any,

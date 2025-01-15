@@ -3,7 +3,7 @@ package vexiiriscv.execute.lsu
 import spinal.core._
 import spinal.lib.{misc, _}
 import spinal.lib.misc.plugin.FiberPlugin
-import vexiiriscv.fetch.{Fetch, InitService, LsuService}
+import vexiiriscv.fetch.{Fetch, InitService}
 import spinal.lib.misc.pipeline._
 import vexiiriscv.Global
 import vexiiriscv.Global._

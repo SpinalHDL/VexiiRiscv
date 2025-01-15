@@ -21,7 +21,6 @@ import vexiiriscv.{Global, riscv}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu.AguPlugin._
 import vexiiriscv.execute.lsu.LsuL1.HAZARD
-import vexiiriscv.fetch.{LsuL1Service, LsuService}
 
 import scala.collection.mutable.ArrayBuffer
 

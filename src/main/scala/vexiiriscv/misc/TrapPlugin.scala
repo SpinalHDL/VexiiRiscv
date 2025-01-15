@@ -12,7 +12,8 @@ import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
-import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, LsuL1Service, LsuService, PcService}
+import vexiiriscv.execute.lsu.{LsuL1Service, LsuService}
+import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, PcService}
 import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.prediction.{HistoryPlugin, Prediction}
 import vexiiriscv.schedule.Ages

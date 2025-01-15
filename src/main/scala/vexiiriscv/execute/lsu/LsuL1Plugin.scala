@@ -13,7 +13,7 @@ import vexiiriscv.Global
 import vexiiriscv.misc.{PerformanceCounterService, Reservation}
 import vexiiriscv.riscv.{AtomicAlu, Riscv}
 import vexiiriscv.execute._
-import vexiiriscv.fetch.{InitService, LsuL1Service, LsuService}
+import vexiiriscv.fetch.{InitService}
 import vexiiriscv.riscv.Riscv.{RVA, RVC}
 
 import scala.collection.mutable.ArrayBuffer
