@@ -23,7 +23,10 @@ object FetchCachelessPlugin{
   val ID = blocking[Int]
 }
 
-// Implement the instruction fetch bus without L1 cache.
+/**
+ * Implement the instruction fetch bus without L1 cache.
+ * The main particularity of this implementation is that it support out of order memory busses
+ */
 class FetchCachelessPlugin(var wordWidth : Int,
                            var translationStorageParameter: Any,
                            var translationPortParameter: Any,

@@ -11,6 +11,10 @@ import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 
 import scala.collection.mutable
 
+
+/**
+ * Provide a fethc pipeline squeleton, used by other plugins to compose the fethc pipeline.
+ */
 class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   setName("fetch")
   val elaborationLock = Retainer()

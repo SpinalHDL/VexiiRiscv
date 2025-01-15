@@ -34,7 +34,10 @@ trait FetchL1Service{
   def newInvalidationPort() = invalidationPorts.addRet(FetchL1InvalidationBus())
 }
 
-// Implement and bind a instruction L1 cache to the CPU
+/**
+ * Implement and bind a instruction L1 cache to the CPU
+ * The main particularity of this implementation is that the cache is non-blocking and canc onnect to  prefetching plugins
+ */
 class FetchL1Plugin(var translationStorageParameter: Any,
                     var translationPortParameter: Any,
                     var pmpPortParameter : Any,
