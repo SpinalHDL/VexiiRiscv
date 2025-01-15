@@ -18,6 +18,7 @@ import vexiiriscv.fetch.Fetch
  * - physical address trap at 0x40_0000_0000 to be stored in let's say MEPC to store that address while avoiding the sign extension
  */
 object Global extends AreaRoot{
+  // Elaboration time constants
   val PHYSICAL_WIDTH   = blocking[Int]
   val MIXED_WIDTH      = blocking[Int]
   val VIRTUAL_WIDTH    = blocking[Int]
@@ -33,6 +34,7 @@ object Global extends AreaRoot{
     pc.resize(width bits)
   )
 
+  // Pipelining keys
   val MIXED_ADDRESS = Payload(UInt(MIXED_WIDTH bits))
   val PHYSICAL_ADDRESS = Payload(UInt(PHYSICAL_WIDTH bits))
   val PC = Payload(UInt(PC_WIDTH bits))

@@ -23,7 +23,7 @@ object FetchCachelessPlugin{
   val ID = blocking[Int]
 }
 
-//TODO avoid cmd fork on unmapped memory space
+// Implement the instruction fetch bus without L1 cache.
 class FetchCachelessPlugin(var wordWidth : Int,
                            var translationStorageParameter: Any,
                            var translationPortParameter: Any,
@@ -36,6 +36,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
   val regions = Handle[ArrayBuffer[PmaRegion]]()
 
   val logic = during setup new Area{
+    // * Plugins interlocking *
     val pp = host[FetchPipelinePlugin]
     val ps = host[PmpService]
     val ts = host[TrapService]
@@ -45,6 +46,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
     val trapLock =  ts.trapLock()
     awaitBuild()
 
+    // * Plugins interfaces *
     Fetch.WORD_WIDTH.set(wordWidth)
 
     val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
@@ -53,12 +55,14 @@ class FetchCachelessPlugin(var wordWidth : Int,
     val trapPort = ts.newTrap(pp.getAge(joinAt), 0)
     trapLock.release()
 
+    // * Hardware generation *
     val idCount = joinAt - forkAt + 1
     val p = CachelessBusParam(PHYSICAL_WIDTH, Fetch.WORD_WIDTH, idCount, cmdForkPersistence)
     val bus = master(CachelessBus(p))
 
     val BUFFER_ID = Payload(UInt(log2Up(idCount) bits))
 
+    // Storage and reorder of the memory bus responses
     val buffer = new Area{
       val reserveId = Counter(idCount)
       val inflight = Vec.fill(idCount)(RegInit(False))
@@ -67,7 +71,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       val reservedHits = for (ctrlId <- forkAt+1 to joinAt; ctrl = pp.fetch(ctrlId)) yield {
         ctrl.isValid && ctrl(BUFFER_ID) === reserveId
       }
-      val full = CombInit(reservedHits.orR || inflight.read(reserveId)) //TODO that's one cycle late, can use sort of ahead value
+      val full = CombInit(reservedHits.orR || inflight.read(reserveId)) //If this create timings issues, that's one cycle late, can use sort of ahead value
 
       val inflightSpawn = Bool()
       when(inflightSpawn) {
@@ -112,6 +116,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       val RSP = insert(port.rsp)
     }
 
+    // Logic to fork the fetch pipeline toward the memory bus cmd
     val fork = new pp.Fetch(forkAt){
       val fresh = (forkAt == 0).option(host[PcPlugin].forcedSpawn())
       val forked = forkStream(fresh)
@@ -142,11 +147,12 @@ class FetchCachelessPlugin(var wordWidth : Int,
       }
     }
 
+    // Logic to join the memory bus rsp to the pipeline and the buffer
     val join = new pp.Fetch(joinAt){
       val haltIt = buffer.inflight.read(BUFFER_ID)
       val rsp = CombInit(buffer.words.readAsync(BUFFER_ID))
       // Implement bus rsp bypass into the pipeline (without using the buffer)
-      // TODO this one can be optional
+      // To save area an option could be added to disable that.
       when(bus.rsp.valid && bus.rsp.id === BUFFER_ID){
         haltIt := False
         rsp.assignSomeByName(bus.rsp.payload)
@@ -205,10 +211,3 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
   val pmaBuilder = during build new PmaLogic(logic.onPma.port, regions.filter(_.isExecutable))
 }
-
-
-//      val persist = (forkAt > 0 && cmdForkPersistence) generate new Area{
-//        val started = RegNext(translated.isStall) init(False)
-//        translated.valid setWhen(started)
-//        pp.setPersistence(forkAt)
-//      }

@@ -6,7 +6,7 @@ import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.{DebugId, S2mSupport}
 import spinal.lib.misc.plugin.FiberPlugin
 
-
+// Plugin to embed a bridge in VexiiRiscv to convert the FetchL1Bus to Tilelink
 class FetchL1TileLinkPlugin(node : bus.tilelink.fabric.Node) extends FiberPlugin {
   val logic = during build new Area{
     val fcp = host[FetchL1Plugin]
