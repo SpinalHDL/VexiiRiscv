@@ -17,19 +17,24 @@ import vexiiriscv.riscv.{MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-/*
-How to check if a instruction can schedule :
-- If one of the pipeline which implement its micro op is free
-- There is no inflight non-bypassed RF write to one of the source operand
-- There is no scheduling fence
-- For credit based execution, check there is enough credit
-
-Schedule euristic :
-- In priority order, go through the slots
-- Check which pipeline could schedule it (free && compatible)
-- Select the pipeline which the highest priority (to avoid using the one which can do load and store, for instance)
-- If the slot can't be schedule, disable all following ones with same HART_ID
-*/
+/**
+ * The role of the dispatch plugin is to :
+ * - Collect the instruction exiting the decode pipeline,
+ * - Figuring out on which execution lane they could be scheduled (checking for dependencies). If none, then wait for some.
+ * - Issue instructions on execution lanes
+ *
+ * How to check if a instruction can schedule :
+ * - If one of the pipeline which implement its micro op is free
+ * - There is no inflight non-bypassed RF write to one of the source operand
+ * - There is no scheduling fence
+ * - ...
+ *
+ * Schedule heuristic :
+ * - In priority order, go through the slots
+ * - Check which pipeline could schedule it (free && compatible)
+ * - Select the pipeline which the highest priority (to avoid using the one which can do load and store, for instance)
+ * - If the slot can't be schedule, disable all following ones with same HART_ID
+ */
 
 class DispatchPlugin(var dispatchAt : Int,
                      var trapLayer : LaneLayer,
@@ -43,10 +48,7 @@ class DispatchPlugin(var dispatchAt : Int,
 
 
   val hmKeys = mutable.LinkedHashSet[Payload[_ <: Data]]()
-
-//  val fenceYoungerOps = mutable.LinkedHashSet[MicroOp]()
   val fenceOlderOps = mutable.LinkedHashSet[MicroOp]()
-//  def fenceYounger(op : MicroOp) = fenceYoungerOps += op
   def fenceOlder(op : MicroOp) = fenceOlderOps += op
   def haltDispatchWhen(cond : Bool) = api.haltDispatch.setWhen(cond)
 
