@@ -164,12 +164,12 @@ class ParamSimple(){
       MmuStorageLevel(
         id = 0,
         ways = 2,
-        depth = 32
+        sets = 32
       ),
       MmuStorageLevel(
         id = 1,
         ways = 1,
-        depth = 32
+        sets = 32
       )
     ),
     priority = 0
@@ -223,12 +223,12 @@ class ParamSimple(){
       MmuStorageLevel(
         id = 0,
         ways = 3,
-        depth = 32
+        sets = 32
       ),
       MmuStorageLevel(
         id = 1,
         ways = 1,
-        depth = 32
+        sets = 32
       )
     ),
     priority = 1
@@ -390,12 +390,12 @@ class ParamSimple(){
         MmuStorageLevel(
           id = 0,
           ways = 2,
-          depth = 64
+          sets = 64
         ),
         MmuStorageLevel(
           id = 1,
           ways = 1,
-          depth = 64
+          sets = 64
         )
       ),
       priority = 0
@@ -406,12 +406,12 @@ class ParamSimple(){
         MmuStorageLevel(
           id = 0,
           ways = 2,
-          depth = 64
+          sets = 64
         ),
         MmuStorageLevel(
           id = 1,
           ways = 1,
-          depth = 64
+          sets = 64
         )
       ),
       priority = 1

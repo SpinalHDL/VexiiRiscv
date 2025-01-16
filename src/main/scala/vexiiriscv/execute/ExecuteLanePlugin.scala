@@ -10,7 +10,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.Global.{COMMIT, TRAP}
 import vexiiriscv.decode.Decode
-import vexiiriscv.misc.{CtrlPipelinePlugin, InflightService, PipelineService, TrapService}
+import vexiiriscv.misc.{InflightService, PipelineService, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{IntRegFile, MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
 import vexiiriscv.schedule.{Ages, DispatchPlugin, FlushCmd, ReschedulePlugin}

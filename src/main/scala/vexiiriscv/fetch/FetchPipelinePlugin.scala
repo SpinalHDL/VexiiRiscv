@@ -6,7 +6,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline
 import spinal.lib.misc.pipeline.{CtrlLink, CtrlLinkMirror, Link}
 import vexiiriscv.Global
-import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
+import vexiiriscv.misc.{PipelineService}
 import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 
 import scala.collection.mutable

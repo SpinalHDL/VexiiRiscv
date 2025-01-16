@@ -1,6 +1,6 @@
 package vexiiriscv.decode
 
-import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService, TrapService}
+import vexiiriscv.misc.{PipelineService, TrapService}
 import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 import spinal.core._
 import spinal.core.fiber.Retainer
