@@ -17,6 +17,11 @@ object BarrelShifterPlugin extends AreaObject {
   val IS_UW = Payload(Bool())
 }
 
+
+/**
+ * Implements the RISC-V integer shift instructions
+ * use a single left barrel shifter pre/post bit reverse for right shifts
+ */
 class BarrelShifterPlugin(val layer : LaneLayer,
                           var with_slli_uw: Boolean = false,
                           var shiftAt : Int = 0,

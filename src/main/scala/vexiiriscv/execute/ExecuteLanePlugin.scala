@@ -20,6 +20,13 @@ import scala.collection.mutable.ArrayBuffer
 
 case class UopImplKey(uop : MicroOp, name : LaneLayer)
 
+/**
+ * Implements an execution lane :
+ * - Read the register files
+ * - Implement register files bypass logic
+ * - Register  which execution layer are working on that lane
+ * - ...
+ */
 class ExecuteLanePlugin(override val laneName : String,
                         override val rfReadAt : Int,
                         val decodeAt : Int,

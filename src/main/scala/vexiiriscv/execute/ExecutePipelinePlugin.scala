@@ -18,7 +18,12 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
-
+/**
+ * Provide the execution pipeline skeleton for the ExecuteLanePlugin
+ *
+ * The flow control of the whole execute pipeline is interlocked / do not collapse bubbles (freezeIt/isFreezed)
+ * The reason is to preserve the relative timings between the instruction as the dispatcher requires it.
+ */
 class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
   setName("execute")
   val pipelineLock = Retainer()

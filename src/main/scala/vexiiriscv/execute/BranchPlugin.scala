@@ -30,7 +30,7 @@ object BranchPlugin extends AreaObject {
   val BRANCH_CTRL =  Payload(BranchCtrlEnum())
 }
 
-
+// Shared hardware between BranchPlugin which work on the same execution lane.
 class PcCalc(bp: BranchPlugin, at: Int) extends Area {
   import bp._
   import BranchPlugin._
@@ -65,6 +65,16 @@ class PcCalc(bp: BranchPlugin, at: Int) extends Area {
   KeepAttribute(apply(PC_LAST_SLICE))
 }
 
+/**
+ * Implement the branch/jump handeling in the execute stage.
+ * Depending if the CPU has a BTB it work completly differently.
+ * - If there is no BTB, then the plugin work very "normaly" and just execute the incoming instructions
+ * - If there is a BTB, then the goal of the plugin is to check if the predictions done were right, and correct if necessary
+ *
+ * In the case there is multiple BranchPlugin on a given execution lane, they will share quite a bit of hardware via the PcCalc Area.
+ * Also, only the last instance of BranchPlugin on a given execution lane will feed the LearnPlugin via its LearnSource service.
+ * This reduce the hardware area aswell as reducing the possibility of multiple BranchPlugin providing LearnSource request at the same time.
+ */
 class BranchPlugin(val layer : LaneLayer,
                    var aluAt : Int = 0,
                    var jumpAt: Int = 1,
@@ -97,7 +107,7 @@ class BranchPlugin(val layer : LaneLayer,
     val ioRetainer = retains(wbp.elaborationLock, sp.elaborationLock, pcp.elaborationLock, ts.trapLock)
     hp.foreach(ioRetainer += _.elaborationLock)
 
-    val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last
+    val lastOfLane = pluginsOnLane.sortBy(_.jumpAt).last // As multiple branch plugin can be on the same lane if you use the "--late-alu" option
     val isLastOfLane = BranchPlugin.this == lastOfLane
     val events = (isLastOfLane && pcs.nonEmpty).option(new Area{
       val branchMiss = pcs.get.createEventPort(PerformanceCounterService.BRANCH_MISS)

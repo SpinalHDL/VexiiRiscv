@@ -12,6 +12,31 @@ import vexiiriscv.riscv.{MicroOp, RD, RfResource}
 import scala.collection.mutable.ArrayBuffer
 
 
+/**
+ * This is a simple skeleton to ease the implementation of simple execution plugins. It assume a single writeback and a single completion
+ * For a simple example, look at the IntAluPlugin.
+ */
+abstract class ExecutionUnitElementSimple(layer : LaneLayer) extends FiberPlugin {
+  withPrefix(layer.name)
+
+  val SEL = Payload(Bool())
+
+  class Logic extends ExecuteUnitElementSimple.Api(layer,  host.find[SrcPlugin](_.layer == layer), SEL, rsUnsignedPlugin = host.get[RsUnsignedPlugin].getOrElse(null)) with Area with PostInitCallback {
+    val el = layer.lane
+    val srcp = srcPlugin
+    val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
+    val uopRetainer = retains(el.uopLock, srcp.elaborationLock, ifp.elaborationLock)
+    val euPipelineRetainer = retains(el.pipelineLock)
+
+    el.setDecodingDefault(SEL, False)
+
+    override def postInitCallback() = {
+      euPipelineRetainer.release()
+      this
+    }
+  }
+}
+
 object ExecuteUnitElementSimple{
   class Api(layer : LaneLayer, val srcPlugin: SrcPlugin, val SEL : Payload[Bool], val rsUnsignedPlugin: RsUnsignedPlugin = null){
     var iwbpp = Option.empty[(IntFormatPlugin, Flow[Bits])]
@@ -60,28 +85,6 @@ object ExecuteUnitElementSimple{
         else impl.addDecoding(RsUnsignedPlugin.RS1_SIGNED -> Bool(rs1Signed), RsUnsignedPlugin.RS2_SIGNED -> Bool(rs2Signed))
         this
       }
-    }
-  }
-}
-
-//This is a simple skeleton to ease the implementation of simple ExecutionUnit elements. It assume a single writeback and a single completion
-abstract class ExecutionUnitElementSimple(layer : LaneLayer) extends FiberPlugin {
-  withPrefix(layer.name)
-
-  val SEL = Payload(Bool())
-
-  class Logic extends ExecuteUnitElementSimple.Api(layer,  host.find[SrcPlugin](_.layer == layer), SEL, rsUnsignedPlugin = host.get[RsUnsignedPlugin].getOrElse(null)) with Area with PostInitCallback {
-    val el = layer.lane
-    val srcp = srcPlugin
-    val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
-    val uopRetainer = retains(el.uopLock, srcp.elaborationLock, ifp.elaborationLock)
-    val euPipelineRetainer = retains(el.pipelineLock)
-
-    el.setDecodingDefault(SEL, False)
-
-    override def postInitCallback() = {
-      euPipelineRetainer.release()
-      this
     }
   }
 }

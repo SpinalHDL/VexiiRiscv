@@ -13,7 +13,7 @@ import scala.collection.mutable
 
 
 /**
- * Provide a fethc pipeline squeleton, used by other plugins to compose the fethc pipeline.
+ * Provide a fethc pipeline skeleton, used by other plugins to compose the fethc pipeline.
  */
 class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   setName("fetch")

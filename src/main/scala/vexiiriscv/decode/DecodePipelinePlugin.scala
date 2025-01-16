@@ -13,7 +13,7 @@ import vexiiriscv.Global
 import scala.collection.mutable
 
 /**
- * Provide a decode pipeline squeleton, used by other plugins to compose the decode pipeline.
+ * Provide a decode pipeline skeleton, used by other plugins to compose the decode pipeline.
  */
 class DecodePipelinePlugin extends FiberPlugin with PipelineService{
   setName("decode")

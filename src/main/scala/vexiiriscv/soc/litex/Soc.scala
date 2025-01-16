@@ -82,7 +82,6 @@ class SocConfig(){
     TilelinkVgaCtrlSpec.addOption(parser, video)
     MacSgFiberSpec.addOption(parser, macSg)
     opt[Int]("litedram-width") action { (v, c) => litedramWidth = v }
-    //    opt[Seq[String]]("l2-self-flush") action { (v, c) => selfFlush = coherent.SelfFLush(BigInt(v(0)), BigInt(v(1)), BigInt(v(2))) }
     opt[Seq[String]]("l2-self-flush") action { (v, c) =>
       selfFlush = coherent.SelfFLush(BigInt(v(0), 16), BigInt(v(1), 16), BigInt(v(2)))
     }
@@ -112,7 +111,6 @@ class Soc(c : SocConfig) extends Component {
   val litexCd = ClockDomain.external("litex")
   val cpuClk = withCpuCd.mux(ClockDomain.external("cpu", withReset = false), litexCd)
   val cpuResetCtrl = cpuClk(new ResetCtrlFiber())
-  cpuResetCtrl.holdCycles = 50000000*5
   cpuResetCtrl.addAsyncReset(litexCd.isResetActive, HIGH)
   val cpuCd = cpuResetCtrl.cd
 

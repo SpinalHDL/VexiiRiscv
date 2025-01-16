@@ -111,9 +111,6 @@ trait ExecuteLaneService extends Area{
   val pipelineLock = Retainer()
 
   def laneName : String
-//  def pushPort() : ExecutionUnitPush
-//  def staticLatencies() : ArrayBuffer[StaticLatency] = ArrayBuffer[StaticLatency]()
-//  def addMicroOp(enc : MicroOp)
 
   def executeAt: Int
   def rfReadAt: Int
@@ -127,12 +124,10 @@ trait ExecuteLaneService extends Area{
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType)
   def withBypasses : Boolean
   def rfReadHazardFrom(usedAt : Int) : Int
-//  def newFlushPort(executeId : Int) : Flow[FlushCmd]
 
   def getStageable(r: RfResource): Payload[Bits]
   def apply(rf: RegfileSpec, access: RfAccess) = getStageable(rf -> access)
   def apply(r: RfResource) = getStageable(r)
-//  def getSpec(op : MicroOp) : MicroOpSpec
 
   def getRdBroadcastedFromMax(regFiles : Seq[RegfileSpec]) = getUopLayerSpec().filter(e => e.rd.nonEmpty && regFiles.contains(e.rd.get.rf) ).flatMap(s => s.rd.map(v => v.broadcastedFrom)).max
   def getRfReadableAtMax() = getUopLayerSpec().flatMap(s => s.rd.map(v => v.rfReadableFrom)).max
@@ -159,15 +154,6 @@ case class CompletionPayload() extends Bundle{
   val commit = Bool()
 }
 
-//case class RetirePayload() extends Bundle{
-//  val hartId = Global.HART_ID()
-//  val microOpId = Decode.UOP_ID()
-//}
-
 trait CompletionService{
   def getCompletions() : Seq[Flow[CompletionPayload]]
 }
-
-//trait RetireService{
-//  def getRetires() : Seq[Flow[RetirePayload]]
-//}

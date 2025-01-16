@@ -91,14 +91,14 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
         val writeDone = Bool()
         val readDone = Bool()
       }))
-      access.valid := p.fsm.regs.fire
-      access.uopId := p.fsm.regs.uopId
-      access.hartId := p.fsm.regs.hartId
-      access.address := U(p.fsm.regs.uop)(Const.csrRange)
-      access.write := p.fsm.regs.onWriteBits
-      access.read := p.fsm.regs.csrValue
-      access.writeDone := p.fsm.regs.write
-      access.readDone := p.fsm.regs.read
+      access.valid := p.fsm.interface.fire
+      access.uopId := p.fsm.interface.uopId
+      access.hartId := p.fsm.interface.hartId
+      access.address := U(p.fsm.interface.uop)(Const.csrRange)
+      access.write := p.fsm.interface.onWriteBits
+      access.read := p.fsm.interface.csrValue
+      access.writeDone := p.fsm.interface.write
+      access.readDone := p.fsm.interface.read
       val port = wrap(access)
     })
 
