@@ -28,6 +28,10 @@ class DivComp(val width : Int, val radixBits : Int) extends Component{
   val io = DivIo(width, radixBits)
 }
 
+/**
+ * Implement a unsigned hardware divided which supports radix 2 and 4 (1 and 2 bits per cycle being solved)
+ * Radix 4 is supported by "brutfocfing" all 4 values the next 2 bits of the division could be, and selecting the bigggest fit.
+ */
 class DivRadix(width: Int, radix: Int) extends DivComp(width, radix match {
   case 2 => 1
   case 4 => 2
@@ -125,10 +129,8 @@ object DivRadix4Tester extends App{
       dut.clockDomain.waitSampling()
       for (i <- 0 until 100) {
         dut.io.cmd.valid #= true
-//        val a = dut.io.cmd.a.randomizedBigInt()
-//        val b = dut.io.cmd.b.randomizedBigInt()
-        val a = 20
-        val b = 6
+        val a = dut.io.cmd.a.randomizedBigInt()
+        val b = dut.io.cmd.b.randomizedBigInt()
         dut.io.cmd.a #= a
         dut.io.cmd.b #= b
         dut.clockDomain.waitSampling()

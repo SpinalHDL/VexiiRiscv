@@ -78,16 +78,20 @@ case class TrapPending() extends Bundle{
 
 object TrapReason{
   val INTERRUPT = 0
-  val PRIV_RET = 1
+  val PRIV_RET = 1 //Used for MRET, SRET
   val FENCE_I = 2
   val DEBUG_TRIGGER = CSR.MCAUSE_ENUM.BREAKPOINT // Need to match to reduce hardware
-  val REDO = 4
-  val NEXT = 5
+  val REDO = 4 // Allows the retry the current instruction
+  val NEXT = 5 // Allows to fence the current instruction against all the future one by flushing the younger instructions and resuming on the next instruction.
   val SFENCE_VMA = 6
   val MMU_REFILL = 7
   val WFI = 8
 }
 
+/**
+ * Trap args are used in a few cases to provide additional information.
+ * Mainly, when using TrapReason MMU_REFILL, to specify which TLB storage need to be refilled.
+ */
 object TrapArg{
   val LOAD = 0
   val STORE = 1

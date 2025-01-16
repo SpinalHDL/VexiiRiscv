@@ -69,6 +69,12 @@ case class Delegator(var enable: Bool, privilege: Int)
 case class InterruptSpec(var cond: Bool, id: Int, privilege: Int, delegators: List[Delegator])
 case class ExceptionSpec(id: Int, delegators: List[Delegator])
 
+/**
+ * This implements the large majority of the RISC-V privileged spec :
+ * - Most CSR
+ * - Interrupts
+ * - Debug interface (RISC-V debug spec)
+ */
 class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends FiberPlugin with CommitService with LsuTriggerService{
   def implementSupervisor = p.withSupervisor
   def implementUser = p.withUser
@@ -699,15 +705,3 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     buildBefore.release()
   }
 }
-
-
-
-
-
-//        val tval = Reg(TVAL) init (0)
-//        val epc = Reg(PC) init (0)
-//        val tvec = Reg(PC) init (0)
-
-//        api.onCsr(CSR.MTVAL).readWrite(tval)
-//        api.onCsr(CSR.MEPC).readWrite(epc)
-//        api.onCsr(CSR.MTVEC).readWrite(tvec)

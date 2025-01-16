@@ -8,6 +8,10 @@ import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline
 import spinal.lib.misc.pipeline.StageLink
 
+/**
+ * The funciton of this plugin is to collect all the pipeline parts defined by the other's PipelineService plugins.
+ * and then invoke the spinal.lib.misc.pipeline.builder on them in order to finalize the pipelines hardware.
+ */
 class PipelineBuilderPlugin extends FiberPlugin{
   val elaborationLock = Retainer()
   val logic = during build new Area{
