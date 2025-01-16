@@ -106,7 +106,7 @@ class BranchPlugin(val layer : LaneLayer,
     awaitBuild()
 
     import SrcKeys._
-    if(hp.nonEmpty) host[DispatchPlugin].hmKeys += Prediction.BRANCH_HISTORY
+    if(hp.nonEmpty) host[DispatchPlugin].addDispatchCtx(Prediction.BRANCH_HISTORY) // Provide the branch history to the execute pipeline for the branch plugins to use.
 
     add(Rvi.JAL ).decode(BRANCH_CTRL -> BranchCtrlEnum.JAL )
     if(withJalr) add(Rvi.JALR).decode(BRANCH_CTRL -> BranchCtrlEnum.JALR).srcs(SRC1.RF)
@@ -183,36 +183,33 @@ class BranchPlugin(val layer : LaneLayer,
       val doIt = isValid && SEL && needFix
       val pcTarget = withBtb.mux[UInt](btb.REAL_TARGET, PC_TRUE)
 
-
+      // Compute the branch history that should be used after the current instruction
+      // It is kinda a tricky thing :
+      // - We want to be sure to avoid divergences between the history corrections made by the BTB and the Branch plugin
+      // - The BtbPlugin may not be aware of all the branch that he is running through
+      // - There may be multiple instances of the branch plugin working in parallel
+      // So what we do here is that we transport the BRANCH_HISTORY
+      // aswell as what the BTB predicted of the instruction stream via ALIGNED_SLICES_BRANCH/ALIGNED_SLICES_TAKEN
+      // Then we compute what would be the future history using that BTB "view" with the only correction for the current
+      // instruction is taken/non-taken
+      // As a result, we can be sure that we have a good coherency between the BtbPlugin and the BranchPlugin.
+      // But the down side, is that if the BTB learn about a new branch instruction in a sequance, the history layout will change.
       val history = historyPort.nonEmpty generate new Area{
         val fetched, next = Prediction.BRANCH_HISTORY()
-        val withSelfHistory = false // && Global.HART_COUNT.get == 1 && Fetch.SLICE_COUNT.get == 1 && host.list[BranchPlugin].size == 1 && host.get[FetchWordPrediction].get.useAccurateHistory
-
-        val fromSelf = withSelfHistory generate new Area {
-          val state = Reg(Prediction.BRANCH_HISTORY) init (0)
-          val shifted = (state ## COND).dropHigh(1)
-          when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B) {
-            state := shifted
+        val slice = PC(Fetch.SLICE_RANGE.get)
+        var shifter = CombInit(apply(Prediction.BRANCH_HISTORY))
+        // Apply the history changes of all the previous instruction slices
+        for (sliceId <- 0 until Fetch.SLICE_COUNT - 1) {
+          when(slice < sliceId && Prediction.ALIGNED_SLICES_BRANCH(sliceId)) {
+            shifter \= (shifter ## Prediction.ALIGNED_SLICES_TAKEN(sliceId)).dropHigh(1)
           }
-
-          fetched := state
-          next := (BRANCH_CTRL === BranchCtrlEnum.B).mux(shifted, state)
         }
-
-        val fromFetch = !withSelfHistory generate new Area {
-          val slice = PC(Fetch.SLICE_RANGE.get)
-          var shifter = CombInit(apply(Prediction.BRANCH_HISTORY))
-          for (sliceId <- 0 until Fetch.SLICE_COUNT - 1) {
-            when(slice < sliceId && Prediction.ALIGNED_SLICES_BRANCH(sliceId)) {
-              shifter \= (shifter ## Prediction.ALIGNED_SLICES_TAKEN(sliceId)).dropHigh(1)
-            }
-          }
-          when(BRANCH_CTRL === BranchCtrlEnum.B) {
-            shifter \= (shifter ## COND).dropHigh(1)
-          }
-          next := shifter
-          fetched := Prediction.BRANCH_HISTORY
+        // Apply the history changes for the current instruction
+        when(BRANCH_CTRL === BranchCtrlEnum.B) {
+          shifter \= (shifter ## COND).dropHigh(1)
         }
+        next := shifter
+        fetched := Prediction.BRANCH_HISTORY
       }
 
       pcPort.valid := doIt
@@ -250,8 +247,8 @@ class BranchPlugin(val layer : LaneLayer,
 
       val IS_JAL = insert(BRANCH_CTRL === BranchCtrlEnum.JAL)
       val IS_JALR = insert(BRANCH_CTRL === BranchCtrlEnum.JALR)
-      val rdLink  = List[Bits](1,5).map(UOP(Const.rdRange) === _).orR
-      val rs1Link = List[Bits](1,5).map(UOP(Const.rs1Range) === _).orR
+      val rdLink  = List[Bits](1,5).map(UOP(Const.rdRange) === _).orR // See the RISC-V calling conventions specification
+      val rs1Link = List[Bits](1,5).map(UOP(Const.rs1Range) === _).orR // See the RISC-V calling conventions specification
       val rdEquRs1 = UOP(Const.rdRange) === UOP(Const.rs1Range)
 
       ls.learnLock.await()

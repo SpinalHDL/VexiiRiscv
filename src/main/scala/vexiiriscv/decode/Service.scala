@@ -27,6 +27,8 @@ trait DecoderService {
 trait AlignerService{
   val lastSliceData, firstSliceData = mutable.LinkedHashSet[NamedType[_ <: Data]]()
   val elaborationLock = Retainer()
+  def addLastSliceDataCtx(that : NamedType[_ <: Data]) = lastSliceData += that
+  def addFirstSliceDataCtx(that : NamedType[_ <: Data]) = firstSliceData += that
 }
 
 trait InjectorService {

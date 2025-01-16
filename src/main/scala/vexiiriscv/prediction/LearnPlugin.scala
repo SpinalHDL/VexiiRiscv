@@ -16,6 +16,7 @@ trait ForgetSource{
   def getForgetPort() : Flow[ForgetCmd]
 }
 
+// Aggregate all of LearnSource's ports into a single one for the BTB to use.
 class LearnPlugin extends FiberPlugin with LearnService {
   override def getLearnPort(): Flow[LearnCmd] = logic.learn
 
@@ -25,8 +26,8 @@ class LearnPlugin extends FiberPlugin with LearnService {
 
     val ups = host.list[LearnSource].flatMap(_.getLearnPort())
     val learn = Flow(LearnCmd(learnCtxElements.toSeq))
-
-//    learn << StreamArbiterFactory().noLock.roundRobin.on(ups.map(_.queueLowLatency(8))).toFlow; println("REMOVE ME QUEUE")// coremark => 8.3% downto 7.7%
-    learn << StreamArbiterFactory().noLock.roundRobin.on(ups.map(_.pipelined(m2s = ups.size > 1))).toFlow
+    val buffered = ups.map(_.pipelined(m2s = ups.size > 1)) // As we may have multiple learning sources and we can only learn 1 per cycle, let's add some buffer
+    val arbitrated = StreamArbiterFactory().noLock.roundRobin.on(buffered)
+    learn << arbitrated.toFlow
   }
 }

@@ -53,6 +53,7 @@ class DispatchPlugin(var dispatchAt : Int,
   val fenceOlderOps = mutable.LinkedHashSet[MicroOp]()
   def fenceOlder(op : MicroOp) = fenceOlderOps += op
   def haltDispatchWhen(cond : Bool) = api.haltDispatch.setWhen(cond)
+  def addDispatchCtx(that : NamedType[_ <: Data]) = hmKeys += that
 
   val api = during build new Area{
     val haltDispatch = False

@@ -19,6 +19,11 @@ import vexiiriscv.execute.BranchPlugin
 
 import scala.util.Random
 
+/**
+ * Implement the Branch Target Buffer in the fetch stages, aswell as the Return Address Stack.
+ * See https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/BranchPrediction/index.html#btbplugin for more doc.
+ * in particular to understand the chunk topology.
+ */
 class BtbPlugin(var sets : Int,
                 var chunks : Int,
                 var rasDepth : Int = 4,
@@ -61,6 +66,8 @@ class BtbPlugin(var sets : Int,
     retainer.release()
 
     val withRas = rasDepth > 0
+
+    // Imeplement the RAS stack using a simple RAM
     val ras = withRas generate new Area{
       assert(HART_COUNT.get == 1)
       val mem = new Area{
@@ -84,15 +91,6 @@ class BtbPlugin(var sets : Int,
       write.valid := ptr.pushIt
       write.address := ptr.push
       write.data.assignDontCare()
-
-      //Restore the RAS ptr on reschedules
-//      val reschedule = commit.reschedulingPort(onCommit = false)
-//      val healPush = rob.readAsyncSingle(RAS_PUSH_PTR, reschedule.robId)
-//      val healPop  = healPush-1
-//      when(reschedule.valid){
-//        ptr.push := healPush
-//        ptr.pop  := healPop
-//      }
     }
 
     val wordBytesWidth = log2Up(Fetch.WORD_WIDTH/8)
@@ -126,6 +124,8 @@ class BtbPlugin(var sets : Int,
       val hash = getHash(cmd.pcOnLastSlice)
 
       val port = mem.writePortWithMask(chunks)
+      // Here is a important tricky, only make the BTB lean when it badly predicted the target of a taken jump/branch.
+      // This allow to not discard previously learned instructions for new instruction which do not need prediction. (reduce btb trashing)
       port.valid := cmd.valid && withCondPrediction.mux(cmd.badPredictedTarget && cmd.taken, cmd.wasWrong || cmd.badPredictedTarget)
       port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
       port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
@@ -140,6 +140,7 @@ class BtbPlugin(var sets : Int,
       }
     }
 
+    // We need to be able to unlearn prediction on instruction which aren't jump/branch.
     val onForget = new Area{
       val cmd = host[ForgetSource].getForgetPort()
       val hash = getHash(cmd.pcOnLastSlice)
@@ -160,14 +161,15 @@ class BtbPlugin(var sets : Int,
       }
     }
 
-    val readPort = mem.readSyncPort()  //TODO , readUnderWrite = readFirst would save area/ipc/fmax on FPGA which support it, same for gshare
+    val readPort = mem.readSyncPort()
     val readCmd = new fpp.Fetch(readAt){
       readPort.cmd.valid := isReady
       readPort.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
-//      val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
-//      haltWhen(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload) //That create a too long combinatorial path
 
       val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
+      // To fix read during write conflicts, we just prevent the pipeline from progressing when we make the BTB learn stuff.
+      // This implementation relax timings on the BTB read port, at the cost of IPC.
+      // Note that this implementation is compabitle with a single port ram BTB (for ASIC)
       haltWhen(onLearn.port.valid) //Omit readPort.cmd.payload to avoid creating long path. Also, this is inline with a single port RW BTB memory.
     }
 
@@ -183,7 +185,6 @@ class BtbPlugin(var sets : Int,
       }
       val hitCalc = new fpp.Fetch(hitAt) {
         val HIT = insert(readRsp.ENTRY.hash === getHash(WORD_PC) && getSlice(chunkId, readRsp.ENTRY.sliceLow) >= WORD_PC(SLICE_RANGE.get))
-//        HIT clearWhen(readCmd.HAZARDS(chunkId))
         assert(!(isValid && readCmd.HAZARDS(chunkId)))
       }
       val predict = new fpp.Fetch(jumpAt) {
@@ -218,19 +219,6 @@ class BtbPlugin(var sets : Int,
         ras.ptr.popIt setWhen(doIt && entry.isPop)
       }
 
-//      val pushPc = CombInit(this (WORD_PC))
-//      pushPc(SLICE_RANGE) := doItSlice
-//      val pushValue = pushPc + SLICE_BYTES.get
-//
-//      if (withRas) {
-//        ras.write.data := pushValue
-//        when(doIt) {
-//          ras.ptr.pushIt := entry.isPush
-//          ras.ptr.popIt := entry.isPop
-//        }
-//      }
-
-
       flushPort.valid := doIt
       flushPort.self := False
       flushPort.hartId := HART_ID
@@ -243,6 +231,7 @@ class BtbPlugin(var sets : Int,
       WORD_JUMP_SLICE := doItSlice
       WORD_JUMP_PC := pcTarget << Fetch.SLICE_RANGE_LOW
 
+      // Apply the branch prediction to the current branch history
       val history = historyPort.map { port =>
         new Area {
           val layers = List.fill(chunks + 1)(new Area {
@@ -274,6 +263,7 @@ class BtbPlugin(var sets : Int,
       }
     }
 
+    // Ensure the BTB ram is cleared on reset. Else we get siulation x-prop :(
     val initializer = bootMemClear generate new Area {
       val counter = Reg(UInt(log2Up(sets max rasDepth) + 1 bits)) init (0)
       val busy = !counter.msb
