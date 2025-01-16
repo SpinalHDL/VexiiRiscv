@@ -19,8 +19,8 @@ import scala.collection.mutable.ArrayBuffer
 
 case class MmuStorageLevel(id : Int,
                            ways : Int,
-                           depth : Int){
-  assert(isPow2(depth))
+                           sets : Int){
+  assert(isPow2(sets))
 }
 
 case class MmuStorageParameter(levels : Seq[MmuStorageLevel],
@@ -76,6 +76,16 @@ object MmuSpec{
   )
 }
 
+
+/**
+ * Implement the RISC-V MMU using a N-way set associative TLB storage. This fit very well with FPGA which have distributed memories.
+ * For FPGA that do not have that, the MmuPortParameter can be configured to have a low number of sets or use 1 cycle delay to be inferable as block ram.
+ *
+ * Plugins which uses the MmuPlugin can request TLB storage, then they can require the MmuPlugin to bind a new port on a existing pipeline using that TLB storage.
+ * A given TLB storage can be used by multiple MMU ports.
+ *
+ * MMU miss will not by itself trigger a TLB refill. This is instead triggered by the TrapPlugin.
+ */
 class MmuPlugin(var spec : MmuSpec,
                 var physicalWidth : Int) extends FiberPlugin with AddressTranslationService{
 
@@ -150,8 +160,6 @@ class MmuPlugin(var spec : MmuSpec,
     val access = host[DBusAccessService]
     val ram = host[CsrRamService]
     val pcs = host.get[PerformanceCounterService]
-//    val fetch = host[FetchPlugin]
-
 
     val csrLock = retains(csr.csrLock, ram.csrLock)
     val accessLock = retains(access.accessRetainer)
@@ -218,17 +226,18 @@ class MmuPlugin(var spec : MmuSpec,
     portsLock.await()
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
+    // Implement the hardware for all the TLB storages
     val storages = for(ss <- storageSpecs) yield new Composite(ss, "logic", false){
       val sl = for(e <- ss.p.levels) yield new Area{
         val slp = e
         val level = spec.levels(slp.id)
-        def newEntry() = StorageEntry(slp.id, slp.depth)
-        val ways = List.fill(slp.ways)(Mem.fill(slp.depth)(newEntry()))
-        val lineRange = level.virtualRange.low + log2Up(slp.depth) -1 downto level.virtualRange.low
+        def newEntry() = StorageEntry(slp.id, slp.sets)
+        val ways = List.fill(slp.ways)(Mem.fill(slp.sets)(newEntry()))
+        val lineRange = level.virtualRange.low + log2Up(slp.sets) -1 downto level.virtualRange.low
 
         val write = new Area{
           val mask    = Bits(slp.ways bits)
-          val address = UInt(log2Up(slp.depth) bits)
+          val address = UInt(log2Up(slp.sets) bits)
           val data    = newEntry()
 
           mask := 0
@@ -266,6 +275,7 @@ class MmuPlugin(var spec : MmuSpec,
     }
 
 
+    // Implement the hardware of very MMU ports on their respective pipelines / storages
     val portSpecsSorted = portSpecs.sortBy(_.ss.p.priority).reverse
     val ports = for(ps <- portSpecsSorted) yield new Composite(ps.rsp, "logic", false){
       import ps._
@@ -330,7 +340,7 @@ class MmuPlugin(var spec : MmuSpec,
       }
     }
 
-
+    // Implement the TLB storage refill FSM
     val refill = new StateMachine{
       val IDLE = new State
       val CMD, RSP = List.fill(spec.levels.size)(new State)
@@ -427,7 +437,7 @@ class MmuPlugin(var spec : MmuSpec,
             storageLevel.write.mask                 := UIntToOh(storageLevel.allocId).andMask(sel).resized
             storageLevel.write.address              := virtual(storageLevel.lineRange)
             storageLevel.write.data.valid           := True
-            storageLevel.write.data.virtualAddress  := virtual(specLevel.virtualOffset + log2Up(storageLevel.slp.depth), widthOf(storageLevel.write.data.virtualAddress) bits)
+            storageLevel.write.data.virtualAddress  := virtual(specLevel.virtualOffset + log2Up(storageLevel.slp.sets), widthOf(storageLevel.write.data.virtualAddress) bits)
             storageLevel.write.data.physicalAddress := (load.levelToPhysicalAddress(levelId) >> specLevel.virtualOffset).resized
             storageLevel.write.data.allowRead       := load.flags.R
             storageLevel.write.data.allowWrite      := load.flags.W && load.flags.D
@@ -487,7 +497,7 @@ class MmuPlugin(var spec : MmuSpec,
     //Assume no mmu access are done to the given hart while being invalidated
     val invalidate = new Area{
       val arbiter = StreamArbiterFactory().roundRobin.transactionLock.buildOn(invalidationPorts.map(_.cmd))
-      val depthMax = storageSpecs.map(_.p.levels.map(_.depth).max).max
+      val depthMax = storageSpecs.map(_.p.levels.map(_.sets).max).max
       val counter = Reg(UInt(log2Up(depthMax) bits))
       val busy = RegInit(False)
 

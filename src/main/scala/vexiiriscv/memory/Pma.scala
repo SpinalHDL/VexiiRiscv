@@ -32,7 +32,12 @@ case class PmaPort(addressWidth : Int, sizes : Seq[Int], ops : Seq[PmaOp]) exten
   val rsp = new PmaRsp()
 }
 
-
+/**
+ * Implement the hardware to translate an address into its Physical Memory Access permitions.
+ * For VexiiRiscv the permitions are :
+ * - fault => is there something at that address ?
+ * - io => is it an IO memory region (strongly ordered / with side effects) ?
+ */
 class PmaLogic(port : PmaPort, regions : Seq[PmaRegion]) extends Area{
   import port._
   val hitsTerms = ArrayBuffer[Masked]()
