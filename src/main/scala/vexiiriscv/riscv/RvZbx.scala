@@ -4,6 +4,9 @@ import spinal.core._
 
 import scala.collection.mutable
 
+/**
+ * Specifies the RISC-V bit-manip instructions
+ */
 object RvZbx {
   import IntRegFile._
 

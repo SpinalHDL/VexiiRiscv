@@ -60,16 +60,6 @@ case class RegFileRead(rfpp : RegFilePortParam, withReady : Boolean) extends Bun
   }
 }
 
-//case class RegFileBypass(addressWidth : Int, dataWidth : Int, priority : Int) extends Bundle with IMasterSlave{
-//  val valid = Bool()
-//  val address = UInt(addressWidth bits)
-//  val data = Bits(dataWidth bits)
-//
-//  override def asMaster() = {
-//    out(valid, address, data)
-//  }
-//}
-
 trait RegfileService {
   val elaborationLock = Retainer()
 

@@ -8,6 +8,9 @@ case class DecompressedInstruction() extends Bundle{
   val illegal = Bool()
 }
 
+/**
+ * Implement a RISC-V RVC to regular instruction hardware decompressor
+ */
 object RvcDecompressor{
   def main(args: Array[String]): Unit = {
     SpinalVerilog(new Component{
