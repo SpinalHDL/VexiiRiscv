@@ -585,6 +585,22 @@ class ParamSimple(){
     opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
+    opt[Unit]("dual-issue") action { (v, c) =>
+      decoders = 2
+      lanes = 2
+    }
+    opt[Unit]("max-ipc") action { (v, c) =>
+      withBtb = true
+      withGShare = true
+      withRas = true
+      allowBypassFrom = 0
+      divRadix = 4
+      withLateAlu = true
+      if(lanes > 1) {
+        withAlignerBuffer = true
+        withDispatcherBuffer = true
+      }
+    }
   }
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
@@ -728,7 +744,6 @@ class ParamSimple(){
     val early0 = new LaneLayer("early0", lane0, priority = 0)
     plugins += lane0
 
-//    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
