@@ -10,7 +10,9 @@ import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv.Riscv.XLEN
 import vexiiriscv.riscv._
 
-
+/**
+ * Add the floating point add instruction the CPU. Rely on the FpuAddSharedPlugin to do the maths.
+ */
 class FpuAddPlugin(val layer : LaneLayer,
                    addAt : Int = 0) extends FiberPlugin{
   val p = FpuUtils

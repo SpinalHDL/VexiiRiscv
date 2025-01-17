@@ -11,8 +11,9 @@ import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, ROUNDING, muxDouble, muxRv64}
 import vexiiriscv.riscv._
 
 
-
-
+/**
+ * Implement the RISC-V floating point to integer convertions
+ */
 class FpuF2iPlugin(val layer : LaneLayer,
                    var halfRate : Boolean = true, //Hard to squize it tall in 3 stages => improve fmax with halfRate
                    var setupAt: Int = 0,
