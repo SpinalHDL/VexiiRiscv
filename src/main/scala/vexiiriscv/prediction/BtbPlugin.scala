@@ -26,6 +26,7 @@ import scala.util.Random
  */
 class BtbPlugin(var sets : Int,
                 var chunks : Int,
+                var dualPortRam : Boolean,
                 var rasDepth : Int = 4,
                 var hashWidth : Int = 16,
                 var readAt : Int = 0,
@@ -113,6 +114,35 @@ class BtbPlugin(var sets : Int,
 
     // This memory could be implemented as a single port ram, as that ram is only updated on miss predicted stuff
     val mem = Mem.fill(sets)(Vec.fill(chunks)(BtbEntry())).addAttribute("ram_style", "block")
+    val memWrite = Flow(MemWriteCmdWithMask(mem, chunks))
+    val memRead = MemReadPort(mem.wordType(), mem.addressWidth)
+
+    val memDp = dualPortRam generate new Area{
+      val wp = mem.writePortWithMask(chunks)
+      wp << memWrite
+
+      val rp = mem.readSyncPort()
+      rp.cmd << memRead.cmd
+      memRead.rsp := rp.rsp
+    }
+
+    val memSp = !dualPortRam generate new Area{
+      val readWin = CombInit(!memWrite.valid)
+
+      val port = mem.readWriteSync(
+        readWin.mux(memRead.cmd.payload, memWrite.address),
+        memWrite.data,
+        memWrite.valid || memRead.cmd.valid,
+        !readWin,
+        memWrite.mask
+      )
+
+      // Ensure that write to the memory keep the read port stable
+      val bufferLoad = RegNext(memRead.cmd.valid && readWin) init(False)
+      val buffer = RegNextWhen(port, bufferLoad)
+      memRead.rsp := bufferLoad.mux(port, buffer)
+    }
+
     if(GenerationFlags.simulation){
       val rand = new Random(42)
       mem.initBigInt(List.fill(mem.wordCount)(BigInt(mem.width, rand)))
@@ -123,13 +153,12 @@ class BtbPlugin(var sets : Int,
       val cmd = host[LearnPlugin].getLearnPort()
       val hash = getHash(cmd.pcOnLastSlice)
 
-      val port = mem.writePortWithMask(chunks)
       // Here is a important tricky, only make the BTB lean when it badly predicted the target of a taken jump/branch.
       // This allow to not discard previously learned instructions for new instruction which do not need prediction. (reduce btb trashing)
-      port.valid := cmd.valid && withCondPrediction.mux(cmd.badPredictedTarget && cmd.taken, cmd.wasWrong || cmd.badPredictedTarget)
-      port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
-      port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
-      for(data <- port.data) {
+      memWrite.valid := cmd.valid && withCondPrediction.mux(cmd.badPredictedTarget && cmd.taken, cmd.wasWrong || cmd.badPredictedTarget)
+      memWrite.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
+      memWrite.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
+      for(data <- memWrite.data) {
         data.hash := hash
         data.sliceLow := cmd.pcOnLastSlice(SLICE_LOW_RANGE)
         data.pcTarget := cmd.pcTarget >> Fetch.SLICE_RANGE_LOW
@@ -145,12 +174,11 @@ class BtbPlugin(var sets : Int,
       val cmd = host[ForgetSource].getForgetPort()
       val hash = getHash(cmd.pcOnLastSlice)
 
-      import onLearn.port
       when(cmd.valid){
-        port.valid := cmd.valid
-        port.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
-        port.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
-        for(data <- port.data) {
+        memWrite.valid := cmd.valid
+        memWrite.address := (cmd.pcOnLastSlice >> wordBytesWidth).resized
+        memWrite.mask := UIntToOh(cmd.pcOnLastSlice(SLICE_HIGH_RANGE))
+        for(data <- memWrite.data) {
           data.hash := ~hash
           data.sliceLow := cmd.pcOnLastSlice(SLICE_LOW_RANGE)
           data.isBranch := False
@@ -161,16 +189,15 @@ class BtbPlugin(var sets : Int,
       }
     }
 
-    val readPort = mem.readSyncPort()
     val readCmd = new fpp.Fetch(readAt){
-      readPort.cmd.valid := isReady
-      readPort.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
+      memRead.cmd.valid := isReady
+      memRead.cmd.payload := (WORD_PC >> wordBytesWidth).resize(mem.addressWidth)
 
-      val HAZARDS = insert(onLearn.port.mask.andMask(onLearn.port.valid && onLearn.port.address === readPort.cmd.payload))
+      val HAZARDS = insert(memWrite.mask.andMask(memWrite.valid && memWrite.address === memRead.cmd.payload))
       // To fix read during write conflicts, we just prevent the pipeline from progressing when we make the BTB learn stuff.
       // This implementation relax timings on the BTB read port, at the cost of IPC.
       // Note that this implementation is compabitle with a single port ram BTB (for ASIC)
-      haltWhen(onLearn.port.valid) //Omit readPort.cmd.payload to avoid creating long path. Also, this is inline with a single port RW BTB memory.
+      haltWhen(memWrite.valid) //Omit readPort.cmd.payload to avoid creating long path. Also, this is inline with a single port RW BTB memory.
     }
 
 
@@ -180,7 +207,7 @@ class BtbPlugin(var sets : Int,
 
     val chunksLogic = for (chunkId <- chunksRange) yield new Area {
       val readRsp = new fpp.Fetch(readAt + 1) {
-        val ENTRY = insert(readPort.rsp(chunkId))
+        val ENTRY = insert(memRead.rsp(chunkId))
         KeepAttribute(this(ENTRY))
       }
       val hitCalc = new fpp.Fetch(hitAt) {
@@ -269,10 +296,10 @@ class BtbPlugin(var sets : Int,
       val busy = !counter.msb
       when(busy) {
         counter := counter + 1
-        onLearn.port.valid := True
-        onLearn.port.mask.setAll
-        onLearn.port.address := counter.resized
-        for (data <- onLearn.port.data) {
+        memWrite.valid := True
+        memWrite.mask.setAll
+        memWrite.address := counter.resized
+        for (data <- memWrite.data) {
           data.hash.setAll
           data.sliceLow := 0
           data.isBranch := False

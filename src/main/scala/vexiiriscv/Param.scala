@@ -106,6 +106,7 @@ class ParamSimple(){
   var withDiv = false
   var withRva = false
   var withRvf = false
+  var btbDualPortRam = true
   var skipFma = false
   var fpuFmaFullAccuracy = true
   var fpuIgnoreSubnormal = false
@@ -249,6 +250,7 @@ class ParamSimple(){
   )
 
 
+  def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt)
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
@@ -534,6 +536,7 @@ class ParamSimple(){
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
     opt[Unit]("without-ras") action { (v, c) => withRas = false }
+    opt[Unit]("btb-single-port-ram") action { (v, c) => btbDualPortRam = false }
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0; storeRs2Late = true }
     opt[Unit]("with-store-rs2-late") action { (v, c) => storeRs2Late = true }
     opt[Int]("btb-sets") action { (v, c) => btbSets = v }
@@ -631,6 +634,7 @@ class ParamSimple(){
       plugins += new prediction.BtbPlugin(
         sets = btbSets / decoders,
         chunks = decoders,
+        dualPortRam = btbDualPortRam,
         rasDepth = if(withRas) 4 else 0,
         hashWidth = btbHashWidth,
         readAt = 0,
@@ -707,7 +711,7 @@ class ParamSimple(){
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = fetchL1Enable.mux(2, 1+fetchForkAt),
+      fetchAt = alignerPluginFetchAt,
       lanes = decoders,
       withBuffer = withAlignerBuffer
     )

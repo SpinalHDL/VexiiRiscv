@@ -589,8 +589,8 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("bypass", List(0,0,0,1,2,3,100).map(v => s"--allow-bypass-from $v")) //More weight to fully bypassed configs
   addDim("xlen", List(32, 64).map(v => s"--xlen $v"))
   addDim("prediction", List("", "--with-btb", "--with-btb --with-ras", "--with-btb --with-ras --with-gshare"))
-//  addDim("prediction-relaxed", List("", "--relaxed-btb")) //incompatible with single stage fetch pipe
-
+  addDim("btbSp", List("", "--btb-single-port-ram"))
+  addDim("relaxedBranch", List("", "--relaxed-branch"))
   addDim("priv", List("", "--with-supervisor", "--with-user"))
   addDim("rvm", List("--without-mul --without-div", "--with-mul --with-div"))
   addDim("divParam", List(2, 4).flatMap(radix => List("", "--div-ipc").map(opt => s"$opt --div-radix $radix")))
@@ -644,6 +644,12 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
   }
   addDim("pmp", List("", "--pmp-size=8"))
+  dimensions += new Dimensions[ParamSimple]("btbRelaxed") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(state.alignerPluginFetchAt < 2) return ""
+      return List("", "--relaxed-btb").randomPick(random)
+    }
+  }
 
 
 //  addTest(default)
