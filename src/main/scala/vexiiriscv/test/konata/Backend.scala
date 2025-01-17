@@ -55,6 +55,17 @@ class Thread{
   var cycleLock = -1l
 }
 
+/**
+ * This konata backend symplify the way a konata file can be generated, by handeling a buffer of in progress instructions.
+ *
+ * For each hardware thread, the user need to have invoked the newThread function once. Each Thread returned contains a cycleLock timestamp
+ * which specifies until which time the pendings instruction for the given thread are full completed can could be flushed out.
+ *
+ * The user can push instructions into its pendings hashmap, using the instruction creation timestamp as a key.
+ * Instructions need to be  have their "elements" lists of Command already populated, Commands having a timestamp and being able to write themself as a konata string.
+ *
+ * The user can periodicaly call the flush function, this will flush all the instructions until the minimal threads.cycleLock
+ */
 class Backend(f : File) {
   FileUtils.forceMkdir(f.getParentFile)
   val bf = new BufferedWriter(new FileWriter(f))

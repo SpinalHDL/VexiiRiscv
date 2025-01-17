@@ -21,6 +21,16 @@ import vexiiriscv.test.konata.{Comment, Flush, Retire, Spawn, Stage}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * VexiiRiscvProbe can be used in a simulation to probe the activities of VexiiRiscv
+ * and notifies a list of TraceBackend with what happened (ex commit, memory load, memory store, trap, ...)
+ *
+ * There is a few usefull backends :
+ * - RVLS to check that the simulated VexiiRiscv CPU is doing things right
+ * - A file backend, to keep a text file trace of what happened (instead of having to look into a waveform)
+ *
+ * It also keep a trace of various performance metrics, as the IPC, branch miss rate, ...
+ */
 class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvls : Boolean = true){
   var enabled = true
   var trace = true
@@ -39,7 +49,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   val decodeIdWidth = get(Decode.DOP_ID_WIDTH)
   val microOpIdWidth = get(Decode.UOP_ID_WIDTH)
   val microOpIdMask = (1 << microOpIdWidth)-1
-  val withFetch = true //cpu.host[FetchPipelinePlugin].idToFetch.keys.max > 1
+  val withFetch = true
 
   val disass = try {
     if(!withRvls) 0 else rvls.jni.Frontend.newDisassemble(xlen)
@@ -62,7 +72,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     this
   }
 
-
+  // Figure out the PMA (Physical Memory Attributes) from the plugins themself and notify the backends.
   def autoRegions(): Unit = {
     cpu.host.services.foreach {
       case p: LsuCachelessPlugin => p.regions.foreach { region =>
@@ -288,25 +298,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       if (decode.spawnAt != -1) {
         i += new Comment(decode.spawnAt, f"${decode.pc}%X : $instruction")
       }
-      if(decode.fireAt != -1){//} && decode.fireAt < issueAt){
+      if(decode.fireAt != -1){
         i += new Stage(decode.fireAt+1, "D")
       }
-//      if (issueAt != -1) i += new Stage(issueAt, "I")
       if (executeAt != -1) i += new Stage(executeAt, "E")
-//      if (completionAt != -1) i += new Stage(completionAt, "C")
       if (didCommit) {
         i += new Retire(retireAt)
       } else {
         i += new Flush(flushAt max retireAt)
       }
       kb.foreach(_.insert(i))
-
-//        f.write(f"O3PipeView:fetch:${fetch.spawnAt}:0x${decode.pc}%08x:0:${opCounter}:$instruction\n")
-//        f.write(f"O3PipeView:decode:${traceT2s(decode.spawnAt)}\n")
-//        f.write(f"O3PipeView:dispatch:${traceT2s(spawnAt)}\n")
-//        f.write(f"O3PipeView:issue:${traceT2s(executeAt)}\n")
-//        f.write(f"O3PipeView:complete:${traceT2s(completionAt)}\n")
-//        f.write(f"O3PipeView:retire:${traceT2s(completionAt+1)}:store:\n")
     }
 
     def clear() {
@@ -579,10 +580,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
           hart.lastUopId = uopId
           hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
-
-//          if(decode.pc == 0xFFFFFFFF800000c8l){
-//            println("asd")
-//          }
 
           uop.toKonata(hart)
           if (uop.didCommit) {

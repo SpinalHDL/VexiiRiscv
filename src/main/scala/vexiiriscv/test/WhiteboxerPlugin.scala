@@ -18,6 +18,12 @@ import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
 
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * This plugin is here to ease and "standardise" the way a simulation can look at a VexiiRiscv core and figure out what
+ * it is doing. It also generate a large set of easy to read signals that can be read in a waveform.
+ *
+ * All the "Proxy" are there to reduce the overhead of reading hardware signals in a SpinalHDL simulation.
+ */
 class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
 
   val logic = during setup new Logic()
