@@ -16,6 +16,9 @@ import vexiiriscv.riscv.RegfileSpec
 
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * Implement a register file in the CPU and provide an API for other plugins to create read and write access ports
+ */
 class RegFilePlugin(var spec : RegfileSpec,
                     var physicalDepth : Int,
                     var preferedWritePortForInit : String,

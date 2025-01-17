@@ -27,7 +27,7 @@ case class RegFileWrite(rfpp : RegFilePortParam, withReady : Boolean) extends Bu
   val address = UInt(addressWidth bits)
   val data = Bits(dataWidth bits)
   val hartId = UInt(hartIdWidth bits)
-  val uopId = UInt(uopIdWidth bits)
+  val uopId = UInt(uopIdWidth bits) //Used for traces and debug
 
   def fire = if(withReady) valid && ready else valid
 

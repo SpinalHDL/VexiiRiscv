@@ -14,7 +14,10 @@ case class RegFileReadParameter(withReady : Boolean)
 case class RegFileWriteParameter(withReady : Boolean)
 
 
-//The bankCount is currently useless, but maybe useful in the future with execution units which can stall
+/**
+ * Implement a register file with multiple read/write ports and different topology to imeplement those ports
+ * The bankCount is currently useless, but maybe useful in the future with execution units which can stall
+ */
 class RegFileMem(rfpp : RegFilePortParam,
                  readsParameter  : Seq[RegFileReadParameter],
                  writesParameter : Seq[RegFileWriteParameter],
