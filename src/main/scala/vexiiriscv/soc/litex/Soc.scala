@@ -104,6 +104,17 @@ class SocConfig(){
   def withL2 = l2Bytes > 0
 }
 
+/**
+ * This is the VexiiRiscv SoC toplevel used with Litex.
+ * - Based on tilelink for its memory interconnect
+ * - Integrate the PLIC and CLINT peripherals
+ * - Access the main memory through a dedicated AXI bus instead of the regular litex wishbone (for performance reasons)
+ * - Can be multicore
+ * - Implement memory coherency between the code and a AXI DMA access bus
+ * - Has an option L2 cache
+ * - Supports JTAG debug
+ * - Supports a SpinalHDL HDMI and Ethernet controller
+ */
 class Soc(c : SocConfig) extends Component {
 
   import c._
@@ -228,6 +239,8 @@ class Soc(c : SocConfig) extends Component {
       val bridge = new Axi4ToTilelinkFiber(64, 4)
       bridge.up load bus.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.FULL, b = StreamPipe.HALF, r = StreamPipe.FULL)
 
+      // Because the DMA may generate illegal addresses, and tilelink doesn't supports that
+      // we need to filter all memory transactions via this TransactionFilter before it goes any further
       val filter = new fabric.TransferFilter()
       filter.up << bridge.down
 
