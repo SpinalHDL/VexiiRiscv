@@ -1184,6 +1184,5 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     if(withCoherency) c.pip.build()
     tagsWriteArbiter.build()
     bankWriteArbiter.build()
-//    bankReadArbiter.build()
   }
 }

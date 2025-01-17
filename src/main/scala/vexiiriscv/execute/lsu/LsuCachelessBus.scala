@@ -60,19 +60,26 @@ case class LsuCachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth
   }
 }
 
+/**
+ * VexiiRiscv native memory bus used for uncached and IO memory accesses. It it meant to be easily bridged to other memory busses.
+ * Responses are out of order and can be reordered via the id field.
+ * It also supports AMO/LR/SC atomics
+ */
 case class LsuCachelessCmd(p : LsuCachelessBusParam) extends Bundle{
-  val id = UInt(log2Up(p.pendingMax) bits)
+  val id = UInt(log2Up(p.pendingMax) bits) //Unique identifier, only one inflight transaction per ID is allowed
   val write = Bool()
   val address = UInt(p.addressWidth bits)
   val data = Bits(p.dataWidth bit)
   val size = UInt(log2Up(log2Up(p.dataWidth / 8) + 1) bits)
   val mask = Bits(p.dataWidth / 8 bits)
-  val io = Bool() //This is for verification purposes, allowing RVLS to track stuff
-  val fromHart = Bool() //This is for verification purposes, allowing RVLS to track stuff
-  val hartId = UInt(p.hartIdWidth bits)
-  val uopId = UInt(p.uopIdWidth bits)
   val amoEnable = p.withAmo generate Bool()
-  val amoOp = p.withAmo generate Bits(5 bits)
+  val amoOp = p.withAmo generate Bits(5 bits) //See LsuCachelessBusAmo
+
+  // Signals for verification purposes, allowing RVLS to track stuff
+  val io = Bool()
+  val fromHart = Bool()
+  val uopId = UInt(p.uopIdWidth bits)
+  val hartId = UInt(p.hartIdWidth bits)
 }
 
 case class LsuCachelessRsp(p : LsuCachelessBusParam, withId : Boolean = true) extends Bundle{

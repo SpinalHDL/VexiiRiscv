@@ -15,7 +15,7 @@ trait CmoService{
   def withSoftwarePrefetch : Boolean
 }
 
-case class LsuL1InvalidationCmd() extends Bundle //Empty for now
+case class LsuL1InvalidationCmd() extends Bundle //Empty for now, as we flush the whole cache
 case class LsuL1InvalidationBus() extends Bundle {
   val cmd = Stream(LsuL1InvalidationCmd())
 }

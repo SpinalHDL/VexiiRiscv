@@ -13,16 +13,18 @@ import scala.collection.mutable.ArrayBuffer
 
 object AguPlugin extends AreaObject{
   val SEL = Payload(Bool())
-//  val AMO = Payload(Bool())
-//  val SC = Payload(Bool())
-//  val LR = Payload(Bool())
   val LOAD  = Payload(Bool())
   val STORE = Payload(Bool())
-  val ATOMIC   = Payload(Bool())
-  val SIZE = Payload(UInt(2 bits))
+  val ATOMIC = Payload(Bool()) //LR => ATOMIC && LOAD && !STORE, SC => ATOMIC && !LOAD && STORE, AMO => ATOMIC && LOAD && STORE
+  val SIZE = Payload(UInt(2 bits)) //bytes = 1 << SIZE
   val FLOAT = Payload(Bool())
 }
 
+/**
+ * The AguFrontend provide an Area which define all RISC-V memory load/store/atomic instruction/microops aswell as a set
+ * of decodings (see AguPlugin object above)
+ * It can be used by various LSU implementations as a base.
+ */
 class AguFrontend(
     layer: LaneLayer,
     host: PluginHost
