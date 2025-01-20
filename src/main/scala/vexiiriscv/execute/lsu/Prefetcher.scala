@@ -243,18 +243,19 @@ class PrefetcherRptPlugin(sets : Int,
 
 /*
 Benchmark from ext/NaxSoftware/baremetal/prefetch_c :
-L 1x416s 0.74 B/cyc 5513 cyc
-L 1x512s 0.77 B/cyc 5272 cyc
-L 1x512ms 0.78 B/cyc 5248 cyc
-L 1x 2.55 B/cyc 6417 cyc
-L 1x 2.60 B/cyc 6293 cyc
-L 4x 4.86 B/cyc 3368 cyc
-L 16x 5.52 B/cyc 2963 cyc
-L 16x 6.82 B/cyc 9605 cyc
-S 1x512s 0.64 B/cyc 6329 cyc
-S 1x512ms 0.65 B/cyc 6285 cyc
-S 1x 2.64 B/cyc 6202 cyc
-S 4x 3.21 B/cyc 5092 cyc
-S 16x 3.55 B/cyc 18433 cyc
-LLS 4x 1.33 B/cyc 12246 cyc
+--load-elf ext/NaxSoftware/baremetal/prefetch_c/build/rv64ima/prefetch_c.elf --memory-latency=30 --no-rvls-check --xlen=64 --max-ipc --performance-counters=0 --lsu-l1-mem-data-width-min=128 --with-lsu-l1 --with-rvm
+L 1x416s 1.05 B/cyc 3884 cyc
+L 1x512s 0.86 B/cyc 4752 cyc
+L 1x512ms 0.84 B/cyc 4838 cyc
+L 1x 2.56 B/cyc 6395 cyc
+L 1x 2.58 B/cyc 6342 cyc
+L 4x 4.88 B/cyc 3352 cyc
+L 16x 5.47 B/cyc 2994 cyc
+L 16x 6.84 B/cyc 9575 cyc
+S 1x512s 0.71 B/cyc 5713 cyc
+S 1x512ms 0.67 B/cyc 6111 cyc
+S 1x 2.62 B/cyc 6245 cyc
+S 4x 3.95 B/cyc 4145 cyc
+S 16x 4.32 B/cyc 15147 cyc
+LLS 4x 1.50 B/cyc 10855 cyc
  */
