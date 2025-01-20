@@ -603,6 +603,16 @@ class ParamSimple(){
         withAlignerBuffer = true
         withDispatcherBuffer = true
       }
+      lsuMemDataWidthMin = 64
+      lsuL1Sets = 64
+      lsuL1Ways = 4
+      lsuL1RefillCount = 8
+      lsuL1WritebackCount = 8
+      lsuStoreBufferSlots = 4
+      lsuStoreBufferOps = 32
+      withLsuBypass = true
+      lsuSoftwarePrefetch = true
+      lsuHardwarePrefetch = "rpt"
     }
   }
 
