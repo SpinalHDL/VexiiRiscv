@@ -651,6 +651,13 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
   }
 
+  dimensions += new Dimensions[ParamSimple]("physicalWidth") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(state.xlen != 64) return ""
+      return s"--physical-width=${List(36,37,38).randomPick(random)}"
+    }
+  }
+
 
 //  addTest(default)
   // Add a simple test for each dimensions's positions

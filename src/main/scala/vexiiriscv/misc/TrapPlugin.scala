@@ -507,14 +507,14 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               goto(JUMP) //improvment: shave one cycle
               when(atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
                 pending.state.exception := True
-                switch(atsPorts.refill.rsp.pageFault ## pending.state.arg(1 downto 0)){
+                switch(atsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
-                  add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
-                  add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
-                  add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT)
-                  add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT)
-                  add(TrapArg.LOAD  | 4, CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT)
-                  add(TrapArg.STORE | 4, CSR.MCAUSE_ENUM.STORE_PAGE_FAULT)
+                  add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
+                  add(TrapArg.LOAD  | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
+                  add(TrapArg.STORE | 4, CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT)
+                  add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT)
+                  add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT)
+                  add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_PAGE_FAULT)
                 }
                 goto(TRAP_TVAL)
               }
