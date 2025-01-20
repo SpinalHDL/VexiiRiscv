@@ -830,7 +830,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           e.loadMiss   := e.loadAccess && !HAZARD && MISS
         }
 
-        val canRefill = wayWriteReservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard
+        val canRefill = !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard
         val canFlush = wayWriteReservation.win && !writeback.full && !refill.slots.map(_.valid).orR && !writebackHazard
         val needFlushs = CombInit(loadedDirties)
         val needFlushOh = OHMasking.firstV2(needFlushs)
