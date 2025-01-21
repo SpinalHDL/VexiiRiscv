@@ -3,9 +3,23 @@ package vexiiriscv.scratchpad
 import jssc.{SerialPort, SerialPortException}
 import spinal.lib.DoCmd
 
+/**
+ * This is hardware test utility which cycle debian boot again and again to test stability.
+ * - Assume a FPGA board is preconfigured with a litex bitstream and boot debian automaticaly on power-on.
+ * - This utilty connect to a ttyUSB to monitor and sent stimulus to the board's debian.
+ * - Once a full boot/shutdown sequance id done, it restart the board using openocd/JTAG
+ */
 object BootTester extends App{
+  var tty = "/dev/ttyUSB2"
+  var openocdReboot = "openocd -f ft2232h_breakout.cfg  -f vexiiriscv_jtag.tcl -f debug.tcl", "src/main/tcl/openocd"
+
+  assert(new scopt.OptionParser[Unit]("tool") {
+    opt[String]("tty") action { (v, c) => tty = v }
+    opt[String]("openocd-reboot") action { (v, c) => openocdReboot = v }
+  }.parse(args, Unit).nonEmpty)
+
   var counter = 0
-  val serialPort = new SerialPort("/dev/ttyUSB2")
+  val serialPort = new SerialPort(tty)
   var state = "LOGIN"
   def tx(that : String): Unit = {
     for(c <- that){
@@ -15,7 +29,7 @@ object BootTester extends App{
   }
 
   def reboot(): Unit = {
-    DoCmd.doCmd("openocd -f ft2232h_breakout.cfg  -f vexiiriscv_jtag.tcl -f debug.tcl", "src/main/tcl/openocd")
+    DoCmd.doCmd(openocdReboot)
   }
 
   def notify(line : String): Unit = {
@@ -48,11 +62,6 @@ object BootTester extends App{
         state = "LOGIN"
       }
     }
-//    if(line.contains("Debian GNU/Linux trixie/sid nexys ttyLXU0")){
-//      println("MIAOUUUU")
-//      tx("root\nroot")
-//      DoCmd.doCmd("openocd -f ft2232h_breakout.cfg  -f vexiiriscv_jtag.tcl -c reset -c exit", "src/main/tcl/openocd")
-//    }
   }
 
   reboot()
