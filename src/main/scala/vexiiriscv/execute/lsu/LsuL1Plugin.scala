@@ -19,24 +19,25 @@ import vexiiriscv.riscv.Riscv.{RVA, RVC}
 import scala.collection.mutable.ArrayBuffer
 
 object LsuL1 extends AreaObject{
-  // -> L1
-  val ABORD, SKIP_WRITE = Payload(Bool())
-  val SEL = Payload(Bool())
-  val LOAD, STORE, ATOMIC, FLUSH, PREFETCH = Payload(Bool())
-  val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS)
+  // LSU -> L1
+  val ABORD, SKIP_WRITE = Payload(Bool()) // Used on ctrl stage to prevent side effect
+  val SEL = Payload(Bool()) // Enable the L1
+  val LOAD, STORE, ATOMIC, FLUSH, PREFETCH = Payload(Bool()) // Specifies the kind of memory request
+  val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS) // Address before the MMU, can only use the 4K page LSB
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
   val MASK = Payload(Bits(Riscv.LSLEN / 8 bits)) //Also needed for loads
   val SIZE = Payload(UInt(log2Up(log2Up(Riscv.LSLEN / 8+1)) bits)) //Also needed for loads
-  val WAIT_WRITEBACK = Payload(cloneOf(WRITEBACK_BUSY.get)) //Also needed for loads
-  val WAIT_REFILL = Payload(cloneOf(REFILL_BUSY.get)) //Also needed for loads
 
-  // L1 ->
+  // L1 -> LSU
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
-  val HAZARD, MISS, MISS_UNIQUE, FAULT, FLUSH_HAZARD = Payload(Bool()) //Note that MISS, MISS_UNIQUE are doing forward progress
+  val HAZARD, MISS, MISS_UNIQUE, FAULT, FLUSH_HAZARD = Payload(Bool()) //From the ctrl stage, provide the status of the request to the LSU
   val FLUSH_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
-  val REFILL_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
+  val REFILL_HIT = Payload(Bool()) // A ongoing refill is on the same cache set (this is just an optional detail, HAZARD is already set)
+  val WAIT_REFILL = Payload(cloneOf(REFILL_BUSY.get)) // Specifies which refill should be waited on before retrying the failed access (optional)
+  val WAIT_WRITEBACK = Payload(cloneOf(WRITEBACK_BUSY.get))
 
+  // A few constants for other plugins to know about
   val SETS = blocking[Int]
   val WAYS = blocking[Int]
   val LINE_BYTES = blocking[Int]
@@ -47,7 +48,7 @@ object LsuL1 extends AreaObject{
   val coherency = blocking[Boolean]
 }
 
-//allows to lock a physical address into unique state
+//allows to lock a physical address into unique state while a LR/SC sequence is going on.
 case class LockPort() extends Bundle with IMasterSlave {
   val valid = Bool()
   val address = LsuL1.PHYSICAL_ADDRESS()
@@ -57,6 +58,10 @@ case class LockPort() extends Bundle with IMasterSlave {
 
 
 /*
+This is the L1 cache design of VexiiRiscv which originate in part from NaxRIscv.
+
+It is non-blocking, can support multiple outstanding refill/writeback and is thightly coupled to the CPU pipeline to save area.
+
 List of hazard to take care of :
 - store to load
   - withBypass = false => redo when detected
@@ -66,7 +71,9 @@ List of hazard to take care of :
 - refill conflicting
   - redo when detected
 - writeback conflicting
-  - Should not happen
+  - redo when detected
+- Coherency hazard (coherency port is using ressources)
+  - redo when detected
  */
 class LsuL1Plugin(val lane : ExecuteLaneService,
                   var memDataWidth: Int,
@@ -205,7 +212,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val WAYS_HIT = Payload(Bool())
     val TAGS_HAZARD = Payload(Bits(wayCount bits))
     val NEED_UNIQUE = Payload(Bool())
-//    val DIRTY_BYPASS = Payload(Bits(wayCount bits))
     val ALLOW_UNIQUE = Payload(Bool())
     val ALLOW_SHARED = Payload(Bool())
     val ALLOW_PROBE_DATA = Payload(Bool())
@@ -220,7 +226,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     val tagsWriteArbiter = new Reservation()
     val bankWriteArbiter = new Reservation()
-//    val bankReadArbiter  = new Reservation()
 
     val refillCompletions = Bits(refillCount bits)
     val writebackBusy = Bool()
@@ -241,6 +246,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val valid = mask.orR
     }
 
+    // Provide the data storage for the cache
+    // For now, the banks map 1:1 with the cache ways.
+    // But this could change in the future to reduce the total data width required from the data memories.
     val banks = for (id <- 0 until bankCount) yield new Area {
       val usedByWriteback = Bool()
       val mem = Mem(Bits(bankWidth bits), bankWordCount)
@@ -258,6 +266,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
+    // Provide the tags storage
     val ways = for (id <- 0 until wayCount) yield new Area {
       val mem = Mem.fill(linePerWay)(Tag())
       mem.write(waysWrite.address, waysWrite.tag, waysWrite.mask(id))
@@ -265,6 +274,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val cRead = withCoherency generate new Read(mem)
     }
 
+    // Define some storage for things which are often updated
+    // That allows to focus expensive write to read bypass logic on a few bits instead of the whole tags
     case class Shared() extends Bundle {
       val plru = Plru.State(wayCount)
       val dirty = Bits(wayCount bits)
@@ -278,6 +289,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val cRead = withCoherency generate new Read(mem)
     }
 
+    // Implement the ordering between multiple refill/writeback slots, once one is selected, it keep it locked.
+    // (Bool, Bits) => (slotRequestValid, otherSlotsBitMaskWhichHaveMorePriority)
     class PriorityArea(slots: Seq[(Bool, Bits)]) extends Area {
       val slotsWithId = slots.zipWithIndex.map(e => (e._1._1, e._1._2, e._2))
       val hits = B(slots.map(_._1))
@@ -290,23 +303,25 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
-
+    // Implements all the cache refills logic
+    // Note, when coherency is enabled, a refill can just be about getting more permitions, and not carry any data.
     val refill = new Area {
+      // Storage to track the ongoing cache refills
       val slots = for (refillId <- 0 until refillCount) yield new Area {
         val id = refillId
         val valid = RegInit(False)
-        val dirty = Reg(Bool())
+        val dirty = Reg(Bool()) // Will preset the dirty flag (used when the refill is triggered by a store)
         val address = Reg(UInt(postTranslationWidth bits))
         val way = Reg(UInt(log2Up(wayCount) bits))
         val cmdSent = Reg(Bool())
-        val priority = Reg(Bits(refillCount - 1 bits)) //TODO Check it
+        val priority = Reg(Bits(refillCount - 1 bits)) // Which other slots should be handled first.
         val c = withCoherency generate new Area {
           val unique = Reg(Bool())
           val data = Reg(Bool())
-          val ackId = Reg(UInt(ackIdWidth bits))
-          val ackValid = RegInit(False)
+          val ackId = Reg(UInt(ackIdWidth bits)) // Used to look back the read.rsp.ackId -> read.ack.ackId
+          val ackValid = RegInit(False) // Read to emit the read.ack
           val ackTimer = Reg(UInt(3 bits))
-          val ackTimerFull = ackTimer === 6
+          val ackTimerFull = ackTimer === 6 // Give enough time for the CPU to do a minimal amount of forward progress after having aquired a cache line
           val ackRequest = ackValid && ackTimerFull
           when(ackValid && !ackTimerFull) {
             ackTimer := ackTimer + U(!lane.isFreezed || ackUnlock)
@@ -325,13 +340,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val loadedDone = loadedCounter === loadedCounterMax
         loadedCounter := loadedCounter + U(loaded && !loadedDone && !lane.isFreezed()).resized
 
+        val free = !valid && withCoherency.mux(!c.ackValid, True)
         val fire = !lane.isFreezed() && loadedDone
         valid clearWhen (fire)
 
-        val free = !valid && withCoherency.mux(!c.ackValid, True)
-
-        val victim = Reg(Bits(writebackCount bits))
-        val writebackHazards = Reg(Bits(writebackCount bits)) //TODO Check it
+        val victim = Reg(Bits(writebackCount bits)) // Used to wait until the related writeback went far enough before emiting the read memory request
       }
 
       val free = B(OHMasking.first(slots.map(_.free)))
@@ -354,6 +367,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         pushCounter := pushCounter + 1
       }
 
+      // Spawn slots on push requests
       for (slot <- slots) when(push.valid) {
         when(free(slot.id)) {
           slot.valid := True
@@ -382,6 +396,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           arbiter.lock := 0
         }
 
+        // Emit read memory requests
         val cmdAddress = slots.map(_.address(tagRange.high downto lineRange.low)).read(arbiter.sel) @@ U(0, lineRange.low bit)
         bus.read.cmd.valid := arbiter.hit
         bus.read.cmd.id := arbiter.sel
@@ -401,13 +416,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val rspWithData = withCoherency.mux(bus.read.rsp.withData, True)
         if (withCoherency) assert(!(bus.read.rsp.valid && !rspWithData && slots.map(_.c.data).read(bus.read.rsp.id)), "Data cache asked for data but didn't recieved any :(")
 
+        // Route read memory responses to the data banks
         val bankWriteNotif = Bits(bankCount bits)
         val writeReservation = bankWriteArbiter.create(0)
         when(bus.read.rsp.valid) {
           writeReservation.takeIt()
           assert(writeReservation.win)
         }
-
         banksWrite.address := rspAddress(lineRange) @@ wordIndex
         banksWrite.writeData := bus.read.rsp.data
         banksWrite.writeMask.setAll()
@@ -415,9 +430,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           if (!reducedBankWidth) {
             bankWriteNotif(bankId) := bus.read.rsp.valid && rspWithData && way === bankId
             banksWrite.mask(bankId) :=  bankWriteNotif(bankId)
-//            bank.write.valid := bankWriteNotif(bankId)
-//            bank.write.address := rspAddress(lineRange) @@ wordIndex
-//            bank.write.data := bus.read.rsp.data
           } else {
             val sel = U(bankId) - way
             val groupSel = way(log2Up(bankCount) - 1 downto log2Up(bankCount / memToBankRatio))
@@ -428,7 +440,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 //            bank.write.address := rspAddress(lineRange) @@ wordIndex @@ (subSel)
 //            bank.write.data := bus.read.rsp.data.subdivideIn(bankCount / memToBankRatio slices)(subSel)
           }
-//          banks(bankId).write.mask := (default -> true)
         }
 
         val hadError = RegInit(False) setWhen (bus.read.rsp.valid && bus.read.rsp.error)
@@ -436,6 +447,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val reservation = tagsWriteArbiter.create(0)
         val faulty = hadError || bus.read.rsp.error
 
+        // Track memory read responses progress and write the ways tag on completion.
         refillCompletions := 0
         bus.read.rsp.ready := True
         when(bus.read.rsp.valid) {
@@ -467,6 +479,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
+      // Notify the SoC (L2) that the given acquire request is done
       val ackSender = withCoherency generate new Area {
         val ack = cloneOf(bus.read.ack)
         val requests = slots.map(_.c.ackRequest)
@@ -484,7 +497,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       REFILL_BUSY.set(B(slots.map(s => !s.loaded && !s.loadedSet)))
     }
 
+    // Implement all the writeback logic
+    // Note, when coherency is enabled, a writeback can just be about releasing permitions, and not carry any data. (getting rid of a clean cache line)
     val writeback = new Area {
+      // Storage which keep track of all pendings writebacks
       val slots = for (writebackId <- 0 until writebackCount) yield new Area {
         val id = writebackId
         val fire = False
@@ -492,10 +508,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val busy = RegInit(False) clearWhen(fire)
         val address = Reg(UInt(postTranslationWidth bits))
         val way = Reg(UInt(log2Up(wayCount) bits))
-        val priority = Reg(Bits(writebackCount - 1 bits)) //TODO Check it
-        val readCmdDone = Reg(Bool())
-        val victimBufferReady = Reg(Bool())
+        val priority = Reg(Bits(writebackCount - 1 bits)) // Specifies which other slots have higher priority
+        val readCmdDone = Reg(Bool()) // reads to the data banks done
         val readRspDone = Reg(Bool())
+        val victimBufferReady = Reg(Bool()) // When the process to emit a write cmd can be started
         val writeCmdDone = Reg(Bool())
 
         val coherency = withCoherency generate Reg(CoherencyWb())
@@ -521,13 +537,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       case class Push() extends Bundle {
         val address = UInt(postTranslationWidth bits)
         val way = UInt(log2Up(wayCount) bits)
-
-        //TtoB TtoN BtoN
-        val c = withCoherency generate CoherencyWb()
+        val c = withCoherency generate CoherencyWb() // Specifies the kind of permitions transition being done
       }
 
       val push = Flow(Push()).setIdle()
 
+      // Spawn slots on pushes
       for (slot <- slots) when(push.valid) {
         when(free(slot.id)) {
           slot.valid := True
@@ -555,13 +570,16 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       val victimBuffer = Mem.fill(writebackCount * memWordPerLine)(Bits(memDataWidth bits))
+      // Pipeline which read the data banks to fill the victim buffers
       val read = new Area {
+        // Arbitrate between all the slots
         val arbiter = new PriorityArea(slots.map(s => (s.valid && !s.readCmdDone, s.priority)))
 
         val address = slots.map(_.address).read(arbiter.sel)
         val way = slots.map(_.way).read(arbiter.sel)
         val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
 
+        // Generate read tasks
         val slotRead = Flow(new Bundle {
           val id = UInt(log2Up(writebackCount) bits)
           val last = Bool()
@@ -584,11 +602,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           for (slot <- refill.slots) slot.victim(slotRead.id) := False
         }
 
-//        val brr = bankReadArbiter.create(0)
-//        when(slotRead.valid) {
-//          brr.takeIt()
-//          assert(brr.win)
-//        }
+        // Send read request to the data banks
         for ((bank, bankId) <- banks.zipWithIndex) {
           bank.read.cmd.valid := bank.usedByWriteback
           if (!reducedBankWidth) {
@@ -603,6 +617,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           }
         }
 
+        // Collect the reads and write them to the victim buffer.
         val slotReadLast = slotRead.stage()
         val readedData = Bits(memDataWidth bits)
 
@@ -613,8 +628,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             ???
           }
         }
-
-
         when(slotReadLast.valid) {
           victimBuffer.write(slotReadLast.id @@ slotReadLast.wordIndex, readedData)
           whenIndexed(slots, slotReadLast.id) {
@@ -628,11 +641,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
+      // Pipeline which read the write buffer and send memory writes
       val write = new Area {
         val arbiter = new PriorityArea(slots.map(s => (s.valid && s.victimBufferReady && !s.writeCmdDone, s.priority)))
         val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
         val last = wordIndex === wordIndex.maxValue
 
+        // Generate read requests
         val bufferRead = Stream(new Bundle {
           val id = UInt(log2Up(writebackCount) bits)
           val address = UInt(postTranslationWidth bits)
@@ -653,6 +668,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           arbiter.lock := 0
         }
 
+        // Send memory write request
         val cmd = bufferRead.stage()
         val word = victimBuffer.readSync(bufferRead.id @@ wordIndex, bufferRead.ready)
         bus.write.cmd.arbitrationFrom(cmd)
@@ -682,7 +698,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
-    val ls = new Area {
+    // Implements the pipeline which will execute load/stores comming from the LSU
+    val lsu = new Area {
+      // Emit data banks read commands
       val rb0 = new lane.Execute(bankReadAt){
         val readAddress = MIXED_ADDRESS(lineRange.high downto log2Up(bankWidth / 8))
         for ((bank, bankId) <- banks.zipWithIndex) {
@@ -694,6 +712,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
+      // Collect data banks read values
       val rb1 = new lane.Execute(bankReadAt+1){
         def wayToBank(way: Int): UInt = {
           val wayId = U(way, log2Up(wayCount) bits)
@@ -709,12 +728,14 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
+      // For each bank, mux the part of the data we realy need.
       val bm = new lane.Execute(bankMuxesAt){
         for (bankId <- banks.indices) {
           BANKS_MUXES(bankId) := BANKS_WORDS(bankId).subdivideIn(cpuWordWidth bits).read(MIXED_ADDRESS(bankWordToCpuWordRange))
         }
       }
 
+      // Aggregate all the read from the banks into a final read data
       val bankMuxStd = !reducedBankWidth generate new lane.Execute(bankMuxAt){
         MUXED_DATA := OhMux.or(WAYS_HITS, BANKS_MUXES)
       }
@@ -725,7 +746,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         MUXED_DATA := BANKS_MUXES.read(bankId) //MuxOH(WAYS_HITS, BANKS_MUXES)
       }
 
-
+      // Detects write to read hazards
       val w2rh = new Area {
         val dst = lane.execute(ctrlAt-1)
         for(id <- 0 until widthOf(WRITE_TO_READ_HAZARDS)) {
@@ -734,6 +755,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
+      // Emit ways/shared read commands
       val rt0 = new lane.Execute(wayReadAt){
         shared.lsuRead.cmd.valid := !lane.isFreezed()
         shared.lsuRead.cmd.payload := MIXED_ADDRESS(lineRange)
@@ -746,6 +768,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
+      // Collect ways/shared read responses aswell as implement shared bypasses
       val rt1 = new lane.Execute(wayReadAt + 1 - tagsReadAsync.toInt){
         up(SHARED) := shared.lsuRead.rsp
         for (wayId <- ways.indices) {
@@ -757,14 +780,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           }
         }
       }
-
       val sharedBypassers = for(eid <- (wayReadAt + 1 - tagsReadAsync.toInt) until ctrlAt) yield new Area {
         val dst = lane.execute(eid)
         val hit = shared.write.valid && shared.write.address === dst(MIXED_ADDRESS)(lineRange)
         dst.bypass(SHARED) := hit.mux(shared.write.data, dst.up(SHARED))
       }
 
-
+      // Compute ways hits
       val hs  = new lane.Execute(hitsAt){
         for (wayId <- ways.indices) {
           WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === PHYSICAL_ADDRESS(tagRange)
@@ -775,10 +797,12 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       assert(Global.HART_COUNT.get == 1)
+      // Precompute a few additional things to relax the ctrl data paths
       val preCtrl = new lane.Execute(ctrlAt){
         NEED_UNIQUE := STORE || ATOMIC
       }
 
+      // This is the place where all the data / hazards / control path are aggregated
       val ctrl = new lane.Execute(ctrlAt) {
         val plruLogic = new Area {
           val core = new Plru(wayCount, false)
@@ -787,8 +811,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val wayWriteReservation = tagsWriteArbiter.create(2)
         val bankWriteReservation = bankWriteArbiter.create(2)
-        val refillWayWithoutUpdate = CombInit(plruLogic.core.io.evict.id)
-//        val refillWayWithoutUpdate = CounterFreeRun(BigInt(ways.size)).value
+        val refillWayWithoutUpdate = CombInit(plruLogic.core.io.evict.id) // CounterFreeRun(BigInt(ways.size)).value To implement random replacement policy
         val refillWayNeedWriteback = (B(WAYS_TAGS.map(w => w.loaded)) & withCoherency.mux(SHARED.dirty.getAllTrue, SHARED.dirty))(refillWayWithoutUpdate)
 
         //Warning, those two signals aren't stable when lane.isFreezed
@@ -807,7 +830,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val bankNotRead = (BANK_BUSY_REMAPPED & WAYS_HITS).orR
         val loadHazard  = LOAD && !PREFETCH  && (bankNotRead || writeToReadHazard)
         val storeHazard = STORE && !PREFETCH  && !bankWriteReservation.win
-//        val storeHazard = False
+
 //        lane.freezeWhen(SEL && STORE && !FLUSH && !PREFETCH && !bankWriteReservation.win)
         val flushHazard = FLUSH && !wayWriteReservation.win
         val coherencyHazard = False
@@ -815,8 +838,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         // A few explanation : Some things have to be accurate, while some other can be deflected / ignored, especially
         // when is need some shared ressources.
-        // For instance, a load miss may not trigger a refill, a flush may hit but may not trigger a flush
-        val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False)
+        // For instance, a load miss may not trigger a refill, a flush may hit but may not trigger a flush. That is fine
+        // as long as the CPU will retry later on.
+        val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False) // Ensure that once a hazard is triggered, it stays
         HAZARD := hazardReg || loadHazard || refillHazard || storeHazard || coherencyHazard || HAZARD_FORCED
         val flushHazardReg = RegNext(this (FLUSH_HAZARD) && lane.isFreezed()) init (False)
         FLUSH_HAZARD := flushHazardReg || flushHazard
@@ -855,6 +879,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           assert(CountOne(WAYS_HITS) <= 1, "Multiple way hit ???")
         }
 
+        // * Apply side effects *
+
         plruLogic.core.io.update.id := wayId
 
         val doRefillPush = doRefill || doUpgrade
@@ -871,7 +897,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
 
         WAIT_REFILL := refillHazards | refill.free.orMask(refill.full).andMask(!HAZARD && (askRefill || askUpgrade))
-        WAIT_WRITEBACK := 0 // TODO  // writebackHazards | writeback.free.andMask(askRefill && refillWayNeedWriteback)
+        WAIT_WRITEBACK := 0
 
         when(SEL && !ABORD) {
           assert(CountOne(Cat(askRefill, doUpgrade, doFlush)) < 2)
@@ -925,7 +951,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             writeback.push.c.toShared := !wasUnique
             writeback.push.c.release := True
             writeback.push.c.dirty := SHARED.dirty(needFlushSel)
-//            status.write.data.onSel(needFlushSel)(_.dirty := False)
           }
         }
 
@@ -988,10 +1013,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
-
+    // Implements the pipeline which handle memory probe request comming from the SoC (L2)
     val c = withCoherency generate new Area{
       val pip = new StageCtrlPipeline()
       val FORCE_HAZARD = Payload(Bool())
+      // Feed the pipeline with probe.cmd requests
       val onInsert = new pip.InsertArea{
         import bus.probe.cmd
         PHYSICAL_ADDRESS := cmd.address
@@ -1003,8 +1029,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         arbitrateFrom(cmd)
       }
 
-
       val SET_HAZARD = Payload(Bool())
+      // Read tags
       val rt0 = new pip.Ctrl(coherentReadAt) {
         shared.cRead.cmd.valid   := down.isFiring
         shared.cRead.cmd.payload := PHYSICAL_ADDRESS(lineRange)
@@ -1019,6 +1045,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         SET_HAZARD := waysWrite.valid && waysWrite.address === shared.cRead.cmd.payload
       }
 
+      // collect read tags responses
       val rt1 = new pip.Ctrl(coherentReadAt + 1 - tagsReadAsync.toInt) {
         up(SHARED) := shared.cRead.rsp
         for (wayId <- ways.indices) {
@@ -1039,6 +1066,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         dst.bypass(SET_HAZARD) := dst.up(SET_HAZARD) || setHit
       }
 
+      // Generate the ways hits hardware
       val hs = new pip.Ctrl(coherentHitsAt) {
         for (wayId <- ways.indices) {
           WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === PHYSICAL_ADDRESS(tagRange)
@@ -1048,8 +1076,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         WAYS_HIT := B(WAYS_HITS).orR
       }
 
-      val cHazardRange = 20 downto hazardCheckRange.low
+      // Preprocess a few things before the ctrl stage to relax timings
       val onPreCtrl = new pip.Ctrl(coherentCtrlAt-1){
+        val cHazardRange = 20 downto hazardCheckRange.low //To reduce combinatorial path, we are a bit pessimistic about this check
         val wbHits = writeback.slots.map(s => s.valid && s.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)).orR
         val wbPushHit = writeback.push.valid && writeback.push.address(cHazardRange) === PHYSICAL_ADDRESS(cHazardRange)
         val WB_HAZARD = insert(wbHits || wbPushHit)
@@ -1065,6 +1094,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
       import onPreCtrl._
 
+      // Handle what should be done / what side effects are needed from a probe request.
       val onCtrl = new pip.Ctrl(coherentCtrlAt){
         val reservation = tagsWriteArbiter.create(1)
 
@@ -1077,26 +1107,16 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val canTagUpdate = reservation.win
         val wayId = OHToUInt(WAYS_HITS)
 
-//        val didTagUpdate = RegNext(False) init (False)
-//        io.writebackBusy setWhen (didTagUpdate)
-
         val sideEffect = False
         val redo = False
         when(isValid) {
           when(HAZARD){
             redo := True
           } elsewhen(WAYS_HIT && (askData || askTagUpdate)){
-//            when(ls.ctrl(MIXED_ADDRESS)(lineRange) === PHYSICAL_ADDRESS(lineRange)) {
-//            }
-            // reservation.takeIt() Not necessary as we ls.ctrl.coherencyHazard anyway
-            ls.ctrl.coherencyHazard := True
+            lsu.ctrl.coherencyHazard := True // This is a very lazy / pessimistic way to handle it, which improve timings at the cost of false positive hazard
             when(askData && !canData || askTagUpdate && !canTagUpdate) {
-              redo := True
+              redo := True // Bad luck, can't process the probe for now
             } otherwise {
-//              when(ls.ctrl(MIXED_ADDRESS)(lineRange) === PHYSICAL_ADDRESS(lineRange)) {
-//                ls.ctrl.coherencyHazard := True //Could be more pessimistic
-//              }
-
               sideEffect := True
 
               waysWrite.address := PHYSICAL_ADDRESS(lineRange)
@@ -1119,7 +1139,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
               shared.write.data.plru := SHARED.plru
               shared.write.data.dirty := SHARED.dirty & ~WAYS_HITS
 
-//                didTagUpdate := True
               waysWrite.mask := WAYS_HITS
               when(askData) {
                 writeback.push.valid := True
@@ -1128,6 +1147,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           }
         }
 
+        // Drive the bus.probe.rsp
         import bus.probe.rsp
         rsp.valid        := isValid
         rsp.toShared     := WAYS_HIT && ALLOW_SHARED && !(ALLOW_UNIQUE && HIT_UNIQUE)
@@ -1142,10 +1162,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         rsp.getDirtyData := ALLOW_PROBE_DATA
         rsp.writeback    := askData
 
+        // Ensure that inflight LSU request become aware that the probe did some changes
         val lsuHazarder = for(eid <- wayReadAt to ctrlAt-1) yield new Area{
           val dst = lane.execute(eid)
           if(eid == wayReadAt) dst.up(HAZARD_FORCED) := False
-          val hit = sideEffect && dst(MIXED_ADDRESS)(lineRange) === PHYSICAL_ADDRESS(lineRange)
+          val hit = sideEffect && dst(MIXED_ADDRESS)(lineRange) === PHYSICAL_ADDRESS(lineRange) // Quite pessimistic implementation, but very good for FMax.
           val persistance = (eid != wayReadAt).mux(RegInit(False) setWhen(hit) clearWhen(!lane.isFreezed()), False)
           when(hit || persistance) {
             dst.bypass(HAZARD_FORCED) := True
@@ -1169,6 +1190,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
+    // Ensure no x-prop in simulation
     val initializerMem = bootMemClear generate new Area {
       val counter = Reg(UInt(log2Up(bankWordCount) + 1 bits)) init (0)
       val busy = !counter.msb
