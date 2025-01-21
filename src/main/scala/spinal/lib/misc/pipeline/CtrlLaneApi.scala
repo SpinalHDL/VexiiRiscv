@@ -6,6 +6,10 @@ object CtrlLaneApi extends AreaRoot{
   val LANE_SEL = Payload(Bool())
 }
 
+/**
+ * Provide a "Lane" layered in a pipeline CtrlLink.
+ * For instance, execution lane 0 and lane 1 on execute CtrlLink 3.
+ */
 trait CtrlLaneApi{
   def ctrlLink: CtrlLink
   def laneName: String
