@@ -11,7 +11,7 @@ import spinal.lib.DoCmd
  */
 object BootTester extends App{
   var tty = "/dev/ttyUSB2"
-  var openocdReboot = "openocd -f ft2232h_breakout.cfg  -f vexiiriscv_jtag.tcl -f debug.tcl", "src/main/tcl/openocd"
+  var openocdReboot = "openocd -f ft2232h_breakout.cfg  -f vexiiriscv_jtag.tcl -f debug.tcl"
 
   assert(new scopt.OptionParser[Unit]("tool") {
     opt[String]("tty") action { (v, c) => tty = v }
@@ -29,7 +29,7 @@ object BootTester extends App{
   }
 
   def reboot(): Unit = {
-    DoCmd.doCmd(openocdReboot)
+    DoCmd.doCmd(openocdReboot, "src/main/tcl/openocd")
   }
 
   def notify(line : String): Unit = {
