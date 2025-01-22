@@ -504,6 +504,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
           if(ats.mayNeedRedo) ATS_RSP.whenIsActive{
             when(atsPorts.refill.rsp.valid){
+              api.harts(hartId).redo := True
               goto(JUMP) //improvment: shave one cycle
               when(atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
                 pending.state.exception := True
