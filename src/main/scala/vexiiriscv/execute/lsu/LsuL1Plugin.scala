@@ -368,14 +368,22 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
 
       // Spawn slots on push requests
-      for (slot <- slots) when(push.valid) {
-        when(free(slot.id)) {
+
+      for (slot <- slots) {
+        // Slots get priority over free slots
+        val freeFiltred = slots.map(_.free).patch(slot.id, Nil, 1)
+        (slot.priority.asBools, freeFiltred).zipped.foreach(_ clearWhen (_))
+
+        when(push.valid && free(slot.id)) {
           slot.valid := True
+          slot.loaded := False
+        }
+        when(free(slot.id)) {
+          // Relax timings by assigning the slots payload even when no push is done.
           slot.address := push.address
           slot.way := push.way
           slot.cmdSent := False
           slot.priority.setAll()
-          slot.loaded := False
           slot.loadedCounter := 0
           slot.victim := push.victim
           slot.dirty := push.dirty
@@ -383,9 +391,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             slot.c.unique := push.unique
             slot.c.data := push.data
           }
-        } otherwise {
-          val freeFiltred = free.asBools.patch(slot.id, Nil, 1)
-          (slot.priority.asBools, freeFiltred).zipped.foreach(_ clearWhen (_))
         }
       }
 
@@ -543,10 +548,18 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val push = Flow(Push()).setIdle()
 
       // Spawn slots on pushes
-      for (slot <- slots) when(push.valid) {
-        when(free(slot.id)) {
+      for (slot <- slots) {
+        // Slots get priority over free slots
+        val freeFiltred = slots.map(_.free).patch(slot.id, Nil, 1)
+        (slot.priority.asBools, freeFiltred).zipped.foreach(_ clearWhen (_))
+
+        when(free(slot.id) && push.valid) {
           slot.valid := True
           slot.busy := True
+        }
+
+        when(free(slot.id)) {
+          // Here we assign the payload of each free slots without checking if push.valid, as this relax timings
           slot.address := push.address
           slot.way := push.way
           slot.timer.counter := 0
@@ -563,9 +576,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             slot.readRspDone := False
             slot.victimBufferReady := False
           }
-        } otherwise {
-          val freeFiltred = free.asBools.patch(slot.id, Nil, 1)
-          (slot.priority.asBools, freeFiltred).zipped.foreach(_ clearWhen (_))
         }
       }
 
@@ -1090,6 +1100,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val HIT_UNIQUE = insert(waysReader(_.unique))
         val HIT_FAULT = insert(waysReader(_.fault))
         val HIT_DIRTY = insert((down(SHARED).dirty & WAYS_HITS).orR)
+
+        val ASK_DATA = insert(HIT_DIRTY && !ALLOW_UNIQUE && ALLOW_PROBE_DATA) // If this create timings issues, it can be procssed on every ways and then muxed
+        val ASK_TAG_UPDATE = insert(!ALLOW_SHARED || (!ALLOW_UNIQUE && HIT_UNIQUE))
         assert(isReady)
       }
       import onPreCtrl._
@@ -1101,9 +1114,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val locked = LOCK_HIT || !LOCK_VALID && lockPort.valid //Pessimistic approach
         HAZARD := onPreCtrl.WB_HAZARD || SET_HAZARD || locked || FORCE_HAZARD
 
-        val askData = HIT_DIRTY && !ALLOW_UNIQUE && ALLOW_PROBE_DATA
         val canData = reservation.win && !writeback.full
-        val askTagUpdate = !ALLOW_SHARED || (!ALLOW_UNIQUE && HIT_UNIQUE)
         val canTagUpdate = reservation.win
         val wayId = OHToUInt(WAYS_HITS)
 
@@ -1112,9 +1123,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         when(isValid) {
           when(HAZARD){
             redo := True
-          } elsewhen(WAYS_HIT && (askData || askTagUpdate)){
+          } elsewhen(WAYS_HIT && (ASK_DATA || ASK_TAG_UPDATE)){
             lsu.ctrl.coherencyHazard := True // This is a very lazy / pessimistic way to handle it, which improve timings at the cost of false positive hazard
-            when(askData && !canData || askTagUpdate && !canTagUpdate) {
+            when(ASK_DATA && !canData || ASK_TAG_UPDATE && !canTagUpdate) {
               redo := True // Bad luck, can't process the probe for now
             } otherwise {
               sideEffect := True
@@ -1140,7 +1151,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
               shared.write.data.dirty := SHARED.dirty & ~WAYS_HITS
 
               waysWrite.mask := WAYS_HITS
-              when(askData) {
+              when(ASK_DATA) {
                 writeback.push.valid := True
               }
             }
@@ -1160,7 +1171,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         rsp.allowUnique  := ALLOW_UNIQUE
         rsp.allowShared  := ALLOW_SHARED
         rsp.getDirtyData := ALLOW_PROBE_DATA
-        rsp.writeback    := askData
+        rsp.writeback    := ASK_DATA
 
         // Ensure that inflight LSU request become aware that the probe did some changes
         val lsuHazarder = for(eid <- wayReadAt to ctrlAt-1) yield new Area{
