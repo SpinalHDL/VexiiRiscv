@@ -357,17 +357,16 @@ class ParamSimple(){
   }
 
 
+  // Define a few utilities to mutate the ParamSimple
   def withRvm(): Unit = {
     withMul = true
     withDiv = true
   }
-
   def withBranchPredicton(): Unit = {
     withBtb = true
     withGShare = true
     withRas = true
   }
-
   def withCaches(): Unit = {
     fetchL1Enable = true
     fetchL1Sets = 64
@@ -379,13 +378,11 @@ class ParamSimple(){
 
     withLsuBypass = true
   }
-
   def withLinux(): Unit = {
     privParam.withSupervisor = true
     privParam.withUser = true;
     withMmu = true
   }
-
   def withMmuSyncRead(): Unit = {
     fetchTsp = MmuStorageParameter(
       levels = List(
@@ -434,6 +431,7 @@ class ParamSimple(){
     )
   }
 
+  // Hash code used the regression test to generate a unique workspace folder per config
   override def hashCode() = {
     var hash = 0
     val md = new StringBuilder()
@@ -453,7 +451,7 @@ class ParamSimple(){
     Math.abs(md.toString.hashCode())
   }
 
-
+  // Generate a human redable name from most of the supported configuration
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
     var isa = s"rv${xlen}i"
@@ -492,6 +490,7 @@ class ParamSimple(){
     r.mkString("_")
   }
 
+  // Initialize a scopt commande line arguement parser to take controle of this SimpleParam
   def addOptions(parser: scopt.OptionParser[Unit]) = {
     import parser._
     opt[Int]("xlen") action { (v, c) => xlen = v }
@@ -616,6 +615,7 @@ class ParamSimple(){
     }
   }
 
+  // Generate the VexiiRiscv plugin list out of the current SimpleParam configuration
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
   def pluginsArea(hartId : Int = 0) = new Area {
     val plugins = ArrayBuffer[Hostable]()
@@ -637,6 +637,7 @@ class ParamSimple(){
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
 
+    // Branch prediction
     plugins += new LearnPlugin()
     if(withRas) assert(withBtb)
     if(withGShare) assert(withBtb)
@@ -652,10 +653,6 @@ class ParamSimple(){
         jumpAt = 1+relaxedBtb.toInt,
         bootMemClear = bootMemClear
       )
-//      plugins += new prediction.DecodePredictionPlugin(
-//        decodeAt = decoderAt,
-//        jumpAt = decoderAt
-//      )
     }
     if(withGShare) {
       plugins += new prediction.GSharePlugin (
@@ -672,6 +669,7 @@ class ParamSimple(){
     }
 
 
+    // Fetch
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
     if(!fetchL1Enable) plugins += new fetch.FetchCachelessPlugin(
@@ -718,7 +716,6 @@ class ParamSimple(){
         }
       }
     }
-
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
       fetchAt = alignerPluginFetchAt,
@@ -751,13 +748,13 @@ class ParamSimple(){
       trapAt    = 0+regFileSync.toInt + 1 + intWritebackAt,
       withBypasses = allowBypassFrom == 0
     )
-
     plugins += new execute.ExecutePipelinePlugin()
 
     val lane0 = newExecuteLanePlugin("lane0")
+
+    // Main execution pipeline
     val early0 = new LaneLayer("early0", lane0, priority = 0)
     plugins += lane0
-
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
@@ -899,7 +896,8 @@ class ParamSimple(){
       noTapCd = embeddedJtagNoTapCd
     )
     val lateAluAt = intWritebackAt
-    
+
+    // Late ALU in the main execution pipeline
     if(withLateAlu) {
       val late0 = new LaneLayer("late0", lane0, priority = -5)
       plugins += new SrcPlugin(late0, executeAt = lateAluAt, relaxedRs = relaxedSrc)
@@ -911,6 +909,7 @@ class ParamSimple(){
 
     plugins += new WriteBackPlugin(lane0, IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
 
+    // Second execution pipeline (dual-issue configs)
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
       val early1 = new LaneLayer("early1", lane1, priority = 10)
@@ -923,6 +922,7 @@ class ParamSimple(){
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
       if(withRvZb) plugins ++= ZbPlugin.make(early1, formatAt=0)
 
+      // Late ALU in the Second execution pipeline
       if(withLateAlu) {
         val late1 = new LaneLayer("late1", lane1, priority = -3)
         plugins += new SrcPlugin(late1, executeAt = lateAluAt, relaxedRs = relaxedSrc)
@@ -942,6 +942,7 @@ class ParamSimple(){
       case _ =>
     }
 
+    // FPU
     if (withRvf || withRvd) {
       plugins += new regfile.RegFilePlugin(
         spec = riscv.FloatRegFile,
@@ -951,8 +952,6 @@ class ParamSimple(){
         dualPortRam = regFileDualPortRam,
         maskReadDuringWrite = false
       )
-
-//      plugins += new execute.fpu.FpuExecute(early0, 0)
       plugins += new WriteBackPlugin(lane0, FloatRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions
       plugins += new execute.fpu.FpuFlagsWritebackPlugin(lane0, pipTo = intWritebackAt)
       plugins += new execute.fpu.FpuCsrPlugin(List(lane0), intWritebackAt)
@@ -968,7 +967,6 @@ class ParamSimple(){
       if(withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0, ignoreSubnormal = fpuIgnoreSubnormal)
-      //      plugins += new execute.fpu.FpuEmbedded()
     }
 
     plugins += new WhiteboxerPlugin(
