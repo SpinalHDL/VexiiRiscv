@@ -14,16 +14,29 @@ import vexiiriscv.schedule.{Ages, FlushCmd}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-
+/**
+ * Used to model the RISC-V RD usage of a given micro-op
+ */
 case class RdSpec(rf : RegfileSpec,
                   DATA: Payload[Bits],
                   broadcastedFrom : Int,
                   rfReadableFrom : Int)
 
-case class RsSpec(rf : RegfileSpec, rs : RfRead){
+/**
+ * Used to model the RISC-V RS1/RS2 usage of a given micro-op
+ */
+case class RsSpec(rf : RegfileSpec,
+                  rs : RfRead){
   var from = 0
 }
 
+/**
+ * Used to model an execution lane layer.
+ * For isntance if you have a dual issue pipeline with early and late ALUs, then you will have 4 LaneLayers
+ *
+ * So, this class will store the model of every micro-op that it supports, aswell as the timing that they have
+ * (when do they use RS1/RS2, when do they provide a RD value, ..., by using the UopLayerSpec class.
+ */
 class LaneLayer(val name : String, val lane : ExecuteLaneService, var priority : Int){
   val uops = mutable.LinkedHashMap[MicroOp, UopLayerSpec]()
   lane.add(this)
@@ -41,6 +54,14 @@ class LaneLayer(val name : String, val lane : ExecuteLaneService, var priority :
   class Execute(id: Int) extends CtrlLaneMirror(lane.execute(id))
 }
 
+/**
+ * Specfies how a given MicroOp is implemented in a given LaneLayer
+ * - RD/RS1/RS2 timings and usages
+ * - Completion timing
+ * - Flush supported/behaviour
+ * - Additional decoding required
+ * - Shared hardware reservations
+ */
 class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLaneService) {
   var rdOutOfPip = false
   var rd = Option.empty[RdSpec]
@@ -106,25 +127,23 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   }
 }
 
+/**
+ * Provide an API to access an exeuction lanes.
+ */
 trait ExecuteLaneService extends Area{
   val uopLock = Retainer()
   val pipelineLock = Retainer()
 
-  def laneName : String
-
-  def executeAt: Int
-  def rfReadAt: Int
-  def rfReadLatencyMax : Int
-  def ctrl(id: Int): CtrlLaneApi
-  def execute(id: Int): CtrlLaneApi
+  // Querry the model of the execute lane.
   def getUops(): Iterable[MicroOp]
   def getUopLayerSpec(): Iterable[UopLayerSpec]
   def getLayers(): Iterable[LaneLayer]
+
+  // Feed the execute lane model with additional informations
   def add(layer : LaneLayer) : Unit
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType)
-  def withBypasses : Boolean
-  def rfReadHazardFrom(usedAt : Int) : Int
 
+  // API which allows to get the pipeline Payload to access the RS1/RS2 hardware values
   def getStageable(r: RfResource): Payload[Bits]
   def apply(rf: RegfileSpec, access: RfAccess) = getStageable(rf -> access)
   def apply(r: RfResource) = getStageable(r)
@@ -135,16 +154,34 @@ trait ExecuteLaneService extends Area{
   val LAYER_SEL = Payload(Bits(log2Up(getLayers.size) bits))
   def getLayerId(ll : LaneLayer) = getLayers().toSeq.sortBy(_.priority).indexOf(ll)
 
+  // Get an API to access a given stage of the pipeline
+  // ctrl is the raw API, where id 0 map the stage directly connected to the dispatcher
+  def ctrl(id: Int): CtrlLaneApi
+  // execute provide the pipeline API offseted to were the ALU plugins should start to opperate.
+  def execute(id: Int): CtrlLaneApi
+
+  // Create Area which implicitly work in a given stage of the execute lane
   class Execute(id: Int) extends CtrlLaneMirror(execute(id))
   class Ctrl(id: Int) extends CtrlLaneMirror(ctrl(id))
 
-  def getCtrlAge(at: Int): Int = Ages.EU + at * Ages.STAGE
+  // Trap priority computing
+  def getCtrlAge(at: Int): Int = Ages.EXECUTE + at * Ages.STAGE
   def getExecuteAge(at : Int) = getCtrlAge(at + executeAt)
 
+  // Flow control API
   def freezeIt()(implicit loc: Location)
   def freezeWhen(cond: Bool)(implicit loc: Location)
   def isFreezed(): Bool
   def atRiskOfFlush(executeId : Int) : Bool
+
+  // Various API
+  def laneName : String
+  def executeAt: Int // Stage id at which the ALU are meant to start operate.
+  def rfReadAt: Int
+  def rfReadLatencyMax : Int
+  def withBypasses : Boolean
+  def rfReadHazardFrom(usedAt : Int) : Int
+
 }
 
 case class CompletionPayload() extends Bundle{
@@ -154,6 +191,9 @@ case class CompletionPayload() extends Bundle{
   val commit = Bool()
 }
 
+/**
+ * Allows a plugin to publish a list of interface which provide micro-op completion notifications
+ */
 trait CompletionService{
   def getCompletions() : Seq[Flow[CompletionPayload]]
 }
