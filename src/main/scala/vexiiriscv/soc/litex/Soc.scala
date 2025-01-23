@@ -123,6 +123,24 @@ class SocConfig(){
  * - Has an option L2 cache
  * - Supports JTAG debug
  * - Supports a SpinalHDL HDMI and Ethernet controller
+ *
+ * The SpinalHDL RGMII ethernet linux driver is implemented here :
+ * - https://github.com/Dolu1990/litex-linux/tree/spinal-sgmac/drivers/net/ethernet/spinal
+ *
+ * It can be enabled in linux DTS via for instance :
+ *          mac0: mac@f1000000 {
+ *             compatible = "spinal,sgeth";
+ *             reg = <0xf1000000 0x100>,
+ *                   <0xf1000100 0x100>,
+ *                   <0xf1000200 0x100>;
+ *             reg-names = "mac", "tx-dma", "rx-dma";
+ *             interrupts = <40 41>;
+ *             interrupt-names = "tx-dma", "rx-dma";
+ *             status = "okay";
+ *         };
+ *
+ *
+ * Also, be sure the the PLIC's riscv,ndev is set high enough (ex riscv,ndev = <64>; )
  */
 class Soc(c : SocConfig) extends Component {
 
@@ -470,8 +488,8 @@ object SocGen extends App{
 //  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_HIT_DIRTY") //That big
 //  val to = cpu0.reflectBaseType("PrivilegedPlugin_logic_harts_0_debug_dcsr_stepLogic_stepped")
 
-//  val from = cpu0.reflectBaseType("early0_SrcPlugin_logic_addsub_combined_rs2Patched") //That big
-//  val to = cpu0.reflectBaseType("toplevel_execute_ctrl2_up_early0_SrcPlugin_SRC2_lane0")
+//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_ALLOW_UNIQUE") //That big
+//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_writeback_slots_0_valid")
 
 
 //  val drivers = mutable.LinkedHashSet[BaseType]()
