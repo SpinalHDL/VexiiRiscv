@@ -20,6 +20,9 @@ trait FpuDirtyService{
   def gotDirty() : Bool
 }
 
+/**
+ * Provide the RISC-V FPU csr (rounding mode and flags)
+ */
 class FpuCsrPlugin(lanes : Seq[ExecuteLaneService], dirtyAt : Int) extends FiberPlugin with FpuDirtyService {
   val api = during build new Area{
     val rm = Reg(Bits(3 bits)) init (0)

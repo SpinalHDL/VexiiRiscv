@@ -20,6 +20,9 @@ case class FpuSqrtRsp(mantissaWidth : Int) extends Bundle{
   val remain = UInt(mantissaWidth+5 bits)
 }
 
+/**
+ * Implement the floating point mantissa SQRT
+ */
 case class FpuSqrt(val mantissaWidth : Int) extends Component {
   val io = new Bundle{
     val input = slave Stream(FpuSqrtCmd(mantissaWidth))

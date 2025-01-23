@@ -11,8 +11,10 @@ import vexiiriscv.riscv.{CSR, Riscv}
 import scala.collection.mutable.ArrayBuffer
 
 /**
- * This plugin implement the performance counters in a very tricky way to save area
- * Only 7 bits registers are used for each counters, which are flushed into a CSR ram when their MSB is set
+ * This plugin implement the performance counters in a very tricky way to save area. The RISC-V spec specified 64 bits per counter, and that is kinda expensive to implement FPGA.
+ * So in this implementation, Only 8 bits registers are used for each counters, which are flushed into their 64 bits CSR ram when their MSB is set
+ *
+ * To figure out the actual performance events implement in VexiiRIscv, look at vexiiriscv.misc.PerformanceCounterService
  */
 class PerformanceCounterPlugin(var additionalCounterCount : Int,
                                var bufferWidth : Int = 8) extends FiberPlugin with PerformanceCounterService{

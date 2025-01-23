@@ -26,6 +26,18 @@ trait MulReuse{
   val mulLock = Retainer()
 }
 
+/**
+ *  Implement RISC-V multiplication instructions by subdividing them into partial ones.
+ *  For instance, 32bits x 32 bits =
+ *    a[15: 0]*b[15: 0] +
+ *    a[15: 0]*b[31:16] +
+ *    a[31:16]*b[15: 0] +
+ *    a[31:16]*b[31:16]
+ *
+ *  This calculation is splited over multiple stages to get a good FMax on FPGA (in general)
+ *
+ *  bufferedHigh can be used to buffer the mulh instruction one extra cycle on the stage to improve the FMax at the cost of one idle cycle.
+ */
 class MulPlugin(val layer : LaneLayer,
                 var cmdAt : Int = 0,
                 var mulAt: Int = 0,
@@ -189,7 +201,6 @@ class MulPlugin(val layer : LaneLayer,
       val result = useRsUnsignedPlugin match {
         case false => apply(sourceToSignal(sourcesSpec.head))
         case true => Cat(revertResult.chunk.map(apply(_))).asUInt
-//        case true => stage(sourceToSignal(sourcesSpec.head)).twoComplement(RESULT_IS_SIGNED)
       }
       val buffer = bufferedHigh.get generate new Area{
         val valid = RegNext(layer.lane.isFreezed()) init (False)

@@ -15,6 +15,10 @@ object RsUnsignedPlugin extends AreaObject {
   val RS1_UNSIGNED, RS2_UNSIGNED = Payload(UInt(XLEN bits))
 }
 
+/**
+ * This plugin takes the integer RS1/RS2 and unsigne them. This can be used by other plugins to share that hardware.
+ * ex : unsigned divider, unsigned multiplier, ...
+ */
 class RsUnsignedPlugin(val laneName : String, executeAt : Int = 0) extends FiberPlugin{
   import RsUnsignedPlugin._
   withPrefix(laneName)

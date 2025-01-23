@@ -10,7 +10,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.Global.{COMMIT, TRAP}
 import vexiiriscv.decode.Decode
-import vexiiriscv.misc.{CtrlPipelinePlugin, InflightService, PipelineService, TrapService}
+import vexiiriscv.misc.{InflightService, PipelineService, TrapService}
 import vexiiriscv.regfile.RegfileService
 import vexiiriscv.riscv.{IntRegFile, MicroOp, RD, RegfileSpec, RfAccess, RfRead, RfResource}
 import vexiiriscv.schedule.{Ages, DispatchPlugin, FlushCmd, ReschedulePlugin}
@@ -20,6 +20,13 @@ import scala.collection.mutable.ArrayBuffer
 
 case class UopImplKey(uop : MicroOp, name : LaneLayer)
 
+/**
+ * Implements an execution lane :
+ * - Read the register files
+ * - Implement register files bypass logic
+ * - Register  which execution layer are working on that lane
+ * - ...
+ */
 class ExecuteLanePlugin(override val laneName : String,
                         override val rfReadAt : Int,
                         val decodeAt : Int,

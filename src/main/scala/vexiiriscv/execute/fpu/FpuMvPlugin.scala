@@ -10,7 +10,9 @@ import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, muxDouble}
 import vexiiriscv.riscv._
 
 
-
+/**
+ * Implement the RISC-V floating point <> integer binary casts
+ */
 class FpuMvPlugin(val layer : LaneLayer,
                    var intWbAt: Int = 1, //Relax int ALU
                    var floatWbAt: Int = 0) extends FiberPlugin{

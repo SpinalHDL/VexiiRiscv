@@ -1,6 +1,6 @@
 package vexiiriscv.decode
 
-import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService, TrapService}
+import vexiiriscv.misc.{PipelineService, TrapService}
 import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 import spinal.core._
 import spinal.core.fiber.Retainer
@@ -12,7 +12,9 @@ import vexiiriscv.Global
 
 import scala.collection.mutable
 
-
+/**
+ * Provide a decode pipeline skeleton, used by other plugins to compose the decode pipeline.
+ */
 class DecodePipelinePlugin extends FiberPlugin with PipelineService{
   setName("decode")
 

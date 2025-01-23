@@ -6,6 +6,9 @@ package vexiiriscv.riscv
 
 import spinal.core._
 
+/**
+ * Specifies the RISC-V floating point instructions
+ */
 object Rvfd {
   import FloatRegFile._
 

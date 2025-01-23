@@ -5,7 +5,6 @@ import spinal.lib.misc.database.Database._
 import spinal.lib.misc.pipeline._
 
 object Execute extends AreaRoot{
-  val BYPASSED = Payload(Bool())
   val LANE_AGE_WIDTH = blocking[Int]
-  val LANE_AGE = Payload(UInt(LANE_AGE_WIDTH bits))
+  val LANE_AGE = Payload(UInt(LANE_AGE_WIDTH bits)) // Allows to sort the instructions in the same execute stage by age. Lower => oldest
 }

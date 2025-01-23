@@ -7,6 +7,12 @@ import spinal.lib.bus.tilelink
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * This is used for simulations, it can be used to emulate a minmal sets of peripherals :
+ * - Terminal binded to stdin stdout
+ * - RISC-V CLINT
+ * - Simulation pass/fail commands
+ */
 abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : Bool = null, mti : Bool = null, cd : ClockDomain = null) {
   val PUTC = 0
   val PUT_HEX = 0x8
@@ -111,7 +117,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
     false
   }
 
-
+  // Map the PeripheralEmulator as a simulation slave for the given tilelink bus.
   def bind(bus : tilelink.Bus, cd : ClockDomain) = new tilelink.sim.MonitorSubscriber{
     val monitor = new tilelink.sim.Monitor(bus, cd).add(this)
     val driver = new tilelink.sim.SlaveDriver(bus, cd)

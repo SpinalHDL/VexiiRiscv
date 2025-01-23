@@ -8,6 +8,9 @@ import spinal.core._
 
 import scala.collection.mutable
 
+/**
+ * Specifies the RISC-V integer instructions
+ */
 object Rvi extends AreaObject {
   import IntRegFile._
 

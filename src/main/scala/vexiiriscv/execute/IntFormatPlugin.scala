@@ -11,6 +11,14 @@ import vexiiriscv.riscv.{IntRegFile, MicroOp, Riscv}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * This plugin provide an API which allows other plugins to generate an hardware interface to
+ * writeback integer results back to the register file with some specified hardware formating :
+ * - sign extension
+ * - zero extension
+ *
+ * One nice thing is that the hardware which does the formating is shared between all the instructions which opperate in the same stage.
+ */
 class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin{
   withPrefix(lane.laneName)
   val elaborationLock = Retainer()
@@ -80,7 +88,7 @@ class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin{
       }
     }
 
-
+    // For every stages in which the plugin was asked to opperate, we need to generate the formating hardware + writeback interface
     val stages = for(group <- grouped.values; stageId = group.head.ctrlId) yield new eu.Execute(stageId){
       val wb = wbp.createPort(stageId)
       for(spec <- group) wbp.addMicroOp(wb, spec.impls.toSeq)

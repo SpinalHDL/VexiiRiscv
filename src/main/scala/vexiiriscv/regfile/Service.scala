@@ -27,7 +27,7 @@ case class RegFileWrite(rfpp : RegFilePortParam, withReady : Boolean) extends Bu
   val address = UInt(addressWidth bits)
   val data = Bits(dataWidth bits)
   val hartId = UInt(hartIdWidth bits)
-  val uopId = UInt(uopIdWidth bits)
+  val uopId = UInt(uopIdWidth bits) //Used for traces and debug
 
   def fire = if(withReady) valid && ready else valid
 
@@ -59,16 +59,6 @@ case class RegFileRead(rfpp : RegFilePortParam, withReady : Boolean) extends Bun
     in(ready, data)
   }
 }
-
-//case class RegFileBypass(addressWidth : Int, dataWidth : Int, priority : Int) extends Bundle with IMasterSlave{
-//  val valid = Bool()
-//  val address = UInt(addressWidth bits)
-//  val data = Bits(dataWidth bits)
-//
-//  override def asMaster() = {
-//    out(valid, address, data)
-//  }
-//}
 
 trait RegfileService {
   val elaborationLock = Retainer()

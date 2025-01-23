@@ -10,7 +10,12 @@ import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv.Riscv.XLEN
 import vexiiriscv.riscv._
 
-//packAt at 1 to reduce timing presure (unpack -> pack)
+/**
+ * Convert floating point 32 bits to/from 64 bits
+ * packAt at 1 to reduce timing presure (unpack -> pack)
+ *
+ * The FpuPackerPlugin will do the heavy work (rounding)
+ */
 class FpuXxPlugin(val layer : LaneLayer,
                   var packAt : Int = 1) extends FiberPlugin{
   val p = FpuUtils

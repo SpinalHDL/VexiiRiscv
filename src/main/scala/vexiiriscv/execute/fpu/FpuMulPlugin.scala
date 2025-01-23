@@ -10,7 +10,10 @@ import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv.Riscv.XLEN
 import vexiiriscv.riscv._
 
-
+/**
+ * Add the floating point mul instruction the CPU.
+ * The mantissa multiplier is implemented by reusing the hardware from the integer multiplier
+ */
 class FpuMulPlugin(val layer : LaneLayer,
                    withFma : Boolean = true,
                    fmaFullAccuracy : Boolean = true,

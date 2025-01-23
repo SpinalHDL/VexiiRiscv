@@ -17,7 +17,9 @@ object SimdAddRaw{
   val ADD4 = IntRegFile.TypeR(M"0000000----------000-----0001011")
 }
 
-
+/**
+ * Same as SimdAddPlugin, but wihtout the help of the ExecutionUnitElementSimple  skeleton.
+ */
 class SimdAddRawPlugin(val layer : LaneLayer) extends FiberPlugin  {
   import SimdAddRaw._
   val logic = during setup new Area {

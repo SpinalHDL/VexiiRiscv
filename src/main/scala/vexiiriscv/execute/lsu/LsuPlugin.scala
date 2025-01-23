@@ -21,7 +21,6 @@ import vexiiriscv.{Global, riscv}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu.AguPlugin._
 import vexiiriscv.execute.lsu.LsuL1.HAZARD
-import vexiiriscv.fetch.{LsuL1Service, LsuService}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -44,6 +43,22 @@ case class StoreBufferOp() extends Bundle {
   val storeId = Decode.STORE_ID()
 }
 
+
+/**
+ * The LsuPlugin does many things :
+ * - Handle the AGU (Address Generation Unit)
+ * - Interface with the L1 cache
+ * - Handle the MMU integration
+ * - Implement the PMA checks(Physical Memory Access)
+ * - Implement the IO accesses
+ * - Implement the AMO/LR/SC instructino
+ * - Impplement a store buffer
+ * - Implement the prefetching request
+ * - Implement RISC-V debug triggers related to memory load/store
+ *
+ * So, it has a lot of different functionalities which sometimes are thigtly coupled together in order to reduce area and increase FMax
+ * which can make it challenging to read.
+ */
 class LsuPlugin(var layer : LaneLayer,
                 var withRva : Boolean,
                 var translationStorageParameter: Any,
@@ -67,23 +82,24 @@ class LsuPlugin(var layer : LaneLayer,
   override def lsuCommitProbe: Flow[LsuCommitProbe] = logic.commitProbe
   override def getBlockSize: Int = LsuL1.LINE_BYTES.get
 
+  // bus refer to the IO memory bus
   def busParam = LsuCachelessBusParam(
     addressWidth = Global.PHYSICAL_WIDTH,
     dataWidth = Riscv.LSLEN,
     hartIdWidth = Global.HART_ID_WIDTH,
     uopIdWidth = Decode.UOP_ID_WIDTH,
-    withAmo = false, //TODO
+    withAmo = false, // AMO are only supported on the cached memory space
     pendingMax = 1
   )
 
   val tagWidth = 6
   val SB_PTR = Payload(UInt(log2Up(storeBufferOps) + 1 bits))
+  // Interface with the store buffer
   case class StoreBufferPush() extends Bundle {
-    val slotOh = Bits(storeBufferSlots bits)
+    val slotOh = Bits(storeBufferSlots bits) // Specifies which address slots if being concerned
     val tag = Bits(tagWidth bits)
     val op = StoreBufferOp()
   }
-
   case class StoreBufferPop() extends Bundle {
     val ptr = SB_PTR()
     val op = StoreBufferOp()
@@ -92,6 +108,8 @@ class LsuPlugin(var layer : LaneLayer,
   val logic = during setup new Area{
     assert(!(storeBufferSlots != 0 ^ storeBufferOps != 0))
     val withStoreBuffer = storeBufferSlots != 0
+
+    // * Get reference to the concened plugins, as well as retains from of them from elaborating *
     val elp = host.find[ExecuteLanePlugin](_ == layer.lane)
     val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
     val srcp = host.find[SrcPlugin](_.layer == layer)
@@ -108,6 +126,7 @@ class LsuPlugin(var layer : LaneLayer,
     awaitBuild()
     Riscv.RVA.set(withRva)
 
+    // * Instanciate a few hardware interfaces *
     val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.DCACHE_TLB_CYCLES)
     val fpwb = fpwbp.map(_.createPort(wbAt))
 
@@ -121,14 +140,14 @@ class LsuPlugin(var layer : LaneLayer,
     val trapPort = ts.newTrap(layer.lane.getExecuteAge(ctrlAt), Execute.LANE_AGE_WIDTH)
     val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
-    val commitProbe = Flow(LsuCommitProbe())
+    val commitProbe = Flow(LsuCommitProbe()) // Used by the hardware prefetching plugin to learn about the software behaviour
 
-    // IntFormatPlugin specification
+    // Extends the instruction specifications done by the AGU with sign extentions and flush behaviour
     val iwb = ifp.access(wbAt)
     val amos = Riscv.RVA.get.option(frontend.amos.uops).toList.flatten
     for(load <- frontend.writingRf ++ amos){
       val op = layer(load)
-      op.mayFlushUpTo(ctrlAt) // page fault / trap
+      op.mayFlushUpTo(ctrlAt) // page fault / trap / L1 hazard / store queue hazard / ...
       op.dontFlushFrom(ctrlAt+1) //The +1 make the assumption that if a flush happen it is the first cycle in ctrlAt. Also, io access wait one cycle before starting
 
       Rvi.loadSpec.get(load) match {
@@ -156,7 +175,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
       op.mayFlushUpTo(ctrlAt)
       op.dontFlushFrom(ctrlAt+1)
-      op.addRsSpec(RS2, isInt.mux(storeRs2At, 0)) // Only int late usage works (scheduler)
+      op.addRsSpec(RS2, isInt.mux(storeRs2At, 0)) // Only int late usage works, not the float ones (scheduler reasons)
     }
 
     val FENCE = Payload(Bool())
@@ -197,6 +216,7 @@ class LsuPlugin(var layer : LaneLayer,
     val FROM_PREFETCH = Payload(Bool())
     val MMU_FAILURE, MMU_PAGE_FAULT = Payload(Bool())
 
+    // Area which can be used to wait until the L1 finish the refills which triggered the wait.
     class L1Waiter extends Area {
       val refill = Reg(l1.WAIT_REFILL)
       val valid = RegInit(False) clearWhen ((refill & ~l1.REFILL_BUSY).orR)
@@ -210,40 +230,43 @@ class LsuPlugin(var layer : LaneLayer,
       }
     }
 
-        def p2t(that : UInt) = B(that(tagWidth, log2Up(LsuL1.LINE_BYTES) bits))
+    def p2t(that : UInt) = B(that(tagWidth, log2Up(LsuL1.LINE_BYTES) bits))
 
 
     val storeBuffer = withStoreBuffer generate new Area {
       assert(isPow2(storeBufferOps))
 
-      val push = Flow(StoreBufferPush())
-      val pop = Stream(StoreBufferPop())
+      val push = Flow(StoreBufferPush()) // Used when a store do a cache miss, but the cpu commits the instruction
+      val pop = Stream(StoreBufferPop()) // To retry a failed store
 
       val ops = new Area {
         val mem = Mem.fill(storeBufferOps)(StoreBufferOp())
         val pushPtr, popPtr, freePtr = Reg(SB_PTR) init (0)
-        val full = (pushPtr ^ freePtr ^ storeBufferOps) === 0
+        val full = (pushPtr ^ freePtr ^ storeBufferOps) === 0 // Assumes storeBufferOps is a power of 2
         val occupancy = pushPtr - freePtr
 
-        val stages = 2
-        val ctrls = List.fill(stages)(CtrlLink())
-        val regs = for((from, to) <- (ctrls, ctrls.tail).zipped) yield StageLink(from.down, to.up)
-
-        ctrls(0).up.valid := popPtr =/= pushPtr
-        ctrls(0).up(SB_PTR) := popPtr
-        val doRead = ctrls(0).up.isFiring
-        popPtr := popPtr + U(doRead)
-        val OPS = ctrls(1).insert(mem.readSync(popPtr.resized, doRead))
-        ctrls.last.down.driveTo(pop){(p, n) =>
-          p.op := n(OPS)
-          p.ptr := n(SB_PTR)
+        // Implement the pipeline which generate store retry commands (the pop interface)
+        val pip = new StagePipeline(){
+          val inserter = new Area(0){
+            valid := popPtr =/= pushPtr
+            SB_PTR := popPtr
+            val doRead = isFiring
+            popPtr := popPtr + U(doRead)
+          }
+          val read = new Area(1){
+            val OPS = insert(mem.readSync(popPtr.resized, inserter.doRead))
+          }
+          val extracter = new Area(2){
+            arbitrateTo(pop)
+            pop.op := read.OPS
+            pop.ptr := SB_PTR
+          }
         }
-
-        Builder(ctrls ++ regs)
       }
 
       val tagRange = tagWidth + log2Up(LsuL1.LINE_BYTES) -1 downto log2Up(LsuL1.LINE_BYTES)
       val TAG = Payload(Bits(tagWidth bits))
+      // Store which memory block addresses (cache line big) are currently in the store buffer
       val slots = for(slotId <- 0 until storeBufferSlots) yield new Area {
         val valid = RegInit(False)
         val ptr = Reg(SB_PTR)
@@ -252,6 +275,7 @@ class LsuPlugin(var layer : LaneLayer,
       val slotsFree = slots.map(!_.valid).orR
       val slotsFreeFirst = B(OHMasking.firstV2(B(slots.map(!_.valid))))
 
+      // Populate the store buffer
       when(push.fire){
         ops.mem.write(ops.pushPtr.resized, push.op)
         ops.pushPtr := ops.pushPtr + U(push.fire)
@@ -262,6 +286,8 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
+      // Implement some hardware capable of holding the CPU, this is used when the store buffer is starting to be too full
+      // to give priority to the store buffer drain instead of being interrupted by the software usage of the LSU
       val holdHart = new Area{
         val wordPerLine = LsuL1.LINE_BYTES*8/XLEN
         val threshold = Math.max(storeBufferOps - wordPerLine, storeBufferOps/2)
@@ -270,11 +296,12 @@ class LsuPlugin(var layer : LaneLayer,
         events.foreach(_.waiting setWhen(waitIt))
       }
 
-      val waitL1 = new L1Waiter()
+      val waitL1 = new L1Waiter() // Used when the store buffer is waiting of a cache line refill
       val empty = slots.map(!_.valid).andR
     }
 
     invalidationRetainer.await()
+    // Can flush the whole data cache when no memory coherency is implemented. This is used by the fence.i instruction.
     val flusher = !l1.coherency generate new StateMachine {
       val IDLE = makeInstantEntry()
       val SB_DRAIN = withStoreBuffer generate new State()
@@ -311,10 +338,13 @@ class LsuPlugin(var layer : LaneLayer,
       }
     }
 
+    // When memory coherency is implemented and we execute a fence.i instruction, we still need to ensure that the store buffer
+    // is drained before letting the instruction cache fetch stuff.
     val coherentFlusher = l1.coherency.get generate new Area{
       invalidationPorts.foreach(_.cmd.ready := withStoreBuffer.mux(storeBuffer.empty, True))
     }
 
+    // Handle the interface to the RISC-V debug hardware triggers
     val onTrigger = new elp.Execute(triggerAt){
       val bus = host[LsuTriggerService].getLsuTriggerBus
       bus.hartId  := Global.HART_ID
@@ -327,6 +357,7 @@ class LsuPlugin(var layer : LaneLayer,
       val HIT = insert(bus.hits.orR)
     }
 
+    // Collect the different request and interface them with the L1 cache aswell as the MMU
     val onAddress0 = new elp.Execute(addressAt){
       FORCE_PHYSICAL := FROM_ACCESS || FROM_WB
       val translationPort = ats.newTranslationPort(
@@ -340,11 +371,12 @@ class LsuPlugin(var layer : LaneLayer,
 
       val ports = ArrayBuffer[Stream[LsuL1Cmd]]()
 
+      // Accesses comming explicitly from the software
       val ls = new Area {
         val prefetchOp = Decode.UOP(24 downto 20)
         val port = ports.addRet(Stream(LsuL1Cmd()))
         port.valid := isValid && SEL
-        port.address := srcp.ADD_SUB.asUInt.resized  //TODO Overflow  ?
+        port.address := srcp.ADD_SUB.asUInt.resized
         port.size := SIZE
         port.load := LOAD
         port.store := STORE
@@ -357,6 +389,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.storeId := storeId
       }
 
+      // Accesses comming from the MMU (in practice)
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val waiter = new L1Waiter
@@ -373,6 +406,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.storeId := 0
       }
 
+      // Accesses comming from the TrapPlugin (ex : fence.i)
       val flush = (flusher != null) generate new Area {
         val port = ports.addRet(Stream(LsuL1Cmd()))
         port.valid := flusher.isActive(flusher.CMD) && !flusher.cmdCounter.msb
@@ -388,6 +422,7 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
+      // Accesses comming from the store buffer which attempts to retry a failed store
       val sb = withStoreBuffer generate new Area {
         val isHead = storeBuffer.pop.ptr === storeBuffer.ops.freePtr
         val flush = storeBuffer.waitL1.valid && !isHead
@@ -403,6 +438,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.storeId := storeBuffer.pop.op.storeId
       }
 
+      // Accesses comming from the hardware prefetcher
       val fromHp = hp.nonEmpty generate new Area {
         val feed = hp.get.io.get
         val port = ports.addRet(Stream(LsuL1Cmd()))
@@ -416,6 +452,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.storeId := 0
       }
 
+      // Let's arbitrate all those request and connect the atrbitred output to the pipeline / L1
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
       arbiter.io.output.ready := !elp.isFreezed()
       l1.SEL := arbiter.io.output.valid
@@ -462,6 +499,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
     }
 
+    // Pre compute a few things to reduce the combinatorial path presure on the ctrl stage.
     val preCtrl = new elp.Execute(ctrlAt-1){
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
       val IS_AMO = insert(SEL && l1.ATOMIC && l1.STORE && l1.LOAD)
@@ -478,6 +516,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val CACHED_RSP = insert(cached.rsp)
       val IO_RSP = insert(io.rsp)
+      IO_RSP.fault.setWhen(l1.ATOMIC || FROM_ACCESS)
       val IO = insert(CACHED_RSP.fault && !IO_RSP.fault && !FENCE && !FROM_PREFETCH)
       val addressExtension = ats.getSignExtension(AddressTranslationPortUsage.LOAD_STORE, srcp.ADD_SUB.asUInt)
       val FROM_LSU_MSB_FAILED = insert(FROM_LSU && srcp.ADD_SUB.dropLow(Global.MIXED_WIDTH).asBools.map(_ =/= addressExtension).orR)
@@ -485,9 +524,12 @@ class LsuPlugin(var layer : LaneLayer,
       MMU_FAILURE := MMU_PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD || FROM_LSU_MSB_FAILED
     }
 
+    // The ctrl stage will take all the decisions, handle AMO/LR/SC and IO accesses aswell
+    // A loooot of things are happening here.
     val onCtrl = new elp.Execute(ctrlAt) {
       val lsuTrap = False
 
+      // Data which should be written to the memory, before being aligned to the memory address
       val writeData = Bits(Riscv.LSLEN bits)
       writeData.assignDontCare()
       writeData(0, XLEN bits) := up(elp(IntRegFile, riscv.RS2))
@@ -495,10 +537,11 @@ class LsuPlugin(var layer : LaneLayer,
         writeData(0, FLEN bits) := up(elp(FloatRegFile, riscv.RS2))
       }
 
-      val scMiss = Bool()
+      val scMiss = Bool() // (Store Conditional miss)
 
+      // Little state machine which handle IO accesses. Pipelined on all sides to avoid putting presure on the FMax
       val io = new Area {
-        val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False)
+        val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False) // Give one cycle delay, allowing trap to happen before the IO access is emited.
         val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel) init(False)
         val doIt = isValid && l1.SEL && onPma.IO
         val doItReg = RegNext(doIt) init(False)
@@ -506,7 +549,7 @@ class LsuPlugin(var layer : LaneLayer,
         val cmdSent = RegInit(False) setWhen (bus.cmd.fire) clearWhen (!elp.isFreezed())
         bus.cmd.valid := doItReg && !cmdSent && allowIt && !tooEarly
         bus.cmd.write := l1.STORE
-        bus.cmd.address := l1.PHYSICAL_ADDRESS //TODO Overflow on TRANSLATED itself ?
+        bus.cmd.address := l1.PHYSICAL_ADDRESS
         bus.cmd.data := l1.WRITE_DATA
         bus.cmd.size := l1.SIZE
         bus.cmd.mask := l1.MASK
@@ -524,6 +567,7 @@ class LsuPlugin(var layer : LaneLayer,
         l1.ackUnlock setWhen (cmdSent) //Ensure we don't create external lockup
       }
 
+      // Extract the data from the memory read, into the wished register file format.
       val loadData = new Area {
         val input = io.cmdSent.mux[Bits](io.rsp.data, l1.READ_DATA)
         val splited = input.subdivideIn(8 bits)
@@ -542,8 +586,11 @@ class LsuPlugin(var layer : LaneLayer,
         val RESULT = insert(shited)
       }
 
+      // Translate the register file data into the memory friendly format.
+      // So for instance, let's say the want to write 0xABCD on a given 16 bits locatiion on a 64 bits memory bus,
+      // then hardware will generate 0xABCD_ABCD_ABCD_ABCD, allowing the write to happen with every aligned byte mask possible.
       val storeData = new Area{
-        val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map { size =>
+        val mapping = for(size <- 0 to log2Up(Riscv.LSLEN / 8)) yield {
           val w = (1 << size) * 8
           size -> writeData(0, w bits).#*(Riscv.LSLEN / w)
         }
@@ -557,6 +604,8 @@ class LsuPlugin(var layer : LaneLayer,
         l1.lockPort.valid := False
         l1.lockPort.address := 0
       }
+
+      // Implements a little state machine,the AMO ALU and the reservation logic (LR/SC)
       val rva = Riscv.RVA.get generate new Area {
         val srcBuffer = RegNext[Bits](loadData.RESULT.resize(XLEN bits))
         val alu = new AtomicAlu(
@@ -577,15 +626,15 @@ class LsuPlugin(var layer : LaneLayer,
         elp.freezeWhen(freezeIt) //Note that if the refill is faster than 2 cycle, it may create issues
 
         assert(Global.HART_COUNT.get == 1)
-        val nc = new Area {
-          val capture = False
+        val lrsc = new Area {
+          val capture = False // True when the software ask a reservation (load reserve)
           val reserved = RegInit(False)
           val address = Reg(l1.PHYSICAL_ADDRESS)
           when(!elp.isFreezed() && isValid && FROM_LSU && l1.SEL && !lsuTrap && !onPma.IO) {
             when(l1.STORE){
-              reserved := False
+              reserved := False // Kill the reservation on any store
             } elsewhen(apply(l1.ATOMIC)){
-              capture := True
+              capture := True // Load Reserve
             }
           }
           scMiss := !reserved
@@ -596,6 +645,9 @@ class LsuPlugin(var layer : LaneLayer,
           when(age.msb || io.cmdSent){ // io.cmdSent ensure we do not create external deadlock
             reserved := False
           } otherwise {
+            // It only age when the pipeline isn't freezed for 2 reasons :
+            // - Else we may lose the reservation at the same time we are processing a store condition => trensiant cases
+            // - If a LR is followed by a divide instruction (for example), this will slow down things and ensure we have a chance to pass
             age := age + U(!elp.isFreezed())
           }
           when(capture){
@@ -606,21 +658,23 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
+      // Compute a few flags / condition for the store buffer handeling
       val wb = withStoreBuffer generate new Area{
         when(FROM_WB) {
           l1.WRITE_DATA := onAddress0.SB_DATA
         }
         val tag = p2t(LsuL1.PHYSICAL_ADDRESS)
-        val hits = B(storeBuffer.slots.map(s => s.valid && s.tag === tag))
+        val hits = B(storeBuffer.slots.map(s => s.valid && s.tag === tag)) // Check if the current instruction collide with the store queue slots.
         val hit = hits.orR
-        val compatibleOp = FROM_LSU && l1.STORE && !ATOMIC && !onPma.IO
+        val compatibleOp = FROM_LSU && l1.STORE && !ATOMIC && !onPma.IO // The current instruction may eventualy be pushed to the store queue
         val notFull = !storeBuffer.ops.full && (storeBuffer.slotsFree || hit)
-        val allowed = notFull && compatibleOp
-        val slotOh = hits | storeBuffer.slotsFreeFirst.andMask(!hit)
-        val loadHazard = l1.LOAD && hit
-        val selfHazard = FROM_WB && SB_PTR =/= storeBuffer.ops.freePtr
+        val allowed = notFull && compatibleOp // The current store can be pushed to the store queue
+        val slotOh = hits | storeBuffer.slotsFreeFirst.andMask(!hit) // Find which store buffer slot to assign to the current store instruction
+        val loadHazard = l1.LOAD && hit // Store buffer to load hazard detected. Vexii doesn't implement store buffer to load bypass.
+        val selfHazard = FROM_WB && SB_PTR =/= storeBuffer.ops.freePtr // The store retry isn't the one at the head of the store buffer.
       }
 
+      // Handle all the different trap cases
       val traps = new Area {
         flushPort.valid := False
         flushPort.hartId := Global.HART_ID
@@ -628,7 +682,6 @@ class LsuPlugin(var layer : LaneLayer,
         flushPort.laneAge := Execute.LANE_AGE
         flushPort.self := False
 
-        //TODO handle case were address isn't in the range of the virtual address ?
         trapPort.valid := False
         trapPort.hartId := Global.HART_ID
         trapPort.laneAge := Execute.LANE_AGE
@@ -637,7 +690,7 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code.assignDontCare()
         trapPort.arg.allowOverride() := 0
 
-        val accessFault = (onPma.CACHED_RSP.fault).mux[Bool](io.rsp.valid && io.rsp.error || l1.ATOMIC, l1.FAULT) || pmpPort.ACCESS_FAULT
+        val accessFault = (onPma.CACHED_RSP.fault).mux[Bool](io.rsp.valid && io.rsp.error, l1.FAULT) || pmpPort.ACCESS_FAULT
         when(accessFault) {
           lsuTrap := True
           trapPort.exception := True
@@ -722,6 +775,7 @@ class LsuPlugin(var layer : LaneLayer,
         lsuTrap := False
       }
 
+      // memory fences while the store buffer isn't drained are handled by retrying the fence later.
       val fenceTrap = withStoreBuffer generate new Area{
         val valid = (ATOMIC || FENCE) && (!storeBuffer.empty || !onAddress0.STORE_BUFFER_EMPTY)
         when(valid) {
@@ -750,6 +804,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val mmuNeeded = FROM_LSU || FROM_PREFETCH
 
+      // Prevents side effects on the L1 in various cases.
       val abords, skipsWrite = ArrayBuffer[Bool]()
       abords += l1.HAZARD
       abords += l1.FLUSH_HAZARD
@@ -773,13 +828,14 @@ class LsuPlugin(var layer : LaneLayer,
         flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
       }
 
+      // Handle store buffer retry
       if(withStoreBuffer) when(l1.SEL && FROM_WB && !elp.isFreezed() && !wb.selfHazard){
-        when(traps.l1Failed) {
+        when(traps.l1Failed) { // Seems like the L1 cache had a miss
           storeBuffer.ops.popPtr := storeBuffer.ops.freePtr
-          when(!wb.selfHazard){
-            storeBuffer.waitL1.capture(down)
+          when(!l1.HAZARD) {
+            storeBuffer.waitL1.capture(down) // Seems like we need to wait on the L1 refill
           }
-        } otherwise {
+        } otherwise { // All went well :D
           storeBuffer.ops.freePtr := storeBuffer.ops.freePtr + 1
           for (slot <- storeBuffer.slots) when(slot.ptr === storeBuffer.ops.freePtr) {
             slot.valid := False
@@ -787,12 +843,12 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      //TODO what happen if used for IO access ?
+      // Feed L1 load data to the dBusAccess (to the MMU page walker)
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp
         rsp.valid    := l1.SEL && FROM_ACCESS && !elp.isFreezed()
-        rsp.data     := loadData.RESULT.resized //loadData.RESULT instead of l1.READ_DATA (because it rv32fd)
+        rsp.data     := loadData.RESULT.resized // loadData.RESULT instead of l1.READ_DATA (because it rv32fd)
         rsp.error    := l1.FAULT || pmpPort.ACCESS_FAULT
         rsp.redo     := traps.l1Failed
         rsp.waitSlot := 0
@@ -818,6 +874,7 @@ class LsuPlugin(var layer : LaneLayer,
         events.foreach(_.waiting setWhen(valid))
       }
 
+      // Drive the commitProbe bus
       commitProbe.valid := down.isFiring && SEL.mux[Bool](FROM_LSU, FROM_PREFETCH && HAZARD) // && !l1.REFILL_HIT
       commitProbe.address := l1.MIXED_ADDRESS
       commitProbe.load := l1.LOAD
@@ -829,6 +886,7 @@ class LsuPlugin(var layer : LaneLayer,
       commitProbe.pc := Global.PC
     }
 
+    // Drive the write back interface
     val onWb = new elp.Execute(wbAt){
       iwb.valid := SEL && !FLOAT
       iwb.payload := onCtrl.loadData.RESULT.resized
@@ -850,10 +908,15 @@ class LsuPlugin(var layer : LaneLayer,
       val storeBroadcast = down.isReady && l1.SEL && l1.STORE && !l1.ABORD && !l1.SKIP_WRITE && !l1.MISS && !l1.MISS_UNIQUE && !l1.HAZARD
     }
 
+    if(withStoreBuffer) storeBuffer.ops.pip.build()
     buildBefore.release()
   }
 
 
+  // Generate the PMA (Physical Memory access) checkers
+  // - One for the accesses which can go to the L1
+  // - One for the access which can go to the IO bus
+  // If an access could go to both, then L1 win.
   val ioRegions = Handle[ArrayBuffer[PmaRegion]]()
   val pmaBuilder = during build new Area{
     val l1Regions = ArrayBuffer[PmaRegion]()

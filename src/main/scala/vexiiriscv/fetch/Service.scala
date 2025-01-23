@@ -18,6 +18,10 @@ case class JumpCmd(laneAgeWidth : Int) extends Bundle{
 }
 
 case class PcServiceHoldPortSpec(hartId : Int, valid : Bool)
+
+/**
+ * Service which mainly allows other plugins to manipulate the PC being fetched
+ */
 trait PcService {
   val elaborationLock = Retainer()
   def newJumpInterface(age: Int, laneAgeWidth : Int, aggregationPriority : Int) : Flow[JumpCmd] //High priority win
@@ -27,6 +31,7 @@ trait PcService {
   val holdPorts = ArrayBuffer[PcServiceHoldPortSpec]()
 }
 
+// After the CPU reset, this service allows a plugin to make the CPU wait longer before starting fetching instruction.
 trait InitService{
   def initHold() : Bool
 }

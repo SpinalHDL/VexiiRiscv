@@ -22,6 +22,23 @@ import vexiiriscv.execute._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * Implements an LSU without any cache.
+ * The tricky thing about this implementation, is the withSpeculativeLoadFlush parameter, which allows the plugin
+ * to speculatively emit non-io memory load to the memory system, even if the load result may be trashed away.
+ *
+ * The plugin does support MMU aswell as atomic instruction. This allows to run linux without data cache :D.
+ * This is usefull from a verification perspective.
+ *
+ * To get good timings on FPGA in a SoC, consider setting :
+ * - forkAt = 1
+ * - joinAt = 2
+ *
+ * This allows the memory bus CMD to have very relaxed timings by avoiding the XLEN bits adder aswell as the PMA data path.
+ * The down side is that the memory bus respons data path timings are stressed, but as this only impact the data path (no control path),
+ * it seems to be generaly better.
+ */
+
 class LsuCachelessPlugin(var layer : LaneLayer,
                          var withAmo : Boolean,
                          var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing if any plugin doesn't flush from the first cycle after !freeze

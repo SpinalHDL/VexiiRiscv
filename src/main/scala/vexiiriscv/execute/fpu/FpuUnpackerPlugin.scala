@@ -15,7 +15,12 @@ import vexiiriscv.Global.TRAP
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-
+/**
+ * Recode the floating point number comming from the register file to get rid of subnormal numbers by extending the exponant range instead.
+ * Getting ride of subnormal helps various floating point operations, as it ensure that the range of the mantissa stay between [1.0, 2.0[
+ *
+ * When a subnormal number come in, the pipeline will be stuck for a few cycles in order to preserve the FMax.
+ */
 class FpuUnpackerPlugin(val layer : LaneLayer,
                         var ignoreSubnormal : Boolean = false,
                         unpackAt : Int = 0,

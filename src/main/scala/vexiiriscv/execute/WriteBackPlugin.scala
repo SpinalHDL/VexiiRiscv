@@ -15,6 +15,11 @@ import vexiiriscv.riscv.{FloatRegFile, MicroOp, RD, RegfileSpec}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * This plugin allows other plugins to create interface to write in the register file from where they want in the pipeline.
+ * The trick is that this plugin will only instanciate one register file write port at the last stage, and pipeline all the
+ * write interface created for the other plugins to that point.
+ */
 class WriteBackPlugin(val lane : ExecuteLaneService,
                       val rf : RegfileSpec,
                       var writeAt : Int,
@@ -66,7 +71,6 @@ class WriteBackPlugin(val lane : ExecuteLaneService,
           if(rf == FloatRegFile){
             impl.addDecoding(FpuCsrPlugin.DIRTY -> True)
           }
-//          impl.dontFlushFrom(writeAt+1)
         }
       }
     }

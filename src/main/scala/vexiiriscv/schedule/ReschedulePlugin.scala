@@ -12,22 +12,19 @@ import vexiiriscv.misc.PipelineBuilderPlugin
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * The ReschedulePlugin act as a arbiter for all the different plugins which want to reschedule what the CPU should execute,
+ * aswell as a registry for all the plugins which need to know if the CPU is being flushed until a given point in the pipeline.
+ *
+ */
 class ReschedulePlugin extends FiberPlugin with ScheduleService {
   val flushPortsShared = mutable.LinkedHashMap[Nameable, Flow[FlushCmd]]()
   val flushPorts = ArrayBuffer[Flow[FlushCmd]]()
-  val trapPorts  = ArrayBuffer[Flow[TrapCmd]]()
   val ctrls      = ArrayBuffer[CtrlSpec]()
 
   case class CtrlSpec(ctrl : CtrlLink)
 
-//  override def newPcPort(age: Int, aggregationPriority: Int = 0) = host[PcService].createJumpInterface(age, aggregationPriority)
   override def newFlushPort(age: Int, laneAgeWidth : Int, withUopId : Boolean) = flushPorts.addRet(Flow(FlushCmd(age, laneAgeWidth, withUopId)))
-//  override def sharedFlushPort(age: Int, laneAgeWidth: Int, withUopId: Boolean, key : Nameable) = {
-//    flushPortsShared.getOrElseUpdate(key, {
-//      newFlushPort(age, laneAgeWidth, withUopId).setCompositeName(key, "flushPort")
-//    })
-//  }
-  override def newTrapPort(age : Int, causeWidth : Int = 4) = trapPorts.addRet(Flow(TrapCmd(age, Global.PC_WIDTH, Global.TVAL_WIDTH, causeWidth, Global.TRAP_ARG_WIDTH)))
   override def isFlushedAt(age: Int, hartId: UInt, laneAge : UInt): Option[Bool] = {
     elaborationLock.await()
     val filtred = flushPorts.filter(p => p.age >= age)

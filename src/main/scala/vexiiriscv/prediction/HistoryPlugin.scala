@@ -15,12 +15,12 @@ import scala.collection.mutable
 case class HistoryJump(laneAgeWidth : Int) extends Bundle{
   val history = BRANCH_HISTORY()
   val age = UInt(laneAgeWidth bits)
-  //TODO HART ID
 }
 
-//TODO a few history port may be removed to save area, as they are corner case  : DecodePredictionPlugin, and eventualy Lsu io missprediction
+/**
+ * This the plugin in change of handeling the branch history state, provide ports to modify it, and inject it in the fetch pipeline
+ */
 class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin {
-
 
   case class HistorySpec(priority : Int, laneAgeWidth : Int, port : Flow[HistoryJump])
   val historySpecs = mutable.ArrayBuffer[HistorySpec]()
@@ -45,6 +45,7 @@ class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin
       val valueNext = CombInit(value)
       value := valueNext
 
+      // Arbitrate between all the ports which want to change the branch history
       val groups = historySpecs.groupBy(_.priority).toSeq.sortBy(_._1)
       val ports = for((_, elements) <- groups) yield {
         val ret = cloneOf(elements.head.port)

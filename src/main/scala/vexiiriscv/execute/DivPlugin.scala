@@ -25,6 +25,9 @@ trait DivReuse{
   val divRetainer = Retainer()
 }
 
+/**
+ * Implement the RISC-V division instruction using an unsigned divider. but the actual division hardware is provided through a landa function parameter.
+ */
 class DivPlugin(val layer : LaneLayer,
                 var relaxedInputs: Boolean,
                 var impl : (Int, Int, Boolean) => DivComp,

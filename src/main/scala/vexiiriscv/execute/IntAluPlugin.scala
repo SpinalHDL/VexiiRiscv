@@ -18,6 +18,9 @@ object IntAluPlugin extends AreaObject {
   }
 }
 
+/**
+ * Implements most of the integer processing instructions (but not the shift/mul/div)
+ */
 class IntAluPlugin(var layer: LaneLayer,
                    var aluAt : Int = 0,
                    var formatAt : Int = 0) extends ExecutionUnitElementSimple(layer)  {
@@ -34,11 +37,15 @@ class IntAluPlugin(var layer: LaneLayer,
     val abce = AluBitwiseCtrlEnum
 
     val wb = newWriteback(ifp, formatAt)
-    val ORI = Rvi.ORI(host.get[CmoService] match {
+
+    // Cache prefetching instruction reuse the ORI instruction encoding, we need to avoid it
+    val avoidCmoPrefetch = host.get[CmoService] match {
       case Some(s) => s.withSoftwarePrefetch
       case None => false
-    })
+    }
+    val ORI = Rvi.ORI(avoidCmoPrefetch)
 
+    // Define all the instruction implemented by the plugin
     add(Rvi.ADD ).srcs(Op.ADD   , SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> True , ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.ZERO )
     add(Rvi.SUB ).srcs(Op.SUB   , SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> True , ALU_SLTX -> False, ALU_BITWISE_CTRL -> abce.ZERO )
     add(Rvi.SLT ).srcs(Op.LESS  , SRC1.RF, SRC2.RF).decode(ALU_ADD_SUB -> False, ALU_SLTX -> True , ALU_BITWISE_CTRL -> abce.ZERO )
@@ -69,6 +76,7 @@ class IntAluPlugin(var layer: LaneLayer,
 
     uopRetainer.release()
 
+    // Generate the ALU hardware
     val alu = new el.Execute(aluAt) {
       val ss = SrcStageables
 
@@ -84,6 +92,7 @@ class IntAluPlugin(var layer: LaneLayer,
       ALU_RESULT := result.asBits
     }
 
+    // Provide the result back to the write-back interface
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
       wb.payload := ALU_RESULT

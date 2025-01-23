@@ -2,11 +2,14 @@ package vexiiriscv.misc
 
 import spinal.core._
 import spinal.core.fiber.Retainer
+import spinal.lib.misc.pipeline.Link
 
 /*
+Here is the linux DTS which can be used to interface the VexiiRiscv PMU :
+
         pmu {
-		    compatible 			= "riscv,pmu";
-		    riscv,event-to-mhpmevent =
+		      compatible 			= "riscv,pmu";
+		      riscv,event-to-mhpmevent =
  					 <0x1 0x0000 0x06>, /*  Cycle */
 					 <0x2 0x0000 0x07>, /*  instructions */
  					 <0x5 0x0000 0x01>, /*  Conditional branch instruction count */
@@ -18,15 +21,15 @@ import spinal.core.fiber.Retainer
 					 <0x10008 0x0000 0x10>,  /* I-Cache access */
 					 <0x10009 0x0000 0x11>;  /* I-Cache miss */
 
-
 	        riscv,event-to-mhpmcounters =
-	                <0x00001 0x00009 0xFF8>,
-	                <0x10000 0x10009 0xFF8>;
+            <0x00001 0x00009 0xFF8>,
+            <0x10000 0x10009 0xFF8>;
 
-		riscv,raw-event-to-mhpmcounters = <0x0000 0x0000 0xffffffff 0xffffff00 0x00000ff8>;
+		      riscv,raw-event-to-mhpmcounters = <0x0000 0x0000 0xffffffff 0xffffff00 0x00000ff8>;
         };
 
- */
+Also, don't forget to enable the PMU support in the linux defconfig.
+*/
 
 object PerformanceCounterService{
   val BRANCH_COUNT   = 0x01
@@ -52,6 +55,9 @@ object PerformanceCounterService{
   val DEV = 0x20
 }
 
+/**
+ * This service allows other plugins to generate new event sources for the PMU
+ */
 trait PerformanceCounterService {
   def createEventPort(id: Int): Bool
   def createEventPort(id: Int, drive : Bool): Bool = {
@@ -68,4 +74,8 @@ trait CommitService {
 
 trait InflightService {
   def hasInflight(hartId: Int): Bool
+}
+
+trait PipelineService{
+  def getLinks() : Seq[Link]
 }

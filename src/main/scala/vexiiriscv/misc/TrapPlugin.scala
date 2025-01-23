@@ -12,7 +12,8 @@ import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, INSTRUCTION_SLICE_COUNT_WIDTH, INSTRUCTION_WIDTH}
-import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, LsuL1Service, LsuService, PcService}
+import vexiiriscv.execute.lsu.{LsuL1Service, LsuService}
+import vexiiriscv.fetch.{Fetch, FetchL1Service, InitService, PcService}
 import vexiiriscv.memory.AddressTranslationService
 import vexiiriscv.prediction.{HistoryPlugin, Prediction}
 import vexiiriscv.schedule.Ages
@@ -77,24 +78,33 @@ case class TrapPending() extends Bundle{
 
 object TrapReason{
   val INTERRUPT = 0
-  val PRIV_RET = 1
+  val PRIV_RET = 1 //Used for MRET, SRET
   val FENCE_I = 2
   val DEBUG_TRIGGER = CSR.MCAUSE_ENUM.BREAKPOINT // Need to match to reduce hardware
-  val REDO = 4
-  val NEXT = 5
+  val REDO = 4 // Allows the retry the current instruction
+  val NEXT = 5 // Allows to fence the current instruction against all the future one by flushing the younger instructions and resuming on the next instruction.
   val SFENCE_VMA = 6
   val MMU_REFILL = 7
   val WFI = 8
 }
 
+/**
+ * Trap args are used in a few cases to provide additional information.
+ * Mainly, when using TrapReason MMU_REFILL, to specify which TLB storage need to be refilled.
+ */
 object TrapArg{
   val LOAD = 0
   val STORE = 1
   val FETCH = 2
 }
 
-
-//TODO ensure that CSR stored in ram are properly masked on read (mtval ... )
+/**
+ * Mainly, this plugin implement a state-machine which handle regular traps (interrupt/exception), but also a set of
+ * special "hardware" trap used by the CPU to handle special cases as instruction retry/fences, MMU refill, ...
+ *
+ * Also, as VexiiRiscv implements a few large CSR directly into a sharder memory (mepc, mtvec, ...), the TrapPlugin state-machine handles
+ * the hardware read/write with those CSR (durring trap, mret, ...).
+ */
 class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
   override def trapHandelingAt: Int = trapAt
 
@@ -102,10 +112,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
   val api = during build new Area{
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
-      val redo = False
-      val askWake = False
-      val rvTrap = False
-      val fsmBusy = Bool()
+      // Mainly used to interface with the RISC-V debugger implemented in the PrivilegedPlugin
+      val redo = False // Instruction need to retried.
+      val askWake = False // ex : wake the CPU as an interrupt is pending
+      val rvTrap = False // Instruction got a trap
+      val fsmBusy = Bool() //TrapPlugin FSM is doing work, hold on
     }
   }
 
@@ -142,6 +153,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
     val harts = for(hartId <- 0 until HART_COUNT) yield new Area{
       val csr = priv.logic.harts(hartId)
 
+      // Used to read/write the CSR stored in RAM as mepc, mtvec, ... in the state machine
       val crsPorts = withRam generate new Area{
         val read = crs.ramReadPort(CsrRamService.priority.TRAP)
         read.valid := False
@@ -217,7 +229,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
       }
 
 
-
+      // Capture the state of the oldest pending trap requests (from the pipelines)
       val trap = new Area {
         val pending = new Area {
           val requests = traps.map(e => new AgedArbiterUp(e.bus.valid && e.bus.hartId === hartId, e.bus.payload.toRaw(), e.age, e.bus.laneAge, e.subAge))
@@ -260,9 +272,9 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val targetPrivilege = csr.privilege.max(exceptionTargetPrivilegeUncapped)
         }
 
-
+        // Detect when an instruction which did a trap reach the commit point.
         val trigger = new Area {
-          val lanes = host.list[ExecuteLanePlugin] //TODO AREA filter the ones which may trap
+          val lanes = host.list[ExecuteLanePlugin] //This is a bit pessimistic, as a given lane may not be able to trap, but the synthesis should be able to take care of that.
           csr.commitMask := B(for (self <- lanes; sn = self.execute(trapAt+1).down) yield sn.isFiring && sn(COMMIT))
           val oh = B(for (self <- lanes; sn = self.execute(trapAt).down) yield sn.isFiring && sn(TRAP))
           val valid = oh.orR
@@ -291,6 +303,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
         pcPort.fault := False
         pcPort.hartId := hartId
         pcPort.pc.assignDontCare()
+        // This state machine is kinda the heart of the CPU.
         val fsm = new StateMachine {
           val RESET = makeInstantEntry()
           val RUNNING, PROCESS = new State()
@@ -326,6 +339,8 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           }
 
           val resetToRunConditions = ArrayBuffer[Bool](!initHold)
+
+          // Interface with the address translation service (MMU)
           val atsPorts = ats.mayNeedRedo generate new Area{
             val refill = ats.newRefillPort()
             refill.cmd.valid := False
@@ -343,13 +358,13 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
 
           // Used to wait until everybody is ready after reset
-
           RESET.whenIsActive{
             when(resetToRunConditions.andR){
               goto(RUNNING)
             }
           }
 
+          // While CPU is running code
           RUNNING.whenIsActive {
             when(trigger.valid) {
               buffer.sampleIt := True
@@ -377,6 +392,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val trapEnterDebug = RegInit(False)
           val triggerEbreak = (priv.p.debugTriggers == 0).mux(False, !pending.state.exception && pending.state.code === TrapReason.DEBUG_TRIGGER && csr.trigger.slots.reader(pending.state.tval.asUInt.resized)(_.tdata1.doEbreak))
           val triggerEbreakReg = Reg(Bool())
+          // Got a trap, need to figure out exactly what to do.
           PROCESS.whenIsActive{
             triggerEbreakReg := triggerEbreak
             if(priv.p.debugTriggers > 0 ) {
@@ -488,17 +504,18 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
           if(ats.mayNeedRedo) ATS_RSP.whenIsActive{
             when(atsPorts.refill.rsp.valid){
-              goto(JUMP) //TODO shave one cycle
+              api.harts(hartId).redo := True
+              goto(JUMP) //improvment: shave one cycle
               when(atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
                 pending.state.exception := True
-                switch(atsPorts.refill.rsp.pageFault ## pending.state.arg(1 downto 0)){
+                switch(atsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
-                  add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
-                  add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
-                  add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT)
-                  add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT)
-                  add(TrapArg.LOAD  | 4, CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT)
-                  add(TrapArg.STORE | 4, CSR.MCAUSE_ENUM.STORE_PAGE_FAULT)
+                  add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
+                  add(TrapArg.LOAD  | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
+                  add(TrapArg.STORE | 4, CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT)
+                  add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT)
+                  add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT)
+                  add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_PAGE_FAULT)
                 }
                 goto(TRAP_TVAL)
               }

@@ -10,7 +10,10 @@ import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv.Riscv.XLEN
 import vexiiriscv.riscv._
 
-
+/**
+ * Implement the RISC-V floating point SQRT instruction by using the FpuSqrt hardware.
+ * Not having to deal with subnormal numbers helps, as it fix the range of the mantissa between [1.0, 2.0[
+ */
 class FpuSqrtPlugin(val layer : LaneLayer,
                     var exeAt : Int = 0) extends FiberPlugin{
   val p = FpuUtils

@@ -26,6 +26,10 @@ import java.io.{BufferedWriter, File, FileWriter}
 import java.nio.file.Files
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * Integration layer of VexiiRiscv into the fiber / tilelink framework
+ * See the MicroSoc for a simple integration example.
+ */
 class TilelinkVexiiRiscvFiber(plugins : ArrayBuffer[Hostable]) extends Area with RiscvHart{
   val iBus = Node.down()
   val dBus = Node.down()

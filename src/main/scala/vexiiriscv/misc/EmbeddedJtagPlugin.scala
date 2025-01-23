@@ -7,6 +7,10 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.riscv.Riscv._
 
+/**
+ * This is an optional plugin which will integrate the whole RISC-V debug infrastructure in the CPU itself instead of letting that to the SoC toplevel.
+ * So it integrate the jtag TAP (DMI) and the RISC-V debug "hub" (DM). This ease the integration of VexiiRiscv into simple SoC.
+ */
 class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
                         var debugCd: ClockDomain = null,
                         var noTapCd: ClockDomain = null,

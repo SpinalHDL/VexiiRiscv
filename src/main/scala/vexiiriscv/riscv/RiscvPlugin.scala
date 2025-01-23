@@ -6,6 +6,9 @@ import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
 
+/**
+ * The aim of this plugin is mostly to serve as a RISC-V CPU parameter trampoline to globaly shared constants
+ */
 class RiscvPlugin(var xlen : Int,
                   var hartCount : Int,
                   var rvc: Boolean,

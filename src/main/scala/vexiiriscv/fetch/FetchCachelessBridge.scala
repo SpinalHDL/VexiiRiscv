@@ -6,6 +6,21 @@ import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.{DebugId, S2mSupport}
 import spinal.lib.misc.plugin.FiberPlugin
 
+// Plugin to embed a bridge in VexiiRiscv to convert the CachelessBus to Tilelink
+class FetchCachelessTileLinkPlugin(node : bus.tilelink.fabric.Node) extends FiberPlugin {
+  val logic = during build new Area{
+    val fcp = host[FetchCachelessPlugin]
+    fcp.logic.bus.setAsDirectionLess()
+
+    val bridge = new CachelessBusToTilelink(fcp.logic.bus)
+    master(bridge.down)
+
+    node.m2s.forceParameters(bridge.m2sParam)
+    node.s2m.supported.load(S2mSupport.none())
+    node.bus.component.rework(node.bus << bridge.down)
+  }
+}
+
 class CachelessBusToTilelink(up : CachelessBus) extends Area{
   assert(up.p.cmdPersistence)
   val m2sParam = up.p.toTilelinkM2s(this)
@@ -23,18 +38,4 @@ class CachelessBusToTilelink(up : CachelessBus) extends Area{
   up.rsp.id    := down.d.source
   up.rsp.error := down.d.denied
   up.rsp.word  := down.d.data
-}
-
-class FetchCachelessTileLinkPlugin(node : bus.tilelink.fabric.Node) extends FiberPlugin {
-  val logic = during build new Area{
-    val fcp = host[FetchCachelessPlugin]
-    fcp.logic.bus.setAsDirectionLess()
-
-    val bridge = new CachelessBusToTilelink(fcp.logic.bus)
-    master(bridge.down)
-
-    node.m2s.forceParameters(bridge.m2sParam)
-    node.s2m.supported.load(S2mSupport.none())
-    node.bus.component.rework(node.bus << bridge.down)
-  }
 }

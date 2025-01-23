@@ -21,12 +21,19 @@ object CsrFsm{
   val CSR_VALUE = Payload(Bits(XLEN bits))
 }
 
+/**
+ * Implements the RISC-V CSR read/write instructions, aswell as provide an API for other plugin to populate the CSR space.
+ * In other words, this plugin do not define any CSR, but provide an API to define them (that API is defined in CsrService).
+ *
+ * To help with the FMax, CSR accesses are implemented by using a state-machine. Accesses are done over 4 cycles :
+ * idle -> read -> write -> completion
+ *
+ * This maybe a bit overkilled, but as the CSR access isn't critical for the IPC, better to much cycles than not enough.
+ */
 class CsrAccessPlugin(val layer : LaneLayer,
                       writeBackKey : Any,
-                      integrated : Boolean = true,
                       injectAt : Int = 0,
-                      wbAt : Int = 1) extends FiberPlugin with CsrService with CompletionService {
-  override def getCompletions(): Seq[Flow[CompletionPayload]] = if(!integrated) Seq(logic.fsm.completion) else Nil
+                      wbAt : Int = 1) extends FiberPlugin with CsrService {
 
   val SEL = Payload(Bool())
   val TO_RF = Payload(Bits(Riscv.XLEN bits))
@@ -66,13 +73,11 @@ class CsrAccessPlugin(val layer : LaneLayer,
     add(Rvi.CSRRSI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> False)
     add(Rvi.CSRRCI).decode(CSR_IMM -> True, CSR_MASK -> True, CSR_CLEAR -> True)
 
-    val wbWi = integrated generate iwb.access(wbAt)
+    val wbWi = iwb.access(wbAt)
     for(op <- List(Rvi.CSRRW, Rvi.CSRRS, Rvi.CSRRC, Rvi.CSRRWI, Rvi.CSRRSI, Rvi.CSRRCI).map(layer(_))){
       op.dontFlushFrom(injectAt)
       op.mayFlushUpTo(injectAt)
-      if (!integrated) ??? //elp.setRdOutOfPip(op)
-      if (integrated) iwb.addMicroOp(wbWi, op)
-      //      dp.fenceYounger(op)
+      iwb.addMicroOp(wbWi, op)
       dp.fenceOlder(op.uop)
     }
 
@@ -100,9 +105,6 @@ class CsrAccessPlugin(val layer : LaneLayer,
 
     ramPortRetainer.foreach(_.release())
 
-    val wbNi = !integrated generate irf.newWrite(withReady = true, sharingKey = writeBackKey)
-
-
     def filterToName(filter: Any) = filter match {
       case f: Int => f.toString
       case f: Nameable => f.getName()
@@ -116,19 +118,17 @@ class CsrAccessPlugin(val layer : LaneLayer,
 
       val rd = rfaKeys.get(RD)
 
-      //TODO this is a bit fat
-      val regs = new Area {
-        def doReg[T <: Data](that : HardType[T]) : T = if(integrated) that() else Reg(that)
+      val interface = new Area {
         val sels = grouped.map(e => e._1 -> Reg(Bool()).setName("REG_CSR_" + filterToName(e._1)))
         val read, write = Reg(Bool())
-        val rs1 = doReg(CSR_VALUE)
+        val rs1 = CSR_VALUE()
         val aluInput, csrValue, onWriteBits = Reg(CSR_VALUE) //onWriteBits is only for whiteboxing
-        val hartId = doReg(Global.HART_ID)
-        val uopId = doReg(Decode.UOP_ID)
-        val uop = doReg(Decode.UOP)
-        val doImm, doMask, doClear = doReg(Bool())
-        val rdPhys = doReg(rd.PHYS)
-        val rdEnable = doReg(Bool())
+        val hartId = Global.HART_ID()
+        val uopId = Decode.UOP_ID()
+        val uop = Decode.UOP()
+        val doImm, doMask, doClear = Bool()
+        val rdPhys = rd.PHYS()
+        val rdEnable = Bool()
         val fire = False
       }
 
@@ -158,23 +158,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
           }
         }
 
-
-
         val trap = !implemented || bus.decode.exception
-
-        def connectRegs(): Unit = {
-          regs.hartId := Global.HART_ID
-          regs.uopId := Decode.UOP_ID
-          regs.read := SEL && !trap && csrRead
-          regs.write := SEL && !trap && csrWrite
-          regs.rs1 := up(elp(IntRegFile, RS1))
-          regs.uop := UOP
-          regs.doImm := CSR_IMM
-          regs.doMask := CSR_MASK
-          regs.doClear := CSR_CLEAR
-          regs.rdEnable := up(rd.ENABLE)
-          regs.rdPhys := rd.PHYS
-        }
 
         bus.decode.read := csrRead
         bus.decode.write := csrWrite
@@ -182,16 +166,20 @@ class CsrAccessPlugin(val layer : LaneLayer,
         bus.decode.address := csrAddress.asUInt
 
         val unfreeze = RegNext(False) init(False)
-        val iLogic = integrated generate new Area{
-          connectRegs()
-          val freeze = isValid && SEL && !unfreeze
-          elp.freezeWhen(freeze)
-        }
-        val niLogic = !integrated generate new Area{
-          when(isActive(IDLE)) {
-            connectRegs()
-          }
-        }
+        interface.hartId := Global.HART_ID
+        interface.uopId := Decode.UOP_ID
+        interface.read := SEL && !trap && csrRead
+        interface.write := SEL && !trap && csrWrite
+        interface.rs1 := up(elp(IntRegFile, RS1))
+        interface.uop := UOP
+        interface.doImm := CSR_IMM
+        interface.doMask := CSR_MASK
+        interface.doClear := CSR_CLEAR
+        interface.rdEnable := up(rd.ENABLE)
+        interface.rdPhys := rd.PHYS
+
+        val freeze = isValid && SEL && !unfreeze
+        elp.freezeWhen(freeze)
 
         flushPort.valid := False
         flushPort.hartId := Global.HART_ID
@@ -219,7 +207,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         val busTrapCodeReg = RegNext(bus.decode.trapCode)
 
         IDLE whenIsActive {
-          (regs.sels.values, sels.values).zipped.foreach(_ := _)
+          (interface.sels.values, sels.values).zipped.foreach(_ := _)
           when(onDecodeDo) {
             when(!trap && !bus.decode.trap) {
               goto(READ)
@@ -250,7 +238,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         val onReadsDo = False
         val onReadsFireDo = False
         bus.read.valid := onReadsDo
-        bus.read.address := U(regs.uop(Const.csrRange))
+        bus.read.address := U(interface.uop(Const.csrRange))
 
         bus.read.moving := !bus.read.halt //TODO || eu.getExecute(0).isFlushed
 
@@ -261,10 +249,10 @@ class CsrAccessPlugin(val layer : LaneLayer,
           val onReadsAlways = onReads.filter(!_.onlyOnFire)
           val onReadsFire = onReads.filter(_.onlyOnFire)
 
-          if (onReadsAlways.nonEmpty) when(onReadsDo && regs.sels(csrFilter)) {
+          if (onReadsAlways.nonEmpty) when(onReadsDo && interface.sels(csrFilter)) {
             onReadsAlways.foreach(_.body())
           }
-          if (onReadsFire.nonEmpty) when(onReadsFireDo && regs.sels(csrFilter)) {
+          if (onReadsFire.nonEmpty) when(onReadsFireDo && interface.sels(csrFilter)) {
             onReadsFire.foreach(_.body())
           }
         }
@@ -288,13 +276,13 @@ class CsrAccessPlugin(val layer : LaneLayer,
         bus.read.toWriteBits := csrValue
         for ((csrFilter, elements) <- grouped) {
           val onReadToWrite = elements.collect { case e: CsrOnReadToWrite => e }
-          if (onReadToWrite.nonEmpty) when(onReadsDo && regs.sels(csrFilter)) {
+          if (onReadToWrite.nonEmpty) when(onReadsDo && interface.sels(csrFilter)) {
             onReadToWrite.foreach(_.body())
           }
         }
         spec.foreach{
           case e : CsrIsReadingCsr => {
-            e.value := regs.sels(e.csrFilter)
+            e.value := interface.sels(e.csrFilter)
           }
           case _ =>
         }
@@ -302,11 +290,11 @@ class CsrAccessPlugin(val layer : LaneLayer,
         for((id, value) <- onReadingHartIdMap) value := bus.read.hartId === id
 
         READ.whenIsActive {
-          onReadsDo := regs.read
-          regs.aluInput := bus.read.toWriteBits
-          regs.csrValue := csrValue
+          onReadsDo := interface.read
+          interface.aluInput := bus.read.toWriteBits
+          interface.csrValue := csrValue
           when(!bus.read.halt) {
-            onReadsFireDo := regs.read
+            onReadsFireDo := interface.read
             goto(WRITE)
           }
         }
@@ -314,18 +302,18 @@ class CsrAccessPlugin(val layer : LaneLayer,
 
 
       val writeLogic = new Area {
-        val imm = IMM(regs.uop)
+        val imm = IMM(interface.uop)
         bus.write.moving := !bus.write.halt //TODO || eu.getExecute(0).isFlushed
 
         val alu = new Area {
-          val mask = regs.doImm ? imm.z.resized | regs.rs1
-          val masked = regs.doClear ? (regs.aluInput & ~mask) otherwise (regs.aluInput | mask)
-          val result = regs.doMask ? masked otherwise mask
+          val mask = interface.doImm ? imm.z.resized | interface.rs1
+          val masked = interface.doClear ? (interface.aluInput & ~mask) otherwise (interface.aluInput | mask)
+          val result = interface.doMask ? masked otherwise mask
         }
 
-        regs.onWriteBits := alu.result
+        interface.onWriteBits := alu.result
         bus.write.bits := alu.result
-        bus.write.address := U(regs.uop(Const.csrRange))
+        bus.write.address := U(interface.uop(Const.csrRange))
 
         val onWritesDo = False
         val onWritesFireDo = False
@@ -333,10 +321,9 @@ class CsrAccessPlugin(val layer : LaneLayer,
         bus.write.valid := onWritesDo
 
         WRITE.whenIsActive {
-//          regs.flushPipeline setWhen (io.onWriteFlushPipeline)
-          onWritesDo := regs.write
+          onWritesDo := interface.write
           when(!bus.write.halt) {
-            onWritesFireDo := regs.write
+            onWritesFireDo := interface.write
             goto(COMPLETION)
           }
         }
@@ -353,10 +340,10 @@ class CsrAccessPlugin(val layer : LaneLayer,
           val onWritesFire = onWrites.filter(_.onlyOnFire)
 
           def doIt() {
-            if (onWritesAlways.nonEmpty) when(onWritesDo && regs.sels(csrFilter)) {
+            if (onWritesAlways.nonEmpty) when(onWritesDo && interface.sels(csrFilter)) {
               onWritesAlways.foreach(_.body())
             }
-            if (onWritesFire.nonEmpty) when(onWritesFireDo && regs.sels(csrFilter)) {
+            if (onWritesFire.nonEmpty) when(onWritesFireDo && interface.sels(csrFilter)) {
               onWritesFire.foreach(_.body())
             }
           }
@@ -370,36 +357,13 @@ class CsrAccessPlugin(val layer : LaneLayer,
         }
       }
 
-      val completion = Flow(CompletionPayload()) //Only used when !integrated
-      completion.valid := False
-      completion.uopId := regs.uopId
-      completion.hartId := regs.hartId
-      completion.trap := inject(Global.TRAP)
-      completion.commit := inject(Global.COMMIT)
-
-
-      integrated match {
-        case true => {
-          wbWi.valid := elp.execute(wbAt)(SEL)
-          wbWi.payload := regs.csrValue
-        }
-        case false =>{
-          wbNi.valid := False
-          wbNi.data := regs.csrValue
-          wbNi.uopId := regs.uopId
-          wbNi.hartId := regs.hartId
-          wbNi.address := regs.rdPhys
-        }
-      }
+      wbWi.valid := elp.execute(wbAt)(SEL)
+      wbWi.payload := interface.csrValue
 
       COMPLETION.whenIsNext(inject.unfreeze := True)
       COMPLETION.whenIsActive {
-        when(regs.rdEnable){
-          if(!integrated) wbNi.valid := True
-        }
         when(inject.isReady) {
-          regs.fire := True
-          completion.valid := True
+          interface.fire := True
           goto(IDLE)
         }
       }

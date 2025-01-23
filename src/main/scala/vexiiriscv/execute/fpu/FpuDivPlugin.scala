@@ -9,7 +9,11 @@ import vexiiriscv.execute._
 import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv._
 
-
+/**
+ * Implement the RISC-V floating point division.
+ * The mantissa division is implemented by reusing the hardware from the integer divider
+ * Not having to deal with subnormal numbers helps, as it fix the range of the mantissa between [1.0, 2.0[
+ */
 class FpuDivPlugin(val layer : LaneLayer,
                    var exeAt : Int = 0) extends FiberPlugin{
   val p = FpuUtils

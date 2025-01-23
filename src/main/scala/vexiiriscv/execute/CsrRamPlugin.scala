@@ -12,6 +12,14 @@ import vexiiriscv.riscv.Riscv
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * Implement a RAM and provide an API (CsrRamService) that allows other plugins to :
+ * - Staticaly allocate memory space
+ * - Map the allocated memory space on the CPU CSR instruction
+ * - Create new read/write access ports to the memory.
+ *
+ * This plugin is used mostly to implement large CSR as mepc, mtval, aswell as for implementing the performance counters
+ */
 class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
 
   override def initHold(): Bool = !logic.flush.done
@@ -133,7 +141,6 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
       (writes, oh.asBools).zipped.foreach(_.ready :=  _)
     }
 
-
     val readLogic = reads.nonEmpty generate new Area{
       val hits = reads.map(_.valid).asBits
       val hit = hits.orR
@@ -160,19 +167,3 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
     }
   }
 }
-
-
-//val readLogic = reads.nonEmpty generate new Area {
-//  val hits = reads.map(_.valid).asBits
-//  val hit = hits.orR
-//  val oh = OHMasking.first(hits)
-//  val sel = OHToUInt(oh)
-//  val cmd = Stream(mem.addressType)
-//  val rsp = mem.streamReadSync(cmd, oh.andMask(cmd.valid))
-//  val rspBuffer = rsp.toFlow.stage()
-//
-//  cmd.valid := oh.orR && !writeLogic.port.valid
-//  cmd.payload := reads.map(_.address).read(sel)
-//  (reads, rspBuffer.linked.asBools).zipped.foreach(_.ready := _)
-//  reads.foreach(_.data := rspBuffer.value)
-//}

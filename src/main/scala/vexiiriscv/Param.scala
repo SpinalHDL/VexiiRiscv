@@ -26,7 +26,6 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
 
 object ParamSimple{
-
   def addOptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
     import parser._
     opt[Map[String, String]]("region") unbounded() action { (v, c) =>
@@ -74,6 +73,15 @@ object ParamSimple{
   }
 }
 
+
+/**
+ * ParamSimple is a data class which can be used to generate a collection of properly configured plugins for VexiiRiscv.
+ * - you create an instance of ParamSimple
+ * - you configure it
+ * - you ask it to provide the list of VexiiRiscv plugins
+ * - you instanciate VexiiRiscv with that list of plugin
+ * - Thenthen you should get a functional VexiiRiscv.
+ */
 class ParamSimple(){
   var xlen = 32
   var withRvc = false
@@ -98,6 +106,7 @@ class ParamSimple(){
   var withDiv = false
   var withRva = false
   var withRvf = false
+  var btbDualPortRam = true
   var skipFma = false
   var fpuFmaFullAccuracy = true
   var fpuIgnoreSubnormal = false
@@ -156,12 +165,12 @@ class ParamSimple(){
       MmuStorageLevel(
         id = 0,
         ways = 2,
-        depth = 32
+        sets = 32
       ),
       MmuStorageLevel(
         id = 1,
         ways = 1,
-        depth = 32
+        sets = 32
       )
     ),
     priority = 0
@@ -215,12 +224,12 @@ class ParamSimple(){
       MmuStorageLevel(
         id = 0,
         ways = 3,
-        depth = 32
+        sets = 32
       ),
       MmuStorageLevel(
         id = 1,
         ways = 1,
-        depth = 32
+        sets = 32
       )
     ),
     priority = 1
@@ -241,6 +250,7 @@ class ParamSimple(){
   )
 
 
+  def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt)
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
@@ -382,12 +392,12 @@ class ParamSimple(){
         MmuStorageLevel(
           id = 0,
           ways = 2,
-          depth = 64
+          sets = 64
         ),
         MmuStorageLevel(
           id = 1,
           ways = 1,
-          depth = 64
+          sets = 64
         )
       ),
       priority = 0
@@ -398,12 +408,12 @@ class ParamSimple(){
         MmuStorageLevel(
           id = 0,
           ways = 2,
-          depth = 64
+          sets = 64
         ),
         MmuStorageLevel(
           id = 1,
           ways = 1,
-          depth = 64
+          sets = 64
         )
       ),
       priority = 1
@@ -525,6 +535,8 @@ class ParamSimple(){
     opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
+    opt[Unit]("without-ras") action { (v, c) => withRas = false }
+    opt[Unit]("btb-single-port-ram") action { (v, c) => btbDualPortRam = false }
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0; storeRs2Late = true }
     opt[Unit]("with-store-rs2-late") action { (v, c) => storeRs2Late = true }
     opt[Int]("btb-sets") action { (v, c) => btbSets = v }
@@ -556,6 +568,7 @@ class ParamSimple(){
     opt[Int]("lsu-l1-mem-data-width-min") unbounded() action { (v, c) => lsuMemDataWidthMin = v }
     opt[Unit]("lsu-l1-coherency") action { (v, c) => lsuL1Coherency = true}
     opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
+    opt[Unit]("without-lsu-bypass") action { (v, c) => withLsuBypass = false }
     opt[Unit]("with-iterative-shift") action { (v, c) => withIterativeShift = true }
     opt[Int]("div-radix") action { (v, c) => divRadix = v }
     opt[String]("div-impl") action { (v, c) => divImpl = v }
@@ -575,6 +588,32 @@ class ParamSimple(){
     opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
+    opt[Unit]("dual-issue") action { (v, c) =>
+      decoders = 2
+      lanes = 2
+    }
+    opt[Unit]("max-ipc") action { (v, c) =>
+      withBtb = true
+      withGShare = true
+      withRas = true
+      allowBypassFrom = 0
+      divRadix = 4
+      withLateAlu = true
+      if(lanes > 1) {
+        withAlignerBuffer = true
+        withDispatcherBuffer = true
+      }
+      lsuMemDataWidthMin = 64
+      lsuL1Sets = 64
+      lsuL1Ways = 4
+      lsuL1RefillCount = 8
+      lsuL1WritebackCount = 8
+      lsuStoreBufferSlots = 4
+      lsuStoreBufferOps = 32
+      withLsuBypass = true
+      lsuSoftwarePrefetch = true
+      lsuHardwarePrefetch = "rpt"
+    }
   }
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
@@ -605,6 +644,7 @@ class ParamSimple(){
       plugins += new prediction.BtbPlugin(
         sets = btbSets / decoders,
         chunks = decoders,
+        dualPortRam = btbDualPortRam,
         rasDepth = if(withRas) 4 else 0,
         hashWidth = btbHashWidth,
         readAt = 0,
@@ -681,7 +721,7 @@ class ParamSimple(){
 
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = fetchL1Enable.mux(2, 1+fetchForkAt),
+      fetchAt = alignerPluginFetchAt,
       lanes = decoders,
       withBuffer = withAlignerBuffer
     )
@@ -718,7 +758,6 @@ class ParamSimple(){
     val early0 = new LaneLayer("early0", lane0, priority = 0)
     plugins += lane0
 
-//    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
@@ -1042,14 +1081,4 @@ lane micro op spec
   - dontFlushFrom
  */
 
-
-
-object OptionToPython extends App{
-  new scopt.OptionParser[Unit]("lol"){
-    new ParamSimple().addOptions(this)
-    for(o <- options){
-      println(o.name)
-    }
-  }
-}
 

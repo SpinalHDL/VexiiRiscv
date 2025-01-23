@@ -45,6 +45,9 @@ import javax.swing.{JFrame, JPanel, WindowConstants}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * Because VexiiRiscv implement PMA (Physical Memory Access) checking staticaly, we need to know what is mapped behind the litex memory busses.
+ */
 case class LitexMemoryRegion(mapping : SizeMapping, mode : String, bus : String){
   def isExecutable = mode.contains("x")
   def isCachable = mode.contains("c")
@@ -55,12 +58,16 @@ case class LitexMemoryRegion(mapping : SizeMapping, mode : String, bus : String)
   def onMemory = !onPeripheral
 }
 
+/**
+ * Litex SoC configuration object.
+ */
 class SocConfig(){
   var vexiiParam = new ParamSimple()
   val regions = ArrayBuffer[LitexMemoryRegion]()
   var withJtagTap = false
   var withJtagInstruction = false
-  def withDebug = withJtagInstruction || withJtagTap
+  var withDebugProbePc0 = false
+  def withDebug = withJtagInstruction || withJtagTap || withDebugProbePc0
   var withDma = false
   var mBusWidth = 64
   var l2Bytes = 0
@@ -82,7 +89,6 @@ class SocConfig(){
     TilelinkVgaCtrlSpec.addOption(parser, video)
     MacSgFiberSpec.addOption(parser, macSg)
     opt[Int]("litedram-width") action { (v, c) => litedramWidth = v }
-    //    opt[Seq[String]]("l2-self-flush") action { (v, c) => selfFlush = coherent.SelfFLush(BigInt(v(0)), BigInt(v(1)), BigInt(v(2))) }
     opt[Seq[String]]("l2-self-flush") action { (v, c) =>
       selfFlush = coherent.SelfFLush(BigInt(v(0), 16), BigInt(v(1), 16), BigInt(v(2)))
     }
@@ -94,6 +100,8 @@ class SocConfig(){
     opt[Unit]("with-axi3") action { (v, c) => withAxi3 = true }
     opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
     opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
+    opt[Unit]("with-debug-probe-pc0") text("Allows to profile the CPU via JTAG. See ElfMapper.") action { (v, c) => withDebugProbePc0 = true }
+
     opt[Seq[String]]("memory-region") unbounded() action { (v, c) =>
       assert(v.length == 4, "--memory-region need 4 parameters")
       val r = new LitexMemoryRegion(SizeMapping(BigInt(v(0)), BigInt(v(1))), v(2), v(3))
@@ -105,6 +113,17 @@ class SocConfig(){
   def withL2 = l2Bytes > 0
 }
 
+/**
+ * This is the VexiiRiscv SoC toplevel used with Litex.
+ * - Based on tilelink for its memory interconnect
+ * - Integrate the PLIC and CLINT peripherals
+ * - Access the main memory through a dedicated AXI bus instead of the regular litex wishbone (for performance reasons)
+ * - Can be multicore
+ * - Implement memory coherency between the code and a AXI DMA access bus
+ * - Has an option L2 cache
+ * - Supports JTAG debug
+ * - Supports a SpinalHDL HDMI and Ethernet controller
+ */
 class Soc(c : SocConfig) extends Component {
 
   import c._
@@ -112,7 +131,6 @@ class Soc(c : SocConfig) extends Component {
   val litexCd = ClockDomain.external("litex")
   val cpuClk = withCpuCd.mux(ClockDomain.external("cpu", withReset = false), litexCd)
   val cpuResetCtrl = cpuClk(new ResetCtrlFiber())
-  cpuResetCtrl.holdCycles = 50000000*5
   cpuResetCtrl.addAsyncReset(litexCd.isResetActive, HIGH)
   val cpuCd = cpuResetCtrl.cd
 
@@ -147,6 +165,7 @@ class Soc(c : SocConfig) extends Component {
       }
     }
 
+    // Implement a memory coherent video output, based on https://www.digikey.fr/fr/products/detail/efinix-inc/EFX-HDMI/17084519
     val video = for (spec <- c.video) yield new Area {
       setName(spec.name)
       val cd = ClockDomain.external(spec.name, withReset = false)
@@ -216,6 +235,7 @@ class Soc(c : SocConfig) extends Component {
       }
     }
 
+    // Implement a memory coherent AXI bus that the litex DMA's can use.
     val dma = c.withDma generate new ClockingArea(litexCd){
       val bus = slave(
         Axi4(
@@ -230,6 +250,8 @@ class Soc(c : SocConfig) extends Component {
       val bridge = new Axi4ToTilelinkFiber(64, 4)
       bridge.up load bus.pipelined(ar = StreamPipe.HALF, aw = StreamPipe.HALF, w = StreamPipe.FULL, b = StreamPipe.HALF, r = StreamPipe.FULL)
 
+      // Because the DMA may generate illegal addresses, and tilelink doesn't supports that
+      // we need to filter all memory transactions via this TransactionFilter before it goes any further
       val filter = new fabric.TransferFilter()
       filter.up << bridge.down
 
@@ -247,7 +269,7 @@ class Soc(c : SocConfig) extends Component {
 
     val dmaFilter = (c.macSg.nonEmpty) generate new fabric.TransferFilter()
 
-
+    // Implement a RGMII ethernet peripheral, which use a memory coherent DMA to send/receive packets.
     val macSg = for (spec <- c.macSg) yield new Area {
       setName(spec.name)
       val txCd = ClockDomain.external(spec.name + "_tx_ref", withReset = false)
@@ -282,7 +304,7 @@ class Soc(c : SocConfig) extends Component {
       hardFork(fiber.logic.phy.setName(spec.name))
     }
 
-
+    // Implement the main interconnect of the SoC when VexiiRiscv has a data cache (io and cached accesses are on independent busses)
     val splited = vexiiParam.lsuL1Enable generate new Area{
       val mBus = Node()
       mBus.forceDataWidth(mainDataWidth)
@@ -341,7 +363,7 @@ class Soc(c : SocConfig) extends Component {
       }
     }
 
-
+    // Fix up a few things, like additional pipelining, nameing and bridges.
     val patcher = Fiber build new AreaRoot {
       val mBusAxi = withMem generate mem.toAxi4.down.expendId(8)
       val mBus = withMem generate Axi4SpecRenamer(master(
@@ -367,118 +389,8 @@ class Soc(c : SocConfig) extends Component {
       val debugIn = Bits(8 bits)
       val debug = out(Delay(debugIn, 2))
       debugIn := 0
-//      Fiber patch new AreaRoot {
-//        if(withCoherency && vexiiParam.lsuL1Enable) {
-//          val cBus = splited.wc.cBus.bus
-//          debugIn(0) := cBus.a.valid
-//          debugIn(1) := cBus.a.fire
-//          debugIn(2) := cBus.b.valid
-//          debugIn(3) := cBus.b.fire
-//          debugIn(4) := cBus.c.valid
-//          debugIn(5) := cBus.c.fire
-//          debugIn(6) := cBus.d.valid
-//          debugIn(7) := cBus.d.fire
-//        }
-//
-//        def toOut[T <: Data](that : T) = out(Delay(that.pull(),2))
-//        val cpu = vexiis(0).logic.core
-//        val wb = cpu.host[WhiteboxerPlugin]
-//        val commit = wb.logic.commits.ports(0)
-//        val commitvalid = toOut(commit.valid)
-//        val commitPc    = toOut(commit.pc)
-//        val commitUop   = toOut(commit.uop)
-//
-//        val trap = wb.logic.trap.ports(0)
-//        val trapValid = toOut(trap.valid)
-//        val trapInterrupt = toOut(trap.interrupt)
-//        val trapCause = toOut(trap.cause)
-//        val trappedPc = toOut(cpu.host[TrapPlugin].logic.harts(0).trap.pending.pc)
-//
-//        val dispatch = cpu.host[DispatchPlugin]
-//        val cand = dispatch.logic.candidates(0)
-//        val candValid = toOut(cand.ctx.valid)
-//        val candUop = toOut(cand.ctx.uop)
-//        val candPc = toOut(cand.ctx.hm(Global.PC))
-//        val candTrap = toOut(cand.ctx.hm(Global.TRAP))
-//
-//        val fetch = cpu.host[FetchPipelinePlugin].fetch(2)
-//
-//        val fetchValid = toOut(fetch.isValid)
-//        val fetchReady = toOut(fetch.isReady)
-//        val fetchWord = toOut(fetch(Fetch.WORD))
-//        val fetchPc = toOut(fetch(Fetch.WORD_PC))
-//
-//        val tp = cpu.host[TrapPlugin].logic.harts(0)
-//        val tpPcPort = cpu.database.on(toOut(tp.trap.pcPort))
-//        val tpTriggerValid = toOut(tp.trap.trigger.valid)
-//        val tpPendingCode = toOut(tp.trap.pending.state.code)
-//        val tpPendingException = toOut(tp.trap.pending.state.exception)
-//
-//        val exe = cpu.host[ExecuteLanePlugin]
-//        val executesUpValid = toOut((0 to 3).map(id => exe.ctrl(id).up.valid.pull()).asBits)
-//        val executesDownValid = toOut((0 to 3).map(id => exe.ctrl(id).down.valid.pull()).asBits)
-//        val executesCancel = toOut((0 to 3).map(id => exe.ctrl(id).up.isCancel.pull()).asBits)
-//        val executesTrap = toOut((0 to 3).map(id => exe.ctrl(id).down(Global.TRAP).pull()).asBits)
-//        val executesFreeze = toOut(exe.isFreezed())
-//
-//        val xxValid0 = toOut(cpu.reflectBaseType("toplevel_execute_ctrl0_down_LANE_SEL_lane0"))
-//        val xxReady0 = toOut(cpu.reflectBaseType("toplevel_execute_ctrl0_down_isReady"))
-//        val xxValid1 = toOut(cpu.reflectBaseType("toplevel_execute_ctrl1_up_LANE_SEL_lane0"))
-//        val xxReset = toOut(cpu.rework(cpu.clockDomain.readResetWire))
-
-//        debug(3 downto 0) := B(vexiis(0).logic.core.host[LsuL1Plugin].logic.refill.slots.map(!_.free.pull()))
-//        debugIn(4) := mem.toAxi4.up.bus.a.fire
-//        debugIn(5) := mem.toAxi4.up.bus.d.fire
-//        debugIn(6) := mem.toAxi4.up.bus.a.valid
-//        debugIn(7) := mem.toAxi4.up.bus.d.valid
-//      }
-//      for((vexii, i) <- vexiis.zipWithIndex){
-//        debug(i) := vexii.logic.core.host[PrivilegedPlugin].logic.harts(0).int.s.external.pull()
-//      }
-//      debug(1 downto 0) := Delay(vexiis(0).logic.core.host[PrivilegedPlugin].logic.harts(0).privilege.pull.asBits,3)
-//      if(withMem){
-//        debug(2) := mem.toAxi4.up.bus.a.fire
-//        debug(3) := mem.toAxi4.up.bus.d.fire
-//      }
 
       println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus).mkString("\n"))
-
-//      def debug(that: Data) : Unit = that.addAttribute("mark_debug", "true")
-//      def debug[T <: Data](that: spinal.lib.Stream[T]) : Unit = {
-//        debug(that.valid)
-//        debug(that.ready)
-//      }
-//      def debug(that: tilelink.Bus) : Unit = {
-//        debug(that.a)
-//        debug(that.d)
-//        if(that.p.withBCE){
-//          debug(that.b)
-//          debug(that.c)
-//          debug(that.e)
-//        }
-//      }
-//      debug(splited.wc.l2.cache.up.bus)
-//      debug(splited.wc.l2.cache.up.bus.a.address)
-//      debug(splited.wc.l2.cache.down.bus)
-//      for(v <- vexiis){
-//        debug(v.iBus.bus)
-//        debug(v.lsuL1Bus.bus)
-//        debug(v.dBus.bus)
-//        v.logic.core.host.services.foreach{
-//          case p : FetchL1Plugin => {
-//            debug(p.logic.events.get.access)
-//            debug(p.logic.events.get.miss)
-//            debug(p.logic.events.get.waiting)
-//            debug(p.logic.refill.onRsp.holdHarts)
-//            p.logic.refill.slots.foreach(s => debug(s.valid))
-//          }
-//          case p: DispatchPlugin => {
-//            debug(p.logic.events.get.frontendStall)
-//            debug(p.logic.events.get.backendStall)
-//          }
-//          case _ =>
-//        }
-//      }
     }
   }
 
@@ -488,11 +400,12 @@ class Soc(c : SocConfig) extends Component {
     system.vexiis.foreach(bindHart)
   })
 
-
-//  debug.dm.p.probeWidth = 32
-//  val globalPatcher = Fiber build new AreaRoot {
-//    debug.tap.logic.logic.jtagLogic.rework(debug.tap.logic.logic.jtagLogic.probe.input := system.vexiis(0).logic.core.host[PcPlugin].logic.harts(0).self.pc.pull.asBits.resized)
-//  }
+  if(c.withDebugProbePc0) {
+    debug.dm.p.probeWidth = 32
+    val globalPatcher = Fiber build new AreaRoot {
+      debug.tap.logic.logic.jtagLogic.rework(debug.tap.logic.logic.jtagLogic.probe.input := system.vexiis(0).logic.core.host[PcPlugin].logic.harts(0).self.pc.pull.asBits.resized)
+    }
+  }
 }
 
 
@@ -507,6 +420,7 @@ object blackboxPolicy extends MemBlackboxingPolicy{
   override def onUnblackboxable(topology: MemTopology, who: Any, message: String): Unit = generateUnblackboxableError(topology, who, message)
 }
 
+// Used by litex to generate the SoC verilog
 object SocGen extends App{
   var netlistDirectory = "."
   var netlistName = "VexiiRiscvLitex"
@@ -514,8 +428,6 @@ object SocGen extends App{
   var reducedIo = false
   import socConfig._
 
-//  vexiiParam.fetchL1Enable = true
-//  vexiiParam.lsuL1Enable = true
   vexiiParam.privParam.withRdTime = true
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
@@ -553,54 +465,8 @@ object SocGen extends App{
   }
 
   val cpu0 = report.toplevel.system.vexiis(0).logic.core
-//  val cpu2 = report.toplevel.system.vexiis(2).logic.core
-//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl3_up_LsuL1_PHYSICAL_ADDRESS_lane0")
-//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
 
-//  val from = cpu0.reflectBaseType("DispatchPlugin_logic_slots_0_ctx_uop")
-//  val from = cpu0.reflectBaseType("DispatchPlugin_logic_slots_0_ctx_hm_RS3_PHYS")
-//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl0_down_float_RS3_lane0")
-
-//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_LsuL1_PHYSICAL_ADDRESS") // start point was optimized, but aligner timing issue remains
-//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0")
-
-//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_Decode_UOP_lane0")
-//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0")
-
-//  val from = cpu0.reflectBaseType("fetch_logic_ctrls_2_down_valid")
-//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0")
-
-//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl3_up_LsuL1_PHYSICAL_ADDRESS_lane0")
-//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_integer_RS2_lane0")
-
-//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
-//  val to = cpu0.reflectBaseType("FpuPackerPlugin_logic_pip_node_1_s0_EXP_DIF_PLUS_ONE")
-
-//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_decode_ctrls_1_up_Decode_INSTRUCTION_0")
-//  val to = cpu0.host[GSharePlugin].logic.onLearn.cmd.valid
-
-//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")
-//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_writeback_slots_1_timer_counter")
-
-//  val from = report.toplevel.reflectBaseType("vexiis_0_lsuL1Bus_noDecoder_toDown_d_rData_opcode")   <---- TODO fix this path
-//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_WB_HAZARD")
-//
-//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl1_up_float_RS1_lane0")   <---- TODO fix this path
-//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_banks_1_write_valid")
-
-//  val from = cpu0.reflectBaseType("early0_DivPlugin_logic_processing_divRevertResult")
-//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl2_up_early0_SrcPlugin_SRC1_lane0")
-
-//  val from = cpu0.reflectBaseType("_zz_vexiis_0_logic_core_toplevel_execute_ctrl2_down_FpuUnpack_RS3_badBoxing_HIT_lane0")
-//  val to = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl3_up_FpuF2iPlugin_logic_onSetup_SHIFTED_PARTIAL_lane0")
-
-//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_FORCE_HAZARD") //That big
-//  val to = cpu0.reflectBaseType("FpuCsrPlugin_api_flags_OF")
-
-//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl4_up_LsuPlugin_logic_onPma_IO_lane0")
-//  val to = cpu0.reflectBaseType("CsrAccessPlugin_bus_write_halt")
-//  val to = cpu0.reflectBaseType("FpuCsrPlugin_api_flags_NX")
-
+  // Here is some developpement code used to track critical paths
 //  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_HIT_DIRTY") //That big
 //  val to = cpu0.reflectBaseType("PrivilegedPlugin_logic_harts_0_debug_dcsr_stepLogic_stepped")
 
@@ -619,6 +485,10 @@ object SocGen extends App{
 //  println(PathTracer.impl(from, to).report())
 }
 
+/**
+ * Utility used by the litex integration of VexiiRiscv to extract a few informations from a list of VexiiRiscv arguments
+ * and propagate them to the python environnement by generating some sort of python "header"
+ */
 object PythonArgsGen extends App{
   val vexiiParam = new ParamSimple()
   import vexiiParam._
@@ -650,6 +520,9 @@ object PythonArgsGen extends App{
 
 }
 
+/**
+ * Simulation monitor which scan a VGA output and display its image in a GUI
+ */
 object VgaDisplaySim{
   import spinal.core.sim._
   def apply(vga : Vga, cd : ClockDomain): Unit ={
@@ -705,14 +578,14 @@ object VgaDisplaySim{
 
 
 /*
---mmu-sync-read --with-mul --with-div --allow-bypass-from=0 --performance-counters=0 --fetch-l1 --fetch-l1-ways=2 --lsu-l1 --lsu-l1-ways=2 --with-lsu-bypass --relaxed-branch --with-rva --with-supervisor --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-ways=4 --lsu-l1-mem-data-width-min=64 --xlen=32 --fma-reduced-accuracy --fpu-ignore-subnormal --with-btb --with-ras --with-gshare --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2 --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128 --lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4 --relaxed-div --reset-vector 2147483648 --cpu-count=1 --l2-bytes=524288 --l2-ways=4 --litedram-width=128 --memory-region=0,131072,rxc,p --memory-region=268435456,8192,rwxc,p --memory-region=3758096384,1048576,rw,p --memory-region=2147483648,1073741824,rwxc,m --memory-region=4026531840,65536,rw,p --with-jtag-tap --lsu-l1-coherency --mac-sg name=eth,address=0xF1000000,txIrq=40,rxIrq=41 --load-elf /media/data2/proj/vexii/VexiiRiscv/ext/NaxSoftware/baremetal/macSg/build/rv32ima/macSg.elf
+SocSim is a simple developpment testbench of the SoC. This is not meant to be used as a regression tool.
+Here is an example of arguments :
+  --mmu-sync-read --with-mul --with-div --allow-bypass-from=0 --performance-counters=0 --fetch-l1 --fetch-l1-ways=2 --lsu-l1 --lsu-l1-ways=2 --with-lsu-bypass --relaxed-branch --with-rva --with-supervisor --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-ways=4 --lsu-l1-mem-data-width-min=64 --xlen=32 --fma-reduced-accuracy --fpu-ignore-subnormal --with-btb --with-ras --with-gshare --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2 --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128 --lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4 --relaxed-div --reset-vector 2147483648 --cpu-count=1 --l2-bytes=524288 --l2-ways=4 --litedram-width=128 --memory-region=0,131072,rxc,p --memory-region=268435456,8192,rwxc,p --memory-region=3758096384,1048576,rw,p --memory-region=2147483648,1073741824,rwxc,m --memory-region=4026531840,65536,rw,p --with-jtag-tap --lsu-l1-coherency --mac-sg name=eth,address=0xF1000000,txIrq=40,rxIrq=41 --load-elf /media/data2/proj/vexii/VexiiRiscv/ext/NaxSoftware/baremetal/macSg/build/rv32ima/macSg.elf
  */
 object SocSim extends App{
   val socConfig = new SocConfig()
   import socConfig._
 
-  //  vexiiParam.fetchL1Enable = true
-  //  vexiiParam.lsuL1Enable = true
   vexiiParam.privParam.withRdTime = true
   val elfs = ArrayBuffer[File]();
 
@@ -739,8 +612,6 @@ object SocSim extends App{
       VgaDisplaySim(video.ctrl.logic.ctrl.io.vga, video.resetCtrl.cd)
     }
     for(mac <- dut.system.macSg){
-//      mac.txCd.forkStimulus(20000)
-//      mac.rxCd.forkStimulus(20000)
       mac.txCd.forkStimulus(7000)
       mac.rxCd.forkStimulus(7000)
       val phy = mac.fiber.logic.phy
@@ -756,7 +627,6 @@ object SocSim extends App{
       dut.debugReset #= false
     }
     sleep(1)
-//    dut.cpuCd.waitRisingEdge(4)
 
     val onPbus = new Area {
       val axi = dut.system.patcher.pBus
@@ -797,16 +667,6 @@ object SocSim extends App{
         rDriver.transactionDelay = () => simRandom.nextInt(3)
         baseLatency = 60 * 1000
 
-//        periodicaly(300*1000*1000){
-//          val value = ((60 + simRandom.nextInt(3000))*1000)
-//          println(s"RANDOM $value")
-//          baseLatency = value
-//
-////          val value = simRandom.nextFloat() * 0.8f
-////          println(s"RANDOM $value")
-////          rDriver.setFactor(value)
-//        }
-
         override def readByte(address: BigInt): Byte = {
           bytesAccess += 1
           ddrMemory.read(address.toLong)
@@ -833,10 +693,12 @@ object SocSim extends App{
     setPix(0x00ffffff)
     onAxi.ddrMemory.write(0x40c00000 + cnt, 0x000000FF); cnt += 4
     onAxi.ddrMemory.write(0x40c00000 + cnt, 0x00800080); cnt += 4
-
   }
 }
+
 /*
+!! Here are quite a few memo/notes/references used durring the developpment !!
+
 report_path -to  VexiiRiscvLitex_44a81283d17b029c539716862d04b1a0/vexiis_3_iBus_bus_a_rValid~FF|CE -nworst 100
 
 make CROSS_COMPILE=riscv-none-embed-      PLATFORM=generic      PLATFORM_RISCV_XLEN=64      PLATFORM_RISCV_ISA=rv64gc      PLATFORM_RISCV_ABI=lp64d      FW_FDT_PATH=../linux.dtb      FW_JUMP_ADDR=0x41000000       FW_JUMP_FDT_ADDR=0x46000000      -j20

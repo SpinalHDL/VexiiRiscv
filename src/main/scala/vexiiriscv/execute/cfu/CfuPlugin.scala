@@ -42,6 +42,10 @@ case class CfuBusParameter(CFU_VERSION : Int = 0,
                            CFU_WITH_STATUS : Boolean = false,
                            CFU_RAW_INSN_W : Int = 0)
 
+/**
+ * CFU (Custom Functional Unit) allows people to implement custom instruction hardware outside the CPU through a stream based interface.
+ * This plugin implements a old version of the CFU spec, the same as VexRiscv.
+ */
 case class CfuCmd( p : CfuBusParameter ) extends Bundle{
   val function_id = UInt(p.CFU_FUNCTION_ID_W bits)
   val reorder_id = UInt(p.CFU_REORDER_ID_W bits)
@@ -211,7 +215,6 @@ class CfuPlugin(val layer : LaneLayer,
       val freezeIt = bus.cmd.valid && !bus.cmd.ready
       layer.lane.freezeWhen(freezeIt)
 
-      //      bus.cmd.function_id := U(input(INSTRUCTION)(14 downto 12)).resized
       val functionIdFromInstructinoWidth = encodings.map(_.functionIdWidth).max
       val functionsIds = encodings.map(e => U(Cat(e.functionId.map(r => Decode.UOP(r))), functionIdFromInstructinoWidth bits))
       bus.cmd.cfu_index := csr.cfuIndex
@@ -226,6 +229,7 @@ class CfuPlugin(val layer : LaneLayer,
         CfuPlugin.Input2Kind.IMM_I -> IMM(Decode.UOP).h_sext.asBits
       )
     }
+
     val onJoin = new layer.Execute(joinAt) {
       val busRspStream = bus.rsp.toFlow.toStream
       val rsp = busRspStream.queueLowLatency(
