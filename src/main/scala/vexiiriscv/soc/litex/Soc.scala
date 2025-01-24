@@ -444,6 +444,7 @@ object SocGen extends App{
   var netlistDirectory = "."
   var netlistName = "VexiiRiscvLitex"
   val socConfig = new SocConfig()
+  val analysis = new AnalysisUtils
   var reducedIo = false
   import socConfig._
 
@@ -452,6 +453,7 @@ object SocGen extends App{
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
     socConfig.addOptions(this)
+    analysis.addOption(this)
     opt[String]("netlist-directory") action { (v, c) => netlistDirectory = v }
     opt[String]("netlist-name") action { (v, c) => netlistName = v }
     opt[Unit]("reduced-io") action { (v, c) => reducedIo = true }
@@ -483,25 +485,7 @@ object SocGen extends App{
     soc
   }
 
-  val cpu0 = report.toplevel.system.vexiis(0).logic.core
-
-  // Here is some developpement code used to track critical paths
-//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_HIT_DIRTY") //That big
-//  val to = cpu0.reflectBaseType("PrivilegedPlugin_logic_harts_0_debug_dcsr_stepLogic_stepped")
-
-//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_ALLOW_UNIQUE") //That big
-//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_writeback_slots_0_valid")
-
-
-//  val drivers = mutable.LinkedHashSet[BaseType]()
-//  AnalysisUtils.seekNonCombDrivers(to){driver =>
-//    driver match {
-//      case bt : BaseType => drivers += bt
-//    }
-//  }
-//  drivers.foreach(e => println(e.getName()))
-//  println("******")
-//  println(PathTracer.impl(from, to).report())
+  analysis.report(report)
 }
 
 /**
