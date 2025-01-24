@@ -25,6 +25,10 @@ Here is the online documentation :
 - https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Introduction/#
 - https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/HowToUse/index.html
 
+Here is the VexiiRiscv's scala doc (auto-generated from the source code) :
+
+- https://spinalhdl.github.io/VexiiRiscv/doc/vexiiriscv/index.html
+
 A roadmap is available here : 
 
 - https://github.com/SpinalHDL/VexiiRiscv/issues/1

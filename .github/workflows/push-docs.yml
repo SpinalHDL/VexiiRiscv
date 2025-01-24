@@ -3,7 +3,7 @@ name: "Push scaladoc on gh-pages"
 on:
   push:
     branches:
-      - doc
+      - dev
   release:
     types:
       - published
