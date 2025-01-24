@@ -146,6 +146,7 @@ class Soc(c : SocConfig) extends Component {
 
   import c._
 
+  // Let's define all the clock domains and reset controllers of the SoC
   val litexCd = ClockDomain.external("litex")
   val cpuClk = withCpuCd.mux(ClockDomain.external("cpu", withReset = false), litexCd)
   val cpuResetCtrl = cpuClk(new ResetCtrlFiber())

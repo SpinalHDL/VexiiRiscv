@@ -25,9 +25,11 @@ object Generate extends App {
   val sc = SpinalConfig()
   val regions = ArrayBuffer[PmaRegion]()
   val analysis = new AnalysisUtils
+  var reportModel = false
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
+    opt[Unit]("report-model") action { (v, c) => reportModel = true }
     param.addOptions(this)
     analysis.addOption(this)
     ParamSimple.addOptionRegion(this, regions)
@@ -42,6 +44,10 @@ object Generate extends App {
   }
 
   analysis.report(report)
+
+  if(reportModel){
+    misc.Reporter.model(report.toplevel)
+  }
 }
 
 //Generates a tilelink version of VexiiRiscv verilog using command line arguments
