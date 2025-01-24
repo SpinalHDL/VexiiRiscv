@@ -2,6 +2,11 @@
 
 This readme document (from scratch) how to generate all the images to run buildroot Litex + VexiiRiscv.
 
+The hardware requirements are to have : 
+- RV32IMA CPU
+- Some RAM (64 MB)
+- SDCARD support
+
 ## Setup environnement variables
 
 ```shell
