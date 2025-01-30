@@ -469,15 +469,6 @@ object SocGen extends App{
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
   spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
-  spinalConfig.dontCareGenAsZero = true
-  spinalConfig.addTransformationPhase(new PhaseNetlist {
-    override def impl(pc: PhaseContext) = {
-      pc.walkDeclarations{
-        case bt : BaseType if bt.isReg && !bt.hasInit && bt.clockDomain.canInit => bt.component.rework(bt.init(bt.getZero))
-        case _ =>
-      }
-    }
-  })
 //  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {
