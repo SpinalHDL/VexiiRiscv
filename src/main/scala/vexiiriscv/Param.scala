@@ -126,6 +126,7 @@ class ParamSimple(){
   var allowBypassFrom = 100 //100 => disabled
   var additionalPerformanceCounters = 0
   var withPerformanceCounters = false
+  var withPerformanceScountovf = true // Disabled to keep in sync with RVLS
   var fetchL1Enable = false
   var fetchL1Sets = 64
   var fetchL1Ways = 1
@@ -546,6 +547,7 @@ class ParamSimple(){
     opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") unbounded() action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
+    opt[Unit]("without-performance-scountovf") unbounded() action { (v, c) => withPerformanceScountovf = false }
     opt[Unit]("with-fetch-l1") unbounded() action { (v, c) => fetchL1Enable = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
@@ -586,6 +588,7 @@ class ParamSimple(){
     opt[Int]("pmp-size") action { (v, c) => pmpParam.pmpSize = v }
     opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
+    opt[Unit]("with-rdtime") action { (v, c) => privParam.withRdTime = true }
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
     opt[Unit]("dual-issue") action { (v, c) =>
       decoders = 2

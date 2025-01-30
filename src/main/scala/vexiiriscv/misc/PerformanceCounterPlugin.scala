@@ -17,7 +17,8 @@ import scala.collection.mutable.ArrayBuffer
  * To figure out the actual performance events implement in VexiiRIscv, look at vexiiriscv.misc.PerformanceCounterService
  */
 class PerformanceCounterPlugin(var additionalCounterCount : Int,
-                               var bufferWidth : Int = 8) extends FiberPlugin with PerformanceCounterService{
+                               var bufferWidth : Int = 8,
+                               var withScountovf : Boolean = true) extends FiberPlugin with PerformanceCounterService{
   def counterCount = 2 + additionalCounterCount
 
   case class Spec(id : Int, event : Bool)
@@ -151,7 +152,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       }
       val privValue = priv.getPrivilege(0)
       val ofRead = CombInit(OF)
-      csr.read(CSR.SCOUNTOVF, id -> ofRead)
+      if(withScountovf && priv.implementSupervisor) csr.read(CSR.SCOUNTOVF, id -> ofRead)
       ofRead clearWhen(!counter.mcounteren && !privValue(1))
 
       csr.readWrite(eb, 63-eo -> OF, 62-eo -> MINH)
