@@ -35,6 +35,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   var enabled = true
   var trace = true
   var checkLiveness = true
+  var livenessThreshold = 16000l
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
   val autoStoreBroadcast = cpu.host.get[LsuCachelessPlugin].nonEmpty
@@ -67,6 +68,13 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
   def add(tracer: TraceBackend): this.type = {
     backends += tracer
+    harts.foreach(_.add(tracer))
+    proxies.interrupts.sync()
+    this
+  }
+
+  def addHead(tracer: TraceBackend): this.type = {
+    backends.insert(0, tracer)
     harts.foreach(_.add(tracer))
     proxies.interrupts.sync()
     this
@@ -565,7 +573,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       if(((wfi >> localHartId) & 1) != 0){
         hart.lastCommitAt = cycle
       }
-      if (checkLiveness && hart.lastCommitAt + 16000l < cycle) {
+      if (checkLiveness && hart.lastCommitAt + livenessThreshold < cycle) {
         val status = if (hart.microOpAllocPtr != hart.microOpRetirePtr) f"waiting on uop 0x${hart.microOpRetirePtr}%X" else f"last uop id 0x${hart.lastUopId}%X"
         simFailure(f"Vexii hasn't commited anything for too long, $status")
       }

@@ -1,6 +1,7 @@
 package vexiiriscv.tester
 
 import spinal.core.sim.{delayed, simSuccess}
+import vexiiriscv.soc.litex.SocSim.fsmTasksGen
 
 import scala.collection.mutable
 
@@ -17,7 +18,7 @@ import scala.collection.mutable
  * --fsm-putc "cat /proc/cpuinfo"
  * --fsm-putc-lr
  * --fsm-getc #
- * --fsm-success 
+ * --fsm-success
  */
 object FsmOption{
   def apply(parser: scopt.OptionParser[Unit], fsmTasksGen : mutable.Queue[() => FsmTask]): Unit = {
@@ -27,6 +28,24 @@ object FsmOption{
     parser.opt[Long]("fsm-sleep") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSleep(v)) }
     parser.opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSuccess()) }
   }
+}
+
+/**
+ * Provide a default implementation to be used in testbenches
+ * Tasks are builded from a queue of landa function (To allow dual sim)
+ *
+ * The testbench need to interface with putcQueue and tasks.head.getc
+ */
+class FsmHalGen(fsmTasksGen : mutable.Queue[() => FsmTask]) extends FsmHal{
+  val tasks =  mutable.Queue[FsmTask]()
+  for(gen <- fsmTasksGen) tasks += gen()
+  val putcQueue = mutable.Queue[Byte]()
+  override def next(): Unit = {
+    if (tasks.nonEmpty) tasks.dequeue()
+    if (tasks.nonEmpty) tasks.head.start(this)
+  }
+  override def putc(value: String): Unit = putcQueue ++= value.map(_.toByte)
+  if (tasks.nonEmpty) tasks.head.start(this)
 }
 
 trait FsmHal{
