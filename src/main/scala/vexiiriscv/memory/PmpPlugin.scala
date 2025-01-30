@@ -170,7 +170,7 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
       self.isLocked := self.cfg.locked || (i+1 != pmpSize).mux(entries(i+1).cfg.locked && entries(i+1).isTor , False)
     }
 
-    val allFilter = CsrListFilter((0 to 63).map(_ + CSR.PMPADDR) ++ (0 to 15).filter(i => Riscv.XLEN.get == 32 || (i % 2) == 0).map(_ + CSR.PMPCFG))
+    val allFilter = CsrListFilter((0 to 15).map(_ + CSR.PMPADDR) ++ (0 to 3).filter(i => Riscv.XLEN.get == 32 || (i % 2) == 0).map(_ + CSR.PMPCFG))
     if(p.pmpSize > 0) csr.onDecode(allFilter) {
       when(csr.bus.decode.write) {
         csr.bus.decode.doTrap(TrapReason.NEXT)
