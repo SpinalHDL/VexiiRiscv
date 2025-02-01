@@ -11,10 +11,17 @@ import vexiiriscv.riscv.{CSR, Riscv}
 
 import scala.collection.mutable.ArrayBuffer
 
-// Here are some good Spike implementation references :
-// - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
-// - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/csrs.cc#L183
-// - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
+/**
+ * Reading the RISC-V spec to figure out all the flags/details of the PMP is just too tricky.
+ * A good way to figure things out is to loook at spike (software implementation) :
+ * - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
+ * - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/csrs.cc#L183
+ * - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
+ *
+ * In particular, one tricky thing with the PMP is how the PMPADDRx LSB bits are handled in regard of the granularity.
+ * Their value change depending the PMPCFGx XD
+ */
+
 
 case class PmpStorageParameter(slots : Int)
 case class PmpPortParameter(var napotMatchAt : Int,
@@ -32,6 +39,9 @@ case class PmpParam(
   var withNapot: Boolean = true
 )
 
+/**
+ * This PMP implementation is quite regular, but allows the user to get ports which are pipelined (to improve FMax / timings)
+ */
 class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
   import p._
 
@@ -160,7 +170,7 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
       self.isLocked := self.cfg.locked || (i+1 != pmpSize).mux(entries(i+1).cfg.locked && entries(i+1).isTor , False)
     }
 
-    val allFilter = CsrListFilter((0 to 63).map(_ + CSR.PMPADDR) ++ (0 to 15).filter(i => Riscv.XLEN.get == 32 || (i % 2) == 0).map(_ + CSR.PMPCFG))
+    val allFilter = CsrListFilter((0 to 15).map(_ + CSR.PMPADDR) ++ (0 to 3).filter(i => Riscv.XLEN.get == 32 || (i % 2) == 0).map(_ + CSR.PMPCFG))
     if(p.pmpSize > 0) csr.onDecode(allFilter) {
       when(csr.bus.decode.write) {
         csr.bus.decode.doTrap(TrapReason.NEXT)

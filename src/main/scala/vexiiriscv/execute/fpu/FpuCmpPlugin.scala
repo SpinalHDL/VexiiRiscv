@@ -14,6 +14,12 @@ object FpuCmpFloatOp extends SpinalEnum{
   val MIN_MAX, SGNJ = newElement()
 }
 
+/**
+ * Implement a bunch of simple RISC-V floating point instruction :
+ * - sign manipulation
+ * - min/max
+ * - compare
+ */
 class FpuCmpPlugin(val layer : LaneLayer,
                    var cmpAt : Int = 0,
                    var intWbAt: Int = 1,

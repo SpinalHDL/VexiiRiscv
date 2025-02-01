@@ -5,7 +5,11 @@ import spinal.core.fiber._
 
 import scala.collection.mutable
 
-// This is just a HashMap storage
+/**
+ * Provide a API to access a HashMap which uses Element[_ <: Any] as keys
+ * The Database object provide a SpinalHDL ScopeProperty[DataBase] allowing to have one globaly accessible implicit database
+ * That globaly shared database can be used as a way to exchange "global" variable in a given context (ex : VexiiRiscv core 3)
+ */
 class Database{
   // User API
   def update[T](key: Element[T], value: T) = key.set(this, value)
@@ -20,9 +24,13 @@ class Database{
   def storageExists[T](key : Element[T]) = storage.contains(key)
 }
 
-// This is the default thread local database instance
+/**
+ * Provide a global implicit database
+ */
 object Database extends ScopeProperty[Database] {
-  def on[T](body: => T) = this (new Database).on(body)
+  def on[T](body: => T) = this (new Database).on(body) // Set the implicit database to be used ojn the given body of code.
+
+  //Here is a few ways you can define new Element instances (which can be used as a key to the data base)
   def value[T]() = new ElementValue[T]()
   def blocking[T]() = new ElementBlocking[T]()
   def landa[T](body : => T) = new ElementLanda(body)
@@ -37,11 +45,11 @@ object Element{
   }
 
   implicit def thingIntPimperFunc(p: Element[Int]): ThingIntPimper = new ThingIntPimper(p)
-//  implicit def thingIntBigInt(p: Element[Int]): BigInt = p.get()
-//  implicit def thingInt2Int(p: Element[Int]): Int = p.get()
 }
 
-// Represent a thing which can be in a data base (this is the key)
+/**
+ * Represent a thing which can be in a data base (this is the key)
+ */
 abstract class Element[T](sp: ScopeProperty[Database] = Database) extends Nameable {
   // user API
   def get : T = getOn(sp.get)
@@ -55,14 +63,20 @@ abstract class Element[T](sp: ScopeProperty[Database] = Database) extends Nameab
   def set(db: Database, value: T) : Unit
 }
 
-// Simple implementation
+/**
+ * Simple implementation, which allow to get/set a value
+ * Will throw an exception if we try to get something which isn't set.
+ */
 class ElementValue[T](sp : ScopeProperty[Database] = Database) extends Element[T](sp) {
   def getOn(db: Database): T = db.storageGet(this)
   def set(db: Database, value: T) = db.storageUpdate(this, value)
   override def isEmpty(db: Database): Boolean = ???
 }
 
-// Layered with a handle to allow blocking "get"
+/**
+ * Same as ElementValue, but based on the SpinalHDL Fiber API.
+ * Meaning that when we get something which isn't set, it will put the current fiber thread in sleep until the thing is set.
+ */
 class ElementBlocking[T](sp : ScopeProperty[Database] = Database) extends Element[T](sp) with Area{
   val thing = new ElementValue[Handle[T]]()
   def getHandle(db : Database) : Handle[T] = db.storageGetElseUpdate(thing, new Handle[T].setCompositeName(this))
@@ -82,7 +96,9 @@ class ElementBlocking[T](sp : ScopeProperty[Database] = Database) extends Elemen
   override def isEmpty(db: Database): Boolean = !getHandle(db).isLoaded
 }
 
-// The body provide the processing to generate the value
+/**
+ * The body provide the processing to generate the value
+ */
 class ElementLanda[T](body : => T, sp : ScopeProperty[Database] = Database) extends ElementValue[T](sp){
   override def getOn(db: Database) : T = {
     if(!db.storageExists(this)){

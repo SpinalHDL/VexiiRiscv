@@ -10,6 +10,11 @@ import vexiiriscv.riscv.Riscv
 
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * This plugin implement a dummy memory translation (for CPU without MMU).
+ * That way, the plugins like the LSU/Fetch always have a MMU-like interface, which symplify their code.
+ */
+
 class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with AddressTranslationService {
   override def mayNeedRedo: Boolean = false
   override def newStorage(pAny: Any, pmuStorageId : Int): Any = { }
@@ -59,6 +64,7 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
       import node._
       import spec.rsp.keys._
 
+      // Implement a pass through
       REFILL := False
       HAZARD := False
       TRANSLATED := spec.preAddress.resized //PC RESIZED

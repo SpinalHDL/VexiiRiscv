@@ -31,6 +31,10 @@ class FpuPackerPort(_cmd : FpuPackerCmd) extends Area{
   val cmd = _cmd
 }
 
+/**
+ * Implement the floating point rounding, recode the result into (ieee 754) and then writeback it back into the register file using the WriteBackPlugin.
+ * Subnormal recoding will stall the pipeline 2 extra cycles to save FMax.
+ */
 class FpuPackerPlugin(val lane: ExecuteLanePlugin,
                       var ignoreSubnormal: Boolean = false,
                       var wbAt : Int = 2) extends FiberPlugin with RegFileWriterService {

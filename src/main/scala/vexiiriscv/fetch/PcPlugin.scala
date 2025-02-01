@@ -11,7 +11,6 @@ import vexiiriscv.Global
 import scala.collection.mutable.ArrayBuffer
 
 class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with PcService{
-
   case class JumpSpec(bus : Flow[JumpCmd], priority : Int, aggregationPriority : Int) extends Composite(bus) {
     val laneValid = Bool()
   }
@@ -19,7 +18,6 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
   override def newJumpInterface(age: Int, laneAgeWidth : Int, aggregationPriority : Int): Flow[JumpCmd] = {
     jumps.addRet(JumpSpec(Flow(JumpCmd(laneAgeWidth)), age, aggregationPriority)).bus
   }
-
 
   override def simSetPc(value: Long): Unit = {
     logic.harts.foreach { h =>
@@ -30,7 +28,6 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
       h.output.fault #= false
     }
   }
-
 
   override def forcedSpawn(): Bool = logic.forcedSpawn
 

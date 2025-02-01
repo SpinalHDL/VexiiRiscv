@@ -12,6 +12,10 @@ import scala.collection.mutable.ArrayBuffer
 
 class DecodingCtx(val node : NodeBaseApi, val legal : Bool)
 
+/**
+ * Provide an API which allows other plugins to ask additional instruction decoding in the decode pipeline,
+ * providing decoded values in the DecodePipeline payloads
+ */
 trait DecoderService {
   val elaborationLock = Retainer()
   val decodingLock = Retainer()
@@ -20,16 +24,25 @@ trait DecoderService {
   def addMicroOpDecoding[T <: BaseType](microOp: MicroOp, key : Payload[T], value: T) : Unit = addMicroOpDecoding(microOp, DecodeList(key -> value))
   def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType)
   def addMicroOpDecodingDefault(key : Payload[_ <: BaseType], value : BaseType) : Unit
-//  def addMicroOpEnable(uop : MicroOp, enable : Bool)
   def addDecodingLogic(body : DecodingCtx => Unit)
 }
 
-
+/**
+ * Provide an API which allows other plugin to carry pipeline payload from Fetch to Decode.
+ * The payload carried can be specified to come from the first or the last fetch-word of a given instruction.
+ * This is used by plugins like branch prediction to carry data through the different pipelines
+ */
 trait AlignerService{
   val lastSliceData, firstSliceData = mutable.LinkedHashSet[NamedType[_ <: Data]]()
   val elaborationLock = Retainer()
+  def addLastSliceDataCtx(that : NamedType[_ <: Data]) = lastSliceData += that
+  def addFirstSliceDataCtx(that : NamedType[_ <: Data]) = firstSliceData += that
 }
 
+/**
+ * Provide an API which allows to inject an instruction in the CPU pipeline.
+ * This is used by the PrivilegedPlugin to implement the RISC-V External Debug Support spec.
+ */
 trait InjectorService {
   val injectRetainer = Retainer()
   var injectPorts = ArrayBuffer[Flow[Bits]]()

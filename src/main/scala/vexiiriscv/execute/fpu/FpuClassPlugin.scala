@@ -10,7 +10,10 @@ import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, muxDouble}
 import vexiiriscv.riscv.Riscv.RVC
 import vexiiriscv.riscv._
 
-
+/**
+ * Provide the RISC-V fclass instruction, which allows to figure out the kind of a given floating point number
+ * (normal, submornal, infinit, nan, ...)
+ */
 class FpuClassPlugin(val layer : LaneLayer,
                      var wbAt : Int = 1 //Relax int ALU
                     ) extends FiberPlugin{

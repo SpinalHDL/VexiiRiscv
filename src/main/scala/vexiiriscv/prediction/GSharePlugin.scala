@@ -15,6 +15,9 @@ import vexiiriscv.decode.{AlignerPlugin, AlignerService}
 
 import scala.util.Random
 
+/**
+ * Implements conditional branch prediction using a RAM of taken/non-taken bias indexed by the PC xor branch history
+ */
 class GSharePlugin(var historyWidth : Int,
                    var entries : Int = 0,
                    var memBytes : BigInt = null,
@@ -41,9 +44,11 @@ class GSharePlugin(var historyWidth : Int,
 
     assert(readAsync == false, "The issue with read async is that it may change while btb stage is stuck, producing transiants => missmatch between pc correction and announced prediction done to BranchPlugin")
 
+    // Specify to the pipeline plugins to carry the GSHARE_COUNTER all the way
+    // This will be used when a branch instruction is commited to make RAM learn. (increament/decrement)
     ls.addLearnCtx(GSHARE_COUNTER)
-    dp.hmKeys += GSHARE_COUNTER
-    ap.lastSliceData += GSHARE_COUNTER
+    dp.addDispatchCtx(GSHARE_COUNTER)
+    ap.addLastSliceDataCtx(GSHARE_COUNTER)
 
     retainer.release()
 
@@ -79,22 +84,20 @@ class GSharePlugin(var historyWidth : Int,
         case true  => mem.readAsync(readCmd(HASH))
       }
       this(GSHARE_COUNTER) := readMem(mem.counter)
+      // Unlike the BTB, here we handle the read durring write using a bypass mux.
       when(BYPASS.valid && this(BYPASS).address === HASH){
         this(GSHARE_COUNTER) := this(BYPASS).data
       }
 
-//      when(WORD_PC === 0x800063A8l && down.isFiring && this(GSHARE_COUNTER)(1) =/= 3){
-//        report(L"# ${this(BRANCH_HISTORY)} ${this(GSHARE_COUNTER)(1)}")
-//      }
       KeepAttribute(this(GSHARE_COUNTER))
     }
 
+    // Make the a RAM bias increment/decrement using the learn port.
+    // To avoid having to read the RAM to know the current bias value, we use the GSHARE_COUNTER provided by the learn port.
     val onLearn = new Area{
       val cmd = host[LearnService].getLearnPort()
       val hash = gshareHash(cmd.pcOnLastSlice, cmd.history)
 
-
-//      val counters = mem.counter.readAsync(hash); println("!!!!!!!!!!!! REMOVE THAT READ ASYNC <3 !!!!!!!!!!!!") //This is a 100% accurate implementation
       val counters = cmd.ctx(GSHARE_COUNTER)
       val updated = GSHARE_COUNTER()
       val incrValue = cmd.taken ? U(1) | U((1 << counterWidth)-1)
@@ -109,6 +112,7 @@ class GSharePlugin(var historyWidth : Int,
       mem.write.data := updated
     }
 
+    // Ensure the ram is cleared on reset to avoid x-prop
     val initializer = bootMemClear generate new Area {
       val counter = Reg(UInt(log2Up(words) + 1 bits)) init (0)
       val busy = !counter.msb

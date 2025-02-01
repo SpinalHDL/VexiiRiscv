@@ -9,37 +9,35 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.execute.Execute
 import vexiiriscv.fetch.JumpCmd
 
+/**
+ * This contains the integer constant which allows to compute identifier for a given point in the pipeline.
+ * This id can then be used with the ReschedulePlugin to querry/register flushes
+ *
+ * So for instance, if you want to get the age id for the execute stage 3, then you do EXECUTE + 3*STAGE + NOT_PREDICTION
+ */
 object Ages {
   val STAGE = 10
   val NOT_PREDICTION = 1
   val FETCH = 0
   val DECODE = 1000
-  val EU = 2000
+  val EXECUTE = 2000
   val TRAP = 3000
 }
 
 case class FlushCmd(age : Int, laneAgeWidth : Int, withUopId : Boolean) extends Bundle{
   val hartId = Global.HART_ID()
-  val uopId = withUopId generate Decode.UOP_ID()
-  val laneAge = UInt(laneAgeWidth bits)
-  val self = Bool()
+  val uopId = withUopId generate Decode.UOP_ID() //Used for debugging/tracking
+  val laneAge = UInt(laneAgeWidth bits) //Used to know the order between lanes of the same pipeline (decode/execute lanes)
+  val self = Bool() //True if the flush source is killing itself
 }
 
-case class TrapCmd(age : Int, pcWidth : Int, tvalWidth : Int, causeWidth : Int, trapArgWidth : Int) extends Bundle {
-  val cause      = UInt(causeWidth bits)
-  val tval       = Bits(tvalWidth bits)
-  val arg        = Bits(trapArgWidth bits)
-  val skipCommit = Bool() //Want to skip commit for exceptions, but not for [jump, ebreak, redo]
-}
-
+/**
+ * Provide an API to create new interfaces to flush the CPU pipelines.
+ * The "age" can be generated from the Ages object.
+ */
 trait ScheduleService {
   def newFlushPort(age: Int, laneAgeWidth: Int, withUopId: Boolean): Flow[FlushCmd]
-//  def sharedFlushPort(age: Int, laneAgeWidth: Int, withUopId: Boolean, key : Nameable): Flow[FlushCmd]
-//  def newPcPort(age : Int, aggregationPriority : Int = 0) : Flow[JumpCmd]
-  def newTrapPort(age : Int, causeWidth : Int = 4) : Flow[TrapCmd]
-  def isFlushedAt(age: Int, hartId : UInt, laneAge : UInt): Option[Bool]
-//  def addCtrl(age : Int, ctrl : CtrlLink) : Unit
-
+  def isFlushedAt(age: Int, hartId : UInt, laneAge : UInt): Option[Bool] // Querry if the given place in the CPU is being flushed
   val elaborationLock = Retainer()
 }
 

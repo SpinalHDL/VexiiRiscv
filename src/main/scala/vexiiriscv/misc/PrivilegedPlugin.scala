@@ -28,6 +28,7 @@ object PrivilegedParam{
     withUserTrap   = false,
     withRdTime     = false,
     withDebug      = false,
+    mstatusFsInit  = 0,
     vendorId       = 0,
     archId         = 46, //As spike
     impId          = 0,
@@ -53,6 +54,7 @@ case class PrivilegedParam(var withSupervisor : Boolean,
                            var withUserTrap: Boolean,
                            var withRdTime : Boolean,
                            var withDebug: Boolean,
+                           var mstatusFsInit : Int,
                            var debugTriggers : Int,
                            var debugTriggersLsu : Boolean,
                            var vendorId: Int,
@@ -67,6 +69,12 @@ case class Delegator(var enable: Bool, privilege: Int)
 case class InterruptSpec(var cond: Bool, id: Int, privilege: Int, delegators: List[Delegator])
 case class ExceptionSpec(id: Int, delegators: List[Delegator])
 
+/**
+ * This implements the large majority of the RISC-V privileged spec :
+ * - Most CSR
+ * - Interrupts
+ * - Debug interface (RISC-V debug spec)
+ */
 class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends FiberPlugin with CommitService with LsuTriggerService{
   def implementSupervisor = p.withSupervisor
   def implementUser = p.withUser
@@ -187,7 +195,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         bus.running := hartRunning
         bus.halted := !hartRunning
-        bus.unavailable := BufferCC(ClockDomain.current.isResetActive)
+        bus.unavailable := BufferCC.withTag(ClockDomain.current.isResetActive)
 
         when(debugMode) {
           inhibateInterrupts(hartId)
@@ -519,7 +527,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val status = new api.Csr(CSR.MSTATUS) {
           val mie, mpie = RegInit(False)
           val mpp = p.withUser.mux(RegInit(U"00"), U"11")
-          val fs = withFs generate RegInit(U"00")
+          val fs = withFs generate RegInit(U(p.mstatusFsInit, 2 bits))
           val sd = False
           val tsr, tvm = p.withSupervisor generate RegInit(False)
           val tw = p.withUser.mux(RegInit(False), False)
@@ -697,15 +705,3 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     buildBefore.release()
   }
 }
-
-
-
-
-
-//        val tval = Reg(TVAL) init (0)
-//        val epc = Reg(PC) init (0)
-//        val tvec = Reg(PC) init (0)
-
-//        api.onCsr(CSR.MTVAL).readWrite(tval)
-//        api.onCsr(CSR.MEPC).readWrite(epc)
-//        api.onCsr(CSR.MTVEC).readWrite(tvec)

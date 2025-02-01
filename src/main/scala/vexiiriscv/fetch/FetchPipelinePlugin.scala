@@ -6,11 +6,15 @@ import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline
 import spinal.lib.misc.pipeline.{CtrlLink, CtrlLinkMirror, Link}
 import vexiiriscv.Global
-import vexiiriscv.misc.{CtrlPipelinePlugin, PipelineService}
+import vexiiriscv.misc.{PipelineService}
 import vexiiriscv.schedule.{Ages, ReschedulePlugin}
 
 import scala.collection.mutable
 
+
+/**
+ * Provide a fethc pipeline skeleton, used by other plugins to compose the fethc pipeline.
+ */
 class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   setName("fetch")
   val elaborationLock = Retainer()

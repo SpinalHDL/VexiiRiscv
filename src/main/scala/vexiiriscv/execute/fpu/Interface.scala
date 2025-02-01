@@ -28,6 +28,11 @@ object FloatUnpacked{
             mantissaWidth: Int) : FloatUnpacked = FloatUnpacked(FloatUnpackedParam(exponentMax, exponentMin, mantissaWidth))
 }
 
+/**
+ * This is the floating format used in the FPU ALUs
+ * Unlike ieee 754, it doesn't support subnormals, so, to convert from ieee 754 to FloatUnpacked accurately on subnormals,
+ * the FloatUnpacked need to have an extended exponent field, allowing to cover the subnormal numbers as if they were normal.
+ */
 case class FloatUnpacked(p : FloatUnpackedParam) extends Bundle{
   def exponentMax = p.exponentMax
   def exponentMin = p.exponentMin
@@ -64,24 +69,6 @@ case class FloatUnpacked(p : FloatUnpackedParam) extends Bundle{
   }
 }
 
-case class FpuParameter(rvd : Boolean,
-                        rv64 : Boolean,
-                        robIdWidth : Int,
-                        portCount : Int,
-                        withAdd : Boolean = true,
-                        withMul : Boolean = true,
-                        withDiv : Boolean = true,
-                        withSqrt : Boolean = true){
-  val rsFloatWidth = 32 + rvd.toInt*32
-  val rsIntWidth = 32 + rv64.toInt*32
-  val exponentWidth = if(rvd) 11 else 8
-  val mantissaWidth = if(rvd) 52 else 23
-}
-
-object FpuOpcode extends SpinalEnum{
-  val MUL, ADD, FMA, I2F, F2I, CMP, DIV, SQRT, MIN_MAX, SGNJ, FMV_X_W, FMV_W_X, FCLASS, FCVT_X_X = newElement()
-}
-
 object FpuFormat extends SpinalEnum{
   val FLOAT, DOUBLE = newElement()
 }
@@ -95,33 +82,6 @@ object FpuRoundMode extends SpinalEnum(){
     RUP -> 3,
     RMM -> 4
   )
-}
-object FpuRoundModeInstr extends SpinalEnum(){
-  val RNE, RTZ, RDN, RUP, RMM, DYN = newElement()
-  defaultEncoding = SpinalEnumEncoding("opt")(
-    RNE -> 0,
-    RTZ -> 1,
-    RDN -> 2,
-    RUP -> 3,
-    RMM -> 4,
-    DYN -> 7
-  )
-}
-
-case class FpuFloatCmd(rvd : Boolean, robIdWidth : Int, withRs : Boolean = true) extends Bundle {
-  val opcode = FpuOpcode()
-  val arg = Bits(2 bits)
-  val rs = withRs generate Vec.fill(3)(Bits((if(rvd) 64 else 32) bits))
-  val format = FpuFormat()
-  val roundMode = FpuRoundMode()
-  val robId = UInt(robIdWidth bits)
-//  val scheduleId = UInt(robIdWidth bits)
-
-  def withoutRs() : FpuFloatCmd = {
-    val ret = FpuFloatCmd(rvd, robIdWidth, false)
-    ret.assignSomeByName(this)
-    ret
-  }
 }
 
 case class FpuFlags() extends Bundle{
@@ -160,45 +120,5 @@ case class FpuFlags() extends Bundle{
   }
 }
 
-case class FpuFloatWriteback(robIdWidth : Int, valueWidth : Int) extends Bundle{
-  val robId = UInt(robIdWidth bits)
-  val flags = FpuFlags()
-  val value = Bits(valueWidth bits)
-}
-
-case class FpuFloatWake(robIdWidth : Int) extends Bundle{
-  val robId = UInt(robIdWidth bits)
-}
-
-case class FpuIntCmd(rv64 : Boolean, robIdWidth : Int) extends Bundle {
-  val opcode = FpuOpcode()
-  val arg = Bits(2 bits)
-  val rs1 = Bits(32+rv64.toInt*32 bits)
-  val format = FpuFormat()
-  val roundMode = FpuRoundMode()
-  val robId = UInt(robIdWidth bits)
-}
 
 
-
-case class FpuIntWriteback(robIdWidth : Int, rsIntWidth : Int) extends Bundle{
-  val flags = FpuFlags()
-  val robId = UInt(robIdWidth bits)
-  val value = Bits(rsIntWidth bits)
-}
-
-
-case class FpuPort(p : FpuParameter) extends Bundle with IMasterSlave {
-  val floatCmd       = Stream(FpuFloatCmd(p.rvd, p.robIdWidth))
-  val floatWriteback = Flow(FpuFloatWriteback(p.robIdWidth, p.rsFloatWidth))
-  val floatWake      = Flow(FpuFloatWake(p.robIdWidth))
-  val intCmd         = Stream(FpuIntCmd(p.rv64, p.robIdWidth))
-  val intWriteback   = Stream(FpuIntWriteback(p.robIdWidth, p.rsIntWidth))
-  val unschedule     = Bool()
-
-  override def asMaster(): Unit = {
-    master(floatCmd, intCmd)
-    slave(floatWake, floatWriteback, intWriteback)
-    out(unschedule)
-  }
-}

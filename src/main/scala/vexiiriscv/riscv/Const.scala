@@ -18,6 +18,9 @@ object Const {
   def rsRange(id : Int) = List(rs1Range, rs2Range,rs3Range)(id)
 }
 
+/**
+ * Decode immediate values from a RISC-V instruction
+ */
 case class IMM(instruction  : Bits) extends Area{
   // immediates
   def i = instruction(31 downto 20)

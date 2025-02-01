@@ -8,7 +8,9 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.execute.LsuL1Bus
 
 
-
+/**
+ * Bridge the LsuL1Plugin to a Tilelink node
+ */
 class LsuL1TileLinkPlugin(node : bus.tilelink.fabric.Node, probeInflightMax : Int = 2) extends FiberPlugin {
   val logic = during setup new Area{
     val lsucp = host[LsuL1Plugin]
@@ -33,4 +35,3 @@ class LsuL1TileLinkPlugin(node : bus.tilelink.fabric.Node, probeInflightMax : In
     node.bus.component.rework(node.bus << down)
   }
 }
-//--lsu-l1-coherency

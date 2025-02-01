@@ -8,6 +8,9 @@ import spinal.core.{widthOf, _}
 import spinal.lib.misc.pipeline._
 import spinal.lib.{Shift, _}
 
+/**
+ * This Area can be used to implement and bind a floating point adder on a given pipeline.
+ */
 class FpuAdd(rs1 : Payload[FloatUnpacked],
              rs2 : Payload[FloatUnpacked],
              roundDown : Payload[Bool],

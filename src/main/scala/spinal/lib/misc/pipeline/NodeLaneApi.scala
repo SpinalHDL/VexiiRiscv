@@ -2,6 +2,10 @@ package spinal.lib.misc.pipeline
 
 import spinal.core._
 
+/**
+ * Provide a "Lane" layered in a pipeline Node.
+ * For instance, execution lane 0 and lane 1 on execute node 3 would be two lanes layered in the execute node 3.
+ */
 trait NodeLaneApi{
   def nodeLink: Node
   def laneName: String

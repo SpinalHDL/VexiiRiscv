@@ -9,7 +9,10 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.DebugId
 
-case class CachelessBusParam(addressWidth : Int, dataWidth : Int, idCount : Int, cmdPersistence : Boolean){
+case class CachelessBusParam(addressWidth : Int,
+                             dataWidth : Int,
+                             idCount : Int,
+                             cmdPersistence : Boolean){
   val idWidth = log2Up(idCount)
 
   def toTilelinkM2s(name : Nameable) = new tilelink.M2sParameters(
@@ -42,6 +45,12 @@ case class CachelessRsp(p : CachelessBusParam, withId : Boolean = true) extends 
   val word  = Bits(p.dataWidth bits)
 }
 
+/**
+ * The fetch CachelessBus has the following caracteristics :
+ * - address in byte, always aligned on the full data width
+ * - supports out of order responses via the id signals
+ * - Only one transaction per id can be inflight at a given time
+ */
 case class CachelessBus(p : CachelessBusParam) extends Bundle with IMasterSlave {
   var cmd = Stream(CachelessCmd(p))
   var rsp = Flow(CachelessRsp(p))

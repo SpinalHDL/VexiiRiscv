@@ -18,6 +18,12 @@ import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
 
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * This plugin is here to ease and "standardise" the way a simulation can look at a VexiiRiscv core and figure out what
+ * it is doing. It also generate a large set of easy to read signals that can be read in a waveform.
+ *
+ * All the "Proxy" are there to reduce the overhead of reading hardware signals in a SpinalHDL simulation.
+ */
 class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
 
   val logic = during setup new Logic()
@@ -91,14 +97,14 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
         val writeDone = Bool()
         val readDone = Bool()
       }))
-      access.valid := p.fsm.regs.fire
-      access.uopId := p.fsm.regs.uopId
-      access.hartId := p.fsm.regs.hartId
-      access.address := U(p.fsm.regs.uop)(Const.csrRange)
-      access.write := p.fsm.regs.onWriteBits
-      access.read := p.fsm.regs.csrValue
-      access.writeDone := p.fsm.regs.write
-      access.readDone := p.fsm.regs.read
+      access.valid := p.fsm.interface.fire
+      access.uopId := p.fsm.interface.uopId
+      access.hartId := p.fsm.interface.hartId
+      access.address := U(p.fsm.interface.uop)(Const.csrRange)
+      access.write := p.fsm.interface.onWriteBits
+      access.read := p.fsm.interface.csrValue
+      access.writeDone := p.fsm.interface.write
+      access.readDone := p.fsm.interface.read
       val port = wrap(access)
     })
 

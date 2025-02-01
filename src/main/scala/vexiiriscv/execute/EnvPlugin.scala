@@ -18,6 +18,9 @@ object EnvPluginOp extends SpinalEnum{
   val ECALL, EBREAK, PRIV_RET, FENCE_I, SFENCE_VMA, WFI = newElement()
 }
 
+/**
+ * Implements a bunch of special instruction which always traps into the TrapPlugin. (ecall, ebreak, mret, fences, efi, ...)
+ */
 class EnvPlugin(layer : LaneLayer,
                 executeAt : Int) extends ExecutionUnitElementSimple(layer){
   val OP = Payload(EnvPluginOp())

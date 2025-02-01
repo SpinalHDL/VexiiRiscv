@@ -78,7 +78,9 @@ case class CsrBus() extends Bundle {
   }
 }
 
-
+/**
+ * Service which provide a bunch of primitives allowing to map some hardware to the CSR address space
+ */
 trait CsrService {
   val csrLock = Retainer()
   val spec = ArrayBuffer[CsrSpec]()

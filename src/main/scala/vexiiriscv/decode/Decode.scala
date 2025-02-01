@@ -25,8 +25,8 @@ object Decode extends AreaObject {
   val rfaKeys = blocking[mutable.LinkedHashMap[RfAccess, AccessKeys]]
 
   val LEGAL = Payload(Bool())
-  val DOP_ID = Payload(UInt(DOP_ID_WIDTH bits))
-  val UOP_ID = Payload(UInt(UOP_ID_WIDTH bits))
+  val DOP_ID = Payload(UInt(DOP_ID_WIDTH bits)) // Used to track instruction between the end of the fetch pipeline until they are decoded
+  val UOP_ID = Payload(UInt(UOP_ID_WIDTH bits)) // Used to track isntruction after they are decoded until they are commited
 
   val STORE_ID_WIDTH = 12 //Assume it is enough to let the store buffer drain
   val STORE_ID = Payload(UInt(STORE_ID_WIDTH bits))

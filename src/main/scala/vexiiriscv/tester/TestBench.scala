@@ -29,74 +29,90 @@ import java.util.Scanner
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class TestArgs{
-  val args = ArrayBuffer[String]()
-  def dualSim() : this.type = {args ++= List("--dual-sim"); this }
-  def withWave() : this.type = {args ++= List("--with-wave"); this }
-  def withKonata() : this.type = {args ++= List("--with-konata"); this }
-  def withRvlsLog() : this.type = {args ++= List("--with-rvls-log"); this }
-  def withSpikeLog() : this.type = {args ++= List("--with-spike-log"); this }
-  def printStats() : this.type = {args ++= List("--print-stats"); this }
-  def traceAll() : this.type = {args ++= List("--trace-all"); this }
-  def noProbe() : this.type = {args ++= List("--no-probe"); this }
-  def noRvlsCheck() : this.type = {args ++= List("--no-rvls-check"); this }
-  def noStdin() : this.type = {args ++= List("--no-stdin"); this }
-  def fsmSuccess() : this.type = {args ++= List("--fsm-success"); this }
+/**
+ * This is the main VexiiRiscv testbench, you can invoke it from command line and is based on the TestOptions class
+ */
+object TestBench extends App{
+  doIt()
 
-  def name(name : String) : this.type = {args ++= List("--name", name); this }
-  def failAfter(value : Long) : this.type = {args ++= List("--fail-after", value.toString); this }
-  def passAfter(value : Long) : this.type = {args ++= List("--pass-after", value.toString); this }
-  def simSpeedPrinter(value : Double) : this.type = {args ++= List("--sim-speed-printer", value.toString); this }
-  def loadElf(value : String) : this.type = {args ++= List("--load-elf", value); this }
-  def loadElf(value : File) : this.type = loadElf(value.getAbsolutePath)
-  def startSymbol(value : String) : this.type = {args ++= List("--start-symbol", value); this }
-  def passSymbol(value : String) : this.type = {args ++= List("--pass-symbol", value); this }
-  def startSymbolOffset(value : Int) : this.type = {args ++= List("--start-symbol-offset", value.toString); this }
-  def fsmGetc(value : String) : this.type = {args ++= List("--fsm-getc", value); this }
-  def fsmPutc(value : String) : this.type = {args ++= List("--fsm-putc", value); this }
-  def fsmPutcLr() : this.type = {args ++= List("--fsm-putc-lr"); this }
-  def fsmSleep(value : Long) : this.type = {args ++= List("--fsm-sleep", value.toString); this }
-  def ibusReadyFactor(value : Double) : this.type = {args ++= List("--ibus-ready-factor", value.toString); this }
-  def dbusReadyFactor(value : Double) : this.type = {args ++= List("--dbus-ready-factor", value.toString); this }
-
-  def loadBin(address : Long, file : String) : this.type = {args ++= List("--load-bin", f"0x${address.toHexString},$file"); this }
-  def loadU32(address : Long, value : Long) : this.type = {args ++= List("--load-u32", f"0x${address.toHexString},0x${value.toHexString}"); this }
-}
-
-trait FsmHal{
-  def putc(value : String) : Unit
-  def next() : Unit
-}
-trait FsmTask{
-  def start(hal : FsmHal) : Unit = {}
-  def getc(hal : FsmHal, c : Char) : Unit = {}
-}
-class FsmGetc(value : String) extends FsmTask{
-  val buffer = new StringBuilder()
-  override def getc(hal : FsmHal, c: Char): Unit = {
-    buffer += c
-    if(buffer.toString().endsWith(value)){
-      hal.next()
+  def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
+    val ret = param.plugins()
+    ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
+      p.ackIdWidth = 8
+      p.probeIdWidth = log2Up(p.writebackCount)
+      ret  += new LsuL1TlPlugin
     }
-  }
-}
-class FsmPutc(value : String) extends FsmTask{
-  override def start(hal: FsmHal): Unit = {
-    hal.putc(value)
-    hal.next()
-  }
-}
-class FsmSleep(value : Long) extends FsmTask{
-  override def start(hal: FsmHal): Unit = {
-    delayed(value) {
-      hal.next()
+    val regions = ArrayBuffer(
+      new PmaRegion{
+        override def mapping: AddressMapping = SizeMapping(0x80000000l, (1l << param.physicalWidth) - 0x80000000l)
+        override def transfers: MemoryTransfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all
+        )
+        override def isMain: Boolean = true
+        override def isExecutable: Boolean = true
+      },
+      new PmaRegion{
+        override def mapping: AddressMapping = SizeMapping(0x10000000l, 0x10000000l)
+        override def transfers: MemoryTransfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all
+        )
+        override def isMain: Boolean = false
+        override def isExecutable: Boolean = true
+      },
+      new PmaRegion{
+        override def mapping: AddressMapping = SizeMapping(0x1000, 0x1000)
+        override def transfers: MemoryTransfers = M2sTransfers(
+          get = SizeRange.all,
+          putFull = SizeRange.all
+        )
+        override def isMain: Boolean = true
+        override def isExecutable: Boolean = true
+      }
+    )
+    ret.foreach{
+      case p: FetchCachelessPlugin => p.regions.load(regions)
+      case p: LsuCachelessPlugin => p.regions.load(regions)
+      case p: FetchL1Plugin => p.regions.load(regions)
+      case p: LsuPlugin => p.ioRegions.load(regions)
+      case p: LsuL1Plugin => p.regions.load(regions)
+      case p: EmbeddedRiscvJtag => p.debugCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
+      case _ =>
     }
+
+    ret
   }
-}
-class FsmSuccess extends FsmTask{
-  override def start(hal: FsmHal): Unit = simSuccess()
+
+  def doIt(param : ParamSimple = new ParamSimple()) {
+    val testOpt = new TestOptions()
+
+    val genConfig = SpinalConfig()
+    val simConfig = SpinalSimConfig()
+    simConfig.withFstWave
+    simConfig.withTestFolder
+    simConfig.withConfig(genConfig)
+
+    assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+      help("help").text("prints this usage text")
+      testOpt.addOptions(this)
+      param.addOptions(this)
+    }.parse(args, Unit).nonEmpty)
+
+    println(s"With Vexiiriscv parm :\n - ${param.getName()}")
+    val compiled = TestBench.synchronized { // To avoid to many calls at the same time
+      simConfig.compile(VexiiRiscv(paramToPlugins(param)))
+    }
+    testOpt.test(compiled)
+    Thread.sleep(10)
+  }
 }
 
+/**
+ * This class store a bunch of options about how to run a VexiiRiscv testbench, including which binaries need to be loaded in memory.
+ *
+ * It also include a "test" function actualy contains the simulation code itself, and when invoked will run the whole simulation.
+ */
 class TestOptions{
   var dualSim = false // Double simulation, one ahead of the other which will trigger wave capture of the second simulation when it fail
   var traceWave = false
@@ -109,7 +125,6 @@ class TestOptions{
   var simSpeedPrinter = Option.empty[Double]
   var withRvls = new File("ext/rvls/build/apps/rvls.so").exists()
   var withRvlsCheck = withRvls
-//  var withKonata = true
   var failAfter, passAfter = Option.empty[Long]
   var startSymbol = Option.empty[String]
   var startSymbolOffset = 0l
@@ -126,8 +141,6 @@ class TestOptions{
   var seed = 2
   var jtagRemote = false
   var spawnProcess = Option.empty[String]
-
-//  traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true; printStats = true
 
   def getTestName() = testName.getOrElse("test")
 
@@ -163,12 +176,7 @@ class TestOptions{
     opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
     opt[Unit]("jtag-remote") unbounded() action { (v, c) => jtagRemote = true }
     opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v; ibusBaseLatency = v }
-
-    opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
-    opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
-    opt[String]("fsm-getc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmGetc(v)) }
-    opt[Long]("fsm-sleep") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSleep(v)) }
-    opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSuccess()) }
+    FsmOption(parser, fsmTasksGen)
     opt[Int]("seed") action { (v, c) => seed = v }
     opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
 
@@ -183,7 +191,6 @@ class TestOptions{
   }
 
   def test(dut : VexiiRiscv, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
-//    traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true; printStats = true;
     val fsmTasks =  mutable.Queue[FsmTask]()
     for(gen <- fsmTasksGen) fsmTasks += gen()
     val cd = dut.clockDomain
@@ -220,7 +227,6 @@ class TestOptions{
     probe.enabled = withProbe
     probe.trace = false
 
-//    delayed(1000){ simFailure() }
     // Things to enable when we want to collect traces
     val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath(), "tracer.log")))
     onTrace {
@@ -608,143 +614,7 @@ class TestOptions{
   }
 }
 
-object TestBench extends App{
-  doIt()
-
-  def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
-    val ret = param.plugins()
-    ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
-      p.ackIdWidth = 8
-      p.probeIdWidth = log2Up(p.writebackCount)
-      ret  += new LsuL1TlPlugin
-    }
-    val regions = ArrayBuffer(
-      new PmaRegion{
-        override def mapping: AddressMapping = SizeMapping(0x80000000l, (1l << param.physicalWidth) - 0x80000000l)
-        override def transfers: MemoryTransfers = M2sTransfers(
-          get = SizeRange.all,
-          putFull = SizeRange.all
-        )
-        override def isMain: Boolean = true
-        override def isExecutable: Boolean = true
-      },
-      new PmaRegion{
-        override def mapping: AddressMapping = SizeMapping(0x10000000l, 0x10000000l)
-        override def transfers: MemoryTransfers = M2sTransfers(
-          get = SizeRange.all,
-          putFull = SizeRange.all
-        )
-        override def isMain: Boolean = false
-        override def isExecutable: Boolean = true
-      },
-      new PmaRegion{
-        override def mapping: AddressMapping = SizeMapping(0x1000, 0x1000)
-        override def transfers: MemoryTransfers = M2sTransfers(
-          get = SizeRange.all,
-          putFull = SizeRange.all
-        )
-        override def isMain: Boolean = true
-        override def isExecutable: Boolean = true
-      }
-    )
-    ret.foreach{
-      case p: FetchCachelessPlugin => p.regions.load(regions)
-      case p: LsuCachelessPlugin => p.regions.load(regions)
-      case p: FetchL1Plugin => p.regions.load(regions)
-      case p: LsuPlugin => p.ioRegions.load(regions)
-      case p: LsuL1Plugin => p.regions.load(regions)
-      case p: EmbeddedRiscvJtag => p.debugCd = ClockDomain.current.copy(reset = Bool().setName("debugReset"))
-      case _ =>
-    }
-
-    ret
-  }
-
-  def doIt(param : ParamSimple = new ParamSimple()) {
-    val testOpt = new TestOptions()
-
-    val genConfig = SpinalConfig()
-//    genConfig.includeSimulation
-
-    val simConfig = SpinalSimConfig()
-//    simConfig.withIVerilog
-//    simConfig.withVcdWave
-    simConfig.withFstWave
-    simConfig.withTestFolder
-    simConfig.withConfig(genConfig)
-
-    assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
-      help("help").text("prints this usage text")
-      testOpt.addOptions(this)
-      param.addOptions(this)
-    }.parse(args, Unit).nonEmpty)
-
-    println(s"With Vexiiriscv parm :\n - ${param.getName()}")
-    val compiled = TestBench.synchronized { // To avoid to many calls at the same time
-      simConfig.compile(VexiiRiscv(paramToPlugins(param)))
-    }
-    testOpt.test(compiled)
-    Thread.sleep(10)
-  }
-}
-
-object TestBenchDebug extends App{
-  val param = new ParamSimple()
-  param.regFileSync = true
-  TestBench.doIt()
-}
-
-//echo '--load-elf ext/NaxSoftware/baremetal/dhrystone/build/rv32ima/dhrystone.elf   --with-all' | nc localhost  8189
-object TestBenchServer extends App{
-  val simConfig = SpinalSimConfig()
-  simConfig.withFstWave
-  simConfig.withTestFolder
-  simConfig.withConfig(SpinalConfig(dontCareGenAsZero = true)) //TODO dontCareGenAsZero = true required as verilator isn't deterministic on that :())
-
-  val param = new ParamSimple()
-  val compiled = simConfig.compile(VexiiRiscv(TestBench.paramToPlugins(param)))
-  val serverSocket = new ServerSocket(8189)
-  var i = 0
-  println("Waiting for connections")
-  while (true) {
-    val incoming = serverSocket.accept
-    new TestBenchServerConnection(incoming, compiled)
-    i += 1
-  }
-}
 
 
-class TestBenchServerConnection(incoming: Socket, compiled : SimCompiled[VexiiRiscv]) extends Thread {
-  this.start()
-  override def run() = {
-    try try {
-      val inputStream = incoming.getInputStream
-      val outputStream = incoming.getOutputStream
-      val in = new Scanner(inputStream)
-      val out = new PrintWriter(outputStream, true) /* autoFlush */
-      var command = ""
-      command = in.nextLine
-      out.println("got " + command)
-      println("got " + command)
-      val args = command.split("\\s+")
-      Console.withOut(outputStream) {
-        Console.withErr(outputStream) {
-          val testOpt = new TestOptions()
-          assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
-            help("help").text("prints this usage text")
-            testOpt.addOptions(this)
-          }.parse(args, Unit).nonEmpty)
-          testOpt.test(compiled)
-          Thread.sleep(100)
-        }
-      }
-    } catch {
-      case e: InterruptedException =>
-        throw new RuntimeException(e)
-    } finally incoming.close()
-    catch {
-      case ex: IOException =>
-        ex.printStackTrace()
-    }
-  }
-}
+
+

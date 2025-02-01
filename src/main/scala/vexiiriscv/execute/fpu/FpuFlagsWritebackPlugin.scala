@@ -20,6 +20,9 @@ case class FpuFlagsWritebackPort(atsSpec : Seq[Int]) extends Bundle{
   val ats = Bits(atsSpec.size bits)
 }
 
+/**
+ * Handle the update of the FPU flags for all inflight instruction (commited and uncommited)
+ */
 class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extends FiberPlugin{
   val elaborationLock = Retainer()
 

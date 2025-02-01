@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 
+// This file defines the integer and floating point RISC-V register file, aswell as a few utilities to easily the instructions working with them
+
 package vexiiriscv.riscv
 
 import spinal.core.{AreaObject, MaskedLiteral}

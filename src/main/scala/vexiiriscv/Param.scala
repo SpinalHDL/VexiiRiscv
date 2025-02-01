@@ -26,7 +26,6 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
 
 object ParamSimple{
-
   def addOptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
     import parser._
     opt[Map[String, String]]("region") unbounded() action { (v, c) =>
@@ -74,6 +73,15 @@ object ParamSimple{
   }
 }
 
+
+/**
+ * ParamSimple is a data class which can be used to generate a collection of properly configured plugins for VexiiRiscv.
+ * - you create an instance of ParamSimple
+ * - you configure it
+ * - you ask it to provide the list of VexiiRiscv plugins
+ * - you instanciate VexiiRiscv with that list of plugin
+ * - Thenthen you should get a functional VexiiRiscv.
+ */
 class ParamSimple(){
   var xlen = 32
   var withRvc = false
@@ -98,6 +106,7 @@ class ParamSimple(){
   var withDiv = false
   var withRva = false
   var withRvf = false
+  var btbDualPortRam = true
   var skipFma = false
   var fpuFmaFullAccuracy = true
   var fpuIgnoreSubnormal = false
@@ -117,6 +126,7 @@ class ParamSimple(){
   var allowBypassFrom = 100 //100 => disabled
   var additionalPerformanceCounters = 0
   var withPerformanceCounters = false
+  var withPerformanceScountovf = true // Disabled to keep in sync with RVLS
   var fetchL1Enable = false
   var fetchL1Sets = 64
   var fetchL1Ways = 1
@@ -156,12 +166,12 @@ class ParamSimple(){
       MmuStorageLevel(
         id = 0,
         ways = 2,
-        depth = 32
+        sets = 32
       ),
       MmuStorageLevel(
         id = 1,
         ways = 1,
-        depth = 32
+        sets = 32
       )
     ),
     priority = 0
@@ -215,12 +225,12 @@ class ParamSimple(){
       MmuStorageLevel(
         id = 0,
         ways = 3,
-        depth = 32
+        sets = 32
       ),
       MmuStorageLevel(
         id = 1,
         ways = 1,
-        depth = 32
+        sets = 32
       )
     ),
     priority = 1
@@ -241,6 +251,7 @@ class ParamSimple(){
   )
 
 
+  def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt)
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
@@ -347,17 +358,16 @@ class ParamSimple(){
   }
 
 
+  // Define a few utilities to mutate the ParamSimple
   def withRvm(): Unit = {
     withMul = true
     withDiv = true
   }
-
   def withBranchPredicton(): Unit = {
     withBtb = true
     withGShare = true
     withRas = true
   }
-
   def withCaches(): Unit = {
     fetchL1Enable = true
     fetchL1Sets = 64
@@ -369,25 +379,23 @@ class ParamSimple(){
 
     withLsuBypass = true
   }
-
   def withLinux(): Unit = {
     privParam.withSupervisor = true
     privParam.withUser = true;
     withMmu = true
   }
-
   def withMmuSyncRead(): Unit = {
     fetchTsp = MmuStorageParameter(
       levels = List(
         MmuStorageLevel(
           id = 0,
           ways = 2,
-          depth = 64
+          sets = 64
         ),
         MmuStorageLevel(
           id = 1,
           ways = 1,
-          depth = 64
+          sets = 64
         )
       ),
       priority = 0
@@ -398,12 +406,12 @@ class ParamSimple(){
         MmuStorageLevel(
           id = 0,
           ways = 2,
-          depth = 64
+          sets = 64
         ),
         MmuStorageLevel(
           id = 1,
           ways = 1,
-          depth = 64
+          sets = 64
         )
       ),
       priority = 1
@@ -424,6 +432,7 @@ class ParamSimple(){
     )
   }
 
+  // Hash code used the regression test to generate a unique workspace folder per config
   override def hashCode() = {
     var hash = 0
     val md = new StringBuilder()
@@ -443,7 +452,7 @@ class ParamSimple(){
     Math.abs(md.toString.hashCode())
   }
 
-
+  // Generate a human redable name from most of the supported configuration
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
     var isa = s"rv${xlen}i"
@@ -482,6 +491,7 @@ class ParamSimple(){
     r.mkString("_")
   }
 
+  // Initialize a scopt commande line arguement parser to take controle of this SimpleParam
   def addOptions(parser: scopt.OptionParser[Unit]) = {
     import parser._
     opt[Int]("xlen") action { (v, c) => xlen = v }
@@ -526,6 +536,7 @@ class ParamSimple(){
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
     opt[Unit]("without-ras") action { (v, c) => withRas = false }
+    opt[Unit]("btb-single-port-ram") action { (v, c) => btbDualPortRam = false }
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0; storeRs2Late = true }
     opt[Unit]("with-store-rs2-late") action { (v, c) => storeRs2Late = true }
     opt[Int]("btb-sets") action { (v, c) => btbSets = v }
@@ -536,6 +547,7 @@ class ParamSimple(){
     opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters") unbounded() action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
+    opt[Unit]("without-performance-scountovf") unbounded() action { (v, c) => withPerformanceScountovf = false }
     opt[Unit]("with-fetch-l1") unbounded() action { (v, c) => fetchL1Enable = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
@@ -576,9 +588,37 @@ class ParamSimple(){
     opt[Int]("pmp-size") action { (v, c) => pmpParam.pmpSize = v }
     opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
+    opt[Unit]("with-rdtime") action { (v, c) => privParam.withRdTime = true }
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
+    opt[Unit]("dual-issue") action { (v, c) =>
+      decoders = 2
+      lanes = 2
+    }
+    opt[Unit]("max-ipc") action { (v, c) =>
+      withBtb = true
+      withGShare = true
+      withRas = true
+      allowBypassFrom = 0
+      divRadix = 4
+      withLateAlu = true
+      if(lanes > 1) {
+        withAlignerBuffer = true
+        withDispatcherBuffer = true
+      }
+      lsuMemDataWidthMin = 64
+      lsuL1Sets = 64
+      lsuL1Ways = 4
+      lsuL1RefillCount = 8
+      lsuL1WritebackCount = 8
+      lsuStoreBufferSlots = 4
+      lsuStoreBufferOps = 32
+      withLsuBypass = true
+      lsuSoftwarePrefetch = true
+      lsuHardwarePrefetch = "rpt"
+    }
   }
 
+  // Generate the VexiiRiscv plugin list out of the current SimpleParam configuration
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
   def pluginsArea(hartId : Int = 0) = new Area {
     val plugins = ArrayBuffer[Hostable]()
@@ -600,6 +640,7 @@ class ParamSimple(){
     plugins += new misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
 
+    // Branch prediction
     plugins += new LearnPlugin()
     if(withRas) assert(withBtb)
     if(withGShare) assert(withBtb)
@@ -607,6 +648,7 @@ class ParamSimple(){
       plugins += new prediction.BtbPlugin(
         sets = btbSets / decoders,
         chunks = decoders,
+        dualPortRam = btbDualPortRam,
         rasDepth = if(withRas) 4 else 0,
         hashWidth = btbHashWidth,
         readAt = 0,
@@ -614,10 +656,6 @@ class ParamSimple(){
         jumpAt = 1+relaxedBtb.toInt,
         bootMemClear = bootMemClear
       )
-//      plugins += new prediction.DecodePredictionPlugin(
-//        decodeAt = decoderAt,
-//        jumpAt = decoderAt
-//      )
     }
     if(withGShare) {
       plugins += new prediction.GSharePlugin (
@@ -634,6 +672,7 @@ class ParamSimple(){
     }
 
 
+    // Fetch
     plugins += new fetch.PcPlugin(resetVector)
     plugins += new fetch.FetchPipelinePlugin()
     if(!fetchL1Enable) plugins += new fetch.FetchCachelessPlugin(
@@ -680,10 +719,9 @@ class ParamSimple(){
         }
       }
     }
-
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
-      fetchAt = fetchL1Enable.mux(2, 1+fetchForkAt),
+      fetchAt = alignerPluginFetchAt,
       lanes = decoders,
       withBuffer = withAlignerBuffer
     )
@@ -713,14 +751,13 @@ class ParamSimple(){
       trapAt    = 0+regFileSync.toInt + 1 + intWritebackAt,
       withBypasses = allowBypassFrom == 0
     )
-
     plugins += new execute.ExecutePipelinePlugin()
 
     val lane0 = newExecuteLanePlugin("lane0")
+
+    // Main execution pipeline
     val early0 = new LaneLayer("early0", lane0, priority = 0)
     plugins += lane0
-
-//    plugins += new RedoPlugin("lane0")
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
@@ -862,7 +899,8 @@ class ParamSimple(){
       noTapCd = embeddedJtagNoTapCd
     )
     val lateAluAt = intWritebackAt
-    
+
+    // Late ALU in the main execution pipeline
     if(withLateAlu) {
       val late0 = new LaneLayer("late0", lane0, priority = -5)
       plugins += new SrcPlugin(late0, executeAt = lateAluAt, relaxedRs = relaxedSrc)
@@ -874,6 +912,7 @@ class ParamSimple(){
 
     plugins += new WriteBackPlugin(lane0, IntRegFile, writeAt = withLateAlu.mux(lateAluAt, intWritebackAt), allowBypassFrom = allowBypassFrom)
 
+    // Second execution pipeline (dual-issue configs)
     if(lanes >= 2) {
       val lane1 = newExecuteLanePlugin("lane1")
       val early1 = new LaneLayer("early1", lane1, priority = 10)
@@ -886,6 +925,7 @@ class ParamSimple(){
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
       if(withRvZb) plugins ++= ZbPlugin.make(early1, formatAt=0)
 
+      // Late ALU in the Second execution pipeline
       if(withLateAlu) {
         val late1 = new LaneLayer("late1", lane1, priority = -3)
         plugins += new SrcPlugin(late1, executeAt = lateAluAt, relaxedRs = relaxedSrc)
@@ -905,6 +945,7 @@ class ParamSimple(){
       case _ =>
     }
 
+    // FPU
     if (withRvf || withRvd) {
       plugins += new regfile.RegFilePlugin(
         spec = riscv.FloatRegFile,
@@ -914,8 +955,6 @@ class ParamSimple(){
         dualPortRam = regFileDualPortRam,
         maskReadDuringWrite = false
       )
-
-//      plugins += new execute.fpu.FpuExecute(early0, 0)
       plugins += new WriteBackPlugin(lane0, FloatRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions
       plugins += new execute.fpu.FpuFlagsWritebackPlugin(lane0, pipTo = intWritebackAt)
       plugins += new execute.fpu.FpuCsrPlugin(List(lane0), intWritebackAt)
@@ -931,7 +970,6 @@ class ParamSimple(){
       if(withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0, ignoreSubnormal = fpuIgnoreSubnormal)
-      //      plugins += new execute.fpu.FpuEmbedded()
     }
 
     plugins += new WhiteboxerPlugin(
@@ -1044,14 +1082,4 @@ lane micro op spec
   - dontFlushFrom
  */
 
-
-
-object OptionToPython extends App{
-  new scopt.OptionParser[Unit]("lol"){
-    new ParamSimple().addOptions(this)
-    for(o <- options){
-      println(o.name)
-    }
-  }
-}
 

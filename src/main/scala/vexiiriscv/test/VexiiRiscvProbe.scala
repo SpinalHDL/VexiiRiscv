@@ -21,10 +21,21 @@ import vexiiriscv.test.konata.{Comment, Flush, Retire, Spawn, Stage}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * VexiiRiscvProbe can be used in a simulation to probe the activities of VexiiRiscv
+ * and notifies a list of TraceBackend with what happened (ex commit, memory load, memory store, trap, ...)
+ *
+ * There is a few usefull backends :
+ * - RVLS to check that the simulated VexiiRiscv CPU is doing things right
+ * - A file backend, to keep a text file trace of what happened (instead of having to look into a waveform)
+ *
+ * It also keep a trace of various performance metrics, as the IPC, branch miss rate, ...
+ */
 class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvls : Boolean = true){
   var enabled = true
   var trace = true
   var checkLiveness = true
+  var livenessThreshold = 16000l
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
   val autoStoreBroadcast = cpu.host.get[LsuCachelessPlugin].nonEmpty
@@ -39,7 +50,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   val decodeIdWidth = get(Decode.DOP_ID_WIDTH)
   val microOpIdWidth = get(Decode.UOP_ID_WIDTH)
   val microOpIdMask = (1 << microOpIdWidth)-1
-  val withFetch = true //cpu.host[FetchPipelinePlugin].idToFetch.keys.max > 1
+  val withFetch = true
 
   val disass = try {
     if(!withRvls) 0 else rvls.jni.Frontend.newDisassemble(xlen)
@@ -62,7 +73,14 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     this
   }
 
+  def addHead(tracer: TraceBackend): this.type = {
+    backends.insert(0, tracer)
+    harts.foreach(_.add(tracer))
+    proxies.interrupts.sync()
+    this
+  }
 
+  // Figure out the PMA (Physical Memory Attributes) from the plugins themself and notify the backends.
   def autoRegions(): Unit = {
     cpu.host.services.foreach {
       case p: LsuCachelessPlugin => p.regions.foreach { region =>
@@ -99,6 +117,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     if(withRvls) rvls.jni.Frontend.deleteDisassemble(disass)
   }
 
+  def clearStats(): Unit = {
+    for (hart <- harts) {
+      hart.jbStats.clear()
+      hart.branchStats.clear()
+      hart.commits = 0
+    }
+    statsCycleOffset = cycle
+  }
+
+  var statsCycleOffset = 0l
   def getStats(): String = {
     val str = new StringBuilder()
     str ++= "### Stats ###\n"
@@ -119,8 +147,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     }
 
     def cycleRatio(times: Long) = {
-      val rate = (1000f * times / cycle).toInt
-      f"${times}%7d / ${cycle}%7d ${rate / 10}%3d.${rate % 10}%%"
+      val rate = (1000f * times / (cycle-statsCycleOffset)).toInt
+      f"${times}%7d / ${cycle-statsCycleOffset}%7d ${rate / 10}%3d.${rate % 10}%%"
     }
 
     for ((hw, i) <- wbp.perf.dispatchFeedCounters.zipWithIndex) {
@@ -144,6 +172,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     var count = 0l
     var failed = 0l
     var taken = 0l
+
+    def clear(): Unit = {
+      count = 0
+      failed = 0
+      taken = 0
+    }
 
     override def toString(): String ={
       val rate = (1000f*failed/count).toInt
@@ -272,25 +306,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       if (decode.spawnAt != -1) {
         i += new Comment(decode.spawnAt, f"${decode.pc}%X : $instruction")
       }
-      if(decode.fireAt != -1){//} && decode.fireAt < issueAt){
+      if(decode.fireAt != -1){
         i += new Stage(decode.fireAt+1, "D")
       }
-//      if (issueAt != -1) i += new Stage(issueAt, "I")
       if (executeAt != -1) i += new Stage(executeAt, "E")
-//      if (completionAt != -1) i += new Stage(completionAt, "C")
       if (didCommit) {
         i += new Retire(retireAt)
       } else {
         i += new Flush(flushAt max retireAt)
       }
       kb.foreach(_.insert(i))
-
-//        f.write(f"O3PipeView:fetch:${fetch.spawnAt}:0x${decode.pc}%08x:0:${opCounter}:$instruction\n")
-//        f.write(f"O3PipeView:decode:${traceT2s(decode.spawnAt)}\n")
-//        f.write(f"O3PipeView:dispatch:${traceT2s(spawnAt)}\n")
-//        f.write(f"O3PipeView:issue:${traceT2s(executeAt)}\n")
-//        f.write(f"O3PipeView:complete:${traceT2s(completionAt)}\n")
-//        f.write(f"O3PipeView:retire:${traceT2s(completionAt+1)}:store:\n")
     }
 
     def clear() {
@@ -548,7 +573,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       if(((wfi >> localHartId) & 1) != 0){
         hart.lastCommitAt = cycle
       }
-      if (checkLiveness && hart.lastCommitAt + 16000l < cycle) {
+      if (checkLiveness && hart.lastCommitAt + livenessThreshold < cycle) {
         val status = if (hart.microOpAllocPtr != hart.microOpRetirePtr) f"waiting on uop 0x${hart.microOpRetirePtr}%X" else f"last uop id 0x${hart.lastUopId}%X"
         simFailure(f"Vexii hasn't commited anything for too long, $status")
       }
@@ -563,10 +588,6 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
           hart.lastUopId = uopId
           hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
-
-//          if(decode.pc == 0xFFFFFFFF800000c8l){
-//            println("asd")
-//          }
 
           uop.toKonata(hart)
           if (uop.didCommit) {

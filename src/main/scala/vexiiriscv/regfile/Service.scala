@@ -27,7 +27,7 @@ case class RegFileWrite(rfpp : RegFilePortParam, withReady : Boolean) extends Bu
   val address = UInt(addressWidth bits)
   val data = Bits(dataWidth bits)
   val hartId = UInt(hartIdWidth bits)
-  val uopId = UInt(uopIdWidth bits)
+  val uopId = UInt(uopIdWidth bits) //Used for traces and debug
 
   def fire = if(withReady) valid && ready else valid
 
@@ -60,16 +60,9 @@ case class RegFileRead(rfpp : RegFilePortParam, withReady : Boolean) extends Bun
   }
 }
 
-//case class RegFileBypass(addressWidth : Int, dataWidth : Int, priority : Int) extends Bundle with IMasterSlave{
-//  val valid = Bool()
-//  val address = UInt(addressWidth bits)
-//  val data = Bits(dataWidth bits)
-//
-//  override def asMaster() = {
-//    out(valid, address, data)
-//  }
-//}
-
+/**
+ * Provide an API which allows to create new read/write ports to a given register file.
+ */
 trait RegfileService {
   val elaborationLock = Retainer()
 
@@ -82,7 +75,7 @@ trait RegfileService {
   def newRead(withReady : Boolean) : RegFileRead
   def newWrite(withReady : Boolean, sharingKey : Any = null, priority : Int = 0) : RegFileWrite
 
-  def getWrites() : Seq[RegFileWrite]
+  def getWrites() : Seq[RegFileWrite] // Used in the hardware simulation to probe all the register writes of the CPU.
 }
 
 

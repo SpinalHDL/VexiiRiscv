@@ -16,19 +16,16 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 /**
- * - Warning : bad btb hash prediction may cut a word, need to project against that
+ * This plugin will deserialize the aligned fetched words into instructions.
+ * -  withBuffer => A Fetch.WORD sized buffer will be added to allow unaligned instruction to be read
+ * - !withBuffer => Fetch lanes directly feed Decode lanes without muxes. This doesn't support RVC
+ * - Warning, if the plugin start to hold stats => you need to notify TrapService when flush a is pending
  *
- * - Build buffer long enough
- * - Scan buffer for instructions [fusion]
- * - Decode -> Serialize uop
- * - dispatch on lanes
- */
-
-
-//Warning, if it start to hold stats => you need to notify TrapService when flush is pending
-/*
-withBuffer => A Fetch.WORD sized buffer will be added to allow unaligned instruction to be read
-!withBuffer => Fetch lanes directly feed Decode lanes without muxes
+ * Here are the challenges :
+ * - When RVC is enabled, 32 bits instruction can be unaligned, so one instruction my need 2 fetch word
+ * - Branch prediction (ex: from a BTB) may produce a broken stream of fetched word on 32 bits unaligned instruction
+ *   aswell producing predictions which aren't aligned with the real instruction layout (ex prediction from fetched word slice 2, while slice 2 isn't the last slice of a instruction)
+ * - Handeling all the corner cases while keeping the combinatorial path low
  */
 class AlignerPlugin(fetchAt : Int,
                     lanes : Int,
@@ -119,7 +116,6 @@ class AlignerPlugin(fetchAt : Int,
       slices.data.drop(sid).take(Decode.INSTRUCTION_SLICE_COUNT_MAX).asBits.resize(Decode.INSTRUCTION_WIDTH bits)
     )
 
-    //TODO prediction disruption
     //Find out which slices would have enough data to be the start of an instruction
     val scanners = for (i <- 0 until scannerSlices) yield new Area {
       val usageMask = B(0, scannerSlices bits).allowOverride()
@@ -147,6 +143,7 @@ class AlignerPlugin(fetchAt : Int,
 
     val usedMask = Vec.fill(Decode.LANES.get+1)(Bits(scannerSlices bits))
     usedMask(0) := 0
+    // The extractors will scan the slices for the firsts available instructions.
     val extractors = for (eid <- 0 until Decode.LANES) yield new Area {
       val usableSliceRange = if(withBuffer) eid until scannerSlices else eid to eid //Can be tweek to generate smaller designs
       val first = if(withBuffer) Bool(eid == 0) else slices.mask.takeLow(usableSliceRange.low) === 0
@@ -167,6 +164,7 @@ class AlignerPlugin(fetchAt : Int,
       }
     }
 
+    // The feeders will propagate the extractors to the decoder pipeline lanes
     val feeder = new Area{
       val harts = for (hartId <- Global.hartsIds) yield new Area {
         val dopId = Reg(Decode.DOP_ID) init (0)
@@ -211,7 +209,6 @@ class AlignerPlugin(fetchAt : Int,
         val onBtb = withBtb generate new Area{
           val pcLastSlice = lane.up(Global.PC)(Fetch.SLICE_RANGE) + lane.up(Decode.INSTRUCTION_SLICE_COUNT)
 //          val afterPrediction = pcLastSlice > lane.up(Prediction.WORD_JUMP_SLICE)
-          //TODO !!! take care of : what's about the prediction landed on a slice which map nobody ?
           val didPrediction = /*!afterPrediction && */ pcLastSlice >= lane.up(Prediction.WORD_JUMP_SLICE)
           lane.up(Prediction.ALIGNED_JUMPED) := lane.up(Prediction.WORD_JUMPED) && didPrediction
           lane.up(Prediction.ALIGNED_JUMPED_PC) := lane.up(Prediction.WORD_JUMP_PC)
@@ -226,7 +223,7 @@ class AlignerPlugin(fetchAt : Int,
     }
 
 
-
+    // Because of RVC, we need to buffer the previously fetched word (for 32 bits unaligned instructions)
     val buffer = withBuffer generate new Area {
       val bufferedSlices = Fetch.WORD_WIDTH/Fetch.SLICE_WIDTH
       val data = Reg(Fetch.WORD)
@@ -265,7 +262,6 @@ class AlignerPlugin(fetchAt : Int,
         for(e <- hmElements) hm(e).assignFrom(up(e))
       }
 
-      //TODO improve the flush condition ?
       val age = Ages.DECODE - Ages.STAGE
       val flushIt = host[ReschedulePlugin].isFlushedAt(age, U(0), U(0)).getOrElse(False)
       when(flushIt/* && !(downNode.isValid && !downNode.isReady)*/) {
@@ -286,7 +282,7 @@ class AlignerPlugin(fetchAt : Int,
         for (e <- lastSliceData) spec.ctx.hm(e).assignFrom(lastFromBuffer.mux(hm(e), up(e)))
       }
     }
-
+    
     val nobuffer = !withBuffer generate new Area {
       assert(!Riscv.RVC)
       assert(Decode.INSTRUCTION_WIDTH.get*Decode.LANES == Fetch.WORD_WIDTH.get)
