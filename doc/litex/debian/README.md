@@ -2,6 +2,11 @@
 
 This readme document (from scratch) how to generate all the images to run debian Litex + VexiiRiscv.
 
+The hardware requirements are to have :
+- RV64IMAFDC CPU
+- A good amount of RAM (128 MB)
+- SDCARD support
+
 ## Setup environnement variables
 
 ```shell

@@ -809,7 +809,7 @@ class LsuPlugin(var layer : LaneLayer,
       abords += l1.HAZARD
       abords += l1.FLUSH_HAZARD
       abords += !l1.FLUSH && onPma.CACHED_RSP.fault
-      abords += FROM_LSU && (!isValid || isCancel)
+      abords += FROM_LSU && (!isValid || isCancel || FENCE)
       abords += mmuNeeded && MMU_FAILURE
       if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid || wb.selfHazard
 

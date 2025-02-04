@@ -60,6 +60,9 @@ case class RegFileRead(rfpp : RegFilePortParam, withReady : Boolean) extends Bun
   }
 }
 
+/**
+ * Provide an API which allows to create new read/write ports to a given register file.
+ */
 trait RegfileService {
   val elaborationLock = Retainer()
 
@@ -72,7 +75,7 @@ trait RegfileService {
   def newRead(withReady : Boolean) : RegFileRead
   def newWrite(withReady : Boolean, sharingKey : Any = null, priority : Int = 0) : RegFileWrite
 
-  def getWrites() : Seq[RegFileWrite]
+  def getWrites() : Seq[RegFileWrite] // Used in the hardware simulation to probe all the register writes of the CPU.
 }
 
 

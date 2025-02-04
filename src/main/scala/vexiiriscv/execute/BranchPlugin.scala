@@ -18,7 +18,7 @@ import vexiiriscv.fetch.{Fetch, PcPlugin}
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
 import vexiiriscv.misc.{PerformanceCounterService, TrapService}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
-import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, LearnSource, Prediction}
+import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, LearnCmd, LearnService, LearnSource, Prediction}
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
 import scala.collection.mutable

@@ -14,7 +14,7 @@ abstract class MicroOp(val resources : Seq[Resource]){
 // This symplifies things.
 // The keys argument specifie what is the RISC-V instruction leading to that micro op.
 case class SingleDecoding(keys : Seq[MaskedLiteral], override val resources : Seq[Resource]) extends MicroOp(resources) with Nameable {
-  override def toString = s"SingleDecoding ${getName("")} $keys"
+  override def toString = s"${getName("")} $keys"
 }
 object SingleDecoding{
   def apply(key : MaskedLiteral, resources : Seq[Resource]): SingleDecoding = {

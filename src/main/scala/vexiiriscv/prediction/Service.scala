@@ -36,24 +36,37 @@ object Prediction extends AreaObject{
 }
 
 
-// Used just to signal the functionality presence
+/**
+ * Used just to signal the functionality presence
+  */
 trait FetchWordPrediction{
   def useAccurateHistory: Boolean
 }
+
+/**
+ * Implemented by the GSharePlugin, allows the BtbPlugin to access the branch prediction at a given stage.
+ */
 trait FetchConditionalPrediction{
   def useHistoryAt : Int
   def getPredictionAt(stageId : Int) : Seq[Bool]
 }
+
+/**
+ * Allows branch prediction plugins to specify how many bits of history they need
+ */
 trait HistoryUser {
   def historyWidthUsed : Int
 }
 
+/**
+ * Interface used to get traces of the branch/jump instruction execution. This is used by the BtbPlugin/GSharePlugin to learn patterns
+ */
 case class LearnCmd(hmElements : Seq[NamedType[_ <: Data]]) extends Bundle{
-  val pcOnLastSlice = Global.PC()
+  val pcOnLastSlice = Global.PC() // VexiiRiscv branch prediction always use the address pf the instruction' last slice.
   val pcTarget = Global.PC()
   val taken = Bool()
-  val isBranch, isPush, isPop = Bool()
-  val wasWrong = Bool()
+  val isBranch, isPush, isPop = Bool() // What kind of instruction it was. (push => call, pop => ret, see RISC-V calling convention)
+  val wasWrong = Bool() // The BranchPlugin detected that the branch prediction failed
   val badPredictedTarget = Bool() // Meaning the BTB predicted where it should jump/branch wrongly (independently if the branch is taken)
   val history = Prediction.BRANCH_HISTORY()
   val uopId = Decode.UOP_ID()
@@ -62,11 +75,19 @@ case class LearnCmd(hmElements : Seq[NamedType[_ <: Data]]) extends Bundle{
   hmElements.foreach(e => ctx.add(e))
 }
 
+/**
+ * Interface used by the DecodePlugin to make the BtbPlugin forget a given prediction entry, as that entry produced a
+ * prediction which is incompatible with the instruction (ex predicted a branch from a instruction which is a memory load)
+ */
 case class ForgetCmd() extends Bundle{
   val pcOnLastSlice = Global.PC()
   val hartId = Global.HART_ID()
 }
 
+/**
+ * Provide an API allowing plugins to access the LearnCmd interface (used by BtbPlugin/GSharePlugin),
+ * aswell as a way to specify additional execute pipeline payload which should be collected and feeded to the LearnCmd
+ */
 trait LearnService{
   val learnLock = Retainer()
   val learnCtxElements = mutable.LinkedHashSet[NamedType[_ <: Data]]()

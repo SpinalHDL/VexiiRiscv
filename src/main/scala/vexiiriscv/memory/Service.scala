@@ -26,6 +26,9 @@ case class AddressTranslationRefillRsp() extends Bundle{
   val pageFault, accessFault = Bool()
 }
 
+/**
+ * Interface used by the TrapPlugin to ask the MMU's page walker to do work
+ */
 case class AddressTranslationRefill(storageWidth : Int) extends Bundle{
   val cmd = Stream(AddressTranslationRefillCmd(storageWidth))
   val rsp = Flow(AddressTranslationRefillRsp())
@@ -35,10 +38,16 @@ case class AddressTranslationInvalidationCmd() extends Bundle {
   val hartId = HART_ID()
 }
 
+/**
+ * Used by the TrapPlugin to ask the MmuPlugin to invalidate its TLB (on sfence.vma / satp updates)
+ */
 case class AddressTranslationInvalidation() extends Bundle {
   val cmd = Stream(AddressTranslationInvalidationCmd())
 }
 
+/**
+ * Implemented by the MmuPlugin, allows other plugins to create new address translation interfaces
+ */
 trait AddressTranslationService extends Area {
   def mayNeedRedo : Boolean
   val storageLock = Retainer()
@@ -50,6 +59,7 @@ trait AddressTranslationService extends Area {
 
   val regionRetainer = Retainer()
 
+  // new Address translation interface are directly binded into a provided pipeline (nodes)
   def newTranslationPort(nodes: Seq[NodeBaseApi],
                          rawAddress: Payload[UInt],
                          forcePhysical: Payload[Bool],

@@ -1,11 +1,12 @@
 package vexiiriscv.soc.litex
 
+import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core.fiber.{Fiber, hardFork}
 import spinal.lib._
 import spinal.core._
 import spinal.core.blackboxByteEnables.generateUnblackboxableError
 import spinal.core.internals.{MemTopology, PhaseContext, PhaseNetlist}
-import spinal.core.sim.SimDataPimper
+import spinal.core.sim.{SimDataPimper, killRandom}
 import spinal.lib.bus.amba4.axi.sim.{Axi4ReadOnlyMonitor, Axi4ReadOnlySlaveAgent, Axi4WriteOnlyMonitor, Axi4WriteOnlySlaveAgent}
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4SpecRenamer, Axi4ToTilelinkFiber}
 import spinal.lib.bus.amba4.axilite.AxiLite4SpecRenamer
@@ -24,6 +25,7 @@ import spinal.lib.graphic.YcbcrConfig
 import spinal.lib.graphic.vga.{TilelinkVgaCtrlFiber, TilelinkVgaCtrlSpec, Vga, VgaRgbToYcbcr, VgaYcbcrPix2}
 import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
+import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.SparseMemory
 import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, memPimped, slave, traversableOncePimped}
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
@@ -34,9 +36,12 @@ import vexiiriscv.execute.lsu.LsuL1Plugin
 import vexiiriscv.fetch.{Fetch, FetchL1Plugin, FetchPipelinePlugin, PcPlugin}
 import vexiiriscv.misc.{PrivilegedPlugin, TrapPlugin}
 import vexiiriscv.prediction.GSharePlugin
+import vexiiriscv.riscv.Riscv
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
-import vexiiriscv.test.WhiteboxerPlugin
+import vexiiriscv.soc.micro.MicroSocSim.{elfFile, traceKonata, withRvlsCheck}
+import vexiiriscv.test.{VexiiRiscvProbe, WhiteboxerPlugin}
+import vexiiriscv.tester.{FsmHal, FsmHalGen, FsmOption, FsmTask}
 
 import java.awt.{Dimension, Graphics}
 import java.awt.image.BufferedImage
@@ -123,11 +128,30 @@ class SocConfig(){
  * - Has an option L2 cache
  * - Supports JTAG debug
  * - Supports a SpinalHDL HDMI and Ethernet controller
+ *
+ * The SpinalHDL RGMII ethernet linux driver is implemented here :
+ * - https://github.com/Dolu1990/litex-linux/tree/spinal-sgmac/drivers/net/ethernet/spinal
+ *
+ * It can be enabled in linux DTS via for instance :
+ *          mac0: mac@f1000000 {
+ *             compatible = "spinal,sgeth";
+ *             reg = <0xf1000000 0x100>,
+ *                   <0xf1000100 0x100>,
+ *                   <0xf1000200 0x100>;
+ *             reg-names = "mac", "tx-dma", "rx-dma";
+ *             interrupts = <40 41>;
+ *             interrupt-names = "tx-dma", "rx-dma";
+ *             status = "okay";
+ *         };
+ *
+ *
+ * Also, be sure the the PLIC's riscv,ndev is set high enough (ex riscv,ndev = <64>; )
  */
 class Soc(c : SocConfig) extends Component {
 
   import c._
 
+  // Let's define all the clock domains and reset controllers of the SoC
   val litexCd = ClockDomain.external("litex")
   val cpuClk = withCpuCd.mux(ClockDomain.external("cpu", withReset = false), litexCd)
   val cpuResetCtrl = cpuClk(new ResetCtrlFiber())
@@ -425,6 +449,7 @@ object SocGen extends App{
   var netlistDirectory = "."
   var netlistName = "VexiiRiscvLitex"
   val socConfig = new SocConfig()
+  val analysis = new AnalysisUtils
   var reducedIo = false
   import socConfig._
 
@@ -433,6 +458,7 @@ object SocGen extends App{
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
     socConfig.addOptions(this)
+    analysis.addOption(this)
     opt[String]("netlist-directory") action { (v, c) => netlistDirectory = v }
     opt[String]("netlist-name") action { (v, c) => netlistName = v }
     opt[Unit]("reduced-io") action { (v, c) => reducedIo = true }
@@ -443,16 +469,6 @@ object SocGen extends App{
   val spinalConfig = SpinalConfig(inlineRom = true, targetDirectory = netlistDirectory)
   spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
   spinalConfig.addStandardMemBlackboxing(blackboxPolicy)
-  spinalConfig.dontCareGenAsZero = true
-  spinalConfig.addTransformationPhase(new PhaseNetlist {
-    override def impl(pc: PhaseContext) = {
-      pc.walkDeclarations{
-        case bt : BaseType if bt.isReg && !bt.hasInit && bt.clockDomain.canInit => bt.component.rework(bt.init(bt.getZero))
-        case _ =>
-      }
-    }
-
-  })
 //  spinalConfig.addTransformationPhase(new EnforceSyncRamPhase)
 
   val report = spinalConfig.generateVerilog {
@@ -464,25 +480,7 @@ object SocGen extends App{
     soc
   }
 
-  val cpu0 = report.toplevel.system.vexiis(0).logic.core
-
-  // Here is some developpement code used to track critical paths
-//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_onPreCtrl_HIT_DIRTY") //That big
-//  val to = cpu0.reflectBaseType("PrivilegedPlugin_logic_harts_0_debug_dcsr_stepLogic_stepped")
-
-//  val from = cpu0.reflectBaseType("early0_SrcPlugin_logic_addsub_combined_rs2Patched") //That big
-//  val to = cpu0.reflectBaseType("toplevel_execute_ctrl2_up_early0_SrcPlugin_SRC2_lane0")
-
-
-//  val drivers = mutable.LinkedHashSet[BaseType]()
-//  AnalysisUtils.seekNonCombDrivers(to){driver =>
-//    driver match {
-//      case bt : BaseType => drivers += bt
-//    }
-//  }
-//  drivers.foreach(e => println(e.getName()))
-//  println("******")
-//  println(PathTracer.impl(from, to).report())
+  analysis.report(report)
 }
 
 /**
@@ -520,181 +518,6 @@ object PythonArgsGen extends App{
 
 }
 
-/**
- * Simulation monitor which scan a VGA output and display its image in a GUI
- */
-object VgaDisplaySim{
-  import spinal.core.sim._
-  def apply(vga : Vga, cd : ClockDomain): Unit ={
-
-    var width = 800
-    var height = 600
-    var scale = 1
-    val image = new BufferedImage(width, height, BufferedImage.TYPE_INT_BGR);
-
-    val frame = new JFrame{
-      setPreferredSize(new Dimension(800, 600));
-
-      add(new JPanel{
-        this.setPreferredSize(new Dimension(width, height))
-        override def paintComponent(g : Graphics) : Unit = {
-          g.drawImage(image, 0, 0, width*scale,height*scale, null)
-        }
-      })
-
-      pack();
-      setVisible(true);
-      setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-    }
-
-    var overflow = false
-    var x,y = 0
-    cd.onSamplings{
-      val vsync = vga.vSync.toBoolean
-      val hsync = vga.hSync.toBoolean
-      val colorEn = vga.colorEn.toBoolean
-      if(colorEn) {
-//        val color = vga.color.r.toInt << (16 + 8 - vga.rgbConfig.rWidth) | vga.color.g.toInt << (8 + 8 - vga.rgbConfig.gWidth) | vga.color.b.toInt << (0 + 8 - vga.rgbConfig.bWidth)
-        val color = vga.color.r.toInt << (16 + 8 - vga.rgbConfig.rWidth) | vga.color.g.toInt << (8 + 8 - vga.rgbConfig.gWidth) | vga.color.b.toInt << (0 + 8 - vga.rgbConfig.bWidth)
-        if(x < width && y < height) {
-          image.setRGB(x, y, color)
-        }
-        x+=1
-      }
-      if(!vsync){
-        y = 0
-//        for(y <- 0 until height; x <- 0 until width) image.setRGB(x,y,0)
-      }
-      if(!hsync){
-        if(x != 0){
-          y+=1
-          frame.repaint()
-        }
-        x = 0
-      }
-    }
-  }
-}
-
-
-/*
-SocSim is a simple developpment testbench of the SoC. This is not meant to be used as a regression tool.
-Here is an example of arguments :
-  --mmu-sync-read --with-mul --with-div --allow-bypass-from=0 --performance-counters=0 --fetch-l1 --fetch-l1-ways=2 --lsu-l1 --lsu-l1-ways=2 --with-lsu-bypass --relaxed-branch --with-rva --with-supervisor --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-ways=4 --lsu-l1-mem-data-width-min=64 --xlen=32 --fma-reduced-accuracy --fpu-ignore-subnormal --with-btb --with-ras --with-gshare --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2 --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128 --lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4 --relaxed-div --reset-vector 2147483648 --cpu-count=1 --l2-bytes=524288 --l2-ways=4 --litedram-width=128 --memory-region=0,131072,rxc,p --memory-region=268435456,8192,rwxc,p --memory-region=3758096384,1048576,rw,p --memory-region=2147483648,1073741824,rwxc,m --memory-region=4026531840,65536,rw,p --with-jtag-tap --lsu-l1-coherency --mac-sg name=eth,address=0xF1000000,txIrq=40,rxIrq=41 --load-elf /media/data2/proj/vexii/VexiiRiscv/ext/NaxSoftware/baremetal/macSg/build/rv32ima/macSg.elf
- */
-object SocSim extends App{
-  val socConfig = new SocConfig()
-  import socConfig._
-
-  vexiiParam.privParam.withRdTime = true
-  val elfs = ArrayBuffer[File]();
-
-  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
-    help("help").text("prints this usage text")
-    opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
-    socConfig.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
-
-  vexiiParam.lsuL1Coherency = vexiiParam.lsuL1Coherency || cpuCount > 1 || withDma
-
-  val spinalConfig = SpinalConfig()
-  spinalConfig.addTransformationPhase(new MultiPortWritesSymplifier)
-
-  import spinal.core.sim._
-  SimConfig.withConfig(spinalConfig).withFstWave.compile(new Soc(socConfig)).doSimUntilVoid(seed=32){dut =>
-    disableSimWave()
-    dut.litexCd.withSyncReset().forkStimulus(10000)
-
-    if(withJtagTap)  spinal.lib.com.jtag.sim.JtagRemote(dut.debug.tap.jtag, 10000*4)
-    if(socConfig.withCpuCd) dut.cpuClk.forkStimulus(5000)
-    for(video <- dut.system.video){
-      video.cd.forkStimulus(20000)
-      VgaDisplaySim(video.ctrl.logic.ctrl.io.vga, video.resetCtrl.cd)
-    }
-    for(mac <- dut.system.macSg){
-      mac.txCd.forkStimulus(7000)
-      mac.rxCd.forkStimulus(7000)
-      val phy = mac.fiber.logic.phy
-      phy.rx.ctl #= 0
-      mac.txCd.onSamplings {
-        phy.rx.d #= phy.tx.d.toInt
-        phy.rx.ctl #= phy.tx.ctl.toInt
-      }
-    }
-    if(dut.debugReset != null)fork{
-      dut.debugReset #= true
-      dut.cpuCd.waitRisingEdge(2)
-      dut.debugReset #= false
-    }
-    sleep(1)
-
-    val onPbus = new Area {
-      val axi = dut.system.patcher.pBus
-      new AxiLite4ReadOnlySlaveAgent(axi.ar, axi.r, dut.litexCd){
-
-      }
-      val woa = new AxiLite4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.litexCd) {
-        override def onWrite(addr: BigInt, data: BigInt, strb: BigInt) = {
-          super.onWrite(addr, data, strb)
-          if(addr == 0xf0001000l){
-            print(data.toChar)
-          }
-        }
-      }
-    }
-
-    val onAxi = new Area{
-      val ddrMemory = SparseMemory()
-      for (file <- elfs) {
-        val elf = new Elf(file, socConfig.vexiiParam.xlen)
-        elf.load(ddrMemory, 0)
-      }
-      val axi = dut.system.patcher.mBus
-      val woa = new Axi4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.cpuCd) {
-        awDriver.factor = 0.9f
-        wDriver.factor = 0.9f
-        bDriver.transactionDelay = () => 1
-      }
-      var bytesAccess = 0l
-      new Axi4WriteOnlyMonitor(axi.aw, axi.w, axi.b, dut.cpuCd) {
-        override def onWriteByte(address: BigInt, data: Byte, id: Int): Unit = ddrMemory.write(address.toLong, data)
-        override def onWriteStart(address: BigInt, id: Int, size: Int, len: Int, burst: Int): Unit = {
-          bytesAccess += len * (1 << size)
-        }
-      }
-      val roa = new Axi4ReadOnlySlaveAgent(axi.ar, axi.r, dut.cpuCd, withReadInterleaveInBurst = false) {
-        arDriver.factor = 0.8f
-        rDriver.transactionDelay = () => simRandom.nextInt(3)
-        baseLatency = 60 * 1000
-
-        override def readByte(address: BigInt): Byte = {
-          bytesAccess += 1
-          ddrMemory.read(address.toLong)
-        }
-      }
-    }
-    for(y <- 0 until 600; x <- 0 until 800){
-      val color = (x & 0xFF) + ((y & 0xFF) << 8)// + (((x+y) & 0xFF) << 16)
-      onAxi.ddrMemory.write(0x40c00000 + x * 4 + y * 4 * 800, color)
-//      val color = (x & 0x1F)+((y & 0x3F) << 5)
-//      onAxi.ddrMemory.write(0x40c00000 + x*2+y*2*640, color + (color << 16))
-    }
-
-    var cnt = 0
-    def setPix(value : Int) = {
-      onAxi.ddrMemory.write(0x40c00000 + cnt, value)
-      onAxi.ddrMemory.write(0x40c00000 + cnt + 4, value)
-      cnt += 8
-    }
-    setPix(0x00000000)
-    setPix(0x000000ff)
-    setPix(0x0000ff00)
-    setPix(0x00ff0000)
-    setPix(0x00ffffff)
-    onAxi.ddrMemory.write(0x40c00000 + cnt, 0x000000FF); cnt += 4
-    onAxi.ddrMemory.write(0x40c00000 + cnt, 0x00800080); cnt += 4
-  }
-}
 
 /*
 !! Here are quite a few memo/notes/references used durring the developpment !!
@@ -1068,7 +891,7 @@ perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions,stalled-c
 https://www.elecard.com/videos
 https://download.blender.org/peach/bigbuckbunny_movies/
 ffmpeg -re -i BigBuckBunny_320x180.mp4  -c:v rawvideo -pix_fmt rgba -f fbdev /dev/fb0
-ffplay -vf "scale=640:360" -sws_flags neighbor -an BigBuckBunny_320x180.mp4 
+ffplay -vf "scale=640:360" -sws_flags neighbor -an BigBuckBunny_320x180.mp4
 nohup mplayer video/BigBuckBunny_320x180.mp4 &
 perf stat  --timeout 1000 -p $! -e r12,r13,r1a,r1b,cycles,instructions,branch-misses,branches
 export LD_DEBUG=statistics
