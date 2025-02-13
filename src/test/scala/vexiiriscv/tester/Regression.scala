@@ -106,6 +106,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       return List("", "--with-rvf", "--with-rvf --with-rvd").randomPick(random)
     }
   }
+  addDim("fpuStressed", List("", "--stressed-fpu"))
   addDim("pmp", List("", "--pmp-size=8"))
   dimensions += new Dimensions[ParamSimple]("btbRelaxed") {
     override def getRandomPosition(state : ParamSimple, random: Random): String = {

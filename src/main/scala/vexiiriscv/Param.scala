@@ -12,6 +12,7 @@ import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
 import vexiiriscv.execute.cfu.{CfuBusParameter, CfuPlugin, CfuPluginEncoding}
+import vexiiriscv.execute.fpu.{FpuAddSharedParam, FpuMulParam}
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PrefetcherNextLinePlugin}
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter}
@@ -107,9 +108,10 @@ class ParamSimple(){
   var withRva = false
   var withRvf = false
   var btbDualPortRam = true
-  var skipFma = false
-  var fpuFmaFullAccuracy = true
   var fpuIgnoreSubnormal = false
+  var fpuWbAt = 2
+  var fpuMulParam = FpuMulParam()
+  var fpuAddSharedParam = FpuAddSharedParam()
   var withRvd = false
   var withRvZb = false
   var withWhiteboxerOutputs = false
@@ -511,6 +513,17 @@ class ParamSimple(){
     opt[Unit]("stressed-branch") action { (v, c) => relaxedBranch = false }
     opt[Unit]("stressed-shift") action { (v, c) => relaxedShift = false }
     opt[Unit]("stressed-src") action { (v, c) => relaxedSrc = false }
+    opt[Unit]("stressed-fpu") action { (v, c) =>
+      fpuMulParam.expAt = 0
+      fpuMulParam.normAt = 2
+      fpuMulParam.packAt = 2
+      fpuAddSharedParam.preShiftStage = 0
+      fpuAddSharedParam.shifterStage = 0
+      fpuAddSharedParam.mathStage = 1
+      fpuAddSharedParam.normStage = 2
+      fpuAddSharedParam.packAt = 2
+      fpuWbAt = 1
+    }
     opt[Unit]("with-mul") unbounded() action { (v, c) => withMul = true }
     opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rvm") action { (v, c) => withMul = true; withDiv = true }
@@ -521,7 +534,7 @@ class ParamSimple(){
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
     opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
-    opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuFmaFullAccuracy = false }
+    opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuMulParam.fmaFullAccuracy = false }
     opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
     opt[Unit]("with-aligner-buffer") unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
@@ -959,9 +972,9 @@ class ParamSimple(){
       plugins += new execute.fpu.FpuFlagsWritebackPlugin(lane0, pipTo = intWritebackAt)
       plugins += new execute.fpu.FpuCsrPlugin(List(lane0), intWritebackAt)
       plugins += new execute.fpu.FpuUnpackerPlugin(early0, ignoreSubnormal = fpuIgnoreSubnormal)
-      plugins += new execute.fpu.FpuAddSharedPlugin(lane0)
+      plugins += new execute.fpu.FpuAddSharedPlugin(lane0, p = fpuAddSharedParam)
       plugins += new execute.fpu.FpuAddPlugin(early0)
-      plugins += new execute.fpu.FpuMulPlugin(early0, withFma = !skipFma, fmaFullAccuracy = fpuFmaFullAccuracy)
+      plugins += new execute.fpu.FpuMulPlugin(early0, p = fpuMulParam)
       plugins += new execute.fpu.FpuSqrtPlugin(early0)
       plugins += new execute.fpu.FpuClassPlugin(early0)
       plugins += new execute.fpu.FpuCmpPlugin(early0)
@@ -969,7 +982,7 @@ class ParamSimple(){
       plugins += new execute.fpu.FpuMvPlugin(early0, floatWbAt = 2)
       if(withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
-      plugins += new execute.fpu.FpuPackerPlugin(lane0, ignoreSubnormal = fpuIgnoreSubnormal)
+      plugins += new execute.fpu.FpuPackerPlugin(lane0, ignoreSubnormal = fpuIgnoreSubnormal, wbAt = fpuWbAt)
     }
 
     plugins += new WhiteboxerPlugin(

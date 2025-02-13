@@ -787,7 +787,7 @@ object IntegrationSynthBench extends App{
 
     withRvf = true
     withRvd = true
-    fpuFmaFullAccuracy = false
+    fpuMulParam.fmaFullAccuracy = false
     fpuIgnoreSubnormal = false
   }
 

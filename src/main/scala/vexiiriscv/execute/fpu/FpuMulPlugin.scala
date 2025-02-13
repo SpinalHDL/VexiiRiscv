@@ -10,17 +10,19 @@ import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv.Riscv.XLEN
 import vexiiriscv.riscv._
 
+case class FpuMulParam( var withFma : Boolean = true,
+                        var fmaFullAccuracy : Boolean = true,
+                        var expAt : Int = 0,
+                        var normAt: Int = 3,
+                        var packAt : Int = 3)
+
 /**
  * Add the floating point mul instruction the CPU.
  * The mantissa multiplier is implemented by reusing the hardware from the integer multiplier
  */
-class FpuMulPlugin(val layer : LaneLayer,
-                   withFma : Boolean = true,
-                   fmaFullAccuracy : Boolean = true,
-                   var expAt : Int = 0,
-                   var normAt: Int = 3,
-                   var packAt : Int = 3) extends FiberPlugin{
-  val p = FpuUtils
+class FpuMulPlugin(val layer : LaneLayer, p : FpuMulParam) extends FiberPlugin{
+  import p._
+  val fu = FpuUtils
 
   val SEL = Payload(Bool())
   val FMA = Payload(Bool())
@@ -35,18 +37,18 @@ class FpuMulPlugin(val layer : LaneLayer,
     val buildBefore = retains(layer.lane.pipelineLock)
     val uopLock = retains(layer.lane.uopLock, fup.elaborationLock, fpp.elaborationLock, mp.mulLock)
     awaitBuild()
-    mp.injectWidth(p.unpackedConfig.mantissaWidth + 2, p.unpackedConfig.mantissaWidth + 2, 2 * (p.unpackedConfig.mantissaWidth + 2))
+    mp.injectWidth(fu.unpackedConfig.mantissaWidth + 2, fu.unpackedConfig.mantissaWidth + 2, 2 * (fu.unpackedConfig.mantissaWidth + 2))
 
     val packParam = FloatUnpackedParam(
-      exponentMax   = p.unpackedConfig.exponentMax * 2 + 1,
-      exponentMin   = p.unpackedConfig.exponentMin * 2,
-      mantissaWidth = p.unpackedConfig.mantissaWidth + 2
+      exponentMax   = fu.unpackedConfig.exponentMax * 2 + 1,
+      exponentMin   = fu.unpackedConfig.exponentMin * 2,
+      mantissaWidth = fu.unpackedConfig.mantissaWidth + 2
     )
 
     val addParam = FloatUnpackedParam(
-      exponentMax = p.unpackedConfig.exponentMax * 2 + 1,
-      exponentMin = p.unpackedConfig.exponentMin * 2,
-      mantissaWidth = fmaFullAccuracy.mux(p.unpackedConfig.mantissaWidth * 2 + 1, packParam.mantissaWidth)
+      exponentMax = fu.unpackedConfig.exponentMax * 2 + 1,
+      exponentMin = fu.unpackedConfig.exponentMin * 2,
+      mantissaWidth = fmaFullAccuracy.mux(fu.unpackedConfig.mantissaWidth * 2 + 1, packParam.mantissaWidth)
     )
 
     val packPort = fpp.createPort(List(packAt), packParam)

@@ -31,18 +31,21 @@ class FpuAddSharedPort(_cmd : FpuAddSharedCmd) extends Area{
   val cmd = _cmd
 }
 
+case class FpuAddSharedParam(var preShiftStage : Int = 0,
+                             var shifterStage : Int = 1,
+                             var mathStage : Int = 2,
+                             var normStage : Int = 3,
+                             var packAt : Int = 4)
+
 /**
  * This plugin implements an shared hardware floating point adder and provide an API for other plugins to time share it.
  * In practice, the RISC-V fadd and fma instruction use it.
  * The actual adder hadware is provided by the FpuAdd plugin.
  */
 class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
-                         preShiftStage : Int = 0,
-                         shifterStage : Int = 1,
-                         mathStage : Int = 2,
-                         normStage : Int = 3,
-                         packAt : Int = 4) extends FiberPlugin {
-  val p = FpuUtils
+                         p : FpuAddSharedParam) extends FiberPlugin {
+  import p._
+  val fu = FpuUtils
 
   val elaborationLock = Retainer()
 
