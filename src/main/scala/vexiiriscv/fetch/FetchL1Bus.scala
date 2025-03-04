@@ -45,6 +45,24 @@ case class FetchL1BusParam(physicalWidth : Int,
     ),
     name = name
   )
+
+  def toAxi4Config() = Axi4Config(
+    addressWidth = physicalWidth,
+    dataWidth    = dataWidth,
+    idWidth      = log2Up(refillCount),
+    useId        = true,
+    useRegion    = false,
+    useBurst     = true,
+    useLock      = false,
+    useCache     = false,
+    useSize      = true,
+    useQos       = false,
+    useLen       = true,
+    useLast      = true,
+    useResp      = true,
+    useProt      = true,
+    useStrb      = false
+  )
 }
 
 /**
@@ -112,28 +130,12 @@ case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
   }.ret
 
   def toAxi4(): Axi4ReadOnly = new Composite(this, "toAxi4"){
-    val axiConfig = Axi4Config(
-      addressWidth = physicalWidth,
-      dataWidth    = dataWidth,
-      idWidth      = 0,
-      useId        = true,
-      useRegion    = false,
-      useBurst     = true,
-      useLock      = false,
-      useCache     = false,
-      useSize      = true,
-      useQos       = false,
-      useLen       = true,
-      useLast      = true,
-      useResp      = true,
-      useProt      = true,
-      useStrb      = false
-    )
+    val axiConfig = p.toAxi4Config()
 
     val axi = Axi4ReadOnly(axiConfig)
     axi.ar.valid := cmd.valid
     axi.ar.addr  := cmd.address
-    axi.ar.id    := 0
+    axi.ar.id    := cmd.id
     axi.ar.prot  := B"110"
     axi.ar.len   := lineSize*8/dataWidth-1
     axi.ar.size  := log2Up(dataWidth/8)

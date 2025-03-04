@@ -2,6 +2,7 @@ package vexiiriscv.fetch
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.amba4.axi.Axi4Config
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.database.Database._
@@ -31,6 +32,19 @@ case class CachelessBusParam(addressWidth : Int,
         )
       )
     )
+  )
+
+  def toAxi4Config() = Axi4Config(
+    addressWidth = addressWidth,
+    dataWidth = dataWidth,
+    idWidth = log2Up(idCount),
+    useId = true,
+    useRegion = false,
+    useBurst = false,
+    useLock = false,
+    useQos = false,
+    useLen = false,
+    useResp = true
   )
 }
 

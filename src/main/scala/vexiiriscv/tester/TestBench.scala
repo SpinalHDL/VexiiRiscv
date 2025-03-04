@@ -3,6 +3,8 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly}
+import spinal.lib.bus.amba4.axi.sim.Axi4ReadOnlySlaveAgent
 import spinal.lib.{CheckSocketPort, DoCmd}
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
@@ -316,7 +318,30 @@ class TestOptions{
 
     var forceProbe = Option.empty[Long => Unit]
 
-    val fclp = dut.host.get[fetch.FetchCachelessPlugin].map { p =>
+    def mapFetchAxi4(axi : Axi4ReadOnly): Unit = {
+      val agent = new Axi4ReadOnlySlaveAgent(axi.ar, axi.r, cd, withReadInterleaveInBurst = false) {
+        arDriver.setFactor(ibusReadyFactor)
+        rDriver.setFactor(ibusReadyFactor)
+
+        override def readByte(address: BigInt): Byte = {
+          val addressLong = address.toLong
+          axi.r.resp #= (addressLong < 0x20000000).mux(3, 0)
+          mem.read(addressLong)
+        }
+      }
+      agent.arDriver.setFactor(ibusReadyFactor)
+      agent.rDriver.setFactor(ibusReadyFactor)
+    }
+
+    val fetchUncachedAxi4 = dut.host.get[fetch.FetchCachelessAxi4Plugin].map { p =>
+      mapFetchAxi4(p.logic.bridge.axi)
+    }
+
+    val fetchCachedAxi4 = dut.host.get[fetch.FetchL1Axi4Plugin].map { p =>
+      mapFetchAxi4(p.logic.axi)
+    }
+
+    val fclp = dut.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
@@ -341,7 +366,7 @@ class TestOptions{
       rspDriver.setFactor(ibusReadyFactor)
     }
 
-    val fl1p = dut.host.get[fetch.FetchL1Plugin].map { p =>
+    val fl1p = dut.host.get[fetch.FetchL1Plugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 

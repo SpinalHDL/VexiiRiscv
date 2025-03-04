@@ -2,6 +2,7 @@ package vexiiriscv.fetch
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.amba4.axi.{Axi4ReadOnly, Axi4Shared}
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.{DebugId, S2mSupport}
 import spinal.lib.misc.plugin.FiberPlugin
@@ -39,3 +40,34 @@ class CachelessBusToTilelink(up : CachelessBus) extends Area{
   up.rsp.error := down.d.denied
   up.rsp.word  := down.d.data
 }
+
+
+class FetchCachelessAxi4Plugin() extends FiberPlugin {
+  val logic = during build new Area{
+    val fcp = host[FetchCachelessPlugin]
+    fcp.logic.bus.setAsDirectionLess()
+
+    val bridge = new CachelessBusToAxi4Shared(fcp.logic.bus)
+    master(bridge.axi)
+  }
+}
+
+class CachelessBusToAxi4Shared(up : CachelessBus) extends Area{
+  assert(up.p.cmdPersistence)
+  val axi = Axi4ReadOnly(up.p.toAxi4Config())
+
+  axi.ar.valid := up.cmd.valid
+  axi.ar.addr  := up.cmd.address
+  axi.ar.id    := up.cmd.id
+  axi.ar.size  := log2Up(up.p.dataWidth/8)
+  axi.ar.prot  := "110"
+  axi.ar.cache := "1111"
+  up.cmd.ready := axi.ar.ready
+
+  up.rsp.valid := axi.r.valid
+  up.rsp.id    := axi.r.id
+  up.rsp.word  := axi.r.data
+  up.rsp.error := !axi.r.isOKAY()
+  axi.r.ready  := True
+}
+
