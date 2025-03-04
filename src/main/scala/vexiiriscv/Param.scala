@@ -14,7 +14,7 @@ import vexiiriscv.execute._
 import vexiiriscv.execute.cfu.{CfuBusParameter, CfuPlugin, CfuPluginEncoding}
 import vexiiriscv.execute.fpu.{FpuAddSharedParam, FpuMulParam}
 import vexiiriscv.execute.lsu._
-import vexiiriscv.fetch.{FetchCachelessAxi4Plugin, FetchCachelessPlugin, FetchL1Axi4Plugin, FetchL1Plugin, PrefetcherNextLinePlugin}
+import vexiiriscv.fetch.{FetchCachelessAxi4Plugin, FetchCachelessPlugin, FetchCachelessWishbonePlugin, FetchL1Axi4Plugin, FetchL1Plugin, PrefetcherNextLinePlugin}
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
@@ -137,6 +137,7 @@ class ParamSimple(){
   var fetchL1RefillCount = 1
   var fetchL1Prefetch = "none"
   var fetchAxi4 = false
+  var fetchWishbone = false
   var lsuSoftwarePrefetch = false
   var lsuHardwarePrefetch = "none"
   var lsuStoreBufferSlots = 0
@@ -565,6 +566,7 @@ class ParamSimple(){
     opt[Unit]("with-fetch-l1") unbounded() action { (v, c) => fetchL1Enable = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Unit]("fetch-axi4") action { (v, c) => fetchAxi4 = true }
+    opt[Unit]("fetch-wishbone") action { (v, c) => fetchWishbone = true }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
     opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Int]("fetch-l1-sets") unbounded() action { (v, c) => fetchL1Sets = v }
@@ -708,6 +710,7 @@ class ParamSimple(){
         }
       )
       if(fetchAxi4) plugins += new FetchCachelessAxi4Plugin()
+      if(fetchWishbone) plugins += new FetchCachelessWishbonePlugin()
     }
 
     if(fetchL1Enable) {

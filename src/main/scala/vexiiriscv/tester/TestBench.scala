@@ -9,12 +9,14 @@ import spinal.lib.{CheckSocketPort, DoCmd}
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
+import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.com.jtag.sim.{JtagRemote, JtagTcp}
 import spinal.lib.misc.Elf
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
+import spinal.lib.wishbone.sim.{WishboneDriver, WishboneMonitor, WishboneTransaction}
 import vexiiriscv._
 import vexiiriscv.execute.cfu.{CfuPlugin, CfuRsp}
 import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
@@ -336,9 +338,31 @@ class TestOptions{
     val fetchUncachedAxi4 = dut.host.get[fetch.FetchCachelessAxi4Plugin].map { p =>
       mapFetchAxi4(p.logic.bridge.axi)
     }
-
     val fetchCachedAxi4 = dut.host.get[fetch.FetchL1Axi4Plugin].map { p =>
       mapFetchAxi4(p.logic.axi)
+    }
+
+    def mapFetchWishbone(bus : Wishbone): Unit = {
+      val addressShift = log2Up(bus.config.dataWidth/8)
+      cd.onSamplings{
+        delayed(1) {
+          if (simRandom.nextFloat() < ibusReadyFactor && bus.CYC.toBoolean && bus.STB.toBoolean) {
+            val addr = bus.ADR.toLong << addressShift
+            val bytes = mem.readBytes(addr, bus.config.dataWidth / 8)
+            val data = BigInt(1, bytes.reverse)
+            bus.DAT_MISO #= data
+            bus.ERR #= addr < 0x20000000
+            bus.ACK #= true
+          } else {
+            bus.ACK #= false
+            bus.ERR #= false
+          }
+        }
+      }
+    }
+
+    val fetchUncachedWishbone = dut.host.get[fetch.FetchCachelessWishbonePlugin].map { p =>
+      mapFetchWishbone(p.logic.bridge.bus)
     }
 
     val fclp = dut.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
