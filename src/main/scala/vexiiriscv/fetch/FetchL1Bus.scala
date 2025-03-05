@@ -52,7 +52,7 @@ case class FetchL1BusParam(physicalWidth : Int,
     useRegion    = false,
     useBurst     = true,
     useLock      = false,
-    useCache     = false,
+    useCache     = true,
     useSize      = true,
     useQos       = false,
     useLen       = true,
@@ -148,6 +148,7 @@ case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
     axi.ar.addr  := cmd.address
     axi.ar.id    := cmd.id
     axi.ar.prot  := B"110"
+    axi.ar.cache  := B"1111"
     axi.ar.len   := lineSize*8/dataWidth-1
     axi.ar.size  := log2Up(dataWidth/8)
     axi.ar.setBurstINCR()

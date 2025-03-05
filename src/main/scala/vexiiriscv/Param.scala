@@ -138,6 +138,8 @@ class ParamSimple(){
   var fetchL1Prefetch = "none"
   var fetchAxi4 = false
   var fetchWishbone = false
+  var lsuAxi4 = false
+  var lsuWishbone = false
   var lsuSoftwarePrefetch = false
   var lsuHardwarePrefetch = "none"
   var lsuStoreBufferSlots = 0
@@ -567,6 +569,8 @@ class ParamSimple(){
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Unit]("fetch-axi4") action { (v, c) => fetchAxi4 = true }
     opt[Unit]("fetch-wishbone") action { (v, c) => fetchWishbone = true }
+    opt[Unit]("lsu-axi4") action { (v, c) => lsuAxi4 = true }
+    opt[Unit]("lsu-wishbone") action { (v, c) => lsuWishbone = true }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
     opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Int]("fetch-l1-sets") unbounded() action { (v, c) => fetchL1Sets = v }
@@ -825,27 +829,31 @@ class ParamSimple(){
       )
     )
     if(withRvZb) plugins ++= ZbPlugin.make(early0, formatAt=0)
-    if(!lsuL1Enable) plugins += new LsuCachelessPlugin(
-      layer     = early0,
-      withAmo   = withRva,
-      withSpeculativeLoadFlush = true,
-      addressAt = 0,
-      pmaAt     = lsuPmaAt,
-      forkAt    = lsuForkAt+0,
-      joinAt    = lsuForkAt+1,
-      wbAt      = 2, //TODO
-      pmpPortParameter = lsuNoL1PmpParam,
-      translationStorageParameter = lsuTsp,
-      translationPortParameter = withMmu match {
-        case false => null
-        case true => MmuPortParameter(
-          readAt = 0,
-          hitsAt = 0,
-          ctrlAt = 0,
-          rspAt = 0
-        )
-      }
-    )
+    if(!lsuL1Enable) {
+      plugins += new LsuCachelessPlugin(
+        layer     = early0,
+        withAmo   = withRva,
+        withSpeculativeLoadFlush = true,
+        addressAt = 0,
+        pmaAt     = lsuPmaAt,
+        forkAt    = lsuForkAt+0,
+        joinAt    = lsuForkAt+1,
+        wbAt      = 2, //TODO
+        pmpPortParameter = lsuNoL1PmpParam,
+        translationStorageParameter = lsuTsp,
+        translationPortParameter = withMmu match {
+          case false => null
+          case true => MmuPortParameter(
+            readAt = 0,
+            hitsAt = 0,
+            ctrlAt = 0,
+            rspAt = 0
+          )
+        }
+      )
+
+      if(lsuAxi4) plugins += new LsuCachelessAxi4Plugin()
+    }
     if(lsuL1Enable){
       plugins += new LsuPlugin(
         layer = early0,
