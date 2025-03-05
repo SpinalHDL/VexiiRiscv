@@ -364,12 +364,15 @@ class TestOptions{
     val fetchUncachedWishbone = dut.host.get[fetch.FetchCachelessWishbonePlugin].map { p =>
       mapFetchWishbone(p.logic.bridge.bus)
     }
+    val fetchCachedWishbone = dut.host.get[fetch.FetchL1WishbonePlugin].map { p =>
+      mapFetchWishbone(p.logic.bus)
+    }
 
     val fclp = dut.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
-      case class Cmd(address: Long, id: Int)
+      case class Cmd(address : Long, id : Int)
       val pending = mutable.ArrayBuffer[Cmd]()
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>

@@ -1,9 +1,6 @@
 package vexiiriscv.fetch
 
 import spinal.lib.misc.plugin.FiberPlugin
-
-
-
 import spinal.core._
 import spinal.lib._
 import spinal.lib.pipeline.Stageable
@@ -12,6 +9,7 @@ import spinal.lib.bus.tilelink
 import spinal.lib.bus.amba4.axilite.{AxiLite4Config, AxiLite4ReadOnly}
 import spinal.lib.bus.bmb.{Bmb, BmbAccessParameter, BmbParameter, BmbSourceParameter}
 import spinal.lib.bus.tilelink.{M2sSupport, SizeRange}
+import spinal.lib.bus.wishbone.{Wishbone, WishboneConfig}
 import spinal.lib.misc.Plru
 
 import scala.collection.mutable.ArrayBuffer
@@ -63,6 +61,19 @@ case class FetchL1BusParam(physicalWidth : Int,
     useProt      = true,
     useStrb      = false
   )
+
+  def toWishboneConfig() = WishboneConfig(
+    addressWidth = physicalWidth-log2Up(dataWidth/8),
+    dataWidth = dataWidth,
+    selWidth = dataWidth/8,
+    useSTALL = false,
+    useLOCK = false,
+    useERR = true,
+    useRTY = false,
+    useBTE = true,
+    useCTI = true
+  )
+
 }
 
 /**
@@ -214,4 +225,34 @@ case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
     rsp.error := !axi.r.isOKAY()
     axi.r.ready := True
   }.axi
+
+
+  def toWishbone(): Wishbone = new Composite(this, "toWishbone"){
+    val wishboneConfig = p.toWishboneConfig()
+    val bus = Wishbone(wishboneConfig)
+    val counter = Reg(UInt(log2Up(p.lineSize*8/p.dataWidth) bits)) init(0)
+    val pending = counter =/= 0
+    val lastCycle = counter === counter.maxValue
+
+    bus.ADR := (cmd.address >> widthOf(counter) + log2Up(p.dataWidth/8)) @@ counter
+    bus.CTI := lastCycle ? B"111" | B"010"
+    bus.BTE := "00"
+    bus.SEL.setAll()
+    bus.WE  := False
+    bus.DAT_MOSI.assignDontCare()
+    bus.CYC := False
+    bus.STB := False
+    when(cmd.valid || pending){
+      bus.CYC := True
+      bus.STB := True
+      when(bus.ACK || bus.ERR){
+        counter := counter + 1
+      }
+    }
+
+    cmd.ready := cmd.valid && (bus.ACK || bus.ERR)
+    rsp.valid := RegNext(bus.CYC && (bus.ACK || bus.ERR)) init(False)
+    rsp.data := RegNext(bus.DAT_MISO)
+    rsp.error := RegNext(bus.ERR)
+  }.bus
 }
