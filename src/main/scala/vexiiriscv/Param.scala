@@ -747,7 +747,6 @@ class ParamSimple(){
 
       if(fetchAxi4) plugins += new FetchL1Axi4Plugin()
       if(fetchWishbone) plugins += new FetchL1WishbonePlugin()
-
     }
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
@@ -829,6 +828,8 @@ class ParamSimple(){
       )
     )
     if(withRvZb) plugins ++= ZbPlugin.make(early0, formatAt=0)
+    if(lsuAxi4) plugins += new LsuCachelessAxi4Plugin()
+    if(lsuWishbone) plugins += new LsuCachelessWishbonePlugin()
     if(!lsuL1Enable) {
       plugins += new LsuCachelessPlugin(
         layer     = early0,
@@ -851,8 +852,6 @@ class ParamSimple(){
           )
         }
       )
-
-      if(lsuAxi4) plugins += new LsuCachelessAxi4Plugin()
     }
     if(lsuL1Enable){
       plugins += new LsuPlugin(

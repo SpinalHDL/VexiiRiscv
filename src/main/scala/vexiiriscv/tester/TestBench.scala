@@ -19,7 +19,7 @@ import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
 import spinal.lib.wishbone.sim.{WishboneDriver, WishboneMonitor, WishboneTransaction}
 import vexiiriscv._
 import vexiiriscv.execute.cfu.{CfuPlugin, CfuRsp}
-import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
+import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuCachelessWishbonePlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
 import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
 import vexiiriscv.riscv.Riscv
@@ -335,7 +335,7 @@ class TestOptions{
       agent.rDriver.setFactor(ibusReadyFactor)
     }
 
-    val fetchUncachedAxi4 = dut.host.get[fetch.FetchCachelessAxi4Plugin].map { p =>
+    val fetchCachelessAxi4 = dut.host.get[fetch.FetchCachelessAxi4Plugin].map { p =>
       mapFetchAxi4(p.logic.bridge.axi)
     }
     val fetchCachedAxi4 = dut.host.get[fetch.FetchL1Axi4Plugin].map { p =>
@@ -361,14 +361,14 @@ class TestOptions{
       }
     }
 
-    val fetchUncachedWishbone = dut.host.get[fetch.FetchCachelessWishbonePlugin].map { p =>
+    val fetchCachelessWishbone = dut.host.get[fetch.FetchCachelessWishbonePlugin].map { p =>
       mapFetchWishbone(p.logic.bridge.bus)
     }
     val fetchCachedWishbone = dut.host.get[fetch.FetchL1WishbonePlugin].map { p =>
       mapFetchWishbone(p.logic.bus)
     }
 
-    val fclp = dut.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
+    val fetchCachelessNative = dut.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
@@ -393,7 +393,7 @@ class TestOptions{
       rspDriver.setFactor(ibusReadyFactor)
     }
 
-    val fl1p = dut.host.get[fetch.FetchL1Plugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
+    val fetchCachedNative = dut.host.get[fetch.FetchL1Plugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
@@ -434,7 +434,7 @@ class TestOptions{
 
 
 
-    def ioRead(address : Long, bytes : Int, dst : Array[Byte], offset : Int, io : Boolean): Boolean = {
+    def doRead(address : Long, bytes : Int, dst : Array[Byte], offset : Int, io : Boolean): Boolean = {
       if (io) {
         peripheral.access(false, address, dst)
       } else {
@@ -443,7 +443,7 @@ class TestOptions{
       }
     }
 
-    def ioWrite(address : Long, src : Array[Byte], io : Boolean): Boolean = {
+    def doWrite(address : Long, src : Array[Byte], io : Boolean): Boolean = {
       if (io) {
         peripheral.access(true, address, src)
       } else {
@@ -452,7 +452,7 @@ class TestOptions{
       }
     }
 
-    val lsuUncachedAxi = dut.host.get[LsuCachelessAxi4Plugin].map { p =>
+    val lsuCachelessAxi = dut.host.get[LsuCachelessAxi4Plugin].map { p =>
       val axi = p.logic.axi
       val readAgent = new Axi4ReadOnlySlaveAgent(axi, cd, withReadInterleaveInBurst = false, withArReordering = true){
         arDriver.setFactor(dbusReadyFactor)
@@ -467,7 +467,7 @@ class TestOptions{
 
         override def onReadStart(address: BigInt, size: Int, length: Int, cache : Int, id : Int) = {
           assert(length == 0)
-          ioRead(address.toLong, 1 << size, bytes, 0, cache == 0)
+          doRead(address.toLong, 1 << size, bytes, 0, cache == 0)
           addresses(id) = address.toLong
         }
       }
@@ -484,7 +484,7 @@ class TestOptions{
           bytes(id)(address-addresses(id) toInt) = data
         }
         override def onWriteLast(id : Int) = {
-          ioWrite(addresses(id), bytes(id), caches(id) == 0)
+          doWrite(addresses(id), bytes(id), caches(id) == 0)
         }
       }
       val writeAgent = new Axi4WriteOnlySlaveAgent(axi, cd){
@@ -494,7 +494,37 @@ class TestOptions{
       }
     }
 
-    val lsclp = dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).map { p =>
+    val lsuCachelessWishbone = dut.host.get[LsuCachelessWishbonePlugin].map { p =>
+      val bus = p.logic.wishbone
+      val addressShift = log2Up(bus.config.dataWidth / 8)
+      cd.onSamplings {
+        delayed(1) {
+          if (simRandom.nextFloat() < ibusReadyFactor && bus.CYC.toBoolean) {
+            val mask = bus.SEL.toInt
+            val byteOffset = Integer.numberOfTrailingZeros(mask)
+            val size = Integer.numberOfTrailingZeros((~mask) >> byteOffset)
+            val addr = (bus.ADR.toLong << addressShift) + byteOffset
+            val io = addr >= 0x10000000 && addr < 0x20000000
+            if(bus.WE.toBoolean){
+              val bytes = bus.DAT_MOSI.toBytes.drop(byteOffset).take(size)
+              doWrite(addr, bytes, io)
+            } else {
+              val bytes = new Array[Byte](bus.config.dataWidth/8)
+              doRead(addr, size, bytes, byteOffset, io)
+              val data = BigInt(1, bytes.reverse)
+              bus.DAT_MISO #= data
+            }
+            bus.ERR #= addr < 0x10000000
+            bus.ACK #= true
+          } else {
+            bus.ACK #= false
+            bus.ERR #= false
+          }
+        }
+      }
+    }
+
+    val lsuCachelessNative = dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).map { p =>
       val bus = p.getLsuCachelessBus()
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
@@ -540,11 +570,11 @@ class TestOptions{
 
           def read(dst : Array[Byte], offset : Int): Boolean = {
             assert(!(cmd.amoEnable && cmd.io), "io amo not supported in testbench yet")
-            ioRead(cmd.address, cmd.bytes, dst, offset, cmd.io)
+            doRead(cmd.address, cmd.bytes, dst, offset, cmd.io)
           }
           def write(): Boolean = {
             assert(!(cmd.amoEnable && cmd.io), "io amo not supported in testbench yet")
-            ioWrite(cmd.address, cmd.data, cmd.io)
+            doWrite(cmd.address, cmd.data, cmd.io)
           }
 
           val bytes = new Array[Byte](p.p.dataWidth / 8)

@@ -6,6 +6,7 @@ import spinal.lib.bus.amba4.axi.Axi4Shared
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.{DebugId, S2mSupport}
+import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.misc.pipeline._
 import vexiiriscv.execute
 
@@ -193,4 +194,40 @@ class LsuCachelessAxi4Plugin() extends FiberPlugin {
     val axi = master(bridge.down.toAxi4())
   }
 }
+
+
+
+class LsuCachelessBusToWishbone(up : LsuCachelessBus) extends Area{
+  assert(!up.p.withAmo)
+  val wishboneConfig = up.p.toWishboneConfig()
+  val down = Wishbone(wishboneConfig)
+  val cmdStage = up.cmd.stage()
+
+  down.ADR := cmdStage.address >> log2Up(up.p.dataWidth/8)
+  down.CTI :=B"000"
+  down.BTE := "00"
+  down.SEL := cmdStage.mask
+  down.WE  := cmdStage.write
+  down.DAT_MOSI := cmdStage.data
+
+  cmdStage.ready := cmdStage.valid && (down.ACK || down.ERR)
+  down.CYC := cmdStage.valid
+  down.STB := cmdStage.valid
+
+  up.rsp.valid := cmdStage.valid && (down.ACK || down.ERR)
+  up.rsp.id    := cmdStage.id
+  up.rsp.data  := down.DAT_MISO
+  up.rsp.error := down.ERR
+}
+
+class LsuCachelessWishbonePlugin() extends FiberPlugin {
+  val logic = during build new Area{
+    val bus = host[LsuCachelessBusProvider].getLsuCachelessBus()
+    bus.setAsDirectionLess()
+
+    val bridge = new LsuCachelessBusToWishbone(bus)
+    val wishbone = master(bridge.down)
+  }
+}
+
 
