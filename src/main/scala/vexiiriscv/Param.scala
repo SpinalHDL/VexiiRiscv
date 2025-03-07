@@ -26,6 +26,20 @@ import java.security.MessageDigest
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
 
+
+object FetchBusEnum extends Enumeration {
+  type Bus = Value
+  val native, axi4, wishbone = Value
+}
+object LsuBusEnum extends Enumeration {
+  type Bus = Value
+  val native, axi4, wishbone = Value
+}
+object LsuL1BusEnum extends Enumeration {
+  type Bus = Value
+  val native, axi4, wishbone = Value
+}
+
 object ParamSimple{
   def addOptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
     import parser._
@@ -136,12 +150,9 @@ class ParamSimple(){
   var fetchMemDataWidthMin = 32
   var fetchL1RefillCount = 1
   var fetchL1Prefetch = "none"
-  var fetchAxi4 = false
-  var fetchWishbone = false
-  var lsuAxi4 = false
-  var lsuWishbone = false
-  var lsuL1Axi4 = false
-  var lsuL1Wishbone = false
+  var fetchBus = FetchBusEnum.native
+  var lsuBus = LsuBusEnum.native
+  var lsuL1Bus = LsuL1BusEnum.native
   var lsuSoftwarePrefetch = false
   var lsuHardwarePrefetch = "none"
   var lsuStoreBufferSlots = 0
@@ -569,12 +580,12 @@ class ParamSimple(){
     opt[Unit]("without-performance-scountovf") unbounded() action { (v, c) => withPerformanceScountovf = false }
     opt[Unit]("with-fetch-l1") unbounded() action { (v, c) => fetchL1Enable = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
-    opt[Unit]("fetch-axi4") action { (v, c) => fetchAxi4 = true }
-    opt[Unit]("fetch-wishbone") action { (v, c) => fetchWishbone = true }
-    opt[Unit]("lsu-axi4") action { (v, c) => lsuAxi4 = true }
-    opt[Unit]("lsu-wishbone") action { (v, c) => lsuWishbone = true }
-    opt[Unit]("lsu-l1-axi4") action { (v, c) => lsuL1Axi4 = true }
-    opt[Unit]("lsu-l1-wishbone") action { (v, c) => lsuL1Wishbone = true }
+    opt[Unit]("fetch-axi4") action { (v, c) => fetchBus = FetchBusEnum.axi4 }
+    opt[Unit]("fetch-wishbone") action { (v, c) => fetchBus = FetchBusEnum.wishbone }
+    opt[Unit]("lsu-axi4") action { (v, c) => lsuBus = LsuBusEnum.axi4 }
+    opt[Unit]("lsu-wishbone") action { (v, c) => lsuBus = LsuBusEnum.wishbone }
+    opt[Unit]("lsu-l1-axi4") action { (v, c) => lsuL1Bus = LsuL1BusEnum.axi4 }
+    opt[Unit]("lsu-l1-wishbone") action { (v, c) => lsuL1Bus = LsuL1BusEnum.wishbone }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
     opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Int]("fetch-l1-sets") unbounded() action { (v, c) => fetchL1Sets = v }
@@ -717,8 +728,11 @@ class ParamSimple(){
           )
         }
       )
-      if(fetchAxi4) plugins += new FetchCachelessAxi4Plugin()
-      if(fetchWishbone) plugins += new FetchCachelessWishbonePlugin()
+      fetchBus match {
+        case FetchBusEnum.native =>
+        case FetchBusEnum.axi4 => plugins += new FetchCachelessAxi4Plugin()
+        case FetchBusEnum.wishbone => plugins += new FetchCachelessWishbonePlugin()
+      }
     }
 
     if(fetchL1Enable) {
@@ -749,8 +763,12 @@ class ParamSimple(){
         }
       }
 
-      if(fetchAxi4) plugins += new FetchL1Axi4Plugin()
-      if(fetchWishbone) plugins += new FetchL1WishbonePlugin()
+
+      fetchBus match {
+        case FetchBusEnum.native =>
+        case FetchBusEnum.axi4 => plugins += new FetchL1Axi4Plugin()
+        case FetchBusEnum.wishbone => plugins += new FetchL1WishbonePlugin()
+      }
     }
     plugins += new decode.DecodePipelinePlugin()
     plugins += new decode.AlignerPlugin(
@@ -832,8 +850,13 @@ class ParamSimple(){
       )
     )
     if(withRvZb) plugins ++= ZbPlugin.make(early0, formatAt=0)
-    if(lsuAxi4) plugins += new LsuCachelessAxi4Plugin()
-    if(lsuWishbone) plugins += new LsuCachelessWishbonePlugin()
+
+    lsuBus match {
+      case LsuBusEnum.native =>
+      case LsuBusEnum.axi4 => plugins += new LsuCachelessAxi4Plugin()
+      case LsuBusEnum.wishbone => plugins += new LsuCachelessWishbonePlugin()
+    }
+
     if(!lsuL1Enable) {
       plugins += new LsuCachelessPlugin(
         layer     = early0,
@@ -893,8 +916,11 @@ class ParamSimple(){
           bootMemClear = bootMemClear
         )
       }
-      if(lsuL1Axi4) plugins += new LsuL1Axi4Plugin()
-      if(lsuL1Wishbone) plugins += new LsuL1WishbonePlugin()
+      lsuL1Bus match {
+        case LsuL1BusEnum.native =>
+        case LsuL1BusEnum.axi4 => plugins += new LsuL1Axi4Plugin()
+        case LsuL1BusEnum.wishbone => plugins += new LsuL1WishbonePlugin()
+      }
     }
 
     if(withMul) {

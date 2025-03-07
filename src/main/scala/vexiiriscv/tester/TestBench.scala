@@ -41,7 +41,7 @@ object TestBench extends App{
 
   def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
     val ret = param.plugins()
-    if(!param.lsuL1Axi4 && !param.lsuL1Wishbone) ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
+    if(param.lsuL1Bus == LsuL1BusEnum.native) ret.collectFirst{case p : LsuL1Plugin => p}.foreach{ p =>
       p.ackIdWidth = 8
       p.probeIdWidth = log2Up(p.writebackCount)
       ret  += new LsuL1TlPlugin
