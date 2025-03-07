@@ -19,7 +19,7 @@ import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
 import spinal.lib.wishbone.sim.{WishboneDriver, WishboneMonitor, WishboneTransaction}
 import vexiiriscv._
 import vexiiriscv.execute.cfu.{CfuPlugin, CfuRsp}
-import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuCachelessWishbonePlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
+import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuCachelessWishbonePlugin, LsuL1, LsuL1Axi4Plugin, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
 import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
 import vexiiriscv.riscv.Riscv
@@ -41,7 +41,7 @@ object TestBench extends App{
 
   def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
     val ret = param.plugins()
-    ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
+    if(!param.lsuL1Axi4 && !param.lsuL1Wishbone) ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
       p.ackIdWidth = 8
       p.probeIdWidth = log2Up(p.writebackCount)
       ret  += new LsuL1TlPlugin
@@ -655,6 +655,28 @@ class TestOptions{
       peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
     }
 
+
+    val lsuCacheedAxi = dut.host.get[LsuL1Axi4Plugin].map { p =>
+      val axi = p.logic.axi
+
+      val readAgent = new Axi4ReadOnlySlaveAgent(axi, cd, withReadInterleaveInBurst = false, withArReordering = true){
+        arDriver.setFactor(dbusReadyFactor)
+        rDriver.setFactor(dbusReadyFactor)
+        override def readByte(address: BigInt, id : Int) : Byte = {
+          mem.readByteAsInt(address.toLong).toByte
+        }
+      }
+      val writeMonitor = new Axi4WriteOnlyMonitor(axi, cd){
+        override def onWriteByte(address: BigInt, data: Byte, id: Int) = {
+          mem.write(address.toLong, data)
+        }
+      }
+      val writeAgent = new Axi4WriteOnlySlaveAgent(axi, cd){
+        awDriver.setFactor(dbusReadyFactor)
+        wDriver.setFactor(dbusReadyFactor)
+        bDriver.setFactor(dbusReadyFactor)
+      }
+    }
 
     val lsul1 = dut.host.get[LsuL1TlPlugin] map (p => new Area{
       val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {

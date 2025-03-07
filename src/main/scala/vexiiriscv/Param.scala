@@ -140,6 +140,8 @@ class ParamSimple(){
   var fetchWishbone = false
   var lsuAxi4 = false
   var lsuWishbone = false
+  var lsuL1Axi4 = false
+  var lsuL1Wishbone = false
   var lsuSoftwarePrefetch = false
   var lsuHardwarePrefetch = "none"
   var lsuStoreBufferSlots = 0
@@ -571,6 +573,8 @@ class ParamSimple(){
     opt[Unit]("fetch-wishbone") action { (v, c) => fetchWishbone = true }
     opt[Unit]("lsu-axi4") action { (v, c) => lsuAxi4 = true }
     opt[Unit]("lsu-wishbone") action { (v, c) => lsuWishbone = true }
+    opt[Unit]("lsu-l1-axi4") action { (v, c) => lsuL1Axi4 = true }
+    opt[Unit]("lsu-l1-wishbone") action { (v, c) => lsuL1Wishbone = true }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
     opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Int]("fetch-l1-sets") unbounded() action { (v, c) => fetchL1Sets = v }
@@ -889,6 +893,7 @@ class ParamSimple(){
           bootMemClear = bootMemClear
         )
       }
+      if(lsuL1Axi4) plugins += new LsuL1Axi4Plugin()
     }
 
     if(withMul) {

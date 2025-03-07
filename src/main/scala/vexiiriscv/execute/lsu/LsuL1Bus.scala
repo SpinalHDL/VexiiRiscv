@@ -55,7 +55,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
       useRegion    = false,
       useBurst     = true,
       useLock      = false,
-      useCache     = false,
+      useCache     = true,
       useSize      = true,
       useQos       = false,
       useLen       = true,
@@ -71,6 +71,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
     axi.ar.valid := read.cmd.valid
     axi.ar.addr  := read.cmd.address
     axi.ar.id    := read.cmd.id
+    axi.ar.cache := B"1111"
     axi.ar.prot  := B"010"
     axi.ar.len   := p.lineSize*8/p.dataWidth-1
     axi.ar.size  := log2Up(p.dataWidth/8)
@@ -90,6 +91,7 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
     axi.aw.valid := aw.valid
     axi.aw.addr  := aw.address
     axi.aw.id    := aw.id
+    axi.aw.cache := B"1111"
     axi.aw.prot  := B"010"
     axi.aw.len   := p.lineSize*8/p.dataWidth-1
     axi.aw.size  := log2Up(p.dataWidth/8)
