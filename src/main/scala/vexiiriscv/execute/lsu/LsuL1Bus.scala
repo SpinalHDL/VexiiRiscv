@@ -7,6 +7,7 @@ import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink._
 import spinal.lib._
+import spinal.lib.bus.wishbone.{Wishbone, WishboneConfig}
 
 
 
@@ -304,6 +305,80 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
       }
     }
   }.bus
+
+
+
+  def toWishbone(): Wishbone = new Composite(this, "toWishbone"){
+    val wishboneConfig = p.toWishboneConfig()
+    val bus = Wishbone(wishboneConfig)
+    val addressShift = log2Up(p.dataWidth/8)
+
+    case class Cmd(withData : Boolean) extends Bundle{
+      val write = Bool()
+      val id = UInt(Math.max(p.writeIdWidth, p.readIdWidth) bits)
+      val address = UInt(p.addressWidth bits)
+      val data = withData generate Bits(p.dataWidth bits)
+    }
+
+    val arbiter = new Area {
+      val readCmd = read.cmd.map{i =>
+        val o = Fragment(Cmd(false))
+        o.last := True
+        o.write := False
+        o.id := i.id.resized
+        o.address := i.address
+        o
+      }
+      val writeCmd = write.cmd.map{i =>
+        val o = Fragment(Cmd(false))
+        o.last := i.last
+        o.write := True
+        o.id := i.id.resized
+        o.address := i.address
+        o
+      }
+      val arbiter = StreamArbiterFactory().fragmentLock.lowerFirst.build(Fragment(Cmd(false)), 2)
+      arbiter.io.inputs(0) << readCmd
+      arbiter.io.inputs(1) << writeCmd
+
+      val serialized = Stream(Fragment(Cmd(true)))
+      val counter = Reg(UInt(log2Up(p.lineSize*8/p.dataWidth) bits)) init(0)
+      when(serialized.fire){
+        counter := counter + 1
+      }
+
+      arbiter.io.output.ready := serialized.ready && serialized.last === arbiter.io.output.last
+      serialized.valid := arbiter.io.output.valid
+      serialized.write := arbiter.io.output.write
+      serialized.id := arbiter.io.output.id
+      serialized.address := arbiter.io.output.address
+      serialized.address(log2Up(p.dataWidth/8), widthOf(counter) bits) := counter
+      serialized.data := write.cmd.data
+      serialized.last := counter.andR
+
+      val buffered = serialized.stage()
+    }
+
+    bus.ADR := arbiter.buffered.address >> addressShift
+    bus.CTI := arbiter.buffered.last ? B"111" | B"010"
+    bus.BTE := B"00"
+    bus.SEL.setAll()
+    bus.WE  := arbiter.buffered.write
+    bus.DAT_MOSI := arbiter.buffered.data
+
+    arbiter.buffered.ready := arbiter.buffered.valid && (bus.ACK || bus.ERR)
+    bus.CYC := arbiter.buffered.valid
+    bus.STB := arbiter.buffered.valid
+
+    read.rsp.valid := arbiter.buffered.valid && !arbiter.buffered.write && (bus.ACK || bus.ERR)
+    read.rsp.error := bus.ERR
+    read.rsp.id := arbiter.buffered.id
+    read.rsp.data  := bus.DAT_MISO
+
+    write.rsp.valid := arbiter.buffered.valid && arbiter.buffered.write && arbiter.buffered.last && (bus.ACK || bus.ERR)
+    write.rsp.error := bus.ERR
+    write.rsp.id := arbiter.buffered.id
+  }.bus
 }
 
 
@@ -362,6 +437,18 @@ case class LsuL1BusParameter( addressWidth: Int,
       masters = masters
     )
   }
+
+  def toWishboneConfig() = WishboneConfig(
+    addressWidth = addressWidth-log2Up(dataWidth/8),
+    dataWidth = dataWidth,
+    selWidth = dataWidth/8,
+    useSTALL = false,
+    useLOCK = false,
+    useERR = true,
+    useRTY = false,
+    useBTE = true,
+    useCTI = true
+  )
 }
 
 case class LsuL1ReadCmd(p : LsuL1BusParameter) extends Bundle {

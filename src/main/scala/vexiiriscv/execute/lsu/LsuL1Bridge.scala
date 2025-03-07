@@ -44,3 +44,13 @@ class LsuL1Axi4Plugin() extends FiberPlugin {
     val axi = master(lsucp.logic.bus.toAxi4())
   }
 }
+
+
+
+class LsuL1WishbonePlugin() extends FiberPlugin {
+  val logic = during build new Area{
+    val lsucp = host[LsuL1Plugin]
+    lsucp.logic.bus.setAsDirectionLess()
+    val bus = master(lsucp.logic.bus.toWishbone())
+  }
+}

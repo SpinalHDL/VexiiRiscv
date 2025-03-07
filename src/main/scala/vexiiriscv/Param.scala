@@ -894,6 +894,7 @@ class ParamSimple(){
         )
       }
       if(lsuL1Axi4) plugins += new LsuL1Axi4Plugin()
+      if(lsuL1Wishbone) plugins += new LsuL1WishbonePlugin()
     }
 
     if(withMul) {

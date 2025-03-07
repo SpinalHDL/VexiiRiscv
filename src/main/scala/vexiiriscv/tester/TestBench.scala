@@ -19,7 +19,7 @@ import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
 import spinal.lib.wishbone.sim.{WishboneDriver, WishboneMonitor, WishboneTransaction}
 import vexiiriscv._
 import vexiiriscv.execute.cfu.{CfuPlugin, CfuRsp}
-import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuCachelessWishbonePlugin, LsuL1, LsuL1Axi4Plugin, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
+import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuCachelessWishbonePlugin, LsuL1, LsuL1Axi4Plugin, LsuL1Plugin, LsuL1TlPlugin, LsuL1WishbonePlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
 import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
 import vexiiriscv.riscv.Riscv
@@ -675,6 +675,31 @@ class TestOptions{
         awDriver.setFactor(dbusReadyFactor)
         wDriver.setFactor(dbusReadyFactor)
         bDriver.setFactor(dbusReadyFactor)
+      }
+    }
+    val lsuCacheedWishbone = dut.host.get[LsuL1WishbonePlugin].map { p =>
+      val bus = p.logic.bus
+      val addressShift = log2Up(bus.config.dataWidth / 8)
+      cd.onSamplings {
+        delayed(1) {
+          if (simRandom.nextFloat() < ibusReadyFactor && bus.CYC.toBoolean) {
+            val mask = bus.SEL.toInt
+            val addr = (bus.ADR.toLong << addressShift)
+            if(bus.WE.toBoolean){
+              val bytes = bus.DAT_MOSI.toBytes
+              mem.write(addr, bytes)
+            } else {
+              val bytes = mem.readBytes(addr, bus.config.dataWidth/8)
+              val data = BigInt(1, bytes.reverse)
+              bus.DAT_MISO #= data
+            }
+            bus.ERR #= addr < 0x10000000
+            bus.ACK #= true
+          } else {
+            bus.ACK #= false
+            bus.ERR #= false
+          }
+        }
       }
     }
 
