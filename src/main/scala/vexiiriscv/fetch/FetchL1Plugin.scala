@@ -268,9 +268,14 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       invalidate.canStart clearWhen (slots.map(_.valid).orR || start.valid)
 
       val onCmd = new Area{
-        val oh = B(for((self, slotId) <- slots.zipWithIndex) yield {
+        val propoedOh = B(for((self, slotId) <- slots.zipWithIndex) yield {
           self.askCmd && slots.filter(_ != self).map(s => !s.askCmd || !s.priority(slotId)).andR
         })
+
+        val locked = RegInit(False) setWhen(bus.cmd.valid) clearWhen(bus.cmd.ready)
+        val lockedOh = RegNextWhen(propoedOh, !locked)
+        val oh = locked.mux(lockedOh, propoedOh)
+
         val reader = slots.reader(oh, bypassIfSingle = true)
         bus.cmd.valid := oh.orR
         bus.cmd.address := reader(_.address(tagRange.high downto lineRange.low)) @@ U(0, lineRange.low bit)
