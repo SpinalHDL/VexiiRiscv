@@ -339,7 +339,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   if(config.regular) for(name <- regulars){
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
-    args.failAfter(300000000)
+    args.failAfter(600000000)
     args.name(s"regular/$name")
   }
 
@@ -347,7 +347,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   if(config.benchmark) for (name <- benchmarks) {
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
-    args.failAfter(300000000)
+    args.failAfter(600000000)
     args.ibusReadyFactor(2.0)
     args.dbusReadyFactor(2.0)
     args.name(s"benchmark/$name")

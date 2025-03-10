@@ -465,7 +465,14 @@ class ParamSimple(){
         case e: BigInt => md ++= s" $e"
         case e: String => md ++= s" $e"
         case e : Product => md ++= s" $e"
-        case e => println(s"$e"); ???
+        case e => {
+          if(e.getClass.getName == "scala.Enumeration$Val"){
+            md ++= s" ${e.toString}"
+          } else {
+            println(s"$e")
+            ???
+          }
+        };
       }
     }
     Math.abs(md.toString.hashCode())
