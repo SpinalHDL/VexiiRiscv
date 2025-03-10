@@ -155,6 +155,7 @@ case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
     cmd.ready := axi.ar.ready
 
     rsp.valid := axi.r.valid
+    rsp.id    := axi.r.id
     rsp.data  := axi.r.data
     rsp.error := !axi.r.isOKAY()
     axi.r.ready := (if(withBackPresure) rsp.ready else True)
@@ -233,7 +234,7 @@ case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
     val bus = Wishbone(wishboneConfig)
     val counter = Reg(UInt(log2Up(p.lineSize*8/p.dataWidth) bits)) init(0)
     val pending = counter =/= 0
-    val lastCycle = counter === counter.maxValue
+    val lastCycle = counter.andR
 
     bus.ADR := (cmd.address >> widthOf(counter) + log2Up(p.dataWidth/8)) @@ counter
     bus.CTI := lastCycle ? B"111" | B"010"
@@ -251,8 +252,9 @@ case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
       }
     }
 
-    cmd.ready := cmd.valid && (bus.ACK || bus.ERR)
+    cmd.ready := cmd.valid && lastCycle && (bus.ACK || bus.ERR)
     rsp.valid := RegNext(bus.CYC && (bus.ACK || bus.ERR)) init(False)
+    rsp.id    := RegNext(cmd.id)
     rsp.data := RegNext(bus.DAT_MISO)
     rsp.error := RegNext(bus.ERR)
   }.bus
