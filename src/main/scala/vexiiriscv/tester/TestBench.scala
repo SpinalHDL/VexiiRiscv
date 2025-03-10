@@ -458,16 +458,16 @@ class TestOptions{
         arDriver.setFactor(dbusReadyFactor)
         rDriver.setFactor(dbusReadyFactor)
         val addresses = Array.fill(64)(0l)
-        var bytes = Array.fill(8)(0.toByte)
+        var bytes = Array.fill(64)(Array.fill(8)(0.toByte))
         override def readByte(address: BigInt, id : Int) : Byte = {
           val offset = (address-addresses(id)).toInt
           if(offset < 0) return simRandom.nextInt().toByte
-          bytes(offset)
+          bytes(id) (offset)
         }
 
         override def onReadStart(address: BigInt, size: Int, length: Int, cache : Int, id : Int) = {
           assert(length == 0)
-          doRead(address.toLong, 1 << size, bytes, 0, cache == 0)
+          doRead(address.toLong, 1 << size, bytes(id) , 0, cache == 0)
           addresses(id) = address.toLong
         }
       }
@@ -656,7 +656,7 @@ class TestOptions{
     }
 
 
-    val lsuCacheedAxi = dut.host.get[LsuL1Axi4Plugin].map { p =>
+    val lsuCachedAxi = dut.host.get[LsuL1Axi4Plugin].map { p =>
       val axi = p.logic.axi
 
       val readAgent = new Axi4ReadOnlySlaveAgent(axi, cd, withReadInterleaveInBurst = false, withArReordering = true){
