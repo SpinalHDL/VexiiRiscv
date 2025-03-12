@@ -20,3 +20,20 @@ class FetchL1TileLinkPlugin(node : bus.tilelink.fabric.Node) extends FiberPlugin
     node.bus.component.rework(node.bus << down)
   }
 }
+
+class FetchL1Axi4Plugin() extends FiberPlugin {
+  val logic = during build new Area{
+    val fcp = host[FetchL1Plugin]
+    fcp.logic.bus.setAsDirectionLess()
+    val axi = master(fcp.logic.bus.toAxi4())
+  }
+}
+
+class FetchL1WishbonePlugin() extends FiberPlugin {
+  val logic = during build new Area{
+    val fcp = host[FetchL1Plugin]
+    fcp.logic.bus.setAsDirectionLess()
+    val bus = master(fcp.logic.bus.toWishbone())
+  }
+}
+

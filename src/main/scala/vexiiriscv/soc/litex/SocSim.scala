@@ -241,7 +241,7 @@ object SocSim extends App{
       var bytesAccess = 0l
       new Axi4WriteOnlyMonitor(axi.aw, axi.w, axi.b, dut.cpuCd) {
         override def onWriteByte(address: BigInt, data: Byte, id: Int): Unit = ddrMemory.write(address.toLong, data)
-        override def onWriteStart(address: BigInt, id: Int, size: Int, len: Int, burst: Int): Unit = {
+        override def onWriteStart(address: BigInt, id: Int, size: Int, len: Int, burst: Int, cache : Int): Unit = {
           bytesAccess += len * (1 << size)
         }
       }
@@ -250,7 +250,7 @@ object SocSim extends App{
         rDriver.transactionDelay = () => simRandom.nextInt(3)
         baseLatency = 70 * 1000
 
-        override def readByte(address: BigInt): Byte = {
+        override def readByte(address: BigInt, id : Int): Byte = {
           bytesAccess += 1
           ddrMemory.read(address.toLong)
         }

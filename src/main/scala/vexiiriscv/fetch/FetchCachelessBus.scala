@@ -2,12 +2,14 @@ package vexiiriscv.fetch
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.amba4.axi.Axi4Config
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.database.Database._
 import spinal.lib.misc.pipeline._
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.DebugId
+import spinal.lib.bus.wishbone.WishboneConfig
 
 case class CachelessBusParam(addressWidth : Int,
                              dataWidth : Int,
@@ -32,6 +34,35 @@ case class CachelessBusParam(addressWidth : Int,
       )
     )
   )
+
+  def toAxi4Config() = Axi4Config(
+    addressWidth = addressWidth,
+    dataWidth = dataWidth,
+    idWidth = log2Up(idCount),
+    useId = true,
+    useRegion = false,
+    useBurst = false,
+    useLock = false,
+    useQos = false,
+    useLen = false,
+    useResp = true
+  )
+
+  def toWishboneConfig() = WishboneConfig(
+    addressWidth = addressWidth - log2Up(dataWidth/8),
+    dataWidth = dataWidth,
+    selWidth = dataWidth/8,
+    useSTALL = false,
+    useLOCK = false,
+    useERR = true,
+    useRTY = false,
+    tgaWidth = 0,
+    tgcWidth = 0,
+    tgdWidth = 0,
+    useBTE = true,
+    useCTI = true
+  )
+
 }
 
 case class CachelessCmd(p : CachelessBusParam) extends Bundle{

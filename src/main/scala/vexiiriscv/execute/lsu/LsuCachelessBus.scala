@@ -7,9 +7,11 @@ import vexiiriscv.{Global, riscv}
 import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
 import spinal.core.fiber.Retainer
+import spinal.lib.bus.amba4.axi.Axi4Config
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.DebugId
+import spinal.lib.bus.wishbone.WishboneConfig
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
@@ -58,6 +60,31 @@ case class LsuCachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth
       )
     )
   }
+
+  def toAxi4Config() = Axi4Config(
+    addressWidth = addressWidth,
+    dataWidth = dataWidth,
+    idWidth = log2Up(pendingMax),
+    useId = true,
+    useRegion = false,
+    useBurst = false,
+    useLock = false,
+    useQos = false,
+    useLen = false,
+    useResp = true
+  )
+
+  def toWishboneConfig() = WishboneConfig(
+    addressWidth = addressWidth-log2Up(dataWidth/8),
+    dataWidth = dataWidth,
+    selWidth = dataWidth/8,
+    useSTALL = false,
+    useLOCK = false,
+    useERR = true,
+    useRTY = false,
+    useBTE = true,
+    useCTI = true
+  )
 }
 
 /**
