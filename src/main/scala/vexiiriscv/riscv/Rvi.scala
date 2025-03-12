@@ -100,6 +100,10 @@ object Rvi extends AreaObject {
   val LRD                = TypeILQ(M"00010--00000-----011-----0101111")
   val SCD                = TypeASQ(M"00011------------011-----0101111")
 
+  val CBM_CLEAN          = TypeCmb(M"00000000000000001_010_00000_0001111")
+  val CBM_FLUSH          = TypeCmb(M"00000000000000010_010_00000_0001111")
+  val CBM_INVALIDATE     = TypeCmb(M"00000000000000000_010_00000_0001111")
+
   val AMOSWAPW           = TypeASQ(M"00001------------010-----0101111")
   val AMOADDW            = TypeASQ(M"00000------------010-----0101111")
   val AMOXORW            = TypeASQ(M"00100------------010-----0101111")

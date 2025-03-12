@@ -33,6 +33,7 @@ case class LsuL1Cmd() extends Bundle {
   val address = LsuL1.MIXED_ADDRESS()
   val size = SIZE()
   val load, store, atomic = Bool()
+  val clean, invalidate = Bool()
   val storeId = Decode.STORE_ID()
 }
 
@@ -65,6 +66,7 @@ class LsuPlugin(var layer : LaneLayer,
                 var translationPortParameter: Any,
                 var pmpPortParameter : Any,
                 var softwarePrefetch: Boolean,
+                var withCbm: Boolean,
                 var addressAt: Int = 0,
                 var triggerAt : Int = 1,
                 var pmaAt : Int = 1,
@@ -139,7 +141,7 @@ class LsuPlugin(var layer : LaneLayer,
 
     val trapPort = ts.newTrap(layer.lane.getExecuteAge(ctrlAt), Execute.LANE_AGE_WIDTH)
     val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
-    val frontend = new AguFrontend(layer, host)
+    val frontend = new AguFrontend(layer, host, withRvcbm = withCbm)
     val commitProbe = Flow(LsuCommitProbe()) // Used by the hardware prefetching plugin to learn about the software behaviour
 
     // Extends the instruction specifications done by the AGU with sign extentions and flush behaviour
@@ -159,6 +161,13 @@ class LsuPlugin(var layer : LaneLayer,
           }
         case None =>
       }
+    }
+
+    for(cbm <- frontend.cbms){
+      val op = layer(cbm)
+      op.mayFlushUpTo(ctrlAt)
+      op.dontFlushFrom(ctrlAt+1)
+      op.setCompletion(wbAt)
     }
 
     fpwbp.foreach(_.addMicroOp(fpwb.get, layer, frontend.writeRfFloat))
@@ -182,9 +191,8 @@ class LsuPlugin(var layer : LaneLayer,
     val LSU_PREFETCH = Payload(Bool())
 
     frontend.uopList.foreach(layer(_).addDecoding(FENCE -> False, LSU_PREFETCH -> False))
-    layer.add(Rvi.FENCE).setCompletion(ctrlAt).addDecoding(SEL -> True, LOAD -> False, STORE -> False, ATOMIC -> False, FLOAT -> False, FENCE -> True, LSU_PREFETCH -> False)
+    layer.add(Rvi.FENCE).setCompletion(ctrlAt).addDecoding(frontend.dec(SEL -> True, FENCE -> True, LSU_PREFETCH -> False))
     elp.setDecodingDefault(FENCE, False)
-
 
     for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(ctrlAt)
 
@@ -193,7 +201,7 @@ class LsuPlugin(var layer : LaneLayer,
       val pw = layer.add(Rvi.PREFETCH_W)
       for(op <- List(pr,pw)) {
         op.setCompletion(ctrlAt)
-        op.addDecoding(SEL -> True, LOAD -> True, STORE -> Bool(op == pw), ATOMIC -> False, FLOAT -> False, FENCE -> False, LSU_PREFETCH -> True)
+        op.addDecoding(frontend.dec(SEL -> True, LOAD -> True, STORE -> Bool(op == pw), FENCE -> False, LSU_PREFETCH -> True))
         frontend.srcPlugin.specify(op, List(SrcKeys.Op.ADD, SrcKeys.SRC1.RF, SrcKeys.SRC2.S))
       }
     }
@@ -381,6 +389,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := LOAD
         port.store := STORE
         port.atomic := ATOMIC
+        port.clean := CLEAN
+        port.invalidate := INVALIDATE
         port.op := LsuL1CmdOpcode.LSU
         if(softwarePrefetch) when(LSU_PREFETCH) { port.op := LsuL1CmdOpcode.PREFETCH }
 
@@ -402,6 +412,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := True
         port.store := False
         port.atomic := False
+        port.clean := False
+        port.invalidate := False
         port.op := LsuL1CmdOpcode.ACCESS
         port.storeId := 0
       }
@@ -415,6 +427,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := False
         port.store := False
         port.atomic := False
+        port.clean := False
+        port.invalidate := False
         port.op := LsuL1CmdOpcode.FLUSH
         port.storeId := 0
         when(port.fire) {
@@ -433,6 +447,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := False
         port.store := True
         port.atomic := False
+        port.clean := False
+        port.invalidate := False
         port.op := LsuL1CmdOpcode.STORE_BUFFER
         storeBuffer.pop.ready := port.ready || flush
         port.storeId := storeBuffer.pop.op.storeId
@@ -449,6 +465,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.size := 0
         port.load := False
         port.atomic := False
+        port.clean := False
+        port.invalidate := False
         port.storeId := 0
       }
 
@@ -462,6 +480,8 @@ class LsuPlugin(var layer : LaneLayer,
       l1.LOAD := arbiter.io.output.load
       l1.ATOMIC := arbiter.io.output.atomic
       l1.STORE := arbiter.io.output.store
+      l1.CLEAN := arbiter.io.output.clean
+      l1.INVALID := arbiter.io.output.invalidate
       l1.PREFETCH := arbiter.io.output.op === LsuL1CmdOpcode.PREFETCH
       l1.FLUSH := arbiter.io.output.op === LsuL1CmdOpcode.FLUSH
       Decode.STORE_ID := arbiter.io.output.storeId
