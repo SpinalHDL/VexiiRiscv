@@ -389,8 +389,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := LOAD
         port.store := STORE
         port.atomic := ATOMIC
-        port.clean := CLEAN
-        port.invalidate := INVALIDATE
+        port.clean := withCbm.mux(CLEAN, False)
+        port.invalidate := withCbm.mux(INVALIDATE, False)
         port.op := LsuL1CmdOpcode.LSU
         if(softwarePrefetch) when(LSU_PREFETCH) { port.op := LsuL1CmdOpcode.PREFETCH }
 
@@ -562,7 +562,7 @@ class LsuPlugin(var layer : LaneLayer,
       // Little state machine which handle IO accesses. Pipelined on all sides to avoid putting presure on the FMax
       val io = new Area {
         val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False) // Give one cycle delay, allowing trap to happen before the IO access is emited.
-        val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel) init(False)
+        val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel && FROM_LSU && !l1.CLEAN && !l1.INVALID) init(False)
         val doIt = isValid && l1.SEL && onPma.IO
         val doItReg = RegNext(doIt) init(False)
 
@@ -718,7 +718,7 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code(1) setWhen (l1.STORE)
         }
 
-        val l1Failed = !onPma.CACHED_RSP.fault && (l1.HAZARD || l1.MISS || l1.MISS_UNIQUE)
+        val l1Failed = !onPma.CACHED_RSP.fault && (l1.HAZARD || (l1.MISS || l1.MISS_UNIQUE) && (l1.LOAD || l1.STORE))
         when(withStoreBuffer.mux((l1Failed || wb.hit) && !wb.allowed, l1Failed)) {
           lsuTrap := True
           trapPort.exception := False
