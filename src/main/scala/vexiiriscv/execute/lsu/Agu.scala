@@ -39,7 +39,7 @@ class AguFrontend(
   import AguPlugin._
   val sk = SrcKeys
 
-  val defaultsDecodings = mutable.LinkedHashMap(LOAD -> False, STORE -> True, ATOMIC -> False, FLOAT -> False)
+  val defaultsDecodings = mutable.LinkedHashMap(LOAD -> False, STORE -> False, ATOMIC -> False, FLOAT -> False)
   def dec(changed : (Payload[_ <: BaseType], Any)*) = {
     val ret =  mutable.LinkedHashMap[Payload[_ <: BaseType], Any]()
     ret ++= defaultsDecodings
