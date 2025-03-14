@@ -522,6 +522,7 @@ class LsuPlugin(var layer : LaneLayer,
     // Pre compute a few things to reduce the combinatorial path presure on the ctrl stage.
     val preCtrl = new elp.Execute(ctrlAt-1){
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
+      if(withCbm) MISS_ALIGNED clearWhen(l1.CLEAN || l1.INVALID)
       val IS_AMO = insert(SEL && l1.ATOMIC && l1.STORE && l1.LOAD)
     }
 
@@ -718,8 +719,10 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code(1) setWhen (l1.STORE)
         }
 
+        l1.ABORD_CMB := False
         val l1Failed = !onPma.CACHED_RSP.fault && (l1.HAZARD || (l1.MISS || l1.MISS_UNIQUE) && (l1.LOAD || l1.STORE))
         when(withStoreBuffer.mux((l1Failed || wb.hit) && !wb.allowed, l1Failed)) {
+          l1.ABORD_CMB := True // Ensure that CMB wait until the store queue is not conflicting
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
@@ -798,6 +801,20 @@ class LsuPlugin(var layer : LaneLayer,
       // memory fences while the store buffer isn't drained are handled by retrying the fence later.
       val fenceTrap = withStoreBuffer generate new Area{
         val valid = (ATOMIC || FENCE) && (!storeBuffer.empty || !onAddress0.STORE_BUFFER_EMPTY)
+        when(valid) {
+          lsuTrap := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.REDO
+        }
+      }
+
+      val cmbTrap = withCbm generate new Area{
+        val cmbTrigger = RegNext(isValid && SEL && (LsuL1.CLEAN || LsuL1.INVALID)) init(False)
+        val pendingWritebacks = Reg(LsuL1.WRITEBACK_BUSY.get) init(0)
+        pendingWritebacks := (pendingWritebacks & LsuL1.WRITEBACK_BUSY) | LsuL1.WRITEBACK_BUSY.andMask(cmbTrigger)
+        val pending = cmbTrigger || pendingWritebacks.orR
+
+        val valid = (ATOMIC || FENCE) && pending
         when(valid) {
           lsuTrap := True
           trapPort.exception := False

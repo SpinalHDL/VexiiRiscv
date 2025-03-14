@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 object LsuL1 extends AreaObject{
   // LSU -> L1
-  val ABORD, SKIP_WRITE = Payload(Bool()) // Used on ctrl stage to prevent side effect
+  val ABORD, SKIP_WRITE, ABORD_CMB = Payload(Bool()) // Used on ctrl stage to prevent side effect
   val SEL = Payload(Bool()) // Enable the L1
   val LOAD, STORE, ATOMIC, FLUSH, PREFETCH, CLEAN, INVALID = Payload(Bool()) // Specifies the kind of memory request
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS) // Address before the MMU, can only use the 4K page LSB
@@ -840,7 +840,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val bankNotRead = (BANK_BUSY_REMAPPED & WAYS_HITS).orR
         val loadHazard  = LOAD && !PREFETCH  && (bankNotRead || writeToReadHazard)
         val storeHazard = STORE && !PREFETCH  && !bankWriteReservation.win
-        val cboHazard = (CLEAN || INVALID) && !wayWriteReservation.win
+        val cboHazard = withCbm.mux((CLEAN || INVALID) && (!wayWriteReservation.win || writeback.full), False)
+        val preventSideEffects = ABORD || lane.isFreezed() || (CLEAN || INVALID) && ABORD_CMB
 
 //        lane.freezeWhen(SEL && STORE && !FLUSH && !PREFETCH && !bankWriteReservation.win)
         val flushHazard = FLUSH && !wayWriteReservation.win
@@ -875,13 +876,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val askRefill = isAccess && MISS && canRefill
         val askUpgrade = isAccess && MISS_UNIQUE && canRefill
         val askFlush = FLUSH && canFlush && needFlushs.orR
-        val askCbo = (CLEAN || INVALID)
+        val askCbm = (CLEAN || INVALID)
 
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
         val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
-        val doCbo = SEL && askCbo
+        val doCbm = SEL && askCbm
 
         val wayId = OHToUInt(WAYS_HITS)
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))
@@ -936,25 +937,38 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           }
         }
 
-        if(withCbm) when(doCbo){
-          wayWriteReservation.takeIt()
+        val cbm = withCbm generate new Area{
+          val hazardCounter = Reg(UInt(log2Up(ctrlAt+1) bits)) //As we write the tags, we need to ensure incoming access are informed
+          when(hazardCounter =/= 0) {
+            HAZARD := True
+            hazardCounter := hazardCounter - 1
+          }
 
-          val reader = this (WAYS_TAGS).reader(needFlushSel)
-          val tag = reader(_.address)
+          val forReal = WAYS_HIT && (INVALID || CLEAN && wasDirty) && !preventSideEffects
+          when(doCbm){
+            when(forReal){
+              hazardCounter := ctrlAt
+            }
+            wayWriteReservation.takeIt()
 
-          shared.write.valid := True
+            val reader = this (WAYS_TAGS).reader(needFlushSel)
+            val tag = reader(_.address)
 
-          waysWrite.mask := WAYS_HITS
-          waysWrite.address := PHYSICAL_ADDRESS(lineRange)
-          waysWrite.tag.loaded := !INVALID
-          waysWrite.tag.address := tag
-          waysWrite.tag.fault := reader(_.fault)
+            shared.write.valid := True
+            shared.write.data.dirty.asBools.onMask(WAYS_HITS){_ := False}
 
-          writeback.push.valid := CLEAN && wasDirty
-          writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low
-          writeback.push.way := wayId
+            waysWrite.mask := WAYS_HITS
+            waysWrite.address := PHYSICAL_ADDRESS(lineRange)
+            waysWrite.tag.loaded := !INVALID
+            waysWrite.tag.address := tag
+            waysWrite.tag.fault := reader(_.fault)
 
-          assert(!withCoherency)
+            writeback.push.valid := CLEAN && wasDirty
+            writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low
+            writeback.push.way := wayId
+
+            assert(!withCoherency)
+          }
         }
 
         FLUSH_HIT := needFlushs.orR
@@ -1031,7 +1045,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
         READ_DATA := BYPASSED_DATA
 
-        val preventSideEffects = ABORD || lane.isFreezed()
         when(preventSideEffects) {
           shared.write.valid := False
           refill.push.valid := False
