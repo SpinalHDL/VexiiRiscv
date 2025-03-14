@@ -3,6 +3,7 @@ package vexiiriscv.test
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib.bus.tilelink
+import spinal.lib.sim.SparseMemory
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -29,8 +30,16 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   val INCR_COUNTER = 0x70
   val FAILURE_ADDRESS = 0x80
   val IO_FAULT_ADDRESS = 0x0FFFFFF0
+  val CMB_ADDRESS = 0x100
+  val CMB_DATA = 0x108
   val RANDOM = 0xA8
+
   var cmp = 0l
+  val cmb = new {
+    var mem : SparseMemory = null
+    var address = 0l
+    var data = 0l
+  }
 
   if (mei != null) mei #= false
   if (sei != null) sei #= false
@@ -65,6 +74,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   def access(write : Boolean, address : Long, data : Array[Byte]) : Boolean = {
     val addressPatched = address - offset
     if(write){
+      val v = BigInt(data.map(_.toByte).reverse.toArray).toLong
       addressPatched.toInt match {
         case PUTC => {
           val c = data(0).toChar
@@ -79,7 +89,6 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
         case SUPERVISOR_EXTERNAL_INTERRUPT_CTRL => sei #= data(0).toBoolean
         case CLINT_BASE => msi #= (data(0).toInt & 1).toBoolean
         case CLINT_CMP => {
-          val v = BigInt(data.map(_.toByte).reverse.toArray).toLong
           data.size match {
             case 4 => cmp = cmp & 0xFFFFFFFF00000000l | v
             case 8 => cmp = v
@@ -88,6 +97,15 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
         case CLINT_CMPH => cmp = cmp & 0xFFFFFFFFl | (BigInt(data.map(_.toByte).reverse.toArray).toLong << 32)
         case IO_FAULT_ADDRESS => {
           return true
+        }
+        case CMB_ADDRESS => cmb.address = v & 0xFFFFFFFFl
+        case CMB_DATA => {
+          val dut = data
+          val ref = cmb.mem.readBytes(cmb.address, data.size)
+          if((dut, ref).zipped.exists(_ != _)){
+            println("CMB write missmatch")
+            simFailure()
+          }
         }
         case _ => {
           println(address)
@@ -108,6 +126,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
         case RANDOM => simRandom.nextBytes(data)
         case CLINT_TIME => readLong(getClintTime())
         case CLINT_TIMEH => readLong(getClintTime() >> 32)
+        case CMB_DATA => cmb.mem.readBytes(cmb.address, data.size, data, 0)
         case _ => {
           println(address)
           simFailure()
