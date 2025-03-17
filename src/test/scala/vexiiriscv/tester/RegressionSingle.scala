@@ -70,6 +70,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val rvzbb = dut.database(Riscv.RVZbb)
   val rvzbc = dut.database(Riscv.RVZbc)
   val rvzbs = dut.database(Riscv.RVZbs)
+  val rvzcbm = dut.database(Riscv.RVZcbm)
 
   var arch = ""
   var archLinux = ""
@@ -335,6 +336,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
   if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
   if(pmp.get.p.pmpSize > 4 && priv.get.p.withSupervisor) regulars ++= List(s"pmp")
+  if(rvzcbm) regulars ++= List(s"cbm")
 
   if(config.regular) for(name <- regulars){
     val args = newArgs()

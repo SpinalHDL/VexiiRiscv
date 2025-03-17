@@ -5,7 +5,7 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.{FiberPlugin, PluginHost}
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
-import vexiiriscv.riscv.{Const, MicroOp, Rvfd, Rvi}
+import vexiiriscv.riscv.{Const, MicroOp, Riscv, Rvfd, Rvi}
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv.execute._
 
@@ -89,6 +89,7 @@ class AguFrontend(
   }
 
   val cbms = ArrayBuffer[MicroOp]()
+  Riscv.RVZcbm.set(withRvcbm)
   val cbm = withRvcbm generate new Area{
     cbms += add(Rvi.CBM_CLEAN).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(CLEAN -> True)).uop
     cbms += add(Rvi.CBM_FLUSH).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(CLEAN -> True, INVALIDATE -> True)).uop
