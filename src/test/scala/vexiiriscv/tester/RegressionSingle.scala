@@ -336,13 +336,20 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   priv.filter(_.p.withSupervisor).foreach(_ => regulars ++= List("supervisor"))
   if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
   if(pmp.get.p.pmpSize > 4 && priv.get.p.withSupervisor) regulars ++= List(s"pmp")
-  if(rvzcbm) regulars ++= List(s"cbm")
 
   if(config.regular) for(name <- regulars){
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
     args.failAfter(600000000)
     args.name(s"regular/$name")
+  }
+
+  if(rvzcbm) {
+    val args = newArgs()
+    args.loadElf(new File(nsf, s"baremetal/cbm/build/$arch/cbm.elf"))
+    args.failAfter(600000000)
+    args.name(s"regular/cbm")
+    args.noRvlsCheck()
   }
 
   val benchmarks = ArrayBuffer("dhrystone_vexii", "coremark_vexii")
