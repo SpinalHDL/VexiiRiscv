@@ -10,10 +10,10 @@ import spinal.lib.fsm.{State, StateMachine}
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.system.tag.PmaRegion
-import vexiiriscv.decode.Decode
+import vexiiriscv.decode.{Decode, DecoderService}
 import vexiiriscv.decode.Decode.UOP
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
-import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, TrapArg, TrapReason, TrapService}
+import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import vexiiriscv.riscv._
 import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
@@ -119,12 +119,15 @@ class LsuPlugin(var layer : LaneLayer,
     val ps = host[PmpService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
+    val ds = host[DecoderService]
+    val pp = host[PrivilegedPlugin]
+    val cap = host[CsrAccessPlugin]
     val pcs = host.get[PerformanceCounterService]
     val hp = host.get[PrefetcherPlugin]
     val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
     val buildBefore = retains(elp.pipelineLock, ats.portsLock, ps.portsLock)
     val earlyLock = retains(List(ats.storageLock) ++ pcs.map(_.elaborationLock).toList)
-    val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))
+    val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock, cap.csrLock, ds.elaborationLock) ++ fpwbp.map(_.elaborationLock))
     awaitBuild()
     Riscv.RVA.set(withRva)
 
@@ -207,6 +210,32 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
     retainer.release()
+
+    val cbmCsr = withCbm generate new Area{
+      val invalIntoClean = False
+      def xenvcfg(priv : Int) = new Area{
+        val at = 0x00A + priv * 0x100
+        if(priv == 3) cap.allowCsr(at + 0x10) //Allow menvcfgh
+        val privLower = pp.getPrivilege(0) < priv
+        val cbie = RegInit(B"00")
+        val cbcfe = RegInit(B"0")
+        invalIntoClean.setWhen(privLower && cbie === 1)
+
+        cap.readWrite(at, 4 -> cbie, 6 -> cbcfe)
+        ds.addIllegalCheck{ ctrlLane =>
+          privLower && (ctrlLane(INVALID) && cbie === 0 || ctrlLane(CLEAN) && cbcfe === 0  && privLower)
+        }
+      }
+
+      ds.addMicroOpDecodingDefault(CLEAN, False)
+      ds.addMicroOpDecodingDefault(INVALID, False)
+      ds.addMicroOpDecoding(Rvi.CBM_CLEAN, CLEAN, True)
+      ds.addMicroOpDecoding(Rvi.CBM_FLUSH, CLEAN, True)
+      ds.addMicroOpDecoding(Rvi.CBM_INVALIDATE, INVALID, True)
+
+      val menvcfg = xenvcfg(3)
+      val senvcfg = pp.implementSupervisor generate xenvcfg(1)
+    }
 
     val injectCtrl = elp.ctrl(0)
     val inject = new injectCtrl.Area {
@@ -389,7 +418,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := LOAD
         port.store := STORE
         port.atomic := ATOMIC
-        port.clean := withCbm.mux(CLEAN, False)
+        port.clean := withCbm.mux(CLEAN || INVALIDATE && cbmCsr.invalIntoClean, False)
         port.invalidate := withCbm.mux(INVALIDATE, False)
         port.op := LsuL1CmdOpcode.LSU
         if(softwarePrefetch) when(LSU_PREFETCH) { port.op := LsuL1CmdOpcode.PREFETCH }
