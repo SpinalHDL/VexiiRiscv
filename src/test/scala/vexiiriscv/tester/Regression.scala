@@ -148,6 +148,12 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
   }
 
+  dimensions += new Dimensions[ParamSimple]("cbm") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(!state.lsuL1Enable || state.lsuL1Coherency) return ""
+      List("", "--with-rvZcbm").randomPick(random)
+    }
+  }
 
 
   // Generate a bunch of random VexiiRiscv configuration and run the tests on them.

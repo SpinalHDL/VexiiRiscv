@@ -2,7 +2,7 @@ package vexiiriscv.decode
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.misc.pipeline.{CtrlLink, Link, Payload}
+import spinal.lib.misc.pipeline.{CtrlLaneApi, CtrlLink, Link, Payload}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.execute.{CompletionPayload, CompletionService, ExecuteLaneService}
 import vexiiriscv.fetch.{Fetch, FetchPipelinePlugin}
@@ -50,6 +50,11 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
   val decodingLogics = ArrayBuffer[DecodingCtx => Unit]()
   override def addDecodingLogic(body : DecodingCtx => Unit): Unit = {
     decodingLogics += body
+  }
+
+  val illegalCheckSpec = ArrayBuffer[CtrlLaneApi => Bool]()
+  override def addIllegalCheck(body: CtrlLaneApi => Bool): Unit = {
+    illegalCheckSpec += body
   }
 
   val logic = during setup new Area{
@@ -178,6 +183,8 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
           LEGAL := False
         }
       }
+
+      for(e <- illegalCheckSpec) LEGAL clearWhen(e(this))
 
       val decodingCtx = new DecodingCtx(this.down, LEGAL)
       decodingLogics.foreach(_(decodingCtx))

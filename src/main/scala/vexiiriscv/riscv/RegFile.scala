@@ -60,6 +60,10 @@ object IntRegFile extends RegfileSpec with AreaObject {
     key = key,
     resources = List(RD).map(this -> _)
   )
+  def TypeCmb(key : MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(RS1).map(this -> _)
+  )
 
   def TypeNone(key : MaskedLiteral) = SingleDecoding(
     key = key,
