@@ -16,7 +16,7 @@ object BootTester extends App{
   assert(new scopt.OptionParser[Unit]("tool") {
     opt[String]("tty") action { (v, c) => tty = v }
     opt[String]("openocd-reboot") action { (v, c) => openocdReboot = v }
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   var counter = 0
   val serialPort = new SerialPort(tty)

@@ -19,7 +19,7 @@ class DecodingCtx(val node : NodeBaseApi, val legal : Bool)
 trait DecoderService {
   val elaborationLock = Retainer()
   val decodingLock = Retainer()
-  def covers() : Seq[Masked] //List of all instruction implemented
+  def covers() : scala.collection.Seq[Masked] //List of all instruction implemented
 
   def addMicroOpDecoding[T <: BaseType](microOp: MicroOp, key : Payload[T], value: T) : Unit = addMicroOpDecoding(microOp, DecodeList(key -> value))
   def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType)

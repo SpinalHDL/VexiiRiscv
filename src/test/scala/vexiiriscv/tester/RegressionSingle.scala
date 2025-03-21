@@ -438,7 +438,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
       help("help").text("prints this usage text")
       t.addOptions(this)
-    }.parse(args.args, Unit).nonEmpty)
+    }.parse(args.args, ()).nonEmpty)
     
     val testPath = new File(compiled.simConfig.getTestPath(t.testName.get))
     val passFile = new File(testPath, "PASS")
@@ -478,7 +478,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
  * App which can be used to run all the regression test on a given VexiiRiscv config provided by command line arguments.
  */
 object RegressionSingle extends App{
-  def test(name : String, plugins : => Seq[Hostable], dutArgs : Seq[String], config : RegressionSingleConfig): Unit = {
+  def test(name : String, plugins : => scala.collection.Seq[Hostable], dutArgs : Seq[String], config : RegressionSingleConfig): Unit = {
     val simConfig = SpinalSimConfig()
 //    simConfig.withIVerilog
     simConfig.withFstWave
@@ -515,7 +515,7 @@ object RegressionSingle extends App{
       opt[Unit]("with-spike-log") action { (v, c) => config.traceSpikeLog = true }
       opt[Unit]("trace-all") action { (v, c) => config.traceRvlsLog = true; config.traceKonata = true; config.traceWave = true; config.traceSpikeLog = true }
       param.addOptions(this)
-    }.parse(args, Unit).nonEmpty)
+    }.parse(args, ()).nonEmpty)
     test(param, args, config.fromEnv())
   }
 

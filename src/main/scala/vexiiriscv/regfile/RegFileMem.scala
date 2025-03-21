@@ -19,8 +19,8 @@ case class RegFileWriteParameter(withReady : Boolean)
  * The bankCount is currently useless, but maybe useful in the future with execution units which can stall
  */
 class RegFileMem(rfpp : RegFilePortParam,
-                 readsParameter  : Seq[RegFileReadParameter],
-                 writesParameter : Seq[RegFileWriteParameter],
+                 readsParameter  : scala.collection.Seq[RegFileReadParameter],
+                 writesParameter : scala.collection.Seq[RegFileWriteParameter],
                  headZero        : Boolean,
                  syncRead        : Boolean,
                  dualPortRam     : Boolean,

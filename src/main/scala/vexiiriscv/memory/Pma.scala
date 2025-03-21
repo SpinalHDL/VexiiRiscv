@@ -38,7 +38,7 @@ case class PmaPort(addressWidth : Int, sizes : Seq[Int], ops : Seq[PmaOp]) exten
  * - fault => is there something at that address ?
  * - io => is it an IO memory region (strongly ordered / with side effects) ?
  */
-class PmaLogic(port : PmaPort, regions : Seq[PmaRegion]) extends Area{
+class PmaLogic(port : PmaPort, regions : scala.collection.Seq[PmaRegion]) extends Area{
   import port._
   val hitsTerms = ArrayBuffer[Masked]()
   val mainSpec = new DecodingSpec(Bool()).setDefault(Masked.zero)

@@ -46,7 +46,7 @@ trait CtrlLaneApi{
     override def isCanceling = valid && isCancel
     override def apply(key: NamedTypeKey) = ???
     override def apply[T <: Data](key: Payload[T]) = node(key, laneName)
-    override def apply(subKey: Seq[Any]) = ???
+    override def apply(subKey: scala.collection.Seq[Any]) = ???
     def transactionSpawn = valid && !RegNext(valid, False).clearWhen(isReady || isCancel)
   }
 

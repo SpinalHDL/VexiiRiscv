@@ -38,9 +38,9 @@ class WriteBackPlugin(val lane : ExecuteLaneService,
     assert(at <= writeAt, s"WriteBackPlugin.createPort target is behond writeback range ($at > $writeAt)")
     port
   }
-  def addMicroOp(port: Flow[Bits], layer : LaneLayer, uop: Seq[MicroOp]): Unit = addMicroOp(port, uop.map(layer.apply))
+  def addMicroOp(port: Flow[Bits], layer : LaneLayer, uop: scala.collection.Seq[MicroOp]): Unit = addMicroOp(port, uop.map(layer.apply))
   def addMicroOp(port: Flow[Bits], head: UopLayerSpec, tail: UopLayerSpec*): Unit = addMicroOp(port, head +: tail)
-  def addMicroOp(port: Flow[Bits], impls: Seq[UopLayerSpec]): Unit = {
+  def addMicroOp(port: Flow[Bits], impls: scala.collection.Seq[UopLayerSpec]): Unit = {
     val spec = portToSpec(port)
     spec.impls ++= impls
   }

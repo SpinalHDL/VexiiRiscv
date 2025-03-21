@@ -33,7 +33,7 @@ object MicroSocSim extends App{
     opt[Double]("speed-printer") action { (v, c) => speedPrinterPeriod = Some(v) }
     sim.addOptions(this)
     p.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
   p.legalize()
 
   class MicroSocSim extends MicroSoc(p){

@@ -43,7 +43,7 @@ object LsuL1BusEnum extends Enumeration {
 object ParamSimple{
   def addOptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
     import parser._
-    opt[Map[String, String]]("region") unbounded() action { (v, c) =>
+    opt[Map[String, String]]("region").unbounded() action { (v, c) =>
       regions += PmaRegionImpl(
         mapping = SizeMapping(BigInt(v("base"), 16), BigInt(v("size"), 16)),
         transfers = M2sTransfers.all,
@@ -74,8 +74,8 @@ object ParamSimple{
     )
   )
 
-  def setPma(plugins : Seq[Hostable], regions : Seq[PmaRegion] = defaultPma) = {
-    val array = ArrayBuffer(regions :_*)
+  def setPma(plugins : scala.collection.Seq[Hostable], regions : scala.collection.Seq[PmaRegion] = defaultPma) = {
+    val array = ArrayBuffer(regions.toSeq :_*)
     plugins.foreach {
       case p: FetchCachelessPlugin => p.regions.load(array)
       case p: LsuCachelessPlugin => p.regions.load(array)
@@ -525,7 +525,7 @@ class ParamSimple(){
     opt[Int]("lanes") action { (v, c) => lanes = v }
     opt[Int]("decoder-at") action { (v, c) => decoderAt = v }
     opt[Int]("dispatcher-at") action { (v, c) => dispatcherAt = v }
-    opt[Long]("reset-vector") unbounded() action { (v, c) => resetVector = v }
+    opt[Long]("reset-vector").unbounded() action { (v, c) => resetVector = v }
     opt[Unit]("relaxed-div") action { (v, c) => relaxedDiv = true }
     opt[Unit]("relaxed-mul-inputs") action { (v, c) => relaxedMulInputs = true }
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
@@ -548,8 +548,8 @@ class ParamSimple(){
       fpuAddSharedParam.packAt = 2
       fpuWbAt = 1
     }
-    opt[Unit]("with-mul") unbounded() action { (v, c) => withMul = true }
-    opt[Unit]("with-div") unbounded() action { (v, c) => withDiv = true }
+    opt[Unit]("with-mul").unbounded() action { (v, c) => withMul = true }
+    opt[Unit]("with-div").unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rvm") action { (v, c) => withMul = true; withDiv = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
     opt[Unit]("with-rvf") action { (v, c) => withRvf = true }
@@ -560,7 +560,7 @@ class ParamSimple(){
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
     opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuMulParam.fmaFullAccuracy = false }
     opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
-    opt[Unit]("with-aligner-buffer") unbounded() action { (v, c) => withAlignerBuffer = true }
+    opt[Unit]("with-aligner-buffer").unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
     opt[Unit]("with-supervisor") action { (v, c) => privParam.withSupervisor = true; privParam.withUser = true; withMmu = true }
     opt[Unit]("with-user") action { (v, c) => privParam.withUser = true }
@@ -583,9 +583,9 @@ class ParamSimple(){
     opt[Unit]("regfile-dual-ports") action { (v, c) => regFileDualPortRam = true }
     opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
-    opt[Int]("performance-counters") unbounded() action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
-    opt[Unit]("without-performance-scountovf") unbounded() action { (v, c) => withPerformanceScountovf = false }
-    opt[Unit]("with-fetch-l1") unbounded() action { (v, c) => fetchL1Enable = true }
+    opt[Int]("performance-counters").unbounded() action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
+    opt[Unit]("without-performance-scountovf").unbounded() action { (v, c) => withPerformanceScountovf = false }
+    opt[Unit]("with-fetch-l1").unbounded() action { (v, c) => fetchL1Enable = true }
     opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
     opt[Unit]("fetch-axi4") action { (v, c) => fetchBus = FetchBusEnum.axi4 }
     opt[Unit]("fetch-wishbone") action { (v, c) => fetchBus = FetchBusEnum.wishbone }
@@ -595,21 +595,21 @@ class ParamSimple(){
     opt[Unit]("lsu-l1-wishbone") action { (v, c) => lsuL1Bus = LsuL1BusEnum.wishbone }
     opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
     opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
-    opt[Int]("fetch-l1-sets") unbounded() action { (v, c) => fetchL1Sets = v }
-    opt[Int]("fetch-l1-ways") unbounded() action { (v, c) => fetchL1Ways = v }
-    opt[Int]("fetch-l1-refill-count") unbounded() action { (v, c) => fetchL1RefillCount = v }
+    opt[Int]("fetch-l1-sets").unbounded() action { (v, c) => fetchL1Sets = v }
+    opt[Int]("fetch-l1-ways").unbounded() action { (v, c) => fetchL1Ways = v }
+    opt[Int]("fetch-l1-refill-count").unbounded() action { (v, c) => fetchL1RefillCount = v }
     opt[String]("fetch-l1-hardware-prefetch") action { (v, c) => fetchL1Prefetch = v }
-    opt[Int]("fetch-l1-mem-data-width-min") unbounded() action { (v, c) => fetchMemDataWidthMin = v }
+    opt[Int]("fetch-l1-mem-data-width-min").unbounded() action { (v, c) => fetchMemDataWidthMin = v }
     opt[Unit]("fetch-reduced-bank") action { (v, c) => fetchL1ReducedBank = true }
-    opt[Int]("lsu-l1-sets") unbounded() action { (v, c) => lsuL1Sets = v }
-    opt[Int]("lsu-l1-ways") unbounded() action { (v, c) => lsuL1Ways = v }
+    opt[Int]("lsu-l1-sets").unbounded() action { (v, c) => lsuL1Sets = v }
+    opt[Int]("lsu-l1-ways").unbounded() action { (v, c) => lsuL1Ways = v }
     opt[Int]("lsu-l1-store-buffer-slots") action { (v, c) => lsuStoreBufferSlots = v }
     opt[Int]("lsu-l1-store-buffer-ops") action { (v, c) => lsuStoreBufferOps = v }
     opt[String]("lsu-hardware-prefetch") action { (v, c) => lsuHardwarePrefetch = v }
     opt[Unit]("lsu-software-prefetch") action { (v, c) => lsuSoftwarePrefetch = true }
     opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
     opt[Int]("lsu-l1-writeback-count") action { (v, c) => lsuL1WritebackCount = v }
-    opt[Int]("lsu-l1-mem-data-width-min") unbounded() action { (v, c) => lsuMemDataWidthMin = v }
+    opt[Int]("lsu-l1-mem-data-width-min").unbounded() action { (v, c) => lsuMemDataWidthMin = v }
     opt[Unit]("lsu-l1-coherency") action { (v, c) => lsuL1Coherency = true}
     opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
     opt[Unit]("without-lsu-bypass") action { (v, c) => withLsuBypass = false }
@@ -671,8 +671,8 @@ class ParamSimple(){
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc)
     withMmu match {
-      case false => plugins += new memory.StaticTranslationPlugin(physicalWidth)
-      case true => plugins += new memory.MmuPlugin(
+      case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
+      case true => plugins += new vexiiriscv.memory.MmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
         physicalWidth = physicalWidth
       )
@@ -680,7 +680,7 @@ class ParamSimple(){
 
     plugins += new PmpPlugin(pmpParam)
 
-    plugins += new misc.PipelineBuilderPlugin()
+    plugins += new vexiiriscv.misc.PipelineBuilderPlugin()
     plugins += new schedule.ReschedulePlugin()
 
     // Branch prediction

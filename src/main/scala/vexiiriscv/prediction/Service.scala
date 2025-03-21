@@ -48,7 +48,7 @@ trait FetchWordPrediction{
  */
 trait FetchConditionalPrediction{
   def useHistoryAt : Int
-  def getPredictionAt(stageId : Int) : Seq[Bool]
+  def getPredictionAt(stageId : Int) : scala.collection.Seq[Bool]
 }
 
 /**

@@ -173,7 +173,7 @@ class MulPlugin(val layer : LaneLayer,
         untilOffset = if(stepId == 0) untilOffsetS0 else Integer.MAX_VALUE
       )
       // Generate the hardware corresponding to every addersSpec
-      val adders = addersSpec.map(_.craft(sourceToSignal.mapValues(this(_)))).map(insert(_))
+      val adders = addersSpec.map(_.craft(sourceToSignal.mapValues(this(_)).toMap)).map(insert(_))
 
       // Setup the iteration variables for the next step
       sourcesSpec = addersSpec.map(_.toSource()).toList

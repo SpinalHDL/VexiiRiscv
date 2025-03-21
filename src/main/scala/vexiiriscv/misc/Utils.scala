@@ -136,7 +136,7 @@ object AdderAggregator {
 
   // Represent an adder input by aggregating multiple laneSources which never overlap
   // The idea is to create as long as possible inputs for the adder
-  case class Lane(from: Seq[LaneSource]) {
+  case class Lane(from: scala.collection.Seq[LaneSource]) {
     def valueMax(offset: Int, width: Int) = from.map(_.valueMax(offset, width)).sum
 
     // Generate the aggregation hardware
@@ -153,7 +153,7 @@ object AdderAggregator {
 
   // Represent an adder which sum multiple lanes
   // offset and width specify which portions of the sources signal we are interrested into (can be parts of them)
-  case class Adder(offset: Int, width: Int, lanes: Seq[Lane]) {
+  case class Adder(offset: Int, width: Int, lanes: scala.collection.Seq[Lane]) {
     def toSource() = {
       val source = Source(offset, lanes.map(_.valueMax(offset, width)).sum)
       source
@@ -172,7 +172,7 @@ object AdderAggregator {
   // lanesMax specify how many inputs an adder can have
   // Note that if the returned adders is only for one layer, meaning you may have to call
   // this function multiple time to reduce more and more, until you get only a single adder.
-  def apply(splits: Seq[Source], widthMax: Int, lanesMax: Int, untilOffset : Int = Integer.MAX_VALUE): Seq[Adder] = {
+  def apply(splits: Seq[Source], widthMax: Int, lanesMax: Int, untilOffset : Int = Integer.MAX_VALUE): scala.collection.Seq[Adder] = {
     var srcs = ArrayBuffer[Source]()
     val adders = ArrayBuffer[Adder]()
     srcs ++= splits.sortBy(_.offset)
@@ -317,7 +317,7 @@ object AdderAggregator {
 }
 
 case class AgedArbiterUp[T <: Data](valid : Bool, payload : T, age : Int, laneAge : UInt, subAge : Int)
-class AgedArbiter[T <: Data](ups : Seq[AgedArbiterUp[T]]) extends Area{
+class AgedArbiter[T <: Data](ups : scala.collection.Seq[AgedArbiterUp[T]]) extends Area{
   val groups = ups.groupBy(_.age).toSeq.sortBy(_._1).toSeq.reverse
   val ports = for ((_, elements) <- groups) yield {
     val ret = Flow(elements.head.payload)
