@@ -74,7 +74,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       val reservedHits = for (ctrlId <- forkAt+1 to joinAt; ctrl = pp.fetch(ctrlId)) yield {
         ctrl.isValid && ctrl(BUFFER_ID) === reserveId
       }
-      val full = CombInit(reservedHits.orR || inflight.read(reserveId)) //If this create timings issues, that's one cycle late, can use sort of ahead value
+      val full = CombInit(reservedHits.orR || inflight.read(reserveId)) // If this create timings issues, that's one cycle late, can use sort of ahead value
 
       val inflightSpawn = Bool()
       when(inflightSpawn) {

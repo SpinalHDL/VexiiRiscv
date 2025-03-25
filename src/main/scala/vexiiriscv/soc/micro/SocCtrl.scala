@@ -5,7 +5,7 @@ import spinal.lib.ResetCtrlFiber
 import spinal.lib.cpu.riscv.debug.DebugModuleSocFiber
 
 
-class SocCtrlParam{
+class SocCtrlParam {
   var withJtagTap = false
   var withJtagInstruction = false
   var systemFrequency = 100 MHz
@@ -19,7 +19,7 @@ class SocCtrlParam{
   }
 }
 
-class SocCtrl(p: SocCtrlParam) extends Area{
+class SocCtrl(p: SocCtrlParam) extends Area {
   val systemClk = in Bool()
   val systemClkCd = ClockDomain(systemClk, frequency = FixedFrequency(p.systemFrequency))
 

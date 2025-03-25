@@ -4,15 +4,15 @@ import spinal.core.{AreaObject, MaskedLiteral, Nameable}
 import spinal.lib.logic.Masked
 
 // Will be used to build a data model of what a micro op needs / does.
-abstract class MicroOp(val resources : scala.collection.Seq[Resource]){
+abstract class MicroOp(val resources : scala.collection.Seq[Resource]) {
   def keys : Seq[MaskedLiteral]
   def keysMasked = keys.map(Masked.apply)
 }
 
 // Define one to one instruction to micro op mapping.
 // In RISC-V "all" instruction can be considered as one to one with micro op.
-// This symplifies things.
-// The keys argument specifie what is the RISC-V instruction leading to that micro op.
+// This simplifies things.
+// The keys argument specifies what is the RISC-V instruction leading to that micro op.
 case class SingleDecoding(keys : Seq[MaskedLiteral], override val resources : scala.collection.Seq[Resource]) extends MicroOp(resources) with Nameable {
   override def toString = s"${getName("")} $keys"
 }
@@ -43,8 +43,8 @@ object FPU extends Resource with AreaObject
 object RM  extends Resource with AreaObject
 
 
-trait RegfileSpec extends Nameable{
-  def sizeArch : Int // How many words it has from a RISC-V perspective (not physicaly)
+trait RegfileSpec extends Nameable {
+  def sizeArch : Int // How many words it has from a RISC-V perspective (not physically)
   def width : Int // How many bits per word
   def x0AlwaysZero : Boolean // used by the RISC-V integer register file to hardwire x0
   def getName() : String

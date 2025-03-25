@@ -41,9 +41,9 @@ class Reservation{
  * Those smaller multiplication results would need to be summed together.
  * MulSpliter Doesn't generate any hardware by itself, but instead provide you with the datamodel
  * of the work to do.
- * Usefull for large multiplications which need to be pipelined on multiple cycles when retiming isn't good
+ * Useful for large multiplications which need to be pipelined on multiple cycles when retiming isn't good
  */
-object MulSpliter{
+object MulSpliter {
   /**
    * A and B being the input operands
    * offsetX, widthX, signedX specifying the operand
@@ -56,7 +56,7 @@ object MulSpliter{
     val endC = offsetC+widthC
     def signedC = signedA || signedB
 
-    // Generate the multiplcation hardware, and return a UInt.
+    // Generate the multiplication hardware, and return a UInt.
     // For signed multiplications, the result is sign extended to give a signedWidth bits signal
     // allowing to just sum all the partial multiplication in a single unsigned manner.
     def toMulU(srcA : Bits, srcB : Bits, signedWidth : Int): UInt = {
@@ -152,7 +152,7 @@ object AdderAggregator {
   }
 
   // Represent an adder which sum multiple lanes
-  // offset and width specify which portions of the sources signal we are interrested into (can be parts of them)
+  // offset and width specify which portions of the sources signal we are interested into (can be parts of them)
   case class Adder(offset: Int, width: Int, lanes: scala.collection.Seq[Lane]) {
     def toSource() = {
       val source = Source(offset, lanes.map(_.valueMax(offset, width)).sum)
@@ -233,7 +233,7 @@ object AdderAggregator {
     adders
   }
 
-  //Here is an example of usage.
+  // Here is an example of usage.
   def main(args: Array[String]): Unit = {
     import spinal.core.sim._
     //    var sources = ArrayBuffer[Source]()

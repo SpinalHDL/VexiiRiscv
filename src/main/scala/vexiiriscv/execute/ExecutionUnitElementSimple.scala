@@ -37,7 +37,7 @@ abstract class ExecutionUnitElementSimple(layer : LaneLayer) extends FiberPlugin
   }
 }
 
-object ExecuteUnitElementSimple{
+object ExecuteUnitElementSimple {
   class Api(layer : LaneLayer, val srcPlugin: SrcPlugin, val SEL : Payload[Bool], val rsUnsignedPlugin: RsUnsignedPlugin = null){
     var iwbpp = Option.empty[(IntFormatPlugin, Flow[Bits])]
     def setWriteback(ifp : IntFormatPlugin, bus : Flow[Bits]): Unit = {

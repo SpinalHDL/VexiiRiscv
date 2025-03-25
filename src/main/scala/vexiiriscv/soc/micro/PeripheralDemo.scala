@@ -10,7 +10,7 @@ import spinal.lib.misc.InterruptNode
 import scala.collection.mutable.ArrayBuffer
 
 // This object provide a set of utilities
-object PeripheralDemo{
+object PeripheralDemo {
   // This function will be used during the tilelink parameter negotiation
   // This will translate what the masters propose into what is actually supported by the peripheral .
   // In this implementation, we don't really care about what is proposed. Instead we enforce 12 bits address, 32 bits data ...

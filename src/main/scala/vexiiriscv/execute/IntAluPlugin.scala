@@ -23,14 +23,14 @@ object IntAluPlugin extends AreaObject {
  */
 class IntAluPlugin(var layer: LaneLayer,
                    var aluAt : Int = 0,
-                   var formatAt : Int = 0) extends ExecutionUnitElementSimple(layer)  {
+                   var formatAt : Int = 0) extends ExecutionUnitElementSimple(layer) {
   import IntAluPlugin._
 
   val ALU_BITWISE_CTRL = Payload(AluBitwiseCtrlEnum())
   val ALU_ADD_SUB, ALU_SLTX = Payload(Bool())
   val ALU_RESULT = Payload(Bits(Riscv.XLEN bits))
 
-  val logic = during setup new Logic{
+  val logic = during setup new Logic {
     awaitBuild()
     import SrcKeys._
 

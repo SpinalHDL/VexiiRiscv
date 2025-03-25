@@ -26,7 +26,7 @@ object Decode extends AreaObject {
 
   val LEGAL = Payload(Bool())
   val DOP_ID = Payload(UInt(DOP_ID_WIDTH bits)) // Used to track instruction between the end of the fetch pipeline until they are decoded
-  val UOP_ID = Payload(UInt(UOP_ID_WIDTH bits)) // Used to track isntruction after they are decoded until they are commited
+  val UOP_ID = Payload(UInt(UOP_ID_WIDTH bits)) // Used to track instruction after they are decoded until they are committed
 
   val STORE_ID_WIDTH = 12 //Assume it is enough to let the store buffer drain
   val STORE_ID = Payload(UInt(STORE_ID_WIDTH bits))

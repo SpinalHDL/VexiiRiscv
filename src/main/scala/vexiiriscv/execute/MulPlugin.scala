@@ -17,7 +17,7 @@ object MulPlugin extends AreaObject {
   val RESULT_IS_SIGNED = Payload(Bool())
 }
 
-trait MulReuse{
+trait MulReuse {
   def cmdAt : Int
   def inject(a : Bits, b : Bits) : Unit
   def rspAt : Int
@@ -71,7 +71,7 @@ class MulPlugin(val layer : LaneLayer,
     injectApi.b = injectApi.b max b
     injectApi.result = injectApi.result max result
   }
-  val injectApi = new Area{
+  val injectApi = new Area {
     var a,b,result = 0
   }
 
@@ -92,8 +92,8 @@ class MulPlugin(val layer : LaneLayer,
     add(Rvi.MULHSU).decode(HIGH -> True ).rsUnsigned(true , false, useRsUnsignedPlugin)
     add(Rvi.MULHU ).decode(HIGH -> True ).rsUnsigned(false, false, useRsUnsignedPlugin)
 
-    if(!useRsUnsignedPlugin){
-      for(uop <- List(Rvi.MUL,Rvi.MULH, Rvi.MULHSU, Rvi.MULHU); spec = layer(uop)){
+    if(!useRsUnsignedPlugin) {
+      for(uop <- List(Rvi.MUL,Rvi.MULH, Rvi.MULHSU, Rvi.MULHU); spec = layer(uop)) {
         spec.addRsSpec(RS1, cmdAt)
         spec.addRsSpec(RS2, cmdAt)
       }
@@ -113,7 +113,7 @@ class MulPlugin(val layer : LaneLayer,
     mulLock.await()
     val finalWidth = XLEN*2 max injectApi.result
     val SRC_WIDTH = (XLEN.get + (!useRsUnsignedPlugin).toInt) max injectApi.a max injectApi.b
-    val keys = new AreaRoot{
+    val keys = new AreaRoot {
       val MUL_SRC1 = Payload(Bits(SRC_WIDTH bits))
       val MUL_SRC2 = Payload(Bits(SRC_WIDTH bits))
     }
@@ -178,13 +178,12 @@ class MulPlugin(val layer : LaneLayer,
       // Setup the iteration variables for the next step
       sourcesSpec = addersSpec.map(_.toSource()).toList
       for ((s, m) <- (sourcesSpec, adders).zipped) sourceToSignal(s) = m
-      if(splitWidthB == 1){
+      if(splitWidthB == 1) {
         println(addersSpec.mkString("\n"))
         println("------------")
       }
 
-
-      val revert = useRsUnsignedPlugin generate new Area{
+      val revert = useRsUnsignedPlugin generate new Area {
         import revertResult._
         val range = ptr until (if(sourcesSpec.size == 1) sourcesSpec(0).offsetNext else Math.min(sourcesSpec(0).offsetNext, sourcesSpec(1).offset))
         val value = sourceToSignal(sourcesSpec(0))(range)
@@ -202,7 +201,7 @@ class MulPlugin(val layer : LaneLayer,
         case false => apply(sourceToSignal(sourcesSpec.head))
         case true => Cat(revertResult.chunk.map(apply(_))).asUInt
       }
-      val buffer = bufferedHigh.get generate new Area{
+      val buffer = bufferedHigh.get generate new Area {
         val valid = RegNext(layer.lane.isFreezed()) init (False)
         val data = RegNext(result(XLEN, XLEN bits))
         el.freezeWhen(isValid && HIGH && !valid)
