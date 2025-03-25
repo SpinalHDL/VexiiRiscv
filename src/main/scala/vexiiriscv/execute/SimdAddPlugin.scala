@@ -25,7 +25,7 @@ import vexiiriscv.tester.TestOptions
 //Note :  RS1, RS2, RD positions follow the RISC-V spec and are common for all instruction of the ISA
 
 
-object SimdAddPlugin{
+object SimdAddPlugin {
   //Define the instruction type and encoding that we wll use
   val ADD4 = IntRegFile.TypeR(M"0000000----------000-----0001011")
 }

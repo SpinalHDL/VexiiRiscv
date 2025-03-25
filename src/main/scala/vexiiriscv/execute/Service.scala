@@ -55,10 +55,10 @@ class LaneLayer(val name : String, val lane : ExecuteLaneService, var priority :
 }
 
 /**
- * Specfies how a given MicroOp is implemented in a given LaneLayer
+ * Specifies how a given MicroOp is implemented in a given LaneLayer
  * - RD/RS1/RS2 timings and usages
  * - Completion timing
- * - Flush supported/behaviour
+ * - Flush supported/behavior
  * - Additional decoding required
  * - Shared hardware reservations
  */
@@ -128,18 +128,18 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
 }
 
 /**
- * Provide an API to access an exeuction lanes.
+ * Provide an API to access an execution lanes.
  */
-trait ExecuteLaneService extends Area{
+trait ExecuteLaneService extends Area {
   val uopLock = Retainer()
   val pipelineLock = Retainer()
 
-  // Querry the model of the execute lane.
+  // Query the model of the execute lane.
   def getUops(): Iterable[MicroOp]
   def getUopLayerSpec(): Iterable[UopLayerSpec]
   def getLayers(): Iterable[LaneLayer]
 
-  // Feed the execute lane model with additional informations
+  // Feed the execute lane model with additional information
   def add(layer : LaneLayer) : Unit
   def setDecodingDefault(key: Payload[_ <: BaseType], value: BaseType)
 
@@ -157,7 +157,7 @@ trait ExecuteLaneService extends Area{
   // Get an API to access a given stage of the pipeline
   // ctrl is the raw API, where id 0 map the stage directly connected to the dispatcher
   def ctrl(id: Int): CtrlLaneApi
-  // execute provide the pipeline API offseted to were the ALU plugins should start to opperate.
+  // execute provide the pipeline API offseted to were the ALU plugins should start to operate.
   def execute(id: Int): CtrlLaneApi
 
   // Create Area which implicitly work in a given stage of the execute lane
@@ -184,7 +184,7 @@ trait ExecuteLaneService extends Area{
 
 }
 
-case class CompletionPayload() extends Bundle{
+case class CompletionPayload() extends Bundle {
   val hartId = Global.HART_ID()
   val uopId = Decode.UOP_ID()
   val trap = Bool()

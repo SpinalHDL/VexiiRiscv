@@ -17,7 +17,7 @@ import vexiiriscv.fetch.Fetch
  * Then, addresses in the CPU before the MMU (mixed addresses) need to have 40 bits (39 bits + 1 bit of sign extension), that allow for instance :
  * - physical address trap at 0x40_0000_0000 to be stored in let's say MEPC to store that address while avoiding the sign extension
  */
-object Global extends AreaRoot{
+object Global extends AreaRoot {
   // Elaboration time constants
   val PHYSICAL_WIDTH   = blocking[Int]
   val MIXED_WIDTH      = blocking[Int]

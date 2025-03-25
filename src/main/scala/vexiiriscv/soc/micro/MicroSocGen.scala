@@ -11,7 +11,7 @@ import java.io.{File, PrintWriter}
 import scala.collection.mutable
 
 
-object Bsp{
+object Bsp {
   def apply(target : File, vexii: TilelinkVexiiRiscvFiber): Unit = {
 
     target.mkdirs()

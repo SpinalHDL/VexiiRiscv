@@ -7,8 +7,8 @@ import scala.collection.mutable
 
 /**
  * Provide a API to access a HashMap which uses Element[_ <: Any] as keys
- * The Database object provide a SpinalHDL ScopeProperty[DataBase] allowing to have one globaly accessible implicit database
- * That globaly shared database can be used as a way to exchange "global" variable in a given context (ex : VexiiRiscv core 3)
+ * The Database object provide a SpinalHDL ScopeProperty[DataBase] allowing to have one globally accessible implicit database
+ * That globally shared database can be used as a way to exchange "global" variable in a given context (ex : VexiiRiscv core 3)
  */
 class Database{
   // User API

@@ -14,7 +14,7 @@ import vexiiriscv.schedule.ReschedulePlugin
 import scala.collection.mutable.ArrayBuffer
 
 
-object EnvPluginOp extends SpinalEnum{
+object EnvPluginOp extends SpinalEnum {
   val ECALL, EBREAK, PRIV_RET, FENCE_I, SFENCE_VMA, WFI = newElement()
 }
 
@@ -22,7 +22,7 @@ object EnvPluginOp extends SpinalEnum{
  * Implements a bunch of special instruction which always traps into the TrapPlugin. (ecall, ebreak, mret, fences, efi, ...)
  */
 class EnvPlugin(layer : LaneLayer,
-                executeAt : Int) extends ExecutionUnitElementSimple(layer){
+                executeAt : Int) extends ExecutionUnitElementSimple(layer) {
   val OP = Payload(EnvPluginOp())
 
   val logic = during setup new Logic{
@@ -54,7 +54,7 @@ class EnvPlugin(layer : LaneLayer,
     uopRetainer.release()
     ioRetainer.release()
 
-    val exe = new el.Execute(executeAt){
+    val exe = new el.Execute(executeAt) {
       flushPort.valid := False
       flushPort.hartId := Global.HART_ID
       flushPort.uopId := Decode.UOP_ID

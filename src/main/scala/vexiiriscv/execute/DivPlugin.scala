@@ -17,7 +17,7 @@ object DivPlugin extends AreaObject {
   val DIV_RESULT = Payload(Bits(XLEN bits))
 }
 
-trait DivReuse{
+trait DivReuse {
   def divInject(layer : LaneLayer, at : Int, a : UInt, b : UInt, iterations : UInt) : Unit
   def divRsp : DivRsp
   def divRadix : Int
@@ -38,7 +38,7 @@ class DivPlugin(val layer : LaneLayer,
   import DivPlugin._
 
 
-  override def divInject(layer: LaneLayer, at: Int, a: UInt, b: UInt, interations : UInt): Unit = {
+  override def divInject(layer: LaneLayer, at: Int, a: UInt, b: UInt, iterations : UInt): Unit = {
     assert(layer == this.layer && at == this.divAt)
     logic.processing.request := True
     val divWidth = logic.processing.div.width
@@ -47,7 +47,7 @@ class DivPlugin(val layer : LaneLayer,
     logic.processing.a := a.resized // << (divWidth-widthOf(a))
     logic.processing.b := b.resized // << (divWidth-widthOf(b))
     logic.processing.div.io.cmd.normalized := True
-    logic.processing.div.io.cmd.iterations := interations
+    logic.processing.div.io.cmd.iterations := iterations
   }
 
   override def divRsp: DivRsp = logic.processing.div.io.rsp
@@ -116,11 +116,10 @@ class DivPlugin(val layer : LaneLayer,
       div.io.flush := isReady
       div.io.rsp.ready := False
 
-      val relaxer = relaxedInputs generate new Area{
+      val relaxer = relaxedInputs generate new Area {
         val hadRequest = RegNext(request && el.isFreezed()) init(False)
         div.io.cmd.valid clearWhen(!hadRequest)
       }
-
 
       val unscheduleRequest = RegNext(isCancel) clearWhen (isReady) init (False)
       val freeze = request && !div.io.rsp.valid & !unscheduleRequest
@@ -132,7 +131,7 @@ class DivPlugin(val layer : LaneLayer,
       DIV_RESULT := twoComplement(B(selected), divRevertResult).asBits.resized
     }
 
-    val writeback = new el.Execute(writebackAt){
+    val writeback = new el.Execute(writebackAt) {
       formatBus.valid := SEL
       formatBus.payload := DIV_RESULT
     }

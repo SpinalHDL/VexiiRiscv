@@ -4,10 +4,10 @@ import spinal.core.SpinalVerilog
 
 import scala.collection.mutable.ArrayBuffer
 
-object MicroSocSynt extends App{
+object MicroSocSynt extends App {
   import spinal.lib.eda.bench._
   val rtls = ArrayBuffer[Rtl]()
-  rtls += Rtl(SpinalVerilog{
+  rtls += Rtl(SpinalVerilog {
     val p = new MicroSocParam()
     new MicroSoc(p) {
       socCtrl.systemClk.setName("clk")
