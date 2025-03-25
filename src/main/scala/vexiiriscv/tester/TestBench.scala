@@ -101,7 +101,7 @@ object TestBench extends App{
       help("help").text("prints this usage text")
       testOpt.addOptions(this)
       param.addOptions(this)
-    }.parse(args, Unit).nonEmpty)
+    }.parse(args, ()).nonEmpty)
 
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
@@ -170,21 +170,21 @@ class TestOptions{
     opt[Long]("fail-after") action { (v, c) => failAfter = Some(v) }
     opt[Long]("pass-after") action { (v, c) => passAfter = Some(v) }
     opt[Double]("sim-speed-printer") action { (v, c) => simSpeedPrinter = Some(v) }
-    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
-    opt[Seq[String]]("load-u32") unbounded() action { (v, c) => u32s += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Integer.parseInt(v(1).replace("0x", ""), 16) }
-    opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
+    opt[Seq[String]]("load-bin").unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
+    opt[Seq[String]]("load-u32").unbounded() action { (v, c) => u32s += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Integer.parseInt(v(1).replace("0x", ""), 16) }
+    opt[String]("load-elf").unbounded() action { (v, c) => elfs += new File(v) }
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
-    opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
-    opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
-    opt[Unit]("jtag-remote") unbounded() action { (v, c) => jtagRemote = true }
+    opt[Double]("ibus-ready-factor").unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
+    opt[Double]("dbus-ready-factor").unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
+    opt[Unit]("jtag-remote").unbounded() action { (v, c) => jtagRemote = true }
     opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v; ibusBaseLatency = v }
     FsmOption(parser, fsmTasksGen)
     opt[Int]("seed") action { (v, c) => seed = v }
     opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
 
-    opt[String]("spawn-process") unbounded() action { (v, c) => spawnProcess = Some(v) }
+    opt[String]("spawn-process").unbounded() action { (v, c) => spawnProcess = Some(v) }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {

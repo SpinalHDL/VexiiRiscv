@@ -22,11 +22,11 @@ import scala.collection.mutable
  */
 object FsmOption{
   def apply(parser: scopt.OptionParser[Unit], fsmTasksGen : mutable.Queue[() => FsmTask]): Unit = {
-    parser.opt[String]("fsm-putc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
-    parser.opt[Unit]("fsm-putc-lr") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
-    parser.opt[String]("fsm-getc") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmGetc(v)) }
-    parser.opt[Long]("fsm-sleep") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSleep(v)) }
-    parser.opt[Unit]("fsm-success") unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSuccess()) }
+    parser.opt[String]("fsm-putc").unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc(v)) }
+    parser.opt[Unit]("fsm-putc-lr").unbounded() action { (v, c) => fsmTasksGen += (() => new FsmPutc("\n")) }
+    parser.opt[String]("fsm-getc").unbounded() action { (v, c) => fsmTasksGen += (() => new FsmGetc(v)) }
+    parser.opt[Long]("fsm-sleep").unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSleep(v)) }
+    parser.opt[Unit]("fsm-success").unbounded() action { (v, c) => fsmTasksGen += (() => new FsmSuccess()) }
   }
 }
 

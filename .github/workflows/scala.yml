@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        scala_version: ["2.12.18", "2.13.12"]
 
     runs-on: ubuntu-22.04
 
@@ -63,7 +66,7 @@ jobs:
         run: source .github/workflows/tools.sh && install_uncached
 
       - name: Compile
-        run: sbt clean compile
+        run: sbt ++${{ matrix.scala_version }} clean compile
 
 #      - name: Test
 #        run: NAXRISCV_REGRESSION_THREAD_COUNT=1 SBT_OPTS="-Xmx2G -XX:+UseConcMarkSweepGC -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=2G -Xss2M  -Duser.timezone=GMT" sbt test

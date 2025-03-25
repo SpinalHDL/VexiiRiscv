@@ -23,7 +23,7 @@ case class CsrOnReadData (bitOffset : Int, value : Bits)
 case class CsrIsReadingHartId(hartId : Int, value : Bool)
 
 
-case class CsrListFilter(mapping : Seq[Int]) extends Nameable
+case class CsrListFilter(mapping : scala.collection.Seq[Int]) extends Nameable
 
 case class CsrDecode() extends Bundle {
   val exception = Bool()

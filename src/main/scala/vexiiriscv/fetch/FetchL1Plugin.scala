@@ -247,7 +247,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
 
       import spinal.core.sim._
-      val pushCounter = Reg(UInt(32 bits)) init (0) simPublic()
+      val pushCounter = Reg(UInt(32 bits)).init(0).simPublic()
 
       val freeOh = OHMasking.first(slots.map(!_.valid))
 

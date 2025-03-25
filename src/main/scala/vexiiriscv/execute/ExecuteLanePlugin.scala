@@ -100,7 +100,7 @@ class ExecuteLanePlugin(override val laneName : String,
   val logic = during setup new Area {
     val ts = host[TrapService]
     val trapRetain = retains(ts.trapLock)
-    val buildBefore = retains(host.list[RegfileService].map(_.elaborationLock) :+ eupp.pipelineLock)
+    val buildBefore = retains((host.list[RegfileService].map(_.elaborationLock) :+ eupp.pipelineLock).toSeq)
     awaitBuild()
 
     val trapPending = ts.newTrapPending()

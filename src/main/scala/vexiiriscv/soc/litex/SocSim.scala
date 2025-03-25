@@ -74,9 +74,9 @@ object SocSim extends App{
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
-    opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
-    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
-    opt[Seq[String]]("opensbi-bootstrap") unbounded() action { (v, c) => bootstrapOpensbi = Some(java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Long.parseLong(v(1).replace("0x", ""), 16)) }
+    opt[String]("load-elf").unbounded() action { (v, c) => elfs += new File(v) }
+    opt[Seq[String]]("load-bin").unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
+    opt[Seq[String]]("opensbi-bootstrap").unbounded() action { (v, c) => bootstrapOpensbi = Some(java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Long.parseLong(v(1).replace("0x", ""), 16)) }
     opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
     opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true}
     opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
@@ -85,7 +85,7 @@ object SocSim extends App{
     opt[Unit]("trace-wave") action { (v, c) => traceWave = true }
     socConfig.addOptions(this)
     FsmOption(this, fsmTasksGen)
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   vexiiParam.lsuL1Coherency = vexiiParam.lsuL1Coherency || cpuCount > 1 || withDma
   vexiiParam.privParam.withRdTime = false // To keep in sync with RVLS
