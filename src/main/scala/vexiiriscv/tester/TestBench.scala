@@ -314,6 +314,7 @@ class TestOptions{
     val priv = host.hart(0)
     val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
       override def getClintTime(): Long = probe.cycle
+      cmb.mem = mem
     }
     peripheral.withStdIn = withStdIn
 
@@ -524,7 +525,8 @@ class TestOptions{
       }
     }
 
-    val lsuCachelessNative = dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).map { p =>
+
+    val lsuCachelessNative = dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).foreach { p =>
       val bus = p.getLsuCachelessBus()
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
@@ -641,18 +643,6 @@ class TestOptions{
 
       cmdReady.setFactor(dbusReadyFactor)
       rspDriver.setFactor(dbusReadyFactor)
-
-
-
-      val hal = new FsmHal{
-        override def next(): Unit = {
-          if (fsmTasks.nonEmpty) fsmTasks.dequeue()
-          if (fsmTasks.nonEmpty) fsmTasks.head.start(this)
-        }
-        override def putc(value: String): Unit = peripheral.getcQueue ++= value.map(_.toByte)
-      }
-      if (fsmTasks.nonEmpty) fsmTasks.head.start(hal)
-      peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
     }
 
 
@@ -729,6 +719,16 @@ class TestOptions{
         }
       }
     })
+
+    val hal = new FsmHal{
+      override def next(): Unit = {
+        if (fsmTasks.nonEmpty) fsmTasks.dequeue()
+        if (fsmTasks.nonEmpty) fsmTasks.head.start(this)
+      }
+      override def putc(value: String): Unit = peripheral.getcQueue ++= value.map(_.toByte)
+    }
+    if (fsmTasks.nonEmpty) fsmTasks.head.start(hal)
+    peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
 
     dut.host.services.foreach{
       case p : EmbeddedRiscvJtag => {

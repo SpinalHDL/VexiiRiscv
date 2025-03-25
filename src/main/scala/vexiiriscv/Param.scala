@@ -121,6 +121,7 @@ class ParamSimple(){
   var withDiv = false
   var withRva = false
   var withRvf = false
+  var withRvcbm = false
   var btbDualPortRam = true
   var fpuIgnoreSubnormal = false
   var fpuWbAt = 2
@@ -556,6 +557,7 @@ class ParamSimple(){
     opt[Unit]("with-rvd") action { (v, c) => withRvd = true; withRvf = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
+    opt[Unit]("with-rvZcbm") action { (v, c) => withRvcbm = true }
     opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
     opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuMulParam.fmaFullAccuracy = false }
@@ -895,6 +897,7 @@ class ParamSimple(){
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
         softwarePrefetch = lsuSoftwarePrefetch,
+        withCbm = withRvcbm,
         pmpPortParameter = fetchL1PmpParam,
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
@@ -912,6 +915,7 @@ class ParamSimple(){
         wayCount       = lsuL1Ways,
         withBypass     = withLsuBypass,
         withCoherency  = lsuL1Coherency,
+        withCbm        = withRvcbm,
         bootMemClear = bootMemClear
       )
 

@@ -25,6 +25,7 @@ trait DecoderService {
   def addMicroOpDecoding(microOp: MicroOp, decoding: DecodeListType)
   def addMicroOpDecodingDefault(key : Payload[_ <: BaseType], value : BaseType) : Unit
   def addDecodingLogic(body : DecodingCtx => Unit)
+  def addIllegalCheck(body : CtrlLaneApi => Bool)
 }
 
 /**

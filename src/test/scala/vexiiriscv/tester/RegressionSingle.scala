@@ -70,6 +70,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val rvzbb = dut.database(Riscv.RVZbb)
   val rvzbc = dut.database(Riscv.RVZbc)
   val rvzbs = dut.database(Riscv.RVZbs)
+  val rvzcbm = dut.database(Riscv.RVZcbm)
 
   var arch = ""
   var archLinux = ""
@@ -341,6 +342,14 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
     args.failAfter(600000000)
     args.name(s"regular/$name")
+  }
+
+  if(rvzcbm) {
+    val args = newArgs()
+    args.loadElf(new File(nsf, s"baremetal/cbm/build/$arch/cbm.elf"))
+    args.failAfter(600000000)
+    args.name(s"regular/cbm")
+    args.noRvlsCheck()
   }
 
   val benchmarks = ArrayBuffer("dhrystone_vexii", "coremark_vexii")
