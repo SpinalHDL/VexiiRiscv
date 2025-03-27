@@ -18,7 +18,7 @@ import vexiiriscv.riscv.Riscv.{RVA, RVC}
 
 import scala.collection.mutable.ArrayBuffer
 
-object LsuL1 extends AreaObject{
+object LsuL1 extends AreaObject {
   // LSU -> L1
   val ABORD, SKIP_WRITE = Payload(Bool()) // Used on ctrl stage to prevent side effect
   val SEL = Payload(Bool()) // Enable the L1
@@ -26,12 +26,12 @@ object LsuL1 extends AreaObject{
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS) // Address before the MMU, can only use the 4K page LSB
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
-  val MASK = Payload(Bits(Riscv.LSLEN / 8 bits)) //Also needed for loads
-  val SIZE = Payload(UInt(log2Up(log2Up(Riscv.LSLEN / 8+1)) bits)) //Also needed for loads
+  val MASK = Payload(Bits(Riscv.LSLEN / 8 bits)) // Also needed for loads
+  val SIZE = Payload(UInt(log2Up(log2Up(Riscv.LSLEN / 8+1)) bits)) // Also needed for loads
 
   // L1 -> LSU
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
-  val HAZARD, MISS, MISS_UNIQUE, FAULT, FLUSH_HAZARD, CBM_REDO = Payload(Bool()) //From the ctrl stage, provide the status of the request to the LSU
+  val HAZARD, MISS, MISS_UNIQUE, FAULT, FLUSH_HAZARD, CBM_REDO = Payload(Bool()) // From the ctrl stage, provide the status of the request to the LSU
   val FLUSH_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
   val REFILL_HIT = Payload(Bool()) // A ongoing refill is on the same cache set (this is just an optional detail, HAZARD is already set)
   val WAIT_REFILL = Payload(cloneOf(REFILL_BUSY.get)) // Specifies which refill should be waited on before retrying the failed access (optional)
@@ -48,7 +48,7 @@ object LsuL1 extends AreaObject{
   val coherency = blocking[Boolean]
 }
 
-//allows to lock a physical address into unique state while a LR/SC sequence is going on.
+// Allows to lock a physical address into unique state while a LR/SC sequence is going on.
 case class LockPort() extends Bundle with IMasterSlave {
   val valid = Bool()
   val address = LsuL1.PHYSICAL_ADDRESS()
@@ -58,9 +58,9 @@ case class LockPort() extends Bundle with IMasterSlave {
 
 
 /*
-This is the L1 cache design of VexiiRiscv which originate in part from NaxRIscv.
+This is the L1 cache design of VexiiRiscv which originate in part from NaxRiscv.
 
-It is non-blocking, can support multiple outstanding refill/writeback and is thightly coupled to the CPU pipeline to save area.
+It is non-blocking, can support multiple outstanding refill/writeback and is tightly coupled to the CPU pipeline to save area.
 
 List of hazard to take care of :
 - store to load
@@ -72,7 +72,7 @@ List of hazard to take care of :
   - redo when detected
 - writeback conflicting
   - redo when detected
-- Coherency hazard (coherency port is using ressources)
+- Coherency hazard (coherency port is using resources)
   - redo when detected
  */
 class LsuL1Plugin(val lane : ExecuteLaneService,

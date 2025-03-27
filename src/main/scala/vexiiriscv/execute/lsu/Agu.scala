@@ -22,11 +22,10 @@ object AguPlugin extends AreaObject {
   val CLEAN, INVALIDATE = Payload(Bool())
 }
 
-/**
- * The AguFrontend provide an Area which define all RISC-V memory load/store/atomic instruction/microops as well as a set
- * of decodings (see AguPlugin object above)
- * It can be used by various LSU implementations as a base.
- */
+/** The AguFrontend provide an Area which define all RISC-V memory load/store/atomic 
+  * instruction/microops as well as a set of decodings (see AguPlugin object above).
+  * It can be used by various LSU implementations as a base.
+  */
 class AguFrontend(
     layer: LaneLayer,
     host: PluginHost,

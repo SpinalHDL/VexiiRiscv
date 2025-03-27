@@ -97,7 +97,7 @@ object ParamSimple{
  * - you instanciate VexiiRiscv with that list of plugin
  * - Thenthen you should get a functional VexiiRiscv.
  */
-class ParamSimple(){
+class ParamSimple() {
   var xlen = 32
   var withRvc = false
   var withAlignerBuffer = false
@@ -518,7 +518,7 @@ class ParamSimple(){
     r.mkString("_")
   }
 
-  // Initialize a scopt commande line arguement parser to take controle of this SimpleParam
+  // Initialize a scopt command line argument parser to take control of this SimpleParam
   def addOptions(parser: scopt.OptionParser[Unit]) = {
     import parser._
     opt[Int]("xlen") action { (v, c) => xlen = v }
@@ -669,7 +669,7 @@ class ParamSimple(){
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
 
-    val intWritebackAt = 2 //Alias for "trap at" aswell
+    val intWritebackAt = 2 //Alias for "trap at" as well
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc)
     withMmu match {

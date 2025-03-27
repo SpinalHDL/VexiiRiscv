@@ -17,7 +17,8 @@ import scala.collection.mutable.ArrayBuffer
  * - sign extension
  * - zero extension
  *
- * One nice thing is that the hardware which does the formatting is shared between all the instructions which operate in the same stage.
+ * One nice thing is that the hardware which does the formatting is shared between all the
+ * instructions which operate in the same stage.
  */
 class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin {
   withPrefix(lane.laneName)
@@ -88,8 +89,9 @@ class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin {
       }
     }
 
-    // For every stages in which the plugin was asked to opperate, we need to generate the formating hardware + writeback interface
-    val stages = for(group <- grouped.values; stageId = group.head.ctrlId) yield new eu.Execute(stageId){
+    // For every stages in which the plugin was asked to operate, we need to generate 
+    // the formatting hardware + writeback interface.
+    val stages = for(group <- grouped.values; stageId = group.head.ctrlId) yield new eu.Execute(stageId) {
       val wb = wbp.createPort(stageId)
       for(spec <- group) wbp.addMicroOp(wb, spec.impls.toSeq)
 

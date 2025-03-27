@@ -9,8 +9,8 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 /**
- * This is used for simulations, it can be used to emulate a minmal sets of peripherals :
- * - Terminal binded to stdin stdout
+ * This is used for simulations, it can be used to emulate a minimal sets of peripherals :
+ * - Terminal bound to stdin stdout
  * - RISC-V CLINT
  * - Simulation pass/fail commands
  */
@@ -73,7 +73,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
 
   def access(write : Boolean, address : Long, data : Array[Byte]) : Boolean = {
     val addressPatched = address - offset
-    if(write){
+    if(write) {
       val v = BigInt(data.map(_.toByte).reverse.toArray).toLong
       addressPatched.toInt match {
         case PUTC => {

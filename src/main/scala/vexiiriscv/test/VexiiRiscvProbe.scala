@@ -80,7 +80,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     this
   }
 
-  // Figure out the PMA (Physical Memory Attributes) from the plugins themself and notify the backends.
+  // Figure out the PMA (Physical Memory Attributes) from the plugins themselves and notify the backends.
   def autoRegions(): Unit = {
     cpu.host.services.foreach {
       case p: LsuCachelessPlugin => p.regions.foreach { region =>
@@ -575,7 +575,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       }
       if (checkLiveness && hart.lastCommitAt + livenessThreshold < cycle) {
         val status = if (hart.microOpAllocPtr != hart.microOpRetirePtr) f"waiting on uop 0x${hart.microOpRetirePtr}%X" else f"last uop id 0x${hart.lastUopId}%X"
-        simFailure(f"Vexii hasn't commited anything for too long, $status")
+        simFailure(f"Vexii hasn't committed anything for too long, $status")
       }
 
       while (hart.microOpRetirePtr != hart.microOpAllocPtr && hart.microOp(hart.microOpRetirePtr).done) {
