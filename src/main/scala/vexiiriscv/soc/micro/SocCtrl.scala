@@ -15,7 +15,7 @@ class SocCtrlParam {
     import parser._
     opt[Int]("system-frequency") action { (v, c) => systemFrequency = v Hz }
     opt[Boolean]("jtag-tap") action { (v, c) => withJtagTap = v  }
-    opt[Boolean]("tag-instruction") action { (v, c) => withJtagInstruction = v}
+    opt[Boolean]("jtag-instruction") action { (v, c) => withJtagInstruction = v}
   }
 }
 
