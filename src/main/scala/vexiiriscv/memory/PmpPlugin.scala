@@ -150,7 +150,7 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
       val isNapot = RegNext(cfg.kind(1))
       val isTor = RegNext(cfg.kind === 1)
       val napot = Napot(address.dropHigh(1)).dropLow(extraBit.toInt)
-      if(granularity == 4) when(!cfgNext.kind(0)){ napot.setAll() }
+      if(granularity == 4) when(!cfg.kind(0)){ napot.setAll() }
       val mask = RegNext(napot)
 
       val (cfgId, cfgOffset) = Riscv.XLEN.get match{
