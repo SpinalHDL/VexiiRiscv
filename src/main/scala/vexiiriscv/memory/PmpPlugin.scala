@@ -128,7 +128,10 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
         cfg := cfgNext
         cfg.write clearWhen (!cfgNext.read)
         if(!p.withTor) when(cfgNext.kind === 1) {cfg.kind := 0}
-        if(granularity > 4) when(cfgNext.kind === 2) {cfg.kind := 0}
+        if(!p.withNapot){
+          if(granularity > 4) when(cfgNext.kind === 2) {cfg.kind := 0}
+          when(cfgNext.kind === 3) {cfg.kind := 0}
+        }
       }
 
       if(i == 0){
