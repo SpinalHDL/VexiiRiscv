@@ -208,8 +208,8 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
 
         val instructionCheck = e.cfg.locked || instructionShouldHit
         val dataCheck = e.cfg.locked || dataShouldHitPort
-        val normalRwx = (!ps.read(permStage) || e.cfg.read || !instructionCheck) &&
-                        (((!ps.write(permStage) || e.cfg.write) && (!ps.execute(permStage) || e.cfg.execute)) || !dataCheck)
+        val normalRwx = (!ps.execute(permStage) || e.cfg.execute || !instructionCheck) &&
+                        (((!ps.write(permStage) || e.cfg.write) && (!ps.read(permStage) || e.cfg.read)) || !dataCheck)
         val PERM_OK = permStage.insert(normalRwx)
       }
       val NEED_HIT = permStage.insert(instructionShouldHit && ps.execute(permStage) || dataShouldHitPort && (ps.read(permStage) || ps.write(permStage)))
