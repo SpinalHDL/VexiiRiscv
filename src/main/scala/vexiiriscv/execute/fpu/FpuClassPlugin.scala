@@ -12,15 +12,15 @@ import vexiiriscv.riscv._
 
 /**
  * Provide the RISC-V fclass instruction, which allows to figure out the kind of a given floating point number
- * (normal, submornal, infinit, nan, ...)
+ * (normal, subnormal, infinite, nan, ...)
  */
 class FpuClassPlugin(val layer : LaneLayer,
-                     var wbAt : Int = 1 //Relax int ALU
-                    ) extends FiberPlugin{
+                     var wbAt : Int = 1 // Relax int ALU
+                    ) extends FiberPlugin {
   val p = FpuUtils
   val SEL = Payload(Bool())
 
-  val logic = during setup new Area{
+  val logic = during setup new Area {
     val fup = host[FpuUnpackerPlugin]
     val iwbp = host.find[IntFormatPlugin](p => p.lane == layer.lane)
     val buildBefore = retains(layer.lane.pipelineLock)
@@ -39,7 +39,7 @@ class FpuClassPlugin(val layer : LaneLayer,
     }
 
     add(Rvfd.FCLASS_S, FORMAT -> FpuFormat.FLOAT)
-    if(Riscv.RVD.get){
+    if(Riscv.RVD.get) {
       add(Rvfd.FCLASS_D, FORMAT -> FpuFormat.DOUBLE)
     }
 

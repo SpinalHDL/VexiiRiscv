@@ -13,13 +13,13 @@ import scala.collection.mutable.ArrayBuffer
 
 /**
  * This plugin provide an API which allows other plugins to generate an hardware interface to
- * writeback integer results back to the register file with some specified hardware formating :
+ * writeback integer results back to the register file with some specified hardware formatting :
  * - sign extension
  * - zero extension
  *
- * One nice thing is that the hardware which does the formating is shared between all the instructions which opperate in the same stage.
+ * One nice thing is that the hardware which does the formatting is shared between all the instructions which operate in the same stage.
  */
-class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin{
+class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin {
   withPrefix(lane.laneName)
   val elaborationLock = Retainer()
 
@@ -57,7 +57,7 @@ class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin{
     impl.setCompletion(portToSpec(port).ctrlId)
   }
 
-  val logic = during setup new Area{
+  val logic = during setup new Area {
     val eu = host.find[ExecuteLanePlugin](_ == lane)
     val wbp = host.find[WriteBackPlugin](p => p.lane == lane && p.rf == IntRegFile)
     val buildBefore = retains(eu.pipelineLock, wbp.elaborationLock)
@@ -80,7 +80,7 @@ class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin{
     val SIGNED = Payload(Bool())
 
     for(spec <- specs) {
-      for(ext <- spec.signExtends){
+      for(ext <- spec.signExtends) {
         ext.op.addDecoding(SIGNED -> True, WIDTH_ID ->  U(widthsToId(ext.bitId), wiw bits))
       }
       for (ext <- spec.zeroExtends) {

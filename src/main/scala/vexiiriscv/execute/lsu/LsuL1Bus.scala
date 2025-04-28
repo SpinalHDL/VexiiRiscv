@@ -16,7 +16,8 @@ import spinal.lib.bus.wishbone.{Wishbone, WishboneConfig}
  * Define the VexiiRiscv LsuL1 native memory bus.
  * Its memory coherency protocol is close to tilelink, but has a few minor twists :
  * - probe request may fail in Vexii, and so, need to be retried
- * - probe request which produce a permition downgrade will be acknoledged on the probe.rsp bus, but will also generate a write.cmd writeback (which can be data-less)
+ * - probe request which produce a permission downgrade will be acknowledged on the probe.rsp bus,
+ *   but will also generate a write.cmd writeback (which can be data-less)
  *
  * All memory transaction are assumed to be the size of a cache line, including probes.
  */

@@ -25,13 +25,13 @@ import scala.collection.mutable.ArrayBuffer
  * VexiiRiscvProbe can be used in a simulation to probe the activities of VexiiRiscv
  * and notifies a list of TraceBackend with what happened (ex commit, memory load, memory store, trap, ...)
  *
- * There is a few usefull backends :
+ * There is a few useful backends :
  * - RVLS to check that the simulated VexiiRiscv CPU is doing things right
  * - A file backend, to keep a text file trace of what happened (instead of having to look into a waveform)
  *
  * It also keep a trace of various performance metrics, as the IPC, branch miss rate, ...
  */
-class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvls : Boolean = true){
+class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvls : Boolean = true) {
   var enabled = true
   var trace = true
   var checkLiveness = true

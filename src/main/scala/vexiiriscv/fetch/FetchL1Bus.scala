@@ -33,7 +33,7 @@ case class FetchL1BusParam(physicalWidth : Int,
                            dataWidth : Int,
                            lineSize : Int,
                            refillCount : Int,
-                           withBackPresure : Boolean){
+                           withBackPresure : Boolean) {
   def toTileLinkM2sParameters(name : Nameable) = tilelink.M2sParameters(
     sourceCount = refillCount,
     support = M2sSupport(

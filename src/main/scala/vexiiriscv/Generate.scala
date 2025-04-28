@@ -33,7 +33,7 @@ object Generate extends App {
     param.addOptions(this)
     analysis.addOption(this)
     ParamSimple.addOptionRegion(this, regions)
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   if(regions.isEmpty) regions ++= ParamSimple.defaultPma
 
@@ -62,7 +62,7 @@ object GenerateTilelink extends App {
     opt[Int]("tl-sink-width") action { (v, c) => tlSinkWidth = v }
     param.addOptions(this)
     ParamSimple.addOptionRegion(this, regions)
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   if(regions.isEmpty) regions ++= ParamSimple.defaultPma
 

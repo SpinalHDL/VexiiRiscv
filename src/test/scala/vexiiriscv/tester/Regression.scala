@@ -148,6 +148,12 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
   }
 
+  dimensions += new Dimensions[ParamSimple]("cbm") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(!state.lsuL1Enable || state.lsuL1Coherency) return ""
+      List("", "--with-rvZcbm").randomPick(random)
+    }
+  }
 
 
   // Generate a bunch of random VexiiRiscv configuration and run the tests on them.
@@ -161,7 +167,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
     for (dim <- dimensions) {
       val arg = dim.getRandomPosition(p, random)
-      parser.parse(arg.replace("  ", " ").split("\\s+").filter(_.nonEmpty), Unit) match {
+      parser.parse(arg.replace("  ", " ").split("\\s+").filter(_.nonEmpty), ()) match {
         case Some(_) =>
         case None => throw new Exception("invalid regression test parameters")
       }

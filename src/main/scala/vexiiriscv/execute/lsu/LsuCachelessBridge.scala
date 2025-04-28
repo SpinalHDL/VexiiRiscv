@@ -17,7 +17,9 @@ import scala.collection.mutable.ArrayBuffer
  * Simple bridge to tilelink which avoid ordering issues by keeping track of all inflight memory transactions and halt
  * new request if a conflict is detected.
  */
-class LsuCachelessBusToTilelink(up : LsuCachelessBus, hashWidth : Int, trackHazard : Boolean = true) extends Area{
+class LsuCachelessBusToTilelink(up : LsuCachelessBus, 
+                                hashWidth : Int, 
+                                trackHazard : Boolean = true) extends Area {
   assert(!up.p.withAmo)
 
   val m2sParam = up.p.toTilelinkM2s(this)
@@ -79,7 +81,7 @@ class LsuCachelessBusToTilelink(up : LsuCachelessBus, hashWidth : Int, trackHaza
  * Bridge the LsuCachelessPlugin to a tilelink Node using LsuCachelessBusToTilelink
  */
 class LsuCachelessTileLinkPlugin(node : bus.tilelink.fabric.Node, hashWidth : Int = 8) extends FiberPlugin {
-  val logic = during build new Area{
+  val logic = during build new Area {
     val lsucp = host[LsuCachelessPlugin]
 
     node.m2s.forceParameters(lsucp.busParam.toTilelinkM2s(LsuCachelessTileLinkPlugin.this))

@@ -25,7 +25,7 @@ import vexiiriscv.tester.TestOptions
 //Note :  RS1, RS2, RD positions follow the RISC-V spec and are common for all instruction of the ISA
 
 
-object SimdAddPlugin{
+object SimdAddPlugin {
   //Define the instruction type and encoding that we wll use
   val ADD4 = IntRegFile.TypeR(M"0000000----------000-----0001011")
 }
@@ -88,7 +88,7 @@ object VexiiSimdAddGen extends App {
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
     param.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   val report = sc.generateVerilog {
     val pa = param.pluginsArea()
@@ -113,7 +113,7 @@ object VexiiSimdAddSim extends App{
     help("help").text("prints this usage text")
     testOpt.addOptions(this)
     param.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   println(s"With Vexiiriscv parm :\n - ${param.getName()}")
   val compiled = simConfig.compile {

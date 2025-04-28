@@ -7,15 +7,15 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
 
 /**
- * The aim of this plugin is mostly to serve as a RISC-V CPU parameter trampoline to globaly shared constants
+ * The aim of this plugin is mostly to serve as a RISC-V CPU parameter trampoline to globally shared constants
  */
 class RiscvPlugin(var xlen : Int,
                   var hartCount : Int,
                   var rvc: Boolean,
                   var rvf: Boolean,
-                  var rvd: Boolean) extends FiberPlugin{
+                  var rvd: Boolean) extends FiberPlugin {
 
-  val logic = during build new Area{
+  val logic = during build new Area {
     if(Riscv.RVC.isEmpty) Riscv.RVC.set(rvc)
     if(Riscv.RVM.isEmpty) Riscv.RVM.set(false)
     if(Riscv.RVF.isEmpty) Riscv.RVF.set(rvf)

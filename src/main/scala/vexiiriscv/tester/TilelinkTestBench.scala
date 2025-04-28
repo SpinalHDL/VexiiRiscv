@@ -185,7 +185,7 @@ object TlTbSim extends App{
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
     opt[String]("load-elf") action { (v, c) => elf = new File(v)}
-    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
+    opt[Seq[String]]("load-bin").unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
     opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("trace-spike") action { (v, c) => traceSpike = true }
     opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true}
@@ -199,7 +199,7 @@ object TlTbSim extends App{
     opt[Unit]("hub-enable") action { (v, c) => p.hubEnable = true }
 
     p.vexiiParam.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   sim.withConfig(SpinalConfig(dontCareGenAsZero = true))
 
