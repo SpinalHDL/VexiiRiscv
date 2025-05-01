@@ -716,7 +716,7 @@ class LsuPlugin(var layer : LaneLayer,
         val tag = p2t(LsuL1.PHYSICAL_ADDRESS)
         val hits = B(storeBuffer.slots.map(s => s.valid && s.tag === tag)) // Check if the current instruction collide with the store queue slots.
         val hit = hits.orR
-        val compatibleOp = FROM_LSU && l1.STORE && !ATOMIC && !onPma.IO // The current instruction may eventualy be pushed to the store queue
+        val compatibleOp = FROM_LSU && l1.STORE && !l1.ATOMIC && !onPma.IO // The current instruction may eventualy be pushed to the store queue
         val notFull = !storeBuffer.ops.full && (storeBuffer.slotsFree || hit)
         val allowed = notFull && compatibleOp // The current store can be pushed to the store queue
         val slotOh = hits | storeBuffer.slotsFreeFirst.andMask(!hit) // Find which store buffer slot to assign to the current store instruction
@@ -834,7 +834,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       // memory fences while the store buffer isn't drained are handled by retrying the fence later.
       val fenceTrap = withStoreBuffer generate new Area{
-        val valid = (ATOMIC || FENCE) && (!storeBuffer.empty || !onAddress0.STORE_BUFFER_EMPTY)
+        val valid = (l1.ATOMIC || FENCE) && (!storeBuffer.empty || !onAddress0.STORE_BUFFER_EMPTY)
         when(valid) {
           lsuTrap := True
           trapPort.exception := False
@@ -848,7 +848,7 @@ class LsuPlugin(var layer : LaneLayer,
         pendingWritebacks := (pendingWritebacks & LsuL1.WRITEBACK_BUSY) | LsuL1.WRITEBACK_BUSY.andMask(cmbTrigger)
         val pending = cmbTrigger || pendingWritebacks.orR
 
-        val valid = (ATOMIC || FENCE) && pending
+        val valid = (l1.ATOMIC || FENCE) && pending
         when(valid) {
           lsuTrap := True
           trapPort.exception := False
