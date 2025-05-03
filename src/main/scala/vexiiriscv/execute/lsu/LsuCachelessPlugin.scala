@@ -414,7 +414,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       if (withAmo) when(ATOMIC && !LOAD) {
         iwb.payload(0) := onJoin.SC_MISS
-        iwb.payload(7 downto 1) := 0
+        iwb.payload(7 downto 1) := 0 // other bits set to 0 by using `LoadSpec(8, ...)` for the instruction
       }
 
       fpwb.foreach{p =>
