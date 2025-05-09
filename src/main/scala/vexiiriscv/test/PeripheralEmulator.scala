@@ -103,13 +103,14 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
           val dut = data
           val ref = cmb.mem.readBytes(cmb.address, data.size)
           if((dut, ref).zipped.exists(_ != _)){
-            println("CMB write missmatch")
+            println("CMB write mismatch")
             simFailure()
           }
         }
         case _ => {
-          println(address)
-          simFailure()
+          val message = f"In PeripheralEmulator, invalid write at address 0x$address%x of value $data"
+          println(message)
+          simFailure(message)
         }
       }
     } else {
@@ -128,8 +129,9 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
         case CLINT_TIMEH => readLong(getClintTime() >> 32)
         case CMB_DATA => cmb.mem.readBytes(cmb.address, data.size, data, 0)
         case _ => {
-          println(address)
-          simFailure()
+          val message = f"In PeripheralEmulator, invalid read at address 0x$address%x"
+          println(message)
+          simFailure(message)
         }
       }
     }
