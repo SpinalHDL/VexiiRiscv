@@ -3,19 +3,23 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly}
+import spinal.lib.bus.amba4.axi.sim.{Axi4ReadOnlyMonitor, Axi4ReadOnlySlaveAgent, Axi4WriteOnlyMonitor, Axi4WriteOnlySlaveAgent}
 import spinal.lib.{CheckSocketPort, DoCmd}
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
+import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.com.jtag.sim.{JtagRemote, JtagTcp}
 import spinal.lib.misc.Elf
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import spinal.lib.system.tag.{MemoryTransfers, PmaRegion}
+import spinal.lib.wishbone.sim.{WishboneDriver, WishboneMonitor, WishboneTransaction}
 import vexiiriscv._
 import vexiiriscv.execute.cfu.{CfuPlugin, CfuRsp}
-import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuL1, LsuL1Plugin, LsuL1TlPlugin, LsuPlugin}
+import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuCachelessWishbonePlugin, LsuL1, LsuL1Axi4Plugin, LsuL1Plugin, LsuL1TlPlugin, LsuL1WishbonePlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
 import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
 import vexiiriscv.riscv.Riscv
@@ -32,12 +36,12 @@ import scala.collection.mutable.ArrayBuffer
 /**
  * This is the main VexiiRiscv testbench, you can invoke it from command line and is based on the TestOptions class
  */
-object TestBench extends App{
+object TestBench extends App {
   doIt()
 
   def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
     val ret = param.plugins()
-    ret.collectFirst{case p : LsuL1Plugin => p}.foreach{p =>
+    if(param.lsuL1Bus == LsuL1BusEnum.native) ret.collectFirst{case p : LsuL1Plugin => p}.foreach{ p =>
       p.ackIdWidth = 8
       p.probeIdWidth = log2Up(p.writebackCount)
       ret  += new LsuL1TlPlugin
@@ -97,7 +101,7 @@ object TestBench extends App{
       help("help").text("prints this usage text")
       testOpt.addOptions(this)
       param.addOptions(this)
-    }.parse(args, Unit).nonEmpty)
+    }.parse(args, ()).nonEmpty)
 
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
@@ -111,9 +115,9 @@ object TestBench extends App{
 /**
  * This class store a bunch of options about how to run a VexiiRiscv testbench, including which binaries need to be loaded in memory.
  *
- * It also include a "test" function actualy contains the simulation code itself, and when invoked will run the whole simulation.
+ * It also include a "test" function actually contains the simulation code itself, and when invoked will run the whole simulation.
  */
-class TestOptions{
+class TestOptions {
   var dualSim = false // Double simulation, one ahead of the other which will trigger wave capture of the second simulation when it fail
   var traceWave = false
   var traceKonata = false
@@ -166,21 +170,21 @@ class TestOptions{
     opt[Long]("fail-after") action { (v, c) => failAfter = Some(v) }
     opt[Long]("pass-after") action { (v, c) => passAfter = Some(v) }
     opt[Double]("sim-speed-printer") action { (v, c) => simSpeedPrinter = Some(v) }
-    opt[Seq[String]]("load-bin") unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
-    opt[Seq[String]]("load-u32") unbounded() action { (v, c) => u32s += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Integer.parseInt(v(1).replace("0x", ""), 16) }
-    opt[String]("load-elf") unbounded() action { (v, c) => elfs += new File(v) }
+    opt[Seq[String]]("load-bin").unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
+    opt[Seq[String]]("load-u32").unbounded() action { (v, c) => u32s += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Integer.parseInt(v(1).replace("0x", ""), 16) }
+    opt[String]("load-elf").unbounded() action { (v, c) => elfs += new File(v) }
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
-    opt[Double]("ibus-ready-factor") unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
-    opt[Double]("dbus-ready-factor") unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
-    opt[Unit]("jtag-remote") unbounded() action { (v, c) => jtagRemote = true }
+    opt[Double]("ibus-ready-factor").unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
+    opt[Double]("dbus-ready-factor").unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
+    opt[Unit]("jtag-remote").unbounded() action { (v, c) => jtagRemote = true }
     opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v; ibusBaseLatency = v }
     FsmOption(parser, fsmTasksGen)
     opt[Int]("seed") action { (v, c) => seed = v }
     opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
 
-    opt[String]("spawn-process") unbounded() action { (v, c) => spawnProcess = Some(v) }
+    opt[String]("spawn-process").unbounded() action { (v, c) => spawnProcess = Some(v) }
   }
 
   def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
@@ -219,9 +223,9 @@ class TestOptions{
     }
 
     val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), "konata.log")))
-    delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registred last
+    delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registered last
 
-    // Collect traces from the CPUs behaviour
+    // Collect traces from the CPUs behavior
     val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
     if (withRvlsCheck) probe.add(rvls)
     probe.enabled = withProbe
@@ -310,17 +314,66 @@ class TestOptions{
     val priv = host.hart(0)
     val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
       override def getClintTime(): Long = probe.cycle
+      cmb.mem = mem
     }
     peripheral.withStdIn = withStdIn
 
 
     var forceProbe = Option.empty[Long => Unit]
 
-    val fclp = dut.host.get[fetch.FetchCachelessPlugin].map { p =>
+    def mapFetchAxi4(axi : Axi4ReadOnly): Unit = {
+      val agent = new Axi4ReadOnlySlaveAgent(axi.ar, axi.r, cd, withReadInterleaveInBurst = false) {
+        arDriver.setFactor(ibusReadyFactor)
+        rDriver.setFactor(ibusReadyFactor)
+
+        override def readByte(address: BigInt, id : Int): Byte = {
+          val addressLong = address.toLong
+          axi.r.resp #= (addressLong < 0x20000000).mux(3, 0)
+          mem.read(addressLong)
+        }
+      }
+      agent.arDriver.setFactor(ibusReadyFactor)
+      agent.rDriver.setFactor(ibusReadyFactor)
+    }
+
+    val fetchCachelessAxi4 = dut.host.get[fetch.FetchCachelessAxi4Plugin].map { p =>
+      mapFetchAxi4(p.logic.bridge.axi)
+    }
+    val fetchCachedAxi4 = dut.host.get[fetch.FetchL1Axi4Plugin].map { p =>
+      mapFetchAxi4(p.logic.axi)
+    }
+
+    def mapFetchWishbone(bus : Wishbone): Unit = {
+      val addressShift = log2Up(bus.config.dataWidth/8)
+      cd.onSamplings{
+        delayed(1) {
+          if (simRandom.nextFloat() < ibusReadyFactor && bus.CYC.toBoolean && bus.STB.toBoolean) {
+            val addr = bus.ADR.toLong << addressShift
+            val bytes = mem.readBytes(addr, bus.config.dataWidth / 8)
+            val data = BigInt(1, bytes.reverse)
+            bus.DAT_MISO #= data
+            bus.ERR #= addr < 0x20000000
+            bus.ACK #= true
+          } else {
+            bus.ACK #= false
+            bus.ERR #= false
+          }
+        }
+      }
+    }
+
+    val fetchCachelessWishbone = dut.host.get[fetch.FetchCachelessWishbonePlugin].map { p =>
+      mapFetchWishbone(p.logic.bridge.bus)
+    }
+    val fetchCachedWishbone = dut.host.get[fetch.FetchL1WishbonePlugin].map { p =>
+      mapFetchWishbone(p.logic.bus)
+    }
+
+    val fetchCachelessNative = dut.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
-      case class Cmd(address: Long, id: Int)
+      case class Cmd(address : Long, id : Int)
       val pending = mutable.ArrayBuffer[Cmd]()
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>
@@ -341,7 +394,7 @@ class TestOptions{
       rspDriver.setFactor(ibusReadyFactor)
     }
 
-    val fl1p = dut.host.get[fetch.FetchL1Plugin].map { p =>
+    val fetchCachedNative = dut.host.get[fetch.FetchL1Plugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
@@ -380,13 +433,117 @@ class TestOptions{
       rspDriver.setFactor(ibusReadyFactor)
     }
 
-    val lsclp = dut.host.get[execute.lsu.LsuCachelessBusProvider].map { p =>
+
+
+    def doRead(address : Long, bytes : Int, dst : Array[Byte], offset : Int, io : Boolean): Boolean = {
+      if (io) {
+        peripheral.access(false, address, dst)
+      } else {
+        mem.readBytes(address, bytes, dst, offset)
+        false
+      }
+    }
+
+    def doWrite(address : Long, src : Array[Byte], io : Boolean): Boolean = {
+      if (io) {
+        peripheral.access(true, address, src)
+      } else {
+        mem.write(address, src)
+        false
+      }
+    }
+
+    val lsuCachelessAxi = dut.host.get[LsuCachelessAxi4Plugin].map { p =>
+      val axi = p.logic.axi
+      val readAgent = new Axi4ReadOnlySlaveAgent(axi, cd, withReadInterleaveInBurst = false, withArReordering = true){
+        arDriver.setFactor(dbusReadyFactor)
+        rDriver.setFactor(dbusReadyFactor)
+        val addresses = Array.fill(64)(0l)
+        var bytes = Array.fill(64)(Array.fill(8)(0.toByte))
+        override def readByte(address: BigInt, id : Int) : Byte = {
+          val offset = (address-addresses(id)).toInt
+          if(offset < 0) return simRandom.nextInt().toByte
+          bytes(id) (offset)
+        }
+
+        override def onReadStart(address: BigInt, size: Int, length: Int, cache : Int, id : Int) = {
+          assert(length == 0)
+          doRead(address.toLong, 1 << size, bytes(id) , 0, cache == 0)
+          addresses(id) = address.toLong
+        }
+      }
+      val writeMonitor = new Axi4WriteOnlyMonitor(axi, cd){
+        val addresses = Array.fill(64)(0l)
+        val caches = Array.fill(64)(0l)
+        var bytes = Array.fill[Array[Byte]](64)(null)
+        override def onWriteStart(address: BigInt, id: Int, size: Int, len: Int, burst: Int, cache : Int) = {
+          addresses(id) = address.toLong
+          caches(id) = cache.toLong
+          bytes(id) = Array.fill(1 << size)(0.toByte)
+        }
+        override def onWriteByte(address: BigInt, data: Byte, id: Int) = {
+          bytes(id)(address-addresses(id) toInt) = data
+        }
+        override def onWriteLast(id : Int) = {
+          doWrite(addresses(id), bytes(id), caches(id) == 0)
+        }
+      }
+      val writeAgent = new Axi4WriteOnlySlaveAgent(axi, cd){
+        awDriver.setFactor(dbusReadyFactor)
+        wDriver.setFactor(dbusReadyFactor)
+        bDriver.setFactor(dbusReadyFactor)
+      }
+    }
+
+    val lsuCachelessWishbone = dut.host.get[LsuCachelessWishbonePlugin].map { p =>
+      val bus = p.logic.wishbone
+      val addressShift = log2Up(bus.config.dataWidth / 8)
+      cd.onSamplings {
+        delayed(1) {
+          if (simRandom.nextFloat() < ibusReadyFactor && bus.CYC.toBoolean) {
+            val mask = bus.SEL.toInt
+            val byteOffset = Integer.numberOfTrailingZeros(mask)
+            val size = Integer.numberOfTrailingZeros((~mask) >> byteOffset)
+            val addr = (bus.ADR.toLong << addressShift) + byteOffset
+            val io = addr >= 0x10000000 && addr < 0x20000000
+            if(bus.WE.toBoolean){
+              val bytes = bus.DAT_MOSI.toBytes.drop(byteOffset).take(size)
+              doWrite(addr, bytes, io)
+            } else {
+              val bytes = new Array[Byte](bus.config.dataWidth/8)
+              doRead(addr, size, bytes, byteOffset, io)
+              val data = BigInt(1, bytes.reverse)
+              bus.DAT_MISO #= data
+            }
+            bus.ERR #= addr < 0x10000000
+            bus.ACK #= true
+          } else {
+            bus.ACK #= false
+            bus.ERR #= false
+          }
+        }
+      }
+    }
+
+
+    val lsuCachelessNative = dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).foreach { p =>
       val bus = p.getLsuCachelessBus()
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
       var reserved = false
 
-      case class Access(id : Int, write : Boolean, address: Long, data : Array[Byte], bytes : Int, io : Boolean, hartId : Int, uopId : Int, amoEnable : Boolean, amoOp : Int)
+      case class Access(
+       id : Int,
+       write : Boolean,
+       address: Long,
+       data : Array[Byte],
+       bytes : Int,
+       io : Boolean,
+       hartId : Int,
+       uopId : Int,
+       amoEnable : Boolean,
+       amoOp : Int
+     )
       val pending = mutable.Queue[Access]()
 
       val cmdMonitor = StreamMonitor(bus.cmd, cd) { p =>
@@ -414,23 +571,12 @@ class TestOptions{
           val cmd = pending.dequeue()
 
           def read(dst : Array[Byte], offset : Int): Boolean = {
-            if (cmd.io) {
-              assert(!cmd.amoEnable, "io amo not supported in testbench yet")
-              peripheral.access(false, cmd.address, dst)
-            } else {
-              mem.readBytes(cmd.address, cmd.bytes, dst, offset)
-              false
-            }
+            assert(!(cmd.amoEnable && cmd.io), "io amo not supported in testbench yet")
+            doRead(cmd.address, cmd.bytes, dst, offset, cmd.io)
           }
-
           def write(): Boolean = {
-            if (cmd.io) {
-              assert(!cmd.amoEnable, "io amo not supported in testbench yet")
-              peripheral.access(cmd.write, cmd.address, cmd.data)
-            } else {
-              mem.write(cmd.address, cmd.data)
-              false
-            }
+            assert(!(cmd.amoEnable && cmd.io), "io amo not supported in testbench yet")
+            doWrite(cmd.address, cmd.data, cmd.io)
           }
 
           val bytes = new Array[Byte](p.p.dataWidth / 8)
@@ -497,20 +643,55 @@ class TestOptions{
 
       cmdReady.setFactor(dbusReadyFactor)
       rspDriver.setFactor(dbusReadyFactor)
-
-
-
-      val hal = new FsmHal{
-        override def next(): Unit = {
-          if (fsmTasks.nonEmpty) fsmTasks.dequeue()
-          if (fsmTasks.nonEmpty) fsmTasks.head.start(this)
-        }
-        override def putc(value: String): Unit = peripheral.getcQueue ++= value.map(_.toByte)
-      }
-      if (fsmTasks.nonEmpty) fsmTasks.head.start(hal)
-      peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
     }
 
+
+    val lsuCachedAxi = dut.host.get[LsuL1Axi4Plugin].map { p =>
+      val axi = p.logic.axi
+
+      val readAgent = new Axi4ReadOnlySlaveAgent(axi, cd, withReadInterleaveInBurst = false, withArReordering = true){
+        arDriver.setFactor(dbusReadyFactor)
+        rDriver.setFactor(dbusReadyFactor)
+        override def readByte(address: BigInt, id : Int) : Byte = {
+          mem.readByteAsInt(address.toLong).toByte
+        }
+      }
+      val writeMonitor = new Axi4WriteOnlyMonitor(axi, cd){
+        override def onWriteByte(address: BigInt, data: Byte, id: Int) = {
+          mem.write(address.toLong, data)
+        }
+      }
+      val writeAgent = new Axi4WriteOnlySlaveAgent(axi, cd){
+        awDriver.setFactor(dbusReadyFactor)
+        wDriver.setFactor(dbusReadyFactor)
+        bDriver.setFactor(dbusReadyFactor)
+      }
+    }
+    val lsuCacheedWishbone = dut.host.get[LsuL1WishbonePlugin].map { p =>
+      val bus = p.logic.bus
+      val addressShift = log2Up(bus.config.dataWidth / 8)
+      cd.onSamplings {
+        delayed(1) {
+          if (simRandom.nextFloat() < ibusReadyFactor && bus.CYC.toBoolean) {
+            val mask = bus.SEL.toInt
+            val addr = (bus.ADR.toLong << addressShift)
+            if(bus.WE.toBoolean){
+              val bytes = bus.DAT_MOSI.toBytes
+              mem.write(addr, bytes)
+            } else {
+              val bytes = mem.readBytes(addr, bus.config.dataWidth/8)
+              val data = BigInt(1, bytes.reverse)
+              bus.DAT_MISO #= data
+            }
+            bus.ERR #= addr < 0x10000000
+            bus.ACK #= true
+          } else {
+            bus.ACK #= false
+            bus.ERR #= false
+          }
+        }
+      }
+    }
 
     val lsul1 = dut.host.get[LsuL1TlPlugin] map (p => new Area{
       val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
@@ -539,7 +720,17 @@ class TestOptions{
       }
     })
 
-    dut.host.services.foreach{
+    val hal = new FsmHal {
+      override def next(): Unit = {
+        if (fsmTasks.nonEmpty) fsmTasks.dequeue()
+        if (fsmTasks.nonEmpty) fsmTasks.head.start(this)
+      }
+      override def putc(value: String): Unit = peripheral.getcQueue ++= value.map(_.toByte)
+    }
+    if (fsmTasks.nonEmpty) fsmTasks.head.start(hal)
+    peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
+
+    dut.host.services.foreach {
       case p : EmbeddedRiscvJtag => {
         p.debugCd.resetSim #= true
         delayed(20) (p.debugCd.resetSim #= false)
@@ -608,7 +799,7 @@ class TestOptions{
       }
     }
 
-    if(printStats) onSimEnd{
+    if(printStats) onSimEnd {
       println(probe.getStats())
     }
   }

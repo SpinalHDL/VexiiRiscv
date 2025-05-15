@@ -26,18 +26,18 @@ class Src1Keys extends SrcKeys
 class Src2Keys extends SrcKeys
 class OpKeys   extends SrcKeys
 object SrcKeys extends AreaObject {
-  val Op = new Area{
+  val Op = new Area {
     val ADD = new OpKeys
     val SUB = new OpKeys
     val SRC1 = new OpKeys
     val LESS = new OpKeys
     val LESS_U = new OpKeys
   }
-  val SRC1 = new Area{
+  val SRC1 = new Area {
     val RF = new Src1Keys
     val U  = new Src1Keys
   }
-  val SRC2 = new Area{
+  val SRC2 = new Area {
     val RF = new Src2Keys
     val I  = new Src2Keys
     val S  = new Src2Keys
@@ -46,17 +46,19 @@ object SrcKeys extends AreaObject {
 }
 
 /**
- * This plugin takes the RS1/RS2/Instruction values early in the execute pipeline and produce SRC1/SRC2/ADD_SUB/LESS values out of it.
+ * This plugin takes the RS1/RS2/Instruction values early in the execute pipeline and produce SRC1/SRC2/ADD_SUB/LESS
+ * values out of it.
  *
- * Other plugins can specify what processing they are interrested for SRC1/SRC2 in function of which instruction is being executed.
- * SRC1/SRC2 are muxed values between RS1/RS2 and literals in the instruction.
- * ADD_SUB can be either the addition or substraction between SRC1 and SRC2
- * LESS specifies if SRC1 is less than SRC2 (unsigned or signed comparison)
+ * Other plugins can specify what processing they are interested for SRC1/SRC2 in function of which instruction is
+ * being executed.
+ *  - SRC1/SRC2 are muxed values between RS1/RS2 and literals in the instruction
+ *  - ADD_SUB can be either the addition or subtraction between SRC1 and SRC2
+ *  - LESS specifies if SRC1 is less than SRC2 (unsigned or signed comparison)
  */
 class SrcPlugin(val layer : LaneLayer,
                 var executeAt : Int,
                 var relaxedRs: Boolean,
-                var splitedAddSub : Boolean = false) extends FiberPlugin{
+                var splitedAddSub : Boolean = false) extends FiberPlugin {
   val elaborationLock = Retainer()
   withPrefix(layer.name)
 
@@ -80,7 +82,7 @@ class SrcPlugin(val layer : LaneLayer,
   val ADD_SUB = Payload(SInt(Riscv.XLEN bits))
   val LESS = Payload(Bool())
 
-  val logic = during setup new Area{
+  val logic = during setup new Area {
     val eu = host.find[ExecuteLanePlugin](_.laneName == layer.laneName)
     val buildBefore = retains(eu.pipelineLock)
     awaitBuild()
@@ -107,7 +109,7 @@ class SrcPlugin(val layer : LaneLayer,
     for((impl, keys) <- spec){
       val REVERT, ZERO = Payload(Bool())
       impl.addDecoding(
-        keys.toSeq.flatMap{
+        keys.toSeq.flatMap {
           case sk.Op.SRC1     => List(ss.REVERT -> False, ss.ZERO   -> True)
           case sk.Op.ADD      => List(ss.REVERT -> False, ss.ZERO   -> False)
           case sk.Op.SUB      => List(ss.REVERT -> True,  ss.ZERO   -> False)
@@ -119,7 +121,7 @@ class SrcPlugin(val layer : LaneLayer,
       )
     }
 
-    val src = new eu.Execute(executeAt-relaxedRs.toInt){
+    val src = new eu.Execute(executeAt-relaxedRs.toInt) {
       def get(rs : RfRead) = relaxedRs match {
         case false => up(eu(IntRegFile, rs))
         case true  => down(eu(IntRegFile, rs))
@@ -140,7 +142,7 @@ class SrcPlugin(val layer : LaneLayer,
     }
 
 
-    val addsub = opKeys.nonEmpty generate new eu.Execute(executeAt){
+    val addsub = opKeys.nonEmpty generate new eu.Execute(executeAt) {
       val alwaysAdd = !has(sk.Op.SUB, sk.Op.LESS, sk.Op.LESS_U)
       val alwaysSub = !has(sk.Op.ADD)
       val withRevert = !alwaysAdd && !alwaysSub
@@ -151,7 +153,7 @@ class SrcPlugin(val layer : LaneLayer,
 
       def ifElseMap[T](cond : Boolean)(value : T)(body : T => T) : T = if(cond) value else body(value)
 
-      val combined = !splitedAddSub generate new Area{
+      val combined = !splitedAddSub generate new Area {
         val rs2Patched =  CombInit(ifElseMap(!alwaysSub)(this(SRC2))(~_))
         if(withRevert) when(ss.REVERT){ rs2Patched :=  ~SRC2  }
         if(has(sk.Op.SRC1)) when(ss.ZERO){ rs2Patched := 0 }

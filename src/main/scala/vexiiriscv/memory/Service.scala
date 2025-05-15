@@ -59,7 +59,7 @@ trait AddressTranslationService extends Area {
 
   val regionRetainer = Retainer()
 
-  // new Address translation interface are directly binded into a provided pipeline (nodes)
+  // New Address translation interfaces are directly bound into a provided pipeline (nodes)
   def newTranslationPort(nodes: Seq[NodeBaseApi],
                          rawAddress: Payload[UInt],
                          forcePhysical: Payload[Bool],
@@ -74,7 +74,7 @@ trait AddressTranslationService extends Area {
   def newInvalidationPort() = invalidationPorts.addRet(AddressTranslationInvalidation())
 }
 
-class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) extends Area{
+class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) extends Area {
   val keys = new Area {
     setName("MMU")
     val TRANSLATED = Payload(PHYSICAL_ADDRESS)

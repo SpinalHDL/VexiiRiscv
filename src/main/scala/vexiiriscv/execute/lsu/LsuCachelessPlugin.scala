@@ -22,26 +22,28 @@ import vexiiriscv.execute._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-/**
- * Implements an LSU without any cache.
- * The tricky thing about this implementation, is the withSpeculativeLoadFlush parameter, which allows the plugin
- * to speculatively emit non-io memory load to the memory system, even if the load result may be trashed away.
- *
- * The plugin does support MMU aswell as atomic instruction. This allows to run linux without data cache :D.
- * This is usefull from a verification perspective.
- *
- * To get good timings on FPGA in a SoC, consider setting :
- * - forkAt = 1
- * - joinAt = 2
- *
- * This allows the memory bus CMD to have very relaxed timings by avoiding the XLEN bits adder aswell as the PMA data path.
- * The down side is that the memory bus respons data path timings are stressed, but as this only impact the data path (no control path),
- * it seems to be generaly better.
- */
-
+/** Implements an LSU without any cache.
+  * 
+  * The tricky thing about this implementation, is the withSpeculativeLoadFlush parameter, which 
+  * allows the plugin to speculatively emit non-io memory load to the memory system, even if the load
+  * result may be trashed away.
+  *
+  * The plugin does support MMU as well as atomic instructions. This allows to run linux without data
+  * cache :D. This is useful from a verification perspective.
+  *
+  * To get good timings on FPGA in a SoC, consider setting :
+  * - forkAt = 1
+  * - joinAt = 2
+  *
+  * This allows the memory bus CMD to have very relaxed timings by avoiding the XLEN bits adder
+  * as well as the PMA data path. The down side is that the memory bus response data path timings
+  * are stressed, but as this only impact the data path (no control path), it seems to be generally better.
+  */
 class LsuCachelessPlugin(var layer : LaneLayer,
                          var withAmo : Boolean,
-                         var withSpeculativeLoadFlush : Boolean, //WARNING, the fork cmd may be flushed out of existance before firing if any plugin doesn't flush from the first cycle after !freeze
+                         // WARNING, the fork cmd may be flushed out of existence before firing if 
+                         // any plugin doesn't flush from the first cycle after !freeze.
+                         var withSpeculativeLoadFlush : Boolean,
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
                          var pmpPortParameter : Any,
@@ -50,7 +52,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          var pmaAt : Int = 0,
                          var forkAt: Int = 0,
                          var joinAt: Int = 1,
-                         var wbAt: Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider{
+                         var wbAt: Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider {
 
   val WITH_RSP, WITH_ACCESS, FENCE = Payload(Bool())
   override def accessRefillCount: Int = 0
@@ -67,7 +69,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     pendingMax = bufferSize
   )
 
-  val logic = during setup new Area{
+  val logic = during setup new Area {
     val elp = host.find[ExecuteLanePlugin](_ == layer.lane)
     val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
     val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
@@ -105,7 +107,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         case None =>
       }
 
-      op.mayFlushUpTo(forkAt) // page fault / trap
+      op.mayFlushUpTo(forkAt) // Page fault / trap
       withSpeculativeLoadFlush match {
         case true =>
         case false => op.dontFlushFrom(forkAt + 1)
@@ -118,7 +120,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       spec.setCompletion(wbAt)
     }
 
-    for(store <- frontend.writingMem ++ amos){
+    for(store <- frontend.writingMem ++ amos) {
       val op = layer(store)
       op.mayFlushUpTo(forkAt)
       op.addRsSpec(RS2, 0)
@@ -148,18 +150,16 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     accessRetainer.await()
 
-    val onFirst = new elp.Execute(0){
+    val onFirst = new elp.Execute(0) {
       val WRITE_DATA = Payload(Bits(LSLEN bits))
       WRITE_DATA.assignDontCare()
-      WRITE_DATA(0, XLEN bits) := up(elp(IntRegFile, riscv.RS2)) //Workaround for op.addRsSpec(RS2, 0) (TODO) ?
-      if(Riscv.withFpu) when(FLOAT){
+      WRITE_DATA(0, XLEN bits) := up(elp(IntRegFile, riscv.RS2)) // Workaround for op.addRsSpec(RS2, 0) (TODO) ?
+      if(Riscv.withFpu) when(FLOAT) {
         WRITE_DATA(0, FLEN bits) := up(elp(FloatRegFile, riscv.RS2))
       }
     }
 
-
-
-    val onAddress = new addressCtrl.Area{
+    val onAddress = new addressCtrl.Area {
       val RAW_ADDRESS = insert(srcp.ADD_SUB.asUInt)
 
       val translationPort = ats.newTranslationPort(
@@ -184,7 +184,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       storageSpec = null
     )
 
-    val onPma = new elp.Execute(pmaAt){
+    val onPma = new elp.Execute(pmaAt) {
       val port = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN / 8)).map(1 << _), List(PmaLoad, PmaStore))
       port.cmd.address := tpk.TRANSLATED
       port.cmd.size := SIZE.asBits
@@ -207,20 +207,20 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     }
 
 
-    val onFork = new forkCtrl.Area{
+    val onFork = new forkCtrl.Area {
       val RS2 = elp(IntRegFile, riscv.RS2)
 
       val skip = False
 
-      val askFenceReg = RegNextWhen(isValid && SEL && ATOMIC, !elp.isFreezed()) init(False) //Implement atomic fencing (pessimistic)
+      val askFenceReg = RegNextWhen(isValid && SEL && ATOMIC, !elp.isFreezed()) init(False) // Implement atomic fencing (pessimistic)
       val askFence = isValid && (FENCE || SEL && ATOMIC || askFenceReg)
-      val doFence = askFence && cmdInflights //Not ideal, because if the first cycle is freezed, then it will also consider the send cmd as something to fence
+      val doFence = askFence && cmdInflights // Not ideal, because if the first cycle is freezed, then it will also consider the send cmd as something to fence
 
       val cmdCounter = Counter(bufferSize, bus.cmd.fire)
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
       bus.cmd.assertPersistence()
       bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip && !doFence
-      bus.cmd.id := cmdCounter
+      bus.cmd.id := cmdCounter  
       bus.cmd.write := STORE
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>
@@ -258,7 +258,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      if(withSpeculativeLoadFlush) when(LOAD && onPma.RSP.io && elp.atRiskOfFlush(forkAt)){
+      if(withSpeculativeLoadFlush) when(LOAD && onPma.RSP.io && elp.atRiskOfFlush(forkAt)) {
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
@@ -298,7 +298,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         trapPort.code := TrapReason.REDO
       }
 
-      when(onAddress.MISS_ALIGNED){
+      when(onAddress.MISS_ALIGNED) {
         skip := True
         trapPort.exception := True
         trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(onAddress.MISS_ALIGNED).resized
@@ -312,7 +312,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         trapPort.tval(triggerId.bitsRange) := B(OHToUInt(onTrigger.HITS))
       }
 
-      when(isValid && SEL && skip){
+      when(isValid && SEL && skip) {
         trapPort.valid := True
         flushPort.valid := True
         bypass(Global.TRAP) := True
@@ -320,7 +320,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
 
       WITH_RSP := bus.cmd.valid || cmdSent
-      val access = dbusAccesses.nonEmpty generate new Area{
+      val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
         val allowIt = !(isValid && SEL) && !cmdSent
         val cmd = dbusAccesses.head.cmd
@@ -328,7 +328,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
         val accessSent = RegInit(False) setWhen(cmd.fire) clearWhen(!elp.isFreezed())
         WITH_ACCESS := accessSent || cmd.fire
-        when(allowIt){
+        when(allowIt) {
           bus.cmd.valid := cmd.valid
           bus.cmd.write := False
           bus.cmd.address := cmd.address
@@ -340,8 +340,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
     }
 
-    val onJoin = new joinCtrl.Area{
-      val buffers = List.fill(bufferSize)(new Area{
+    val onJoin = new joinCtrl.Area {
+      val buffers = List.fill(bufferSize)(new Area {
         val valid = RegInit(False)
         val inflight = RegInit(False)
         val payload = Reg(LsuCachelessRsp(bus.p, false))
@@ -366,7 +366,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val rspCounter = Counter(bufferSize, pop)
       val reader = buffers.reader(rspCounter)
       val readerValid = reader(_.valid)
-      when(pop){
+      when(pop) {
         buffers.onSel(rspCounter)(_.valid := False)
       }
 
@@ -399,7 +399,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val rspShifted = Bits(LSLEN bits)
       val wordBytes = LSLEN/8
 
-      //Generate minimal mux to move from a wide aligned memory read to the register file shifter representation
+      // Generate minimal mux to move from a wide aligned memory read to the register file shifter representation
       for (i <- 0 until wordBytes) {
         val srcSize = 1 << (log2Up(wordBytes) - log2Up(i + 1))
         val srcZipped = rspSplits.zipWithIndex.filter { case (v, b) => b % (wordBytes / srcSize) == i }
@@ -414,7 +414,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       if (withAmo) when(ATOMIC && !LOAD) {
         iwb.payload(0) := onJoin.SC_MISS
-        iwb.payload(7 downto 1) := 0
+        iwb.payload(7 downto 1) := 0 // other bits set to 0 by using `LoadSpec(8, ...)` for the instruction
       }
 
       fpwb.foreach{p =>

@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        scala_version: ["2.12.18", "2.13.12"]
 
     runs-on: ubuntu-22.04
 
@@ -29,15 +32,15 @@ jobs:
         run: source .github/workflows/tools.sh && install_packages
 
       - name: Cache pip
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-v2
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
       - name: Cache SBT
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.ivy2/cache
@@ -46,11 +49,11 @@ jobs:
 
       - name: Cache tools
         id: tools
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/tools
-          key: ${{ runner.os }}-tools_v7
+          key: ${{ runner.os }}-tools_v8
 
       - name: Setup env
         run: echo "$HOME/tools/bin" >> $GITHUB_PATH
@@ -63,7 +66,7 @@ jobs:
         run: source .github/workflows/tools.sh && install_uncached
 
       - name: Compile
-        run: sbt clean compile
+        run: sbt ++${{ matrix.scala_version }} clean compile
 
 #      - name: Test
 #        run: NAXRISCV_REGRESSION_THREAD_COUNT=1 SBT_OPTS="-Xmx2G -XX:+UseConcMarkSweepGC -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=2G -Xss2M  -Duser.timezone=GMT" sbt test

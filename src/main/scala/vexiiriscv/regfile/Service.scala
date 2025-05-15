@@ -13,8 +13,8 @@ case class RegFilePortParam(addressWidth: Int,
                             uopIdWidth : Int)
 
 case class RegFileIo( rfpp : RegFilePortParam,
-                      readsParameter: Seq[RegFileReadParameter],
-                      writesParameter: Seq[RegFileWriteParameter]
+                      readsParameter: scala.collection.Seq[RegFileReadParameter],
+                      writesParameter: scala.collection.Seq[RegFileWriteParameter]
                     ) extends Bundle{
   val writes = Vec(writesParameter.map(p => slave(RegFileWrite(rfpp, p.withReady))))
   val reads = Vec(readsParameter.map(p => slave(RegFileRead(rfpp, p.withReady))))
@@ -75,7 +75,7 @@ trait RegfileService {
   def newRead(withReady : Boolean) : RegFileRead
   def newWrite(withReady : Boolean, sharingKey : Any = null, priority : Int = 0) : RegFileWrite
 
-  def getWrites() : Seq[RegFileWrite] // Used in the hardware simulation to probe all the register writes of the CPU.
+  def getWrites() : scala.collection.Seq[RegFileWrite] // Used in the hardware simulation to probe all the register writes of the CPU.
 }
 
 

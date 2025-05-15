@@ -11,7 +11,7 @@ import java.io.{File, PrintWriter}
 import scala.collection.mutable
 
 
-object Bsp{
+object Bsp {
   def apply(target : File, vexii: TilelinkVexiiRiscvFiber): Unit = {
 
     target.mkdirs()
@@ -52,7 +52,7 @@ object MicroSocGen extends App{
 
   assert(new scopt.OptionParser[Unit]("MicroSoc") {
     p.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
   p.legalize()
 
   val report = SpinalVerilog(new MicroSoc(p))

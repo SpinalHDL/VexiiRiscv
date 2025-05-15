@@ -78,6 +78,8 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       }
     )
   )
+  addDim("fetchL1AsyncTag", List("", "--fetch-l1-tags-read-async"))
+
   addDim("debugger", List("", "--debug-privileged --debug-triggers 4 --debug-triggers-lsu --debug-jtag-tap"))
   addDim("fl1rw", List("", "--fetch-reduced-bank"))
   addDims("lsu")(
@@ -94,6 +96,8 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       }
     )
   )
+
+  addDim("lsuL1AsyncTag", List("", "--lsu-l1-tags-read-async"))
   addDim("coherency", List("", "--with-fetch-l1 --lsu-l1-coherency")) //Want the fetch l1, else it slow down the sim too much
   addDim("lsu bypass", List("", "--with-lsu-bypass"))
   addDim("ishift", List("", "--with-iterative-shift"))
@@ -127,6 +131,35 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
   }
 
+  dimensions += new Dimensions[ParamSimple]("fetchBus") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(state.lsuL1Coherency) return "" //As the testbench doesn't implement probe generation from AXI4/Wishbone
+      List("", "--fetch-axi4", "--fetch-wishbone").randomPick(random)
+    }
+  }
+
+  dimensions += new Dimensions[ParamSimple]("lsuBus") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(!state.lsuL1Enable && state.withRva) return ""
+      List("", "--lsu-axi4", "--lsu-wishbone").randomPick(random)
+    }
+  }
+
+  dimensions += new Dimensions[ParamSimple]("lsuL1Bus") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(!state.lsuL1Enable || state.lsuL1Coherency) return ""
+      List("", "--lsu-l1-axi4", "--lsu-l1-wishbone").randomPick(random)
+    }
+  }
+
+  dimensions += new Dimensions[ParamSimple]("cbm") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(!state.lsuL1Enable || state.lsuL1Coherency) return ""
+      List("", "--with-rvZcbm").randomPick(random)
+    }
+  }
+
+
   // Generate a bunch of random VexiiRiscv configuration and run the tests on them.
   val random = new Random(42)
   for(i <- 0 until 50){
@@ -138,7 +171,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
     for (dim <- dimensions) {
       val arg = dim.getRandomPosition(p, random)
-      parser.parse(arg.replace("  ", " ").split("\\s+").filter(_.nonEmpty), Unit) match {
+      parser.parse(arg.replace("  ", " ").split("\\s+").filter(_.nonEmpty), ()) match {
         case Some(_) =>
         case None => throw new Exception("invalid regression test parameters")
       }

@@ -66,7 +66,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
     val BUFFER_ID = Payload(UInt(log2Up(idCount) bits))
 
     // Storage and reorder of the memory bus responses
-    val buffer = new Area{
+    val buffer = new Area {
       val reserveId = Counter(idCount)
       val inflight = Vec.fill(idCount)(RegInit(False))
       val words = Mem.fill(idCount)(CachelessRsp(p, false))
@@ -74,7 +74,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       val reservedHits = for (ctrlId <- forkAt+1 to joinAt; ctrl = pp.fetch(ctrlId)) yield {
         ctrl.isValid && ctrl(BUFFER_ID) === reserveId
       }
-      val full = CombInit(reservedHits.orR || inflight.read(reserveId)) //If this create timings issues, that's one cycle late, can use sort of ahead value
+      val full = CombInit(reservedHits.orR || inflight.read(reserveId)) // If this create timings issues, that's one cycle late, can use sort of ahead value
 
       val inflightSpawn = Bool()
       when(inflightSpawn) {
@@ -154,7 +154,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
     val join = new pp.Fetch(joinAt){
       val haltIt = buffer.inflight.read(BUFFER_ID)
       val rsp = CombInit(buffer.words.readAsync(BUFFER_ID))
-      // Implement bus rsp bypass into the pipeline (without using the buffer)
+      // Implement bus rsp bypass into the pipeline (without using the buffer).
       // To save area an option could be added to disable that.
       when(bus.rsp.valid && bus.rsp.id === BUFFER_ID){
         haltIt := False
@@ -162,8 +162,9 @@ class FetchCachelessPlugin(var wordWidth : Int,
       }
       Fetch.WORD := rsp.word
 
-      //trapSent is required, as the CPU will continue to fetch stuff as long as the trap request do not reach decode stages
-      assert(Global.HART_COUNT.get == 1) //Would require proper clearWhen(up.isCancel) and trapSent per hart
+      // trapSent is required, as the CPU will continue to fetch stuff as long as
+      // the trap request do not reach decode stages.
+      assert(Global.HART_COUNT.get == 1) // Would require proper clearWhen(up.isCancel) and trapSent per hart
       val trapSent = RegInit(False) setWhen(trapPort.valid) clearWhen(up.isCancel)
 
       TRAP := False

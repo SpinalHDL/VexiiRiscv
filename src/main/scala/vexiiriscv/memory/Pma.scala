@@ -16,29 +16,28 @@ trait PmaOp
 object PmaLoad extends PmaOp
 object PmaStore extends PmaOp
 
-class PmaCmd(addressWidth : Int, sizes : Seq[Int], ops : Seq[PmaOp]) extends Bundle{
+class PmaCmd(addressWidth : Int, sizes : Seq[Int], ops : Seq[PmaOp]) extends Bundle {
   val address = UInt(addressWidth bits)
   val size = Bits(log2Up(sizes.size) bits)
   val op = Bits(log2Up(ops.size) bits)
 }
 
-class PmaRsp() extends Bundle{
+class PmaRsp() extends Bundle {
   val fault = Bool()
   val io = Bool()
 }
 
-case class PmaPort(addressWidth : Int, sizes : Seq[Int], ops : Seq[PmaOp]) extends Bundle{
+case class PmaPort(addressWidth : Int, sizes : Seq[Int], ops : Seq[PmaOp]) extends Bundle {
   val cmd = new PmaCmd(addressWidth, sizes, ops)
   val rsp = new PmaRsp()
 }
 
-/**
- * Implement the hardware to translate an address into its Physical Memory Access permitions.
- * For VexiiRiscv the permitions are :
- * - fault => is there something at that address ?
- * - io => is it an IO memory region (strongly ordered / with side effects) ?
- */
-class PmaLogic(port : PmaPort, regions : Seq[PmaRegion]) extends Area{
+/** Implement the hardware to translate an address into its Physical Memory Access permissions.
+  * For VexiiRiscv the permissions are :
+  * - fault => is there something at that address ?
+  * - io => is it an IO memory region (strongly ordered / with side effects) ?
+  */
+class PmaLogic(port : PmaPort, regions : scala.collection.Seq[PmaRegion]) extends Area {
   import port._
   val hitsTerms = ArrayBuffer[Masked]()
   val mainSpec = new DecodingSpec(Bool()).setDefault(Masked.zero)
@@ -59,7 +58,7 @@ class PmaLogic(port : PmaPort, regions : Seq[PmaRegion]) extends Area{
   }
 
   val byTransfers = regions.groupBy(_.transfers)
-  val onTransfers = for ((transfer, regions) <- byTransfers) yield new Area{
+  val onTransfers = for ((transfer, regions) <- byTransfers) yield new Area {
     val terms = ArrayBuffer[Masked]()
     val addressSpec = new DecodingSpec(Bool()).setDefault(Masked.zero)
     for (region <- regions) terms ++= AddressMapping.terms(region.mapping, addressWidth)
@@ -67,7 +66,7 @@ class PmaLogic(port : PmaPort, regions : Seq[PmaRegion]) extends Area{
     val addressHit = addressSpec.build(addressBits, hitsTerms)
 
     val argsOk, argsKo = ArrayBuffer[Masked]()
-    for((size, sizeId) <- sizes.zipWithIndex){
+    for((size, sizeId) <- sizes.zipWithIndex) {
       for((op, opId) <- ops.zipWithIndex){
         val mask = opMask(opId, sizeId)
         val ok = op match {

@@ -2,7 +2,7 @@ package spinal.lib.misc.pipeline
 
 import spinal.core._
 
-object CtrlLaneApi extends AreaRoot{
+object CtrlLaneApi extends AreaRoot {
   val LANE_SEL = Payload(Bool())
 }
 
@@ -10,7 +10,7 @@ object CtrlLaneApi extends AreaRoot{
  * Provide a "Lane" layered in a pipeline CtrlLink.
  * For instance, execution lane 0 and lane 1 on execute CtrlLink 3.
  */
-trait CtrlLaneApi{
+trait CtrlLaneApi {
   def ctrlLink: CtrlLink
   def laneName: String
   def LANE_SEL: Payload[Bool] = CtrlLaneApi.LANE_SEL
@@ -46,14 +46,14 @@ trait CtrlLaneApi{
     override def isCanceling = valid && isCancel
     override def apply(key: NamedTypeKey) = ???
     override def apply[T <: Data](key: Payload[T]) = node(key, laneName)
-    override def apply(subKey: Seq[Any]) = ???
+    override def apply(subKey: scala.collection.Seq[Any]) = ???
     def transactionSpawn = valid && !RegNext(valid, False).clearWhen(isReady || isCancel)
   }
 
-  def up = new NodeMirror(_c.up){
+  def up = new NodeMirror(_c.up) {
     override def isCancel: Bool = upIsCancel
   }
-  def down = new NodeMirror(_c.down){
+  def down = new NodeMirror(_c.down) {
     override def isCancel: Bool = downIsCancel
   }
 

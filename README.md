@@ -14,6 +14,7 @@ VexiiRiscv (Vex2Risc5) is the successor of VexRiscv. Work in progress, here are 
 - Can run linux / buildroot / Debian
 - Pipeline visualisation in simulation via Konata
 - Lock step simulation via RVLS and Spike
+- AXI4, Wishbone, Tilelink memory busses (RVA is not available in some configs, see the RTD doc SoC main page)
 - ... and many other things
 
 Here is a demonstration of a quad core VexiiRiscv running debian on FPGA : https://youtu.be/dR_jqS13D2c?t=112

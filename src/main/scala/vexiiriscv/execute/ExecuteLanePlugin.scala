@@ -24,7 +24,7 @@ case class UopImplKey(uop : MicroOp, name : LaneLayer)
  * Implements an execution lane :
  * - Read the register files
  * - Implement register files bypass logic
- * - Register  which execution layer are working on that lane
+ * - Register which execution layers are working on that lane
  * - ...
  */
 class ExecuteLanePlugin(override val laneName : String,
@@ -75,7 +75,7 @@ class ExecuteLanePlugin(override val laneName : String,
 
   val idToCtrl = mutable.LinkedHashMap[Int, CtrlLaneApiImpl]()
 
-  class CtrlLaneApiImpl(ctrlId : Int) extends Area with CtrlLaneApi{
+  class CtrlLaneApiImpl(ctrlId : Int) extends Area with CtrlLaneApi {
     override def ctrlLink: CtrlLink = eupp.ctrl(ctrlId)
     override def laneName: String = ExecuteLanePlugin.this.laneName
     override val upIsCancel = Bool()
@@ -100,7 +100,7 @@ class ExecuteLanePlugin(override val laneName : String,
   val logic = during setup new Area {
     val ts = host[TrapService]
     val trapRetain = retains(ts.trapLock)
-    val buildBefore = retains(host.list[RegfileService].map(_.elaborationLock) :+ eupp.pipelineLock)
+    val buildBefore = retains((host.list[RegfileService].map(_.elaborationLock) :+ eupp.pipelineLock).toSeq)
     awaitBuild()
 
     val trapPending = ts.newTrapPending()
@@ -112,7 +112,7 @@ class ExecuteLanePlugin(override val laneName : String,
 
     val completionGrouped = getUopLayerSpec.groupBy(_.completion)
     val inflightHarts = Array.fill(Global.HART_COUNT)(ArrayBuffer[Bool]())
-    for(at <- 1 to completionGrouped.keys.map(_.get).max.max(trapAt)) new Ctrl(at){
+    for(at <- 1 to completionGrouped.keys.map(_.get).max.max(trapAt)) new Ctrl(at) {
       val hit = (at <= trapAt).mux(isValid, isValid && !Global.COMPLETED)
       for(hartId <- 0 until Global.HART_COUNT) inflightHarts(hartId) += hit && Global.HART_ID === hartId
     }
@@ -127,7 +127,6 @@ class ExecuteLanePlugin(override val laneName : String,
     for(hartId <- 0 until Global.HART_COUNT){
       api.hartsInflight(hartId) := inflightHarts(hartId).orR
     }
-
 
     var readLatencyMax = 0
     val rfSpecs = rfStageables.keys.map(_.rf).distinctLinked
@@ -190,7 +189,7 @@ class ExecuteLanePlugin(override val laneName : String,
         bypassEnables.msb := True
         val sel = OHMasking.firstV2(bypassEnables)
         val datas = bypassSorted.map(b => b.eu.ctrl(b.nodeId)(b.payload))
-        if(spec.rf == IntRegFile && bypassSorted.size > 2) { //This optimize the int ALU bypass, trying to keep it as short as possible by merging it last
+        if(spec.rf == IntRegFile && bypassSorted.size > 2) { // This optimize the int ALU bypass, trying to keep it as short as possible by merging it last
           val tmp = OHMux.or(sel.dropLow(1), datas.tail :+ port.data, true)
           KeepAttribute(tmp)  // Hurt me no more
           dataCtrl(payload) := tmp
@@ -201,7 +200,7 @@ class ExecuteLanePlugin(override val laneName : String,
           dataCtrl(payload) := OHMux.or(sel, datas :+ port.data, true)
         }
 
-        //Update the RSx values along the pipeline
+        // Update the RSx values along the pipeline
         val along = new Area {
           var useRsUntil = -100
           for (opSpec <- getUopLayerSpec()) {
@@ -227,7 +226,7 @@ class ExecuteLanePlugin(override val laneName : String,
 
 
           val ctrlRange = mainBypassAt + 1 until useRsUntil
-          val bypasses = for (ctrlId <- ctrlRange) yield new Area{
+          val bypasses = for (ctrlId <- ctrlRange) yield new Area {
             val on = ctrl(ctrlId)
             val filtred = updateSpecs.filter(_.nodeId > ctrlId).toSeq
             val checks = filtred.map{ f => new Area {
@@ -278,19 +277,19 @@ class ExecuteLanePlugin(override val laneName : String,
       val decodingSpecs = mutable.LinkedHashMap[Payload[_ <: BaseType], DecodingSpec[_ <: BaseType]]()
       def ds(key : Payload[_ <: BaseType]) = decodingSpecs.getOrElseUpdate(key, new DecodingSpec(key))
       for((key, default) <- decodingDefaults) ds(key).setDefault(Masked(default))
-      for(impl <- getUopLayerSpec()){
+      for(impl <- getUopLayerSpec()) {
         for((key, value) <- impl.decodings) ds(key).addNeeds(implToMasked(impl), value)
       }
       val decodingBits = apply(LAYER_SEL) ## apply(Decode.UOP)
       for ((key, spec) <- decodingSpecs) {
         key.assignFromBits(spec.build(decodingBits, coverAll).asBits)
       }
-      when(Global.TRAP){
+      when(Global.TRAP) {
         for((key, default) <- decodingDefaults) key.assignFrom(default)
       }
     }
 
-    // Handle SEL initialisation and flushes
+    // Handle SEL initialization and flushes
     val rp = host[ReschedulePlugin]
     val rdRfa = Decode.rfaKeys.get(RD)
     for(ctrlId <- 0 to idToCtrl.keys.max){

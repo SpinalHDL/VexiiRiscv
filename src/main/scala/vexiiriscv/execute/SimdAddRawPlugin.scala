@@ -13,14 +13,14 @@ import vexiiriscv.tester.TestOptions
 
 
 
-object SimdAddRaw{
+object SimdAddRaw {
   val ADD4 = IntRegFile.TypeR(M"0000000----------000-----0001011")
 }
 
 /**
- * Same as SimdAddPlugin, but wihtout the help of the ExecutionUnitElementSimple  skeleton.
+ * Same as SimdAddPlugin, but without the help of the ExecutionUnitElementSimple skeleton.
  */
-class SimdAddRawPlugin(val layer : LaneLayer) extends FiberPlugin  {
+class SimdAddRawPlugin(val layer : LaneLayer) extends FiberPlugin {
   import SimdAddRaw._
   val logic = during setup new Area {
     val wbp = host.find[WriteBackPlugin](p => p.rf == IntRegFile && p.lane == layer.lane)

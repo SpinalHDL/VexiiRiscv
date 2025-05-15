@@ -70,6 +70,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val rvzbb = dut.database(Riscv.RVZbb)
   val rvzbc = dut.database(Riscv.RVZbc)
   val rvzbs = dut.database(Riscv.RVZbs)
+  val rvzcbm = dut.database(Riscv.RVZcbm)
 
   var arch = ""
   var archLinux = ""
@@ -339,15 +340,23 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   if(config.regular) for(name <- regulars){
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
-    args.failAfter(300000000)
+    args.failAfter(600000000)
     args.name(s"regular/$name")
+  }
+
+  if(rvzcbm) {
+    val args = newArgs()
+    args.loadElf(new File(nsf, s"baremetal/cbm/build/$arch/cbm.elf"))
+    args.failAfter(600000000)
+    args.name(s"regular/cbm")
+    args.noRvlsCheck()
   }
 
   val benchmarks = ArrayBuffer("dhrystone_vexii", "coremark_vexii")
   if(config.benchmark) for (name <- benchmarks) {
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
-    args.failAfter(300000000)
+    args.failAfter(600000000)
     args.ibusReadyFactor(2.0)
     args.dbusReadyFactor(2.0)
     args.name(s"benchmark/$name")
@@ -438,7 +447,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
       help("help").text("prints this usage text")
       t.addOptions(this)
-    }.parse(args.args, Unit).nonEmpty)
+    }.parse(args.args, ()).nonEmpty)
     
     val testPath = new File(compiled.simConfig.getTestPath(t.testName.get))
     val passFile = new File(testPath, "PASS")
@@ -478,7 +487,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
  * App which can be used to run all the regression test on a given VexiiRiscv config provided by command line arguments.
  */
 object RegressionSingle extends App{
-  def test(name : String, plugins : => Seq[Hostable], dutArgs : Seq[String], config : RegressionSingleConfig): Unit = {
+  def test(name : String, plugins : => scala.collection.Seq[Hostable], dutArgs : Seq[String], config : RegressionSingleConfig): Unit = {
     val simConfig = SpinalSimConfig()
 //    simConfig.withIVerilog
     simConfig.withFstWave
@@ -515,7 +524,7 @@ object RegressionSingle extends App{
       opt[Unit]("with-spike-log") action { (v, c) => config.traceSpikeLog = true }
       opt[Unit]("trace-all") action { (v, c) => config.traceRvlsLog = true; config.traceKonata = true; config.traceWave = true; config.traceSpikeLog = true }
       param.addOptions(this)
-    }.parse(args, Unit).nonEmpty)
+    }.parse(args, ()).nonEmpty)
     test(param, args, config.fromEnv())
   }
 

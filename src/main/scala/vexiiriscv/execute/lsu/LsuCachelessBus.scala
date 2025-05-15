@@ -7,9 +7,11 @@ import vexiiriscv.{Global, riscv}
 import vexiiriscv.riscv.{CSR, Const, IntRegFile, MicroOp, RS1, RS2, Riscv, Rvi}
 import AguPlugin._
 import spinal.core.fiber.Retainer
+import spinal.lib.bus.amba4.axi.Axi4Config
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.DebugId
+import spinal.lib.bus.wishbone.WishboneConfig
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService}
@@ -22,7 +24,7 @@ import vexiiriscv.schedule.{ReschedulePlugin, ScheduleService}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-object LsuCachelessBusAmo{
+object LsuCachelessBusAmo {
   val LR = 0x02
   val SC = 0x03
   val AMOSWAP = 0x01
@@ -58,6 +60,31 @@ case class LsuCachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth
       )
     )
   }
+
+  def toAxi4Config() = Axi4Config(
+    addressWidth = addressWidth,
+    dataWidth = dataWidth,
+    idWidth = log2Up(pendingMax),
+    useId = true,
+    useRegion = false,
+    useBurst = false,
+    useLock = false,
+    useQos = false,
+    useLen = false,
+    useResp = true
+  )
+
+  def toWishboneConfig() = WishboneConfig(
+    addressWidth = addressWidth-log2Up(dataWidth/8),
+    dataWidth = dataWidth,
+    selWidth = dataWidth/8,
+    useSTALL = false,
+    useLOCK = false,
+    useERR = true,
+    useRTY = false,
+    useBTE = true,
+    useCTI = true
+  )
 }
 
 /**
@@ -65,15 +92,15 @@ case class LsuCachelessBusParam(addressWidth : Int, dataWidth : Int, hartIdWidth
  * Responses are out of order and can be reordered via the id field.
  * It also supports AMO/LR/SC atomics
  */
-case class LsuCachelessCmd(p : LsuCachelessBusParam) extends Bundle{
-  val id = UInt(log2Up(p.pendingMax) bits) //Unique identifier, only one inflight transaction per ID is allowed
+case class LsuCachelessCmd(p : LsuCachelessBusParam) extends Bundle {
+  val id = UInt(log2Up(p.pendingMax) bits) // Unique identifier, only one inflight transaction per ID is allowed
   val write = Bool()
   val address = UInt(p.addressWidth bits)
   val data = Bits(p.dataWidth bit)
   val size = UInt(log2Up(log2Up(p.dataWidth / 8) + 1) bits)
   val mask = Bits(p.dataWidth / 8 bits)
   val amoEnable = p.withAmo generate Bool()
-  val amoOp = p.withAmo generate Bits(5 bits) //See LsuCachelessBusAmo
+  val amoOp = p.withAmo generate Bits(5 bits) // See LsuCachelessBusAmo
 
   // Signals for verification purposes, allowing RVLS to track stuff
   val io = Bool()

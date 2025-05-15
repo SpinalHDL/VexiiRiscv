@@ -107,7 +107,7 @@ class SocConfig(){
     opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
     opt[Unit]("with-debug-probe-pc0") text("Allows to profile the CPU via JTAG. See ElfMapper.") action { (v, c) => withDebugProbePc0 = true }
 
-    opt[Seq[String]]("memory-region") unbounded() action { (v, c) =>
+    opt[Seq[String]]("memory-region").unbounded() action { (v, c) =>
       assert(v.length == 4, "--memory-region need 4 parameters")
       val r = new LitexMemoryRegion(SizeMapping(BigInt(v(0)), BigInt(v(1))), v(2), v(3))
       regions += r
@@ -462,7 +462,7 @@ object SocGen extends App{
     opt[String]("netlist-directory") action { (v, c) => netlistDirectory = v }
     opt[String]("netlist-name") action { (v, c) => netlistName = v }
     opt[Unit]("reduced-io") action { (v, c) => reducedIo = true }
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   vexiiParam.lsuL1Coherency = cpuCount > 1 || withDma
 
@@ -496,7 +496,7 @@ object PythonArgsGen extends App{
     vexiiParam.addOptions(this)
     opt[String]("python-file") action { (v, c) => pythonPath = v }
 
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   import java.io.PrintWriter
 

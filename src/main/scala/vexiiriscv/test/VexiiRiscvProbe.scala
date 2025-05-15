@@ -25,13 +25,13 @@ import scala.collection.mutable.ArrayBuffer
  * VexiiRiscvProbe can be used in a simulation to probe the activities of VexiiRiscv
  * and notifies a list of TraceBackend with what happened (ex commit, memory load, memory store, trap, ...)
  *
- * There is a few usefull backends :
+ * There is a few useful backends :
  * - RVLS to check that the simulated VexiiRiscv CPU is doing things right
  * - A file backend, to keep a text file trace of what happened (instead of having to look into a waveform)
  *
  * It also keep a trace of various performance metrics, as the IPC, branch miss rate, ...
  */
-class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvls : Boolean = true){
+class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvls : Boolean = true) {
   var enabled = true
   var trace = true
   var checkLiveness = true
@@ -80,7 +80,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     this
   }
 
-  // Figure out the PMA (Physical Memory Attributes) from the plugins themself and notify the backends.
+  // Figure out the PMA (Physical Memory Attributes) from the plugins themselves and notify the backends.
   def autoRegions(): Unit = {
     cpu.host.services.foreach {
       case p: LsuCachelessPlugin => p.regions.foreach { region =>
@@ -510,7 +510,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
           if(!trace.write){
             trace.data = bus.rsp.data.toLong
           }
-          val offset = trace.address.toInt & (trace.size - 1)
+          val offset = trace.address.toInt & (bus.p.dataWidth/8 - 1)
           trace.data = (trace.data >> offset*8) & sizeMask(trace.sizel2)
           trace.error = bus.rsp.error.toBoolean
           backends.foreach(_.ioAccess(trace.hartId, trace))
@@ -575,7 +575,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       }
       if (checkLiveness && hart.lastCommitAt + livenessThreshold < cycle) {
         val status = if (hart.microOpAllocPtr != hart.microOpRetirePtr) f"waiting on uop 0x${hart.microOpRetirePtr}%X" else f"last uop id 0x${hart.lastUopId}%X"
-        simFailure(f"Vexii hasn't commited anything for too long, $status")
+        simFailure(f"Vexii hasn't committed anything for too long, $status")
       }
 
       while (hart.microOpRetirePtr != hart.microOpAllocPtr && hart.microOp(hart.microOpRetirePtr).done) {

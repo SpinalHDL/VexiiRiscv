@@ -202,7 +202,7 @@ class DispatchPlugin(var dispatchAt : Int,
       }
     }
 
-    val hcs = for((ll, llId) <- lanesLayers.zipWithIndex) yield new HazardChecker(ll, llId)
+    val hcs = for((ll, llId) <- lanesLayers.zipWithIndex.toSeq) yield new HazardChecker(ll, llId)
 
     case class MicroOpCtx() extends Bundle{
       val valid = Bool()

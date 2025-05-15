@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 
-// This file defines the integer and floating point RISC-V register file, aswell as a few utilities to easily the instructions working with them
+// This file defines the integer and floating point RISC-V register file, 
+// as well as a few utilities to easily the instructions working with them.
 
 package vexiiriscv.riscv
 
@@ -59,6 +60,10 @@ object IntRegFile extends RegfileSpec with AreaObject {
   def TypeIC(key : MaskedLiteral) = SingleDecoding(
     key = key,
     resources = List(RD).map(this -> _)
+  )
+  def TypeCmb(key : MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(RS1).map(this -> _)
   )
 
   def TypeNone(key : MaskedLiteral) = SingleDecoding(

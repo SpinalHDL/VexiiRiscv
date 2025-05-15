@@ -28,7 +28,7 @@ object IterativeShifterPlugin extends AreaObject {
   * Only 2**n shift distances are well supported, other distances will lead
   * to suboptimal shift sequence if needed multiple times.
   *
-  * lateResult can be used to make the done logic slighly smaller, which should not be
+  * lateResult can be used to make the done logic slightly smaller, which should not be
   * needed for the default configuration. Enabling it costs 1 cycle for all shifts.
   */
 class IterativeShifterPlugin(val layer: LaneLayer,

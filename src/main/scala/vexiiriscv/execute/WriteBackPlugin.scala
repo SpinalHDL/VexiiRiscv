@@ -17,34 +17,33 @@ import scala.collection.mutable.ArrayBuffer
 
 /**
  * This plugin allows other plugins to create interface to write in the register file from where they want in the pipeline.
- * The trick is that this plugin will only instanciate one register file write port at the last stage, and pipeline all the
+ * The trick is that this plugin will only instantiate one register file write port at the last stage, and pipeline all the
  * write interface created for the other plugins to that point.
  */
 class WriteBackPlugin(val lane : ExecuteLaneService,
                       val rf : RegfileSpec,
                       var writeAt : Int,
-                      var allowBypassFrom : Int) extends FiberPlugin with RegFileWriterService{
+                      var allowBypassFrom : Int) extends FiberPlugin with RegFileWriterService {
   withPrefix(lane.laneName + "_" + rf.getName())
 
   val elaborationLock = Retainer()
 
-  case class Spec(port : Flow[Bits], ctrlAt : Int){
+  case class Spec(port : Flow[Bits], ctrlAt : Int) {
     val impls = ArrayBuffer[UopLayerSpec]()
   }
   val portToSpec = mutable.LinkedHashMap[Flow[Bits],Spec]()
   def createPort(at : Int): Flow[Bits] = {
     val port = Flow(Bits(rf.width bits))
     portToSpec(port) = Spec(port, at)
-    assert(at <= writeAt, s"WriteBackPlugin.createPort target is behond writeback range ($at > $writeAt)")
+    assert(at <= writeAt, s"WriteBackPlugin.createPort target is beyond writeback range ($at > $writeAt)")
     port
   }
-  def addMicroOp(port: Flow[Bits], layer : LaneLayer, uop: Seq[MicroOp]): Unit = addMicroOp(port, uop.map(layer.apply))
+  def addMicroOp(port: Flow[Bits], layer : LaneLayer, uop: scala.collection.Seq[MicroOp]): Unit = addMicroOp(port, uop.map(layer.apply))
   def addMicroOp(port: Flow[Bits], head: UopLayerSpec, tail: UopLayerSpec*): Unit = addMicroOp(port, head +: tail)
-  def addMicroOp(port: Flow[Bits], impls: Seq[UopLayerSpec]): Unit = {
+  def addMicroOp(port: Flow[Bits], impls: scala.collection.Seq[UopLayerSpec]): Unit = {
     val spec = portToSpec(port)
     spec.impls ++= impls
   }
-
 
   val SEL = Payload(Bool())
 
@@ -68,7 +67,7 @@ class WriteBackPlugin(val lane : ExecuteLaneService,
         for (impl <- spec.impls) {
           impl.setRdSpec(DATA, Math.max(ctrlId, broadcastMin), writeAt + rfp.writeLatency)
           impl.addDecoding(SEL -> True)
-          if(rf == FloatRegFile){
+          if(rf == FloatRegFile) {
             impl.addDecoding(FpuCsrPlugin.DIRTY -> True)
           }
         }
@@ -91,9 +90,8 @@ class WriteBackPlugin(val lane : ExecuteLaneService,
       write.data := muxed
     }
 
-
     val writeCtrl = eu.execute(writeAt)
-    val write = new writeCtrl.Area{
+    val write = new writeCtrl.Area {
       val port = rfp.newWrite(false, sharingKey = laneName)
       port.valid := isValid && isReady && !isCancel && up(rfa.ENABLE) && SEL && Global.COMMIT
       port.address := HART_ID @@ rfa.PHYS

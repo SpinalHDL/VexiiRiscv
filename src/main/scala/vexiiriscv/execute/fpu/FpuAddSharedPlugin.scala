@@ -37,11 +37,10 @@ case class FpuAddSharedParam(var preShiftStage : Int = 0,
                              var normStage : Int = 3,
                              var packAt : Int = 4)
 
-/**
- * This plugin implements an shared hardware floating point adder and provide an API for other plugins to time share it.
- * In practice, the RISC-V fadd and fma instruction use it.
- * The actual adder hadware is provided by the FpuAdd plugin.
- */
+/** This plugin implements an shared hardware floating point adder and provide an API for 
+  * other plugins to time share it. In practice, the RISC-V fadd and fma instruction use it.
+  * The actual adder hardware is provided by `FpuAddPlugin`.
+  */
 class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
                          p : FpuAddSharedParam) extends FiberPlugin {
   import p._
@@ -54,7 +53,7 @@ class FpuAddSharedPlugin(lane: ExecuteLanePlugin,
     ports.addRet(new FpuAddSharedPort(FpuAddSharedCmd(p1, p2, ats)))
   }
 
-  val logic = during setup new Area{
+  val logic = during setup new Area {
     val fpp = host.find[FpuPackerPlugin](p => p.lane == lane)
     val buildBefore = retains(lane.pipelineLock, fpp.elaborationLock)
     val uopLock = retains(lane.uopLock)

@@ -1,9 +1,6 @@
 package vexiiriscv.fetch
 
 import spinal.lib.misc.plugin.FiberPlugin
-
-
-
 import spinal.core._
 import spinal.lib._
 import spinal.lib.pipeline.Stageable
@@ -12,6 +9,7 @@ import spinal.lib.bus.tilelink
 import spinal.lib.bus.amba4.axilite.{AxiLite4Config, AxiLite4ReadOnly}
 import spinal.lib.bus.bmb.{Bmb, BmbAccessParameter, BmbParameter, BmbSourceParameter}
 import spinal.lib.bus.tilelink.{M2sSupport, SizeRange}
+import spinal.lib.bus.wishbone.{Wishbone, WishboneConfig}
 import spinal.lib.misc.Plru
 
 import scala.collection.mutable.ArrayBuffer
@@ -35,7 +33,7 @@ case class FetchL1BusParam(physicalWidth : Int,
                            dataWidth : Int,
                            lineSize : Int,
                            refillCount : Int,
-                           withBackPresure : Boolean){
+                           withBackPresure : Boolean) {
   def toTileLinkM2sParameters(name : Nameable) = tilelink.M2sParameters(
     sourceCount = refillCount,
     support = M2sSupport(
@@ -45,6 +43,37 @@ case class FetchL1BusParam(physicalWidth : Int,
     ),
     name = name
   )
+
+  def toAxi4Config() = Axi4Config(
+    addressWidth = physicalWidth,
+    dataWidth    = dataWidth,
+    idWidth      = log2Up(refillCount),
+    useId        = true,
+    useRegion    = false,
+    useBurst     = true,
+    useLock      = false,
+    useCache     = true,
+    useSize      = true,
+    useQos       = false,
+    useLen       = true,
+    useLast      = true,
+    useResp      = true,
+    useProt      = true,
+    useStrb      = false
+  )
+
+  def toWishboneConfig() = WishboneConfig(
+    addressWidth = physicalWidth-log2Up(dataWidth/8),
+    dataWidth = dataWidth,
+    selWidth = dataWidth/8,
+    useSTALL = false,
+    useLOCK = false,
+    useERR = true,
+    useRTY = false,
+    useBTE = true,
+    useCTI = true
+  )
+
 }
 
 /**
@@ -112,35 +141,21 @@ case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
   }.ret
 
   def toAxi4(): Axi4ReadOnly = new Composite(this, "toAxi4"){
-    val axiConfig = Axi4Config(
-      addressWidth = physicalWidth,
-      dataWidth    = dataWidth,
-      idWidth      = 0,
-      useId        = true,
-      useRegion    = false,
-      useBurst     = true,
-      useLock      = false,
-      useCache     = false,
-      useSize      = true,
-      useQos       = false,
-      useLen       = true,
-      useLast      = true,
-      useResp      = true,
-      useProt      = true,
-      useStrb      = false
-    )
+    val axiConfig = p.toAxi4Config()
 
     val axi = Axi4ReadOnly(axiConfig)
     axi.ar.valid := cmd.valid
     axi.ar.addr  := cmd.address
-    axi.ar.id    := 0
+    axi.ar.id    := cmd.id
     axi.ar.prot  := B"110"
+    axi.ar.cache  := B"1111"
     axi.ar.len   := lineSize*8/dataWidth-1
     axi.ar.size  := log2Up(dataWidth/8)
     axi.ar.setBurstINCR()
     cmd.ready := axi.ar.ready
 
     rsp.valid := axi.r.valid
+    rsp.id    := axi.r.id
     rsp.data  := axi.r.data
     rsp.error := !axi.r.isOKAY()
     axi.r.ready := (if(withBackPresure) rsp.ready else True)
@@ -212,4 +227,35 @@ case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
     rsp.error := !axi.r.isOKAY()
     axi.r.ready := True
   }.axi
+
+
+  def toWishbone(): Wishbone = new Composite(this, "toWishbone"){
+    val wishboneConfig = p.toWishboneConfig()
+    val bus = Wishbone(wishboneConfig)
+    val counter = Reg(UInt(log2Up(p.lineSize*8/p.dataWidth) bits)) init(0)
+    val pending = counter =/= 0
+    val lastCycle = counter.andR
+
+    bus.ADR := (cmd.address >> widthOf(counter) + log2Up(p.dataWidth/8)) @@ counter
+    bus.CTI := lastCycle ? B"111" | B"010"
+    bus.BTE := "00"
+    bus.SEL.setAll()
+    bus.WE  := False
+    bus.DAT_MOSI.assignDontCare()
+    bus.CYC := False
+    bus.STB := False
+    when(cmd.valid || pending){
+      bus.CYC := True
+      bus.STB := True
+      when(bus.ACK || bus.ERR){
+        counter := counter + 1
+      }
+    }
+
+    cmd.ready := cmd.valid && lastCycle && (bus.ACK || bus.ERR)
+    rsp.valid := RegNext(bus.CYC && (bus.ACK || bus.ERR)) init(False)
+    rsp.id    := RegNext(cmd.id)
+    rsp.data := RegNext(bus.DAT_MISO)
+    rsp.error := RegNext(bus.ERR)
+  }.bus
 }

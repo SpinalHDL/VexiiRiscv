@@ -16,7 +16,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 case class FpuPackerCmd(p : FloatUnpackedParam,
-                        ats : Seq[Int]) extends Bundle{
+                        ats : Seq[Int]) extends Bundle {
   val at = Bits(ats.size bits)
   val value = FloatUnpacked(p)
   val format = FpuFormat()
@@ -26,15 +26,15 @@ case class FpuPackerCmd(p : FloatUnpackedParam,
   val flags = FpuFlags()
 }
 
-class FpuPackerPort(_cmd : FpuPackerCmd) extends Area{
+class FpuPackerPort(_cmd : FpuPackerCmd) extends Area {
   val uopsAt = ArrayBuffer[(UopLayerSpec, Int)]()
   val cmd = _cmd
 }
 
-/**
- * Implement the floating point rounding, recode the result into (ieee 754) and then writeback it back into the register file using the WriteBackPlugin.
- * Subnormal recoding will stall the pipeline 2 extra cycles to save FMax.
- */
+/** Implement the floating point rounding, recode the result into (ieee 754) and
+  * then writeback it back into the register file using the WriteBackPlugin.
+  * Subnormal recoding will stall the pipeline 2 extra cycles to save FMax.
+  */
 class FpuPackerPlugin(val lane: ExecuteLanePlugin,
                       var ignoreSubnormal: Boolean = false,
                       var wbAt : Int = 2) extends FiberPlugin with RegFileWriterService {
@@ -118,7 +118,7 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
     val s1 = new pip.Area(1) {
       val MAN_SHIFTED = insert(U(VALUE.mantissa.raw))
 
-      // First we check if we are subnormal, in which case we need to denormalize the mantissa
+      // First we check if we are subnormal, in which case we need to denormalize the mantissa.
       val subnormal = !ignoreSubnormal generate new Area {
         val EXP_DIF_PLUS_ONE = insert(U(EXP_SUBNORMAL - VALUE.exponent) + 1)
         val manShiftNoSat = EXP_DIF_PLUS_ONE

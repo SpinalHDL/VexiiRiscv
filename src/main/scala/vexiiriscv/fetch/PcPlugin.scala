@@ -48,8 +48,8 @@ class PcPlugin(var resetVector : BigInt = 0x80000000l) extends FiberPlugin with 
         val id = Reg(Fetch.ID) init(0)
         val flow = newJumpInterface(-1, laneAgeWidth = 0, aggregationPriority = 0)
         val increment = RegInit(False)
-        val fault = RegInit(False) simPublic()
-        val state = Reg(PC) init (resetVector) simPublic()
+        val fault = RegInit(False).simPublic()
+        val state = Reg(PC).init(resetVector).simPublic()
         val pc = state + U(WORD_BYTES).andMask(increment)
         flow.valid := True
         flow.fault := fault

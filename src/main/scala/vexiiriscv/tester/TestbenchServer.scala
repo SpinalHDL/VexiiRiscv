@@ -36,7 +36,7 @@ object TestBenchServer extends App{
   assert(new scopt.OptionParser[Unit]("TestBenchServer") {
     help("help").text("prints this usage text")
     param.addOptions(this)
-  }.parse(args, Unit).nonEmpty)
+  }.parse(args, ()).nonEmpty)
 
   val compiled = simConfig.compile(VexiiRiscv(TestBench.paramToPlugins(param)))
   val serverSocket = new ServerSocket(8189)
@@ -69,7 +69,7 @@ class TestBenchServerConnection(incoming: Socket, compiled : SimCompiled[VexiiRi
           assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
             help("help").text("prints this usage text")
             testOpt.addOptions(this)
-          }.parse(args, Unit).nonEmpty)
+          }.parse(args, ()).nonEmpty)
           testOpt.test(compiled)
           Thread.sleep(100)
         }

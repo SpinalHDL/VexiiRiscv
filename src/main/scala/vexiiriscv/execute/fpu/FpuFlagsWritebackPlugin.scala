@@ -41,7 +41,7 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
   def addUop(port : FpuFlagsWritebackPort, uop : UopLayerSpec, at : Int): Unit = {
     if(at > pipTo){
       val sel = hazardSels.getOrElseUpdate(at, {
-        val v = Payload(Bool()).setCompositeName(this, s"_SEL_" + at)
+        val v = Payload(Bool()).setCompositeName(this, s"SEL_" + at)
         lane.setDecodingDefault(v, False)
         v
       })
