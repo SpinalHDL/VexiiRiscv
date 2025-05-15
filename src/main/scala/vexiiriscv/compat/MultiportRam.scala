@@ -129,7 +129,7 @@ case class RamAsyncMwMux[T <: Data](payloadType : HardType[T],
   val rawType = HardType(Bits(rawBits bits))
   val ram = List.fill(writePorts)(Mem.fill(depth)(rawType))
 
-  val location = RamAsyncMwXor(
+  val location = RamAsyncMwReg(
     payloadType = UInt(log2Up(writePorts) bits),
     depth       = depth,
     writePorts  = writePorts,
