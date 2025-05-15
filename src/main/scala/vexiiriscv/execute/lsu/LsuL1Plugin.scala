@@ -1079,7 +1079,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           way.cRead.cmd.payload := PHYSICAL_ADDRESS(lineRange)
         }
 
-        SET_HAZARD := waysWrite.valid && waysWrite.address === shared.cRead.cmd.payload
+        up(SET_HAZARD) := waysWrite.valid && waysWrite.address === shared.cRead.cmd.payload
       }
 
       // collect read tags responses

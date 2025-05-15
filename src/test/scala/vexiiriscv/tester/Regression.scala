@@ -78,6 +78,8 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       }
     )
   )
+  addDim("fetchL1AsyncTag", List("", "--fetch-l1-tags-read-async"))
+
   addDim("debugger", List("", "--debug-privileged --debug-triggers 4 --debug-triggers-lsu --debug-jtag-tap"))
   addDim("fl1rw", List("", "--fetch-reduced-bank"))
   addDims("lsu")(
@@ -94,6 +96,8 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       }
     )
   )
+
+  addDim("lsuL1AsyncTag", List("", "--lsu-l1-tags-read-async"))
   addDim("coherency", List("", "--with-fetch-l1 --lsu-l1-coherency")) //Want the fetch l1, else it slow down the sim too much
   addDim("lsu bypass", List("", "--with-lsu-bypass"))
   addDim("ishift", List("", "--with-iterative-shift"))
