@@ -10,12 +10,13 @@ import spinal.lib.bus.amba4.axilite.{AxiLite4Config, AxiLite4ReadOnly}
 import spinal.lib.bus.bmb.{Bmb, BmbAccessParameter, BmbParameter, BmbSourceParameter}
 import spinal.lib.bus.tilelink.{M2sSupport, SizeRange}
 import spinal.lib.misc.Plru
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort, PmpService}
+import vexiiriscv.memory._
 import vexiiriscv.misc._
 import vexiiriscv._
 import vexiiriscv.Global._
 import Fetch._
 import spinal.core.fiber.{Handle, Retainer}
+import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.execute.lsu.LsuCommitProbe
 import vexiiriscv.riscv.CSR
@@ -56,7 +57,9 @@ class FetchL1Plugin(var translationStorageParameter: Any,
                     var hitsWithTranslationWays: Boolean = false,
                     var reducedBankWidth: Boolean = false,
                     var tagsReadAsync: Boolean = false,
-                    var bootMemClear : Boolean) extends FiberPlugin with FetchL1Service with InitService {
+                    var bootMemClear : Boolean,
+                    var withCoupledBus : Boolean = false,
+                    var coupledBusMapping : SizeMapping) extends FiberPlugin with FetchL1Service with InitService {
 
   def getBusParameter() = FetchL1BusParam(
     physicalWidth = PHYSICAL_WIDTH,
@@ -89,6 +92,14 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val bus = master(FetchL1Bus(
       getBusParameter()
     ))
+    val coupledBusParam = CoupledBusParam(
+      addressWidth = log2Up(coupledBusMapping.size),
+      dataWidth = fetchDataWidth,
+      canRead = true,
+      canWrite = false,
+      readLatency = ctrlAt-readAt,
+    )
+    val coupledBus = withCoupledBus generate master(CoupledBus(coupledBusParam))
 
     val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
     atsStorageLock.release()
@@ -367,6 +378,17 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       for((way, wayId) <- ways.zipWithIndex) {
         way.read.cmd.valid := doIt
         way.read.cmd.payload := MIXED_PC_SOLVED(lineRange)
+      }
+
+      val coupled = withCoupledBus generate new Area{
+        val hit = coupledBusMapping.hit(WORD_PC)
+        coupledBus.enable := isReady
+        coupledBus.cmd.valid := isValid && hit
+        coupledBus.cmd.address := WORD_PC
+        coupledBus.cmd.write := False
+        when(coupledBus.cmd.isStall){
+          
+        }
       }
 
       prefetcher match {
