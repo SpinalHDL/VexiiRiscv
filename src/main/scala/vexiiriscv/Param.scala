@@ -136,6 +136,7 @@ class ParamSimple(){
   var fetchMemDataWidthMin = 32
   var fetchL1RefillCount = 1
   var fetchL1Prefetch = "none"
+  var fetchL1TagsReadAsync = false
   var lsuSoftwarePrefetch = false
   var lsuHardwarePrefetch = "none"
   var lsuStoreBufferSlots = 0
@@ -146,6 +147,7 @@ class ParamSimple(){
   var lsuL1RefillCount = 1
   var lsuL1WritebackCount = 1
   var lsuL1Coherency = false
+  var lsuL1TagsReadAsync = false
   var lsuMemDataWidthMin = 32
   var withLsuBypass = false
   var withIterativeShift = false
@@ -568,6 +570,7 @@ class ParamSimple(){
     opt[Int]("fetch-l1-sets") unbounded() action { (v, c) => fetchL1Sets = v }
     opt[Int]("fetch-l1-ways") unbounded() action { (v, c) => fetchL1Ways = v }
     opt[Int]("fetch-l1-refill-count") unbounded() action { (v, c) => fetchL1RefillCount = v }
+    opt[Unit]("fetch-l1-tags-read-async") action { (v, c) =>  fetchL1TagsReadAsync = true }
     opt[String]("fetch-l1-hardware-prefetch") action { (v, c) => fetchL1Prefetch = v }
     opt[Int]("fetch-l1-mem-data-width-min") unbounded() action { (v, c) => fetchMemDataWidthMin = v }
     opt[Unit]("fetch-reduced-bank") action { (v, c) => fetchL1ReducedBank = true }
@@ -575,6 +578,7 @@ class ParamSimple(){
     opt[Int]("lsu-l1-ways") unbounded() action { (v, c) => lsuL1Ways = v }
     opt[Int]("lsu-l1-store-buffer-slots") action { (v, c) => lsuStoreBufferSlots = v }
     opt[Int]("lsu-l1-store-buffer-ops") action { (v, c) => lsuStoreBufferOps = v }
+    opt[Unit]("lsu-l1-tags-read-async") action { (v, c) =>  lsuL1TagsReadAsync = true }
     opt[String]("lsu-hardware-prefetch") action { (v, c) => lsuHardwarePrefetch = v }
     opt[Unit]("lsu-software-prefetch") action { (v, c) => lsuSoftwarePrefetch = true }
     opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
@@ -714,7 +718,7 @@ class ParamSimple(){
         memDataWidth = fetchMemDataWidth,
         reducedBankWidth = fetchL1ReducedBank,
         hitsWithTranslationWays = true,
-        tagsReadAsync = false,
+        tagsReadAsync = fetchL1TagsReadAsync,
         bootMemClear = bootMemClear,
         translationStorageParameter = fetchTsp,
         translationPortParameter = withMmu match {
@@ -858,7 +862,8 @@ class ParamSimple(){
         wayCount       = lsuL1Ways,
         withBypass     = withLsuBypass,
         withCoherency  = lsuL1Coherency,
-        bootMemClear = bootMemClear
+        bootMemClear   = bootMemClear,
+        tagsReadAsync  = lsuL1TagsReadAsync
       )
 
       lsuHardwarePrefetch match {
