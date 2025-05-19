@@ -562,6 +562,7 @@ class ParamSimple() {
     opt[Unit]("with-rvZcbm") action { (v, c) => withRvcbm = true }
     opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
+    opt[Unit]("with-hart-id-input-defaulted") action { (v, c) => privParam.withHartIdInputDefaulted = true }
     opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuMulParam.fmaFullAccuracy = false }
     opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
     opt[Unit]("with-aligner-buffer").unbounded() action { (v, c) => withAlignerBuffer = true }
