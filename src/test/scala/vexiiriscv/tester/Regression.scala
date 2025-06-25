@@ -106,7 +106,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("btbParam", List("--btb-sets 512 --btb-hash-width 16", "--btb-sets 128 --btb-hash-width 6"))
   dimensions += new Dimensions[ParamSimple]("fpu") {
     override def getRandomPosition(state : ParamSimple, random: Random): String = {
-      if(!state.withMul || state.withDiv) return ""
+      if(!state.withMul || !state.withDiv) return ""
       return List("", "--with-rvf", "--with-rvf --with-rvd").randomPick(random)
     }
   }
