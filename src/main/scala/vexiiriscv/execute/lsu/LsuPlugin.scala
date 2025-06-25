@@ -949,7 +949,9 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       // Drive the commitProbe bus
-      commitProbe.valid := down.isFiring && SEL.mux[Bool](FROM_LSU, FROM_PREFETCH && HAZARD) // && !l1.REFILL_HIT
+      val commitProbeReq = down.isFiring && SEL && FROM_LSU
+      val commitProbeToken = RegNextWhen(lsuTrap, commitProbeReq) init(False) // Avoid to spam on consicutive failure
+      commitProbe.valid := down.isFiring && SEL.mux[Bool](FROM_LSU  && (!lsuTrap || !commitProbeToken), FROM_PREFETCH && HAZARD) // && !l1.REFILL_HIT
       commitProbe.address := l1.MIXED_ADDRESS
       commitProbe.load := l1.LOAD
       commitProbe.store := l1.STORE
