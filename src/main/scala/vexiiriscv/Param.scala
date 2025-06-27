@@ -112,6 +112,7 @@ class ParamSimple() {
   var dispatcherAt = 1
   var regFileSync = true
   var regFileDualPortRam = true
+  var regFileRegBasedRam = false
   var withGShare = false
   var withBtb = false
   var withRas = false
@@ -587,6 +588,7 @@ class ParamSimple() {
     opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
     opt[Unit]("regfile-dual-ports") action { (v, c) => regFileDualPortRam = true }
     opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
+    opt[Unit]("regfile-reg-based") action { (v, c) => regFileRegBasedRam = true; regFileDualPortRam = false}
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters").unbounded() action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
     opt[Unit]("without-performance-scountovf").unbounded() action { (v, c) => withPerformanceScountovf = false }
@@ -807,6 +809,7 @@ class ParamSimple() {
       preferedWritePortForInit = "lane0",
       syncRead = regFileSync,
       dualPortRam = regFileDualPortRam,
+      regBasedRam = regFileRegBasedRam,
       maskReadDuringWrite = false
     )
 
@@ -1038,6 +1041,7 @@ class ParamSimple() {
         preferedWritePortForInit = "lane0",
         syncRead = regFileSync,
         dualPortRam = regFileDualPortRam,
+        regBasedRam = regFileRegBasedRam,
         maskReadDuringWrite = false
       )
       plugins += new WriteBackPlugin(lane0, FloatRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions
