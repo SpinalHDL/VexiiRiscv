@@ -93,12 +93,13 @@ object TestBench extends App {
 
     val genConfig = SpinalConfig()
     val simConfig = SpinalSimConfig()
-    simConfig.withFstWave
     simConfig.withTestFolder
     simConfig.withConfig(genConfig)
+    simConfig.withWave
 
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
       help("help").text("prints this usage text")
+      simConfig.addOptions(this)
       testOpt.addOptions(this)
       param.addOptions(this)
     }.parse(args, ()).nonEmpty)
