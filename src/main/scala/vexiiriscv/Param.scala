@@ -182,6 +182,7 @@ class ParamSimple() {
   var bootMemClear = false
   var mulKeepSrc = false
   var withCfu = false
+  var gshareBytes = 4 KiB
 
   var fetchTsp = MmuStorageParameter(
     levels = List(
@@ -640,6 +641,7 @@ class ParamSimple() {
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
     opt[Unit]("with-rdtime") action { (v, c) => privParam.withRdTime = true }
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
+    opt[Int]("gshare-bytes") action{ (v,c) => gshareBytes = v }
     opt[Unit]("dual-issue") action { (v, c) =>
       decoders = 2
       lanes = 2
@@ -709,7 +711,7 @@ class ParamSimple() {
     }
     if(withGShare) {
       plugins += new prediction.GSharePlugin (
-        memBytes = 4 KiB,
+        memBytes = gshareBytes,
         historyWidth = 12,
         readAt = 0,
         bootMemClear = bootMemClear
@@ -980,6 +982,7 @@ class ParamSimple() {
       debugCd = embeddedJtagCd,
       noTapCd = embeddedJtagNoTapCd
     )
+
     val lateAluAt = intWritebackAt
 
     // Late ALU in the main execution pipeline
