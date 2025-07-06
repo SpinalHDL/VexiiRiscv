@@ -682,6 +682,9 @@ class LsuPlugin(var layer : LaneLayer,
           val capture = False // True when the software ask a reservation (load reserve)
           val reserved = RegInit(False)
           val address = Reg(l1.PHYSICAL_ADDRESS)
+          val captureReady = Timeout(5) //Ensure we don't reserve stuff in loop which could block forward progress for other harts / L2
+          captureReady.clearWhen(reserved)
+
           when(!elp.isFreezed() && isValid && FROM_LSU && l1.SEL && !lsuTrap && !onPma.IO) {
             when(l1.STORE){
               reserved := False // Kill the reservation on any store
@@ -702,8 +705,8 @@ class LsuPlugin(var layer : LaneLayer,
             // - If a LR is followed by a divide instruction (for example), this will slow down things and ensure we have a chance to pass
             age := age + U(!elp.isFreezed())
           }
-          when(capture){
-            reserved  := !reserved //Toggling the reservation is a way to ensure that if the code is pulling value in a loop using lr => it doesn't always keep the reservation
+          when(capture && (reserved || captureReady.state)){
+            reserved  := !reserved //Toggling the reservation is a way to ensure reservation changes are notified by the LsuL1 (not great)
             address :=  l1.PHYSICAL_ADDRESS
             age := 0
           }
