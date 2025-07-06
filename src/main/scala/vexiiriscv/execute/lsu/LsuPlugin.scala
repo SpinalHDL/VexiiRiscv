@@ -682,6 +682,7 @@ class LsuPlugin(var layer : LaneLayer,
           val capture = False // True when the software ask a reservation (load reserve)
           val reserved = RegInit(False)
           val address = Reg(l1.PHYSICAL_ADDRESS)
+
           when(!elp.isFreezed() && isValid && FROM_LSU && l1.SEL && !lsuTrap && !onPma.IO) {
             when(l1.STORE){
               reserved := False // Kill the reservation on any store
@@ -694,16 +695,19 @@ class LsuPlugin(var layer : LaneLayer,
           l1.lockPort.address := address
 
           val age = Reg(UInt(6 bits)) //Will make the reservation die after 2**(bits-1) cycles
-          when(age.msb || io.cmdSent){ // io.cmdSent ensure we do not create external deadlock
-            reserved := False
-          } otherwise {
+          when(!age.msb && !elp.isFreezed()){
             // It only age when the pipeline isn't freezed for 2 reasons :
             // - Else we may lose the reservation at the same time we are processing a store condition => transient cases
             // - If a LR is followed by a divide instruction (for example), this will slow down things and ensure we have a chance to pass
-            age := age + U(!elp.isFreezed())
+            age := age + 1
           }
-          when(capture){
-            reserved  := !reserved //Toggling the reservation is a way to ensure that if the code is pulling value in a loop using lr => it doesn't always keep the reservation
+
+          when(age.msb || io.cmdSent){ // io.cmdSent ensure we do not create external deadlock
+            reserved := False
+            age := 0
+          }
+          when(capture && (reserved || age >= 8)){ //age >= 8 Ensure we don't prevent forward progression of other agents
+            reserved  := !reserved //Toggling the reservation is a way to ensure reservation changes are notified by the LsuL1 (not great)
             address :=  l1.PHYSICAL_ADDRESS
             age := 0
           }

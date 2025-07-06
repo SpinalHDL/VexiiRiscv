@@ -306,7 +306,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
         // This state machine is kinda the heart of the CPU.
         val fsm = new StateMachine {
           val RESET = makeInstantEntry()
-          val RUNNING, PROCESS = new State()
+          val RUNNING, COMPUTE = new State()
           val TRAP_EPC, TRAP_TVAL, TRAP_TVEC, TRAP_APPLY = new State()
           val XRET_EPC, XRET_APPLY = new State()
           val ATS_RSP = ats.mayNeedRedo generate new State()
@@ -368,7 +368,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           RUNNING.whenIsActive {
             when(trigger.valid) {
               buffer.sampleIt := True
-              goto(PROCESS)
+              goto(COMPUTE)
             }
             if (priv.p.withDebug) when(!csr.hartRunning && csr.debug.doResume) {
               goto(DPC_READ)
@@ -393,7 +393,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val triggerEbreak = (priv.p.debugTriggers == 0).mux(False, !pending.state.exception && pending.state.code === TrapReason.DEBUG_TRIGGER && csr.trigger.slots.reader(pending.state.tval.asUInt.resized)(_.tdata1.doEbreak))
           val triggerEbreakReg = Reg(Bool())
           // Got a trap, need to figure out exactly what to do.
-          PROCESS.whenIsActive{
+          COMPUTE.whenIsActive{
             triggerEbreakReg := triggerEbreak
             if(priv.p.debugTriggers > 0 ) {
               pending.state.exception setWhen(triggerEbreak) //Patch to reduce logic in next stages

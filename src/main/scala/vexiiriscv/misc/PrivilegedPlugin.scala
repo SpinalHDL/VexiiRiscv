@@ -33,7 +33,8 @@ object PrivilegedParam{
     archId         = 46, //As spike
     impId          = 0,
     debugTriggers  = 0,
-    debugTriggersLsu = false
+    debugTriggersLsu = false,
+    withHartIdInputDefaulted = false
   )
 }
 
@@ -59,7 +60,8 @@ case class PrivilegedParam(var withSupervisor : Boolean,
                            var debugTriggersLsu : Boolean,
                            var vendorId: Int,
                            var archId: Int,
-                           var impId: Int){
+                           var impId: Int,
+                           var withHartIdInputDefaulted : Boolean){
   def check(): Unit = {
     assert(!(withSupervisor && !withUser))
   }
@@ -276,7 +278,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val xdebugver = U(4, 4 bits)
 
           val stepLogic = new StateMachine {
-            val IDLE, SINGLE, WAIT = new State()
+            val IDLE, SINGLE, WAIT_IT = new State()
             setEntry(IDLE)
 
             val stepped = Reg(Bool()) setWhen(commitMask.orR || tp.api.harts(hartId).rvTrap)
@@ -292,11 +294,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
               when(ap.api.downMoving) {
                 stepped := False
                 counter := 0
-                goto(WAIT)
+                goto(WAIT_IT)
               }
             }
 
-            WAIT whenIsActive {
+            WAIT_IT whenIsActive {
               ap.api.haltIt := True
               when(tp.api.harts(hartId).redo) {
                 goto(SINGLE)
@@ -513,7 +515,17 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             assert(HART_COUNT.get == 1)
             api.read(PrivilegedPlugin.this.api.harts(hartId).hartId, CSR.MHARTID)
           }
-          case _ => api.read(U(hartIds(hartId)), CSR.MHARTID) // MRO Hardware thread ID.Machine Trap Setup
+          case _ => {
+            if(p.withHartIdInputDefaulted){
+              val hartIdDefaulted = in UInt(32 bits)
+              hartIdDefaulted.default(hartIds(hartId))
+              hartIdDefaulted.setName("hartId_" + hartId)
+              api.read(hartIdDefaulted, CSR.MHARTID)
+            } else {
+              api.read(U(hartIds(hartId)), CSR.MHARTID)
+            }
+
+          } // MRO Hardware thread ID.Machine Trap Setup
         }
 
         val misaExt = misaIds.map(1l << _).reduce(_ | _)

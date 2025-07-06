@@ -123,6 +123,7 @@ class ParamSimple() {
   var withRva = false
   var withRvf = false
   var withRvcbm = false
+  var gshareBanks = 1
   var btbDualPortRam = true
   var fpuIgnoreSubnormal = false
   var fpuWbAt = 2
@@ -564,6 +565,7 @@ class ParamSimple() {
     opt[Unit]("with-rvZcbm") action { (v, c) => withRvcbm = true }
     opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
+    opt[Unit]("with-hart-id-input-defaulted") action { (v, c) => privParam.withHartIdInputDefaulted = true }
     opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuMulParam.fmaFullAccuracy = false }
     opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
     opt[Unit]("with-aligner-buffer").unbounded() action { (v, c) => withAlignerBuffer = true }
@@ -579,6 +581,7 @@ class ParamSimple() {
     opt[Unit]("with-btb") action { (v, c) => withBtb = true }
     opt[Unit]("with-ras") action { (v, c) => withRas = true }
     opt[Unit]("without-ras") action { (v, c) => withRas = false }
+    opt[Int]("gshare-banks") action { (v, c) => gshareBanks = v }
     opt[Unit]("btb-single-port-ram") action { (v, c) => btbDualPortRam = false }
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0; storeRs2Late = true }
     opt[Unit]("with-store-rs2-late") action { (v, c) => storeRs2Late = true }
@@ -716,7 +719,8 @@ class ParamSimple() {
         memBytes = gshareBytes,
         historyWidth = 12,
         readAt = 0,
-        bootMemClear = bootMemClear
+        bootMemClear = bootMemClear,
+        banksCount = gshareBanks
       )
       plugins += new prediction.HistoryPlugin()
     }
