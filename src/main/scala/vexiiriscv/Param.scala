@@ -140,6 +140,7 @@ class ParamSimple() {
   var relaxedShift = false
   var relaxedSrc = true
   var relaxedBtb = false
+  var relaxedBtbHit = false
   var relaxedDiv = false
   var relaxedMulInputs = false
   var allowBypassFrom = 100 //100 => disabled
@@ -538,6 +539,7 @@ class ParamSimple() {
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
     opt[Unit]("relaxed-btb") action { (v, c) => relaxedBtb = true }
+    opt[Unit]("relaxed-btb-hit") action { (v, c) => relaxedBtbHit = true }
     opt[Unit]("stressed-btb") action { (v, c) => relaxedBtb = false }
     opt[Unit]("stressed-div") action { (v, c) => relaxedDiv = false }
     opt[Unit]("stressed-branch") action { (v, c) => relaxedBranch = false }
@@ -709,7 +711,7 @@ class ParamSimple() {
         rasDepth = if(withRas) 4 else 0,
         hashWidth = btbHashWidth,
         readAt = 0,
-        hitAt = 1,
+        hitAt = 1+relaxedBtbHit.toInt,
         jumpAt = 1+relaxedBtb.toInt,
         bootMemClear = bootMemClear
       )
