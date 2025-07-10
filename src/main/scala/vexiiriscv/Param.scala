@@ -104,6 +104,7 @@ class ParamSimple() {
   var withDispatcherBuffer = false
   var hartCount = 1
   var withMmu = false
+  var asidWidth = 0
   var physicalWidth = 32
   var resetVector = 0x80000000l
   var decoders = 1
@@ -648,6 +649,7 @@ class ParamSimple() {
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
     opt[Unit]("with-rdtime") action { (v, c) => privParam.withRdTime = true }
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
+    opt[Int]("asid-width") action{ (v,c) => asidWidth = v }
     opt[Int]("gshare-bytes") action{ (v,c) => gshareBytes = v }
     opt[Unit]("dual-issue") action { (v, c) =>
       decoders = 2
@@ -690,7 +692,8 @@ class ParamSimple() {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new vexiiriscv.memory.MmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
-        physicalWidth = physicalWidth
+        physicalWidth = physicalWidth,
+        asidWidth = asidWidth
       )
     }
 
