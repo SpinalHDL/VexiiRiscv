@@ -937,9 +937,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
 
         val cbm = withCbm generate new Area{
-          CBM_REDO := False
+          CBM_REDO := askCbm
           when(doCbm){
-            CBM_REDO := True
             wayWriteReservation.takeIt()
 
             val reader = this (WAYS_TAGS).reader(needFlushSel)
