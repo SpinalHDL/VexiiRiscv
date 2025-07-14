@@ -124,6 +124,7 @@ class ParamSimple() {
   var withRva = false
   var withRvf = false
   var withRvcbm = false
+  var withRvZknAes = true
   var gshareBanks = 1
   var btbDualPortRam = true
   var fpuIgnoreSubnormal = false
@@ -566,6 +567,7 @@ class ParamSimple() {
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
     opt[Unit]("with-rvZcbm") action { (v, c) => withRvcbm = true }
+    opt[Unit]("with-rvZknAes") action { (v, c) => withRvZknAes = true }
     opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
     opt[Unit]("with-hart-id-input-defaulted") action { (v, c) => privParam.withHartIdInputDefaulted = true }
@@ -842,6 +844,7 @@ class ParamSimple() {
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin(lane0)
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
+    if(withRvZknAes) plugins += new AesZknPlugin(layer = early0)
     if(withCfu) plugins += new CfuPlugin(
       layer = early0,
       forkAt = 0,
