@@ -104,6 +104,10 @@ object TestBench extends App {
       param.addOptions(this)
     }.parse(args, ()).nonEmpty)
 
+    if(simConfig._backend == SpinalSimBackendSel.VERILATOR){
+      simConfig.withFstWave
+    }
+
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
       simConfig.compile(VexiiRiscv(paramToPlugins(param)))
