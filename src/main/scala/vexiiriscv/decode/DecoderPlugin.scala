@@ -85,8 +85,8 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
     val rfaKeys = mutable.LinkedHashMap[RfAccess, AccessKeys]()
     for(rfa <- rfAccesses){
-      val physWidth = if(Riscv.RVE) 4 else 5
       val rfMapping = resources.collect{case r : RfResource /*if r.access == rfa*/ => r.rf }.toList //Commenting if r.access == rfa ensure all rfa mappings have the same RFID mapping
+      val physWidth = log2Up(rfMapping.map(_.sizeArch).max)
       val ak = AccessKeys(rfa, physWidth, rfMapping)
       ak.setPartialName(rfa)
       rfaKeys(rfa) = ak

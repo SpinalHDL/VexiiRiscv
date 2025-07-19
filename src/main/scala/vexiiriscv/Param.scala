@@ -491,7 +491,8 @@ class ParamSimple() {
   // Generate a human redable name from most of the supported configuration
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
-    var isa = s"rv${xlen}i"
+    var isa = s"rv${xlen}"
+    if (withRve) isa += "e" else isa += "i"
     if (withMul) isa += s"m"
     if (withRva) isa += "a"
     if (withRvf) isa += "f"
