@@ -124,7 +124,7 @@ class ParamSimple() {
   var withRva = false
   var withRvf = false
   var withRvcbm = false
-  var withRvZknAes = true
+  var withRvZknAes = false
   var gshareBanks = 1
   var btbDualPortRam = true
   var fpuIgnoreSubnormal = false
