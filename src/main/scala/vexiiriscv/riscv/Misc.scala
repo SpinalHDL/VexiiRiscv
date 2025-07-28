@@ -8,11 +8,13 @@ object Riscv extends AreaObject {
   val XLEN = blocking[Int]
   val FLEN = blocking[Int]
   val LSLEN = blocking[Int]
-  val RVC, RVM, RVD, RVF, RVA, RVZba, RVZbb, RVZbc, RVZbs, RVZcbm = blocking[Boolean]
+  val RVC, RVM, RVE, RVD, RVF, RVA, RVZba, RVZbb, RVZbc, RVZbs, RVZcbm = blocking[Boolean]
   def withFpu = RVF || RVD
 
   def fpuExponentWidth = if (RVD) 11 else if (RVF) 8 else 0
   def fpuMantissaWidth = if (RVD) 52 else if (RVF) 23 else 0
+
+  def rfDepth = if (RVE) 16 else 32
 
   /**
    * This is a simple bootloader, which will initialize registers to match opensbi needs (a0 a1 a2).

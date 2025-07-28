@@ -10,7 +10,7 @@ package vexiiriscv.riscv
 import spinal.core.{AreaObject, MaskedLiteral}
 
 object IntRegFile extends RegfileSpec with AreaObject {
-  override def sizeArch = 32
+  override def sizeArch = Riscv.rfDepth
   override def width = Riscv.XLEN
   override def x0AlwaysZero = true
   override def getName() = "integer"
