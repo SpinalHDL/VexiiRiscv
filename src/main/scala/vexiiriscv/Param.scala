@@ -653,6 +653,7 @@ class ParamSimple() {
     opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
     opt[Unit]("with-rdtime") action { (v, c) => privParam.withRdTime = true }
+    opt[Unit]("with-sstc") action { (v, c) => privParam.withSSTC = true }
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
     opt[Int]("asid-width") action{ (v,c) => asidWidth = v }
     opt[Int]("gshare-bytes") action{ (v,c) => gshareBytes = v }
