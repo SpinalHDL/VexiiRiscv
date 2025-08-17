@@ -94,6 +94,13 @@ object CSR {
   def MCAUSE    = 0x342 // MRW Machine trap cause.
   def MTVAL     = 0x343 // MRW Machine bad address.
   def MIP       = 0x344 // MRW Machine interrupt pending.
+  def MISELECT  = 0x350 // MRW Machine indirect register select.
+  def MIREG     = 0x351 // MRW Machine indirect register alias.
+  def MIREG2    = 0x352 // MRW Machine indirect register alias 2.
+  def MIREG3    = 0x353 // MRW Machine indirect register alias 3.
+  def MIREG4    = 0x354 // MRW Machine indirect register alias 4.
+  def MIREG5    = 0x355 // MRW Machine indirect register alias 5.
+  def MIREG6    = 0x356 // MRW Machine indirect register alias 6.
   def MENVCFG   = 0x30A // MRW Machine environment configuration register.
   def MENVCFGH  = 0x31A // MRW Machine environment configuration register.
   def MBASE     = 0x380 // MRW Base register.
@@ -129,6 +136,13 @@ object CSR {
   val STVAL       = 0x143
   val SIP         = 0x144
   val STIMECMP    = 0x14D
+  val SISELECT    = 0x150
+  val SIREG       = 0x151
+  val SIREG2      = 0x152
+  val SIREG3      = 0x153
+  val SIREG4      = 0x154
+  val SIREG5      = 0x155
+  val SIREG6      = 0x156
   val STIMECMPH   = 0x15D
   val SATP        = 0x180
   val SCOUNTOVF   = 0xDA0

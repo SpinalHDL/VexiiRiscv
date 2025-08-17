@@ -136,6 +136,7 @@ class ParamSimple() {
   var withRvd = false
   var withRvZb = false
   var withWhiteboxerOutputs = false
+  var withIndirectCsr = false
   var privParam = PrivilegedParam.base
   var lsuForkAt = 0
   var lsuPmaAt = 0
@@ -500,6 +501,7 @@ class ParamSimple() {
     if (withRvd) isa += "d"
     if (withRvc) isa += "c"
     if (withRvZb) isa += "ZbaZbbZbcZbs"
+    if (withIndirectCsr) isa += "Smcsrind" + privParam.withSupervisor.mux("Sscsrind", "")
     if (privParam.withSupervisor) isa += "s"
     if (privParam.withUser) isa += "u"
     val r = new ArrayBuffer[String]()
@@ -603,6 +605,7 @@ class ParamSimple() {
     opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
     opt[Unit]("regfile-reg-based") action { (v, c) => regFileRegBasedRam = true; regFileDualPortRam = false}
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
+    opt[Unit]("with-indirect-csr") action { (v, c) => withIndirectCsr = true }
     opt[Int]("performance-counters").unbounded() action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
     opt[Unit]("without-performance-scountovf").unbounded() action { (v, c) => withPerformanceScountovf = false }
     opt[Unit]("with-fetch-l1").unbounded() action { (v, c) => fetchL1Enable = true }
@@ -990,6 +993,7 @@ class ParamSimple() {
     plugins += new CsrRamPlugin()
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
+    if(withIndirectCsr) plugins += new IndirectCsrPlugin(privParam.withSupervisor)
     plugins += new PrivilegedPlugin(privParam, withHartIdInput.mux(null, hartId until hartId+hartCount))
     plugins += new TrapPlugin(trapAt = intWritebackAt)
     plugins += new EnvPlugin(early0, executeAt = 0)
