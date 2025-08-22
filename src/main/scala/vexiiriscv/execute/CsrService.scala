@@ -99,7 +99,11 @@ trait CsrService {
   def onRead (csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = spec += CsrOnRead(csrFilter, onlyOnFire, () => body)
   def onReadToWrite (csrFilter : Any)(body : => Unit) = spec += CsrOnReadToWrite(csrFilter, () => body)
   def onWrite(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = spec += CsrOnWrite(csrFilter, onlyOnFire, () => body)
-  def allowCsr(csrFilter : Any) = onDecode(csrFilter){}
+  def allowCsr(csrFilter : Any, cond: Bool = True) = onDecode(csrFilter) {
+    when(!cond) {
+      bus.decode.doException()
+    }
+  }
   def flushOnWrite(csrFilter : Any): Unit = {
     onDecode(csrFilter) {
       when(bus.decode.write) {
@@ -172,6 +176,13 @@ trait CsrService {
 }
 
 class CsrHartApi(csrService: CsrService, hartId : Int){
+  def allowCsr(csrFilter : Any, cond: Bool) = csrService.onDecode(csrFilter) {
+    when(csrService.readingHartId(hartId) || csrService.writingHartId(hartId)) {
+      when (!cond) {
+        csrService.bus.decode.doException()
+      }
+    }
+  }
 
   def onWrite(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = csrService.onWrite(csrFilter, onlyOnFire){
     when(csrService.writingHartId(hartId)){ body }
