@@ -105,9 +105,10 @@ class CsrAccessPlugin(val layer : LaneLayer,
 
     ramPortRetainer.foreach(_.release())
 
+    var unamedId = -1
     def filterToName(filter: Any) = filter match {
       case f: Int => f.toString
-      case f: Nameable => f.getName()
+      case f: Nameable => f.isNamed.mux(f.getName(), s"UNAMED_${unamedId += 1; unamedId}")//assert(f.isNamed, "CSR addresses need to be named. If you do csrApi.access(y, CsrCondFilter(..)), move the CsrCondFilter in a val : val myFilter = CsrCondFilter(..))"); f.getName()
     }
 
     val grouped = spec.groupByLinked(_.csrFilter)
