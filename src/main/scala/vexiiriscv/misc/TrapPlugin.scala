@@ -38,6 +38,13 @@ case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
   }
 }
 
+case class InterruptState(width: Int) extends Bundle {
+  val id = UInt(width bits)
+  val priority = UInt(width bits)
+  val privilege = UInt(2 bits)
+  val valid = Bool()
+}
+
 trait CauseUser{
   def getCauseWidthMin() : Int
 }
@@ -177,10 +184,6 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
       //Process interrupt request, code and privilege
       val interrupt = new Area {
-        val valid = False
-        val code = Global.CODE().assignDontCare()
-        val targetPrivilege = UInt(2 bits).assignDontCare()
-
         val privilegeAllowInterrupts = mutable.LinkedHashMap[Int, Bool]()
         var privilegs: List[Int] = Nil
         privilegs :+= 3
@@ -196,23 +199,50 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           ??? // privilegeAllowInterrupts += 1 -> ((ustatus.UIE && !setup.supervisorPrivilege))
         }
 
-        while (privilegs.nonEmpty) {
-          val p = privilegs.head
-          when(privilegeAllowInterrupts(p)) {
-            for (i <- csr.spec.interrupt
-                 if i.privilege <= p //EX : Machine timer interrupt can't go into supervisor mode
-                 if privilegs.tail.forall(e => i.delegators.exists(_.privilege == e))) { // EX : Supervisor timer need to have machine mode delegator
-              val delegUpOn = i.delegators.filter(_.privilege > p).map(_.enable).fold(True)(_ && _)
-              val delegDownOff = !i.delegators.filter(_.privilege <= p).map(_.enable).orR
-              when(i.cond && delegUpOn && delegDownOff) {
-                valid := True
-                code := i.id
-                targetPrivilege := p
-              }
-            }
-          }
-          privilegs = privilegs.tail
-        }
+        val privilegeTriggers = privilegs.map(p => new Area {
+          val interrupts = csr.spec.interrupt.filter(
+            i => (i.privilege <= p) && //EX : Machine timer interrupt can't go into
+            privilegs.filter(_ > p).forall(e => i.delegators.exists(_.privilege == e)) // EX : Supervisor timer need to have machine mode delegator
+          ).map(i => {
+            val int = InterruptState(CODE_WIDTH)
+            val delegUpOn = i.delegators.filter(_.privilege > p).map(_.enable).fold(True)(_ && _)
+            val delegDownOff = !i.delegators.filter(_.privilege <= p).map(_.enable).orR
+
+            int.id := i.id;
+            int.priority := i.priority
+            int.privilege := p
+            int.valid := i.cond && delegUpOn && delegDownOff
+
+            int
+          })
+
+          val triggered = RegNext(interrupts.reduceBalancedTree((a, b) => {
+            val priorityCheck = (a.privilege > b.privilege) || ((a.privilege === b.privilege) && (a.priority < b.priority))
+            val takeA = !b.valid || (a.valid && (priorityCheck))
+            takeA ? a | b
+          }))
+        })
+
+        val privilegeIndexedTriggers = privilegs.zip(privilegeTriggers)
+
+        val result = privilegeIndexedTriggers.map{case (p, i) => {
+          val int = InterruptState(CODE_WIDTH)
+          val triggered = i.triggered
+
+          int.id := triggered.id
+          int.priority := triggered.priority
+          int.privilege := triggered.privilege
+          int.valid := triggered.valid && privilegeAllowInterrupts(p)
+
+          int
+        }}.reduceBalancedTree((a, b) => {
+          val takeA = !b.valid || (a.valid && (a.privilege > b.privilege))
+          takeA ? a | b
+        })
+
+        val valid = CombInit(result.valid)
+        val code = CombInit(result.id.asBits)
+        val targetPrivilege = CombInit(result.privilege)
 
         if (priv.p.withDebug) {
           valid clearWhen (csr.debug.dcsr.step && !csr.debug.dcsr.stepie)
