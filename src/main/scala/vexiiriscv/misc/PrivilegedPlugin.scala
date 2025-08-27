@@ -423,7 +423,6 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             csrrw(CSR.TDATA1, read, 2 -> execute, 3 -> u, 4 -> s, 6 -> m, XLEN - 5 -> dmode, 12 -> action, 20 -> hit, 16 -> size(1 downto 0))
             if(size.getWidth > 2) csrrw(CSR.TDATA1, read, 21 -> size(3 downto 2))
             csrr(CSR.TDATA1, read, XLEN - 4 -> tpe)
-            csrr(CSR.TDATA1, read, 21 -> B(12))
 
             val load, store = RegInit(False)
             val chain = RegInit(False).allowUnsetRegToAvoidLatch
