@@ -43,6 +43,11 @@ case class CfuCmd( p : CfuBusParameter ) extends Bundle{
     WeakConnector(m, s, m.function_id, s.function_id, defaultValue = null, allowUpSize = false, allowDownSize = true , allowDrop = true)
     WeakConnector(m, s, m.reorder_id,  s.reorder_id,  defaultValue = null, allowUpSize = false , allowDownSize = false, allowDrop = false)
     WeakConnector(m, s, m.request_id,  s.request_id,  defaultValue = null, allowUpSize = false, allowDownSize = false, allowDrop = false)
+
+    WeakConnector(m, s, m.state_index, s.state_index, defaultValue = null, allowUpSize = false, allowDownSize = false , allowDrop = false)
+    WeakConnector(m, s, m.cfu_index,   s.cfu_index,   defaultValue = null, allowUpSize = false, allowDownSize = false , allowDrop = false)
+    WeakConnector(m, s, m.raw_insn,    s.raw_insn,    defaultValue = null, allowUpSize = false, allowDownSize = true  , allowDrop = true)
+
     s.inputs := m.inputs
   }
 }
