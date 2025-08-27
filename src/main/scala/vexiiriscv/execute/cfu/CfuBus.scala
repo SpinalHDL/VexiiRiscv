@@ -56,6 +56,7 @@ case class CfuRsp(p : CfuBusParameter) extends Bundle{
     def s = this
     s.response_id := m.response_id
     s.outputs := m.outputs
+    if(s.p.CFU_WITH_STATUS) s.status := m.p.CFU_WITH_STATUS.mux(m.status, B(0))
   }
 }
 

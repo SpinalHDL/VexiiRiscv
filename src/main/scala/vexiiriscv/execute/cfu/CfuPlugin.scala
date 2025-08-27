@@ -212,7 +212,11 @@ object CfuTest{
     CFU_OUTPUTS = 1,
     CFU_OUTPUT_DATA_W = 32,
     CFU_FLOW_REQ_READY_ALWAYS = false,
-    CFU_FLOW_RESP_READY_ALWAYS = false
+    CFU_FLOW_RESP_READY_ALWAYS = false,
+    CFU_WITH_STATUS = true,
+    CFU_RAW_INSN_W = 32,
+    CFU_CFU_ID_W = 4,
+    CFU_STATE_INDEX_NUM = 5
   )
 }
 case class CfuTest() extends Component{
@@ -222,5 +226,6 @@ case class CfuTest() extends Component{
   io.bus.rsp.arbitrationFrom(io.bus.cmd)
   io.bus.rsp.response_id := io.bus.cmd.request_id
   io.bus.rsp.outputs(0) := ~(io.bus.cmd.inputs(0) & io.bus.cmd.inputs(1))
+  io.bus.rsp.status := 0
 }
 

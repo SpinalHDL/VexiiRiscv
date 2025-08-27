@@ -45,7 +45,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
   val CSR_ADDRESS = Payload(UInt(12 bits))
 
   import CsrFsm._
-  
+
   override val bus = during build CsrBus().setup()
   override def waitElaborationDone(): Unit = logic.get
 
@@ -105,9 +105,10 @@ class CsrAccessPlugin(val layer : LaneLayer,
 
     ramPortRetainer.foreach(_.release())
 
+    var unamedId = -1
     def filterToName(filter: Any) = filter match {
       case f: Int => f.toString
-      case f: Nameable => f.getName()
+      case f: Nameable => f.isNamed.mux(f.getName(), s"UNAMED_${unamedId += 1; unamedId}")//assert(f.isNamed, "CSR addresses need to be named. If you do csrApi.access(y, CsrCondFilter(..)), move the CsrCondFilter in a val : val myFilter = CsrCondFilter(..))"); f.getName()
     }
 
     val grouped = spec.groupByLinked(_.csrFilter)
@@ -144,6 +145,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         for ((filter, sel) <- sels) sel := (filter match {
           case filter: Int => csrAddress === filter
           case filter: CsrListFilter => filter.mapping.map(csrAddress === _).orR //TODO
+          case filter: CsrCondFilter => csrAddress === filter.csrId && filter.cond
         })
         val implemented = sels.values.orR
 

@@ -13,6 +13,7 @@ import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.misc.{Elf, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.MemoryConnection
+import vexiiriscv.execute.cfu.{CfuPlugin, CfuTest}
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 
 
@@ -68,7 +69,6 @@ class MicroSoc(p : MicroSocParam) extends Component {
         xip at 0x20000000 of bus32
       }
 
-
       val demo = p.demoPeripheral.map(new PeripheralDemoFiber(_){
         node at 0x10003000 of bus32
         plic.mapUpInterrupt(3, interrupt)
@@ -78,6 +78,12 @@ class MicroSoc(p : MicroSocParam) extends Component {
       val cpuPlic = cpu.bind(plic) // External interrupts connection
       val cpuClint = cpu.bind(clint) // Timer interrupt + time reference + stop time connection
     }
+
+    val cfu = p.vexii.withCfu generate (Fiber patch new Area {
+      val cpuCfuBus = cpu.logic.core.host[CfuPlugin].logic.bus
+      val cfu = CfuTest() // If instead you want to export the CFU bus to the io, replace with : val bus = cpuCfuBus.toIo()
+      cfu.io.bus << cpuCfuBus
+    })
 
     val patcher = Fiber patch new Area {
       p.ramElf.foreach(new Elf(_, p.vexii.xlen).init(ram.thread.logic.mem, 0x80000000l))

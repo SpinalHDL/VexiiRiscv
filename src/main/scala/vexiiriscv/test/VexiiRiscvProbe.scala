@@ -35,7 +35,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   var enabled = true
   var trace = true
   var checkLiveness = true
-  var livenessThreshold = 16000l
+  var livenessThreshold = 32000l
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
   val autoStoreBroadcast = cpu.host.get[LsuCachelessPlugin].nonEmpty

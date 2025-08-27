@@ -26,6 +26,7 @@ class RegFilePlugin(var spec : RegfileSpec,
                     var allOne : Boolean = false,
                     var syncRead : Boolean = true,
                     var dualPortRam : Boolean = true,
+                    var regBasedRam : Boolean = false,
                     var latchBased : Boolean = false,
                     var maskReadDuringWrite : Boolean = false) extends FiberPlugin with RegfileService with InitService {
   withPrefix(spec.getName())
@@ -109,6 +110,7 @@ class RegFilePlugin(var spec : RegfileSpec,
         headZero = spec.x0AlwaysZero,
         syncRead = syncRead,
         dualPortRam = dualPortRam,
+        regBasedRam = regBasedRam,
         asyncReadBySyncReadRevertedClk = asyncReadBySyncReadRevertedClk,
         maskReadDuringWrite = maskReadDuringWrite
       )

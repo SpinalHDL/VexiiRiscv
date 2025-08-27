@@ -104,6 +104,7 @@ class ParamSimple() {
   var withDispatcherBuffer = false
   var hartCount = 1
   var withMmu = false
+  var asidWidth = 0
   var physicalWidth = 32
   var resetVector = 0x80000000l
   var decoders = 1
@@ -112,6 +113,7 @@ class ParamSimple() {
   var dispatcherAt = 1
   var regFileSync = true
   var regFileDualPortRam = true
+  var regFileRegBasedRam = false
   var withGShare = false
   var withBtb = false
   var withRas = false
@@ -121,7 +123,9 @@ class ParamSimple() {
   var withDiv = false
   var withRva = false
   var withRvf = false
+  var withRve = false
   var withRvcbm = false
+  var withRvZknAes = false
   var gshareBanks = 1
   var btbDualPortRam = true
   var fpuIgnoreSubnormal = false
@@ -139,6 +143,7 @@ class ParamSimple() {
   var relaxedShift = false
   var relaxedSrc = true
   var relaxedBtb = false
+  var relaxedBtbHit = false
   var relaxedDiv = false
   var relaxedMulInputs = false
   var allowBypassFrom = 100 //100 => disabled
@@ -183,6 +188,7 @@ class ParamSimple() {
   var bootMemClear = false
   var mulKeepSrc = false
   var withCfu = false
+  var gshareBytes = 4 KiB
 
   var fetchTsp = MmuStorageParameter(
     levels = List(
@@ -485,7 +491,8 @@ class ParamSimple() {
   // Generate a human redable name from most of the supported configuration
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
-    var isa = s"rv${xlen}i"
+    var isa = s"rv${xlen}"
+    if (withRve) isa += "e" else isa += "i"
     if (withMul) isa += s"m"
     if (withRva) isa += "a"
     if (withRvf) isa += "f"
@@ -536,6 +543,7 @@ class ParamSimple() {
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
     opt[Unit]("relaxed-btb") action { (v, c) => relaxedBtb = true }
+    opt[Unit]("relaxed-btb-hit") action { (v, c) => relaxedBtbHit = true }
     opt[Unit]("stressed-btb") action { (v, c) => relaxedBtb = false }
     opt[Unit]("stressed-div") action { (v, c) => relaxedDiv = false }
     opt[Unit]("stressed-branch") action { (v, c) => relaxedBranch = false }
@@ -555,12 +563,14 @@ class ParamSimple() {
     opt[Unit]("with-mul").unbounded() action { (v, c) => withMul = true }
     opt[Unit]("with-div").unbounded() action { (v, c) => withDiv = true }
     opt[Unit]("with-rvm") action { (v, c) => withMul = true; withDiv = true }
+    opt[Unit]("with-rve") action { (v, c) => withRve = true }
     opt[Unit]("with-rva") action { (v, c) => withRva = true }
     opt[Unit]("with-rvf") action { (v, c) => withRvf = true }
     opt[Unit]("with-rvd") action { (v, c) => withRvd = true; withRvf = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
     opt[Unit]("with-rvZcbm") action { (v, c) => withRvcbm = true }
+    opt[Unit]("with-rvZknAes") action { (v, c) => withRvZknAes = true }
     opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
     opt[Unit]("with-hart-id-input-defaulted") action { (v, c) => privParam.withHartIdInputDefaulted = true }
@@ -589,6 +599,7 @@ class ParamSimple() {
     opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
     opt[Unit]("regfile-dual-ports") action { (v, c) => regFileDualPortRam = true }
     opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
+    opt[Unit]("regfile-reg-based") action { (v, c) => regFileRegBasedRam = true; regFileDualPortRam = false}
     opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
     opt[Int]("performance-counters").unbounded() action { (v, c) => withPerformanceCounters = true; additionalPerformanceCounters = v }
     opt[Unit]("without-performance-scountovf").unbounded() action { (v, c) => withPerformanceScountovf = false }
@@ -642,7 +653,10 @@ class ParamSimple() {
     opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
     opt[Unit]("with-rdtime") action { (v, c) => privParam.withRdTime = true }
+    opt[Unit]("with-sstc") action { (v, c) => privParam.withSSTC = true }
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
+    opt[Int]("asid-width") action{ (v,c) => asidWidth = v }
+    opt[Int]("gshare-bytes") action{ (v,c) => gshareBytes = v }
     opt[Unit]("dual-issue") action { (v, c) =>
       decoders = 2
       lanes = 2
@@ -679,12 +693,13 @@ class ParamSimple() {
 
     val intWritebackAt = 2 //Alias for "trap at" as well
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rve = withRve)
     withMmu match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new vexiiriscv.memory.MmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
-        physicalWidth = physicalWidth
+        physicalWidth = physicalWidth,
+        asidWidth = asidWidth
       )
     }
 
@@ -705,14 +720,14 @@ class ParamSimple() {
         rasDepth = if(withRas) 4 else 0,
         hashWidth = btbHashWidth,
         readAt = 0,
-        hitAt = 1,
+        hitAt = 1+relaxedBtbHit.toInt,
         jumpAt = 1+relaxedBtb.toInt,
         bootMemClear = bootMemClear
       )
     }
     if(withGShare) {
       plugins += new prediction.GSharePlugin (
-        memBytes = 4 KiB,
+        memBytes = gshareBytes,
         historyWidth = 12,
         readAt = 0,
         bootMemClear = bootMemClear,
@@ -805,10 +820,11 @@ class ParamSimple() {
 
     plugins += new regfile.RegFilePlugin(
       spec = riscv.IntRegFile,
-      physicalDepth = 32,
+      physicalDepth = if(withRve) 16 else 32,
       preferedWritePortForInit = "lane0",
       syncRead = regFileSync,
       dualPortRam = regFileDualPortRam,
+      regBasedRam = regFileRegBasedRam,
       maskReadDuringWrite = false
     )
 
@@ -832,6 +848,7 @@ class ParamSimple() {
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin(lane0)
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
+    if(withRvZknAes) plugins += new AesZknPlugin(layer = early0)
     if(withCfu) plugins += new CfuPlugin(
       layer = early0,
       forkAt = 0,
@@ -984,6 +1001,7 @@ class ParamSimple() {
       debugCd = embeddedJtagCd,
       noTapCd = embeddedJtagNoTapCd
     )
+
     val lateAluAt = intWritebackAt
 
     // Late ALU in the main execution pipeline
@@ -1039,6 +1057,7 @@ class ParamSimple() {
         preferedWritePortForInit = "lane0",
         syncRead = regFileSync,
         dualPortRam = regFileDualPortRam,
+        regBasedRam = regFileRegBasedRam,
         maskReadDuringWrite = false
       )
       plugins += new WriteBackPlugin(lane0, FloatRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions

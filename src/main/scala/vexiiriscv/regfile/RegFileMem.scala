@@ -24,6 +24,7 @@ class RegFileMem(rfpp : RegFilePortParam,
                  headZero        : Boolean,
                  syncRead        : Boolean,
                  dualPortRam     : Boolean,
+                 regBasedRam     : Boolean,
                  asyncReadBySyncReadRevertedClk : Boolean = false,
                  maskReadDuringWrite: Boolean = true) extends Component {
   import rfpp._
@@ -44,7 +45,8 @@ class RegFileMem(rfpp : RegFilePortParam,
     from.data := to.rsp
   }
 
-  val asMem = (writesParameter.size == 1 || !dualPortRam) generate new Area {
+  val infered = writesParameter.size == 1 || !dualPortRam
+  val asMem = (infered && !regBasedRam) generate new Area {
     val ram = Mem.fill((1 << addressWidth))(Bits(dataWidth bits))
     Verilator.public(ram)
 
@@ -70,14 +72,34 @@ class RegFileMem(rfpp : RegFilePortParam,
     }
   }
 
-  val asAsyncDp = (asMem == null && !syncRead) generate {
+  val asReg = (infered && regBasedRam) generate new Area {
+    assert(!syncRead)
+    val ram = Vec.fill((1 << addressWidth))(Reg(Bits(dataWidth bits)))
+    Verilator.public(ram)
+
+    for(addr <- ram.indices){
+      val oh = conv.writes.map(p => p.valid && p.address === addr)
+      val data = OhMux.or(oh, conv.writes.map(_.data))
+      when(oh.orR){
+        ram(addr) := data
+      }
+    }
+
+    val reads = for ((r, i) <- conv.read.zipWithIndex) yield new Area {
+      val async = !syncRead generate new Area {
+        r.rsp := ram.read(r.cmd.payload)
+      }
+    }
+  }
+
+  val asAsyncDp = (!infered && !syncRead) generate {
     assert(!asyncReadBySyncReadRevertedClk)
     val logic = new RamAsyncMwMux(Bits(rfpp.dataWidth bits), 1 << rfpp.addressWidth, writesParameter.size, readsParameter.size)
     logic.io <> conv
     logic.location.ram.foreach(_.randBoot())
   }
 
-  val asSyncDp = (asMem == null && syncRead) generate {
+  val asSyncDp = (!infered && syncRead) generate {
     assert(!asyncReadBySyncReadRevertedClk)
     val logic = new RamSyncMwMux(Bits(rfpp.dataWidth bits), 1 << rfpp.addressWidth, writesParameter.size, readsParameter.size)
     logic.location.ram.foreach(_.randBoot())
