@@ -164,3 +164,12 @@ object CSR {
   val FCSR = 0x3
 }
 
+object InterruptInfo {
+  val defaultOrder = List[Int] (
+    11, 3, 7,   // Machine interrupts: external, software, timer
+    9, 1, 5,    // Supervisor interrupts: external, software, timer
+    12,         // Supervisor guest external interrupt
+    10, 2, 6,   // VS interrupts: external, software, timer
+    13          // Local interrupt: counter overflow
+  )
+}
