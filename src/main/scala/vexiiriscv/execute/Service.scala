@@ -116,10 +116,11 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   }
 
   /** Set until which point in the pipeline the instruction may flush younger instructions */
-  def mayFlushUpTo(executeCtrlId: Int): Unit = {
+  def mayFlushUpTo(executeCtrlId: Int) : this.type = {
     var at = executeCtrlId + el.executeAt
     mayFlushUpTo.foreach(v => v max at)
     mayFlushUpTo = Some(at)
+    this
   }
 
   /** Set from which point in the pipeline the instruction should not be flushed anymore because it already had produced side effects */

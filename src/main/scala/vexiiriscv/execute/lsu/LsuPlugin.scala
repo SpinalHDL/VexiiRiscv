@@ -194,7 +194,7 @@ class LsuPlugin(var layer : LaneLayer,
     val LSU_PREFETCH = Payload(Bool())
 
     frontend.uopList.foreach(layer(_).addDecoding(FENCE -> False, LSU_PREFETCH -> False))
-    layer.add(Rvi.FENCE).setCompletion(ctrlAt).addDecoding(frontend.dec(SEL -> True, FENCE -> True, LSU_PREFETCH -> False))
+    layer.add(Rvi.FENCE).mayFlushUpTo(ctrlAt).setCompletion(ctrlAt).addDecoding(frontend.dec(SEL -> True, FENCE -> True, LSU_PREFETCH -> False))
     elp.setDecodingDefault(FENCE, False)
 
     for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(ctrlAt)
@@ -839,13 +839,16 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       // memory fences while the store buffer isn't drained are handled by retrying the fence later.
-      val fenceTrap = withStoreBuffer generate new Area{
-        val valid = (l1.ATOMIC || FENCE) && (!storeBuffer.empty || !onAddress0.STORE_BUFFER_EMPTY)
-        when(valid) {
+      val fenceTrap = new Area{
+        val enable = False
+        val doIt = (l1.ATOMIC || FENCE) && enable
+        when(doIt) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
         }
+
+        if(withStoreBuffer) enable.setWhen((!storeBuffer.empty || !onAddress0.STORE_BUFFER_EMPTY))
       }
 
       val cmbTrap = withCbm generate new Area{
@@ -889,7 +892,7 @@ class LsuPlugin(var layer : LaneLayer,
       abords += FROM_LSU && (!isValid || isCancel || FENCE)
       abords += mmuNeeded && MMU_FAILURE
       if(withStoreBuffer && withCbm) abords += (l1.CLEAN || l1.INVALID) && wb.hit
-      if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid || wb.selfHazard
+      if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.doIt || wb.selfHazard
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
       skipsWrite += l1.FAULT
