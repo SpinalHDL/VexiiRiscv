@@ -23,6 +23,22 @@ case class CsrWriteCancel(override val csrFilter : Any, cond : Bool) extends Csr
 case class CsrOnReadData (bitOffset : Int, value : Bits)
 case class CsrIsReadingHartId(hartId : Int, value : Bool)
 
+/**
+ * CSR filter which ckecks both CSR id and runtime condition
+ *
+ * The CSR filter serves as an enhanced csr filter with extra runtime check.
+ * It is designed to simplify CSR with complex access requirement (such as
+ * indirect CSR), or CSR needs to be mapped to different register with
+ * different condition.
+ *
+ * For a single CsrCondFilter, it is equivalent to performing the following:
+ *
+ * Read:  `csr.read(id)  + csr.allowCSR(id, cond)`
+ * Write: `csr.write(id) + csr.allowCSR(id, cond)`
+ *
+ * For multiple CsrCondFilter with the same id, its `cond` should be exclusive,
+ * otherwise some unexpected behavior may occur.
+ */
 case class CsrCondFilter(csrId : Int, cond : Bool) extends CsrFilter
 case class CsrListFilter(mapping : scala.collection.Seq[Int]) extends CsrFilter
 
