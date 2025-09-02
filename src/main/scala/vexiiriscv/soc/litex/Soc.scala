@@ -509,6 +509,7 @@ object PythonArgsGen extends App{
          |VexiiRiscv.with_rvf = ${withRvf.toInt}
          |VexiiRiscv.with_rvd = ${withRvd.toInt}
          |VexiiRiscv.with_rvc = ${withRvc.toInt}
+         |VexiiRiscv.with_rvcbom = ${withRvcbm.toInt}
          |VexiiRiscv.with_lsu_software_prefetch = ${lsuSoftwarePrefetch.toInt}
          |VexiiRiscv.with_lsu_hardware_prefetch = "${lsuHardwarePrefetch}"
          |VexiiRiscv.internal_bus_width = ${memDataWidth}
