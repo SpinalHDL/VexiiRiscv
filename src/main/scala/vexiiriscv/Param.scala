@@ -126,6 +126,7 @@ class ParamSimple() {
   var withRve = false
   var withRvcbm = false
   var withRvZknAes = false
+  var withRvcbmLlc = false
   var gshareBanks = 1
   var btbDualPortRam = true
   var fpuIgnoreSubnormal = false
@@ -570,6 +571,7 @@ class ParamSimple() {
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
     opt[Unit]("with-rvZcbm") action { (v, c) => withRvcbm = true }
+    opt[Unit]("with-rvZcbm-llc") action { (v, c) => withRvcbm = true; withRvcbmLlc = true }
     opt[Unit]("with-rvZknAes") action { (v, c) => withRvZknAes = true }
     opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
@@ -924,6 +926,7 @@ class ParamSimple() {
         storeBufferOps = lsuStoreBufferOps,
         softwarePrefetch = lsuSoftwarePrefetch,
         withCbm = withRvcbm,
+        withLlcFlush = withRvcbmLlc,
         pmpPortParameter = fetchL1PmpParam,
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
@@ -941,7 +944,7 @@ class ParamSimple() {
         wayCount       = lsuL1Ways,
         withBypass     = withLsuBypass,
         withCoherency  = lsuL1Coherency,
-        withCbm        = withRvcbm,
+        withCbm        = withRvcbm && !withRvcbmLlc,
         bootMemClear = bootMemClear,
         tagsReadAsync  = lsuL1TagsReadAsync
       )

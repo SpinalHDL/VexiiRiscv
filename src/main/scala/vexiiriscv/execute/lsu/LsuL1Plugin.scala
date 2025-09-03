@@ -875,13 +875,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val askRefill = isAccess && MISS && canRefill
         val askUpgrade = isAccess && MISS_UNIQUE && canRefill
         val askFlush = FLUSH && canFlush && needFlushs.orR
-        val askCbm =  WAYS_HIT && (INVALID || CLEAN && wasDirty)
+        val askCbm =  withCbm.mux(WAYS_HIT && (INVALID || CLEAN && wasDirty), False)
 
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
         val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
-        val doCbm = SEL && askCbm && wayWriteReservation.win && !writeback.full && !refillHazard && !writebackHazard
+        val doCbm = withCbm.mux(SEL && askCbm && wayWriteReservation.win && !writeback.full && !refillHazard && !writebackHazard, False)
 
         val wayId = OHToUInt(WAYS_HITS)
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))

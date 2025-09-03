@@ -324,6 +324,18 @@ class TestOptions {
     peripheral.withStdIn = withStdIn
 
 
+
+    dut.host.get[LsuPlugin].filter(_.withLlcFlush).map{p =>
+      val bus = p.logic.llcBus
+      val rspQueue = StreamDriver.queue(bus.rsp, cd)
+
+      StreamReadyRandomizer(bus.cmd, cd)
+      StreamMonitor(bus.cmd, cd){p =>
+        rspQueue._2.enqueue {p => }
+      }
+    }
+
+
     var forceProbe = Option.empty[Long => Unit]
 
     def mapFetchAxi4(axi : Axi4ReadOnly): Unit = {
