@@ -21,7 +21,7 @@ import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
 import vexiiriscv.{Global, riscv}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu.AguPlugin._
-import vexiiriscv.execute.lsu.LsuL1.{HAZARD, INVALID}
+import vexiiriscv.execute.lsu.LsuL1.{HAZARD}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -227,15 +227,15 @@ class LsuPlugin(var layer : LaneLayer,
 
         cap.readWrite(at, 4 -> cbie, 6 -> cbcfe)
         ds.addIllegalCheck{ ctrlLane =>
-          privLower && (ctrlLane(INVALID) && cbie === 0 || ctrlLane(CLEAN) && cbcfe === 0  && privLower)
+          privLower && (ctrlLane(INVALIDATE) && cbie === 0 || ctrlLane(CLEAN) && cbcfe === 0  && privLower)
         }
       }
 
       ds.addMicroOpDecodingDefault(CLEAN, False)
-      ds.addMicroOpDecodingDefault(INVALID, False)
+      ds.addMicroOpDecodingDefault(INVALIDATE, False)
       ds.addMicroOpDecoding(Rvi.CBM_CLEAN, CLEAN, True)
       ds.addMicroOpDecoding(Rvi.CBM_FLUSH, CLEAN, True)
-      ds.addMicroOpDecoding(Rvi.CBM_INVALIDATE, INVALID, True)
+      ds.addMicroOpDecoding(Rvi.CBM_INVALIDATE, INVALIDATE, True)
 
       val menvcfg = xenvcfg(3)
       val senvcfg = pp.implementSupervisor generate xenvcfg(1)
@@ -423,8 +423,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := LOAD
         port.store := STORE
         port.atomic := ATOMIC
-        port.clean := withCbm.mux(CLEAN || INVALIDATE && cbmCsr.invalIntoClean, False)
-        port.invalidate := withCbm.mux(INVALIDATE, False)
+        port.clean := withL1Cmb.mux(CLEAN || INVALIDATE && cbmCsr.invalIntoClean, False)
+        port.invalidate := withL1Cmb.mux(INVALIDATE, False)
         port.op := LsuL1CmdOpcode.LSU
         if(softwarePrefetch) when(LSU_PREFETCH) { port.op := LsuL1CmdOpcode.PREFETCH }
 
@@ -508,14 +508,17 @@ class LsuPlugin(var layer : LaneLayer,
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
       arbiter.io.output.ready := !elp.isFreezed()
       l1.SEL := arbiter.io.output.valid
+      if(withLlcFlush) l1.SEL clearWhen(arbiter.io.output.clean || arbiter.io.output.invalidate) //Avoid enabling the L1 cache on flush
       l1.MIXED_ADDRESS := arbiter.io.output.address
       l1.MASK := AddressToMask(arbiter.io.output.address, arbiter.io.output.size, Riscv.LSLEN / 8)
       l1.SIZE := arbiter.io.output.size
       l1.LOAD := arbiter.io.output.load
       l1.ATOMIC := arbiter.io.output.atomic
       l1.STORE := arbiter.io.output.store
-      l1.CLEAN := arbiter.io.output.clean
-      l1.INVALID := arbiter.io.output.invalidate
+      if(withL1Cmb){
+        l1.CLEAN := arbiter.io.output.clean
+        l1.INVALID := arbiter.io.output.invalidate
+      }
       l1.PREFETCH := arbiter.io.output.op === LsuL1CmdOpcode.PREFETCH
       l1.FLUSH := arbiter.io.output.op === LsuL1CmdOpcode.FLUSH
       Decode.STORE_ID := arbiter.io.output.storeId
@@ -556,7 +559,7 @@ class LsuPlugin(var layer : LaneLayer,
     // Pre compute a few things to reduce the combinatorial path presure on the ctrl stage.
     val preCtrl = new elp.Execute(ctrlAt-1){
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
-      if(withCbm) MISS_ALIGNED clearWhen(l1.CLEAN || l1.INVALID)
+      if(withCbm) MISS_ALIGNED clearWhen(CLEAN || INVALIDATE)
       val IS_AMO = insert(SEL && l1.ATOMIC && l1.STORE && l1.LOAD)
     }
 
@@ -599,7 +602,7 @@ class LsuPlugin(var layer : LaneLayer,
         // Give one cycle delay, allowing trap to happen before the IO access is emitted.
         val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False)
          
-        val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel && FROM_LSU && !l1.CLEAN && !l1.INVALID) init(False)
+        val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel && FROM_LSU && !CLEAN && !INVALIDATE) init(False)
         val doIt = isValid && l1.SEL && onPma.IO
         val doItReg = RegNext(doIt) init(False)
 
@@ -759,8 +762,7 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code(1) setWhen (l1.STORE)
         }
 
-
-        val l1Failed = !onPma.CACHED_RSP.fault && (l1.HAZARD || (l1.MISS || l1.MISS_UNIQUE) && (l1.LOAD || l1.STORE))
+        val l1Failed = l1.SEL && (!onPma.CACHED_RSP.fault && (l1.HAZARD || (l1.MISS || l1.MISS_UNIQUE) && (l1.LOAD || l1.STORE)))
         when(withStoreBuffer.mux((l1Failed || wb.hit) && !wb.allowed, l1Failed)) {
           lsuTrap := True
           trapPort.exception := False
@@ -869,10 +871,10 @@ class LsuPlugin(var layer : LaneLayer,
         val flushEmptyBuffer = RegNextWhen(flushTokens.msb && !llcFlushBuffer.fire, isReady) init(False)
         flushTokens := flushTokens - U(llcFlushBuffer.fire) + U(llcBus.rsp.fire)
 
-        llcFlushBuffer.valid := isValid && SEL && !lsuTrap && !isCancel && (l1.CLEAN || l1.INVALID)
+        llcFlushBuffer.valid := isValid && SEL && !lsuTrap && !isCancel && (CLEAN || INVALIDATE)
         llcFlushBuffer.address := l1.PHYSICAL_ADDRESS
 
-        val redo = (!llcFlushBuffer.ready || wb.hit || flushFull) && (l1.CLEAN || l1.INVALID)
+        val redo = (!llcFlushBuffer.ready || flushFull) && (CLEAN || INVALIDATE)
         when(redo) {
           lsuTrap := True
           trapPort.exception := False
@@ -885,19 +887,18 @@ class LsuPlugin(var layer : LaneLayer,
           fenceTrap.doIt.setWhen(!flushEmptyBuffer)
         }
       }
-//      val cmbTrap = withCbm generate new Area{
-//        val cmbTrigger = RegNext(isValid && SEL && (LsuL1.CLEAN || LsuL1.INVALID)) init(False)
-//        val pendingWritebacks = Reg(LsuL1.WRITEBACK_BUSY.get) init(0)
-//        pendingWritebacks := (pendingWritebacks & LsuL1.WRITEBACK_BUSY) | LsuL1.WRITEBACK_BUSY.andMask(cmbTrigger)
-//        val pending = cmbTrigger || pendingWritebacks.orR
-//
-//        val valid = (l1.ATOMIC || FENCE) && pending
-//        when(valid) {
-//          lsuTrap := True
-//          trapPort.exception := False
-//          trapPort.code := TrapReason.REDO
-//        }
-//      }
+
+      val cmbTrap = withL1Cmb generate new Area{
+        val cmbTrigger = RegNextWhen(isValid && SEL && (CLEAN || INVALIDATE), !elp.isFreezed()) init(False)
+        val pendingWritebacks = Reg(LsuL1.WRITEBACK_BUSY.get) init(0)
+        pendingWritebacks := (pendingWritebacks & LsuL1.WRITEBACK_BUSY.orMask(elp.isFreezed())) | LsuL1.WRITEBACK_BUSY.andMask(cmbTrigger)
+        val pending = cmbTrigger || pendingWritebacks.orR
+
+        val valid = (l1.ATOMIC || FENCE || l1.LOAD) && pending
+        when(valid) {
+          fenceTrap.doIt := True
+        }
+      }
 
       when(isValid && SEL) {
         val t = when(lsuTrap) {
@@ -926,7 +927,7 @@ class LsuPlugin(var layer : LaneLayer,
       abords += FROM_LSU && (!isValid || isCancel || FENCE)
       abords += mmuNeeded && MMU_FAILURE
       abords += fenceTrap.doIt
-      if(withStoreBuffer && withL1Cmb) abords += (l1.CLEAN || l1.INVALID) && wb.hit
+      if(withStoreBuffer && withL1Cmb) abords += (CLEAN || INVALIDATE) && wb.hit
       if(withStoreBuffer) abords += wb.loadHazard || wb.selfHazard
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
