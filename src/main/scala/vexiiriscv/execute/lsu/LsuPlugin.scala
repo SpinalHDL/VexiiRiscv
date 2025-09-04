@@ -423,8 +423,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.load := LOAD
         port.store := STORE
         port.atomic := ATOMIC
-        port.clean := withL1Cmb.mux(CLEAN || INVALIDATE && cbmCsr.invalIntoClean, False)
-        port.invalidate := withL1Cmb.mux(INVALIDATE, False)
+        port.clean := withCbm.mux(CLEAN || INVALIDATE && cbmCsr.invalIntoClean, False)
+        port.invalidate := withCbm.mux(INVALIDATE, False)
         port.op := LsuL1CmdOpcode.LSU
         if(softwarePrefetch) when(LSU_PREFETCH) { port.op := LsuL1CmdOpcode.PREFETCH }
 
@@ -515,10 +515,8 @@ class LsuPlugin(var layer : LaneLayer,
       l1.LOAD := arbiter.io.output.load
       l1.ATOMIC := arbiter.io.output.atomic
       l1.STORE := arbiter.io.output.store
-      if(withL1Cmb){
-        l1.CLEAN := arbiter.io.output.clean
-        l1.INVALID := arbiter.io.output.invalidate
-      }
+      l1.CLEAN := arbiter.io.output.clean
+      l1.INVALID := arbiter.io.output.invalidate
       l1.PREFETCH := arbiter.io.output.op === LsuL1CmdOpcode.PREFETCH
       l1.FLUSH := arbiter.io.output.op === LsuL1CmdOpcode.FLUSH
       Decode.STORE_ID := arbiter.io.output.storeId
@@ -559,7 +557,7 @@ class LsuPlugin(var layer : LaneLayer,
     // Pre compute a few things to reduce the combinatorial path presure on the ctrl stage.
     val preCtrl = new elp.Execute(ctrlAt-1){
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
-      if(withCbm) MISS_ALIGNED clearWhen(CLEAN || INVALIDATE)
+      if(withCbm) MISS_ALIGNED clearWhen(l1.CLEAN || l1.INVALID)
       val IS_AMO = insert(SEL && l1.ATOMIC && l1.STORE && l1.LOAD)
     }
 
@@ -602,7 +600,7 @@ class LsuPlugin(var layer : LaneLayer,
         // Give one cycle delay, allowing trap to happen before the IO access is emitted.
         val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False)
          
-        val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel && FROM_LSU && !CLEAN && !INVALIDATE) init(False)
+        val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel && FROM_LSU && !l1.CLEAN && !l1.INVALID) init(False)
         val doIt = isValid && l1.SEL && onPma.IO
         val doItReg = RegNext(doIt) init(False)
 
@@ -871,10 +869,10 @@ class LsuPlugin(var layer : LaneLayer,
         val flushEmptyBuffer = RegNextWhen(flushTokens.msb && !llcFlushBuffer.fire, isReady) init(False)
         flushTokens := flushTokens - U(llcFlushBuffer.fire) + U(llcBus.rsp.fire)
 
-        llcFlushBuffer.valid := isValid && SEL && !lsuTrap && !isCancel && (CLEAN || INVALIDATE)
+        llcFlushBuffer.valid := isValid && SEL && !lsuTrap && !isCancel && (l1.CLEAN || l1.INVALID)
         llcFlushBuffer.address := l1.PHYSICAL_ADDRESS
 
-        val redo = (!llcFlushBuffer.ready || flushFull) && (CLEAN || INVALIDATE)
+        val redo = (!llcFlushBuffer.ready || flushFull) && (l1.CLEAN || l1.INVALID)
         when(redo) {
           lsuTrap := True
           trapPort.exception := False
@@ -889,7 +887,7 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       val cmbTrap = withL1Cmb generate new Area{
-        val cmbTrigger = RegNextWhen(isValid && SEL && (CLEAN || INVALIDATE), !elp.isFreezed()) init(False)
+        val cmbTrigger = RegNextWhen(isValid && SEL && (l1.CLEAN || l1.INVALID), !elp.isFreezed()) init(False)
         val pendingWritebacks = Reg(LsuL1.WRITEBACK_BUSY.get) init(0)
         pendingWritebacks := (pendingWritebacks & LsuL1.WRITEBACK_BUSY.orMask(elp.isFreezed())) | LsuL1.WRITEBACK_BUSY.andMask(cmbTrigger)
         val pending = cmbTrigger || pendingWritebacks.orR
@@ -927,7 +925,7 @@ class LsuPlugin(var layer : LaneLayer,
       abords += FROM_LSU && (!isValid || isCancel || FENCE)
       abords += mmuNeeded && MMU_FAILURE
       abords += fenceTrap.doIt
-      if(withStoreBuffer && withL1Cmb) abords += (CLEAN || INVALIDATE) && wb.hit
+      if(withStoreBuffer && withL1Cmb) abords += (l1.CLEAN || l1.INVALID) && wb.hit
       if(withStoreBuffer) abords += wb.loadHazard || wb.selfHazard
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
