@@ -60,7 +60,6 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("prediction", List("", "--with-btb", "--with-btb --with-ras", "--with-btb --with-ras --with-gshare"))
   addDim("btbSp", List("", "--btb-single-port-ram"))
   addDim("relaxedBranch", List("", "--relaxed-branch"))
-  addDim("priv", List("", "--with-supervisor", "--with-user"))
   addDim("rvm", List("--without-mul --without-div", "--with-mul --with-div"))
   addDim("divParam", List(2, 4).flatMap(radix => List("", "--div-ipc").map(opt => s"$opt --div-radix $radix")))
   addDim("rva", List("", "--with-mul --with-div --with-rva"))
@@ -154,15 +153,22 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
 
   dimensions += new Dimensions[ParamSimple]("cbm") {
     override def getRandomPosition(state : ParamSimple, random: Random): String = {
-      if(!state.lsuL1Enable || state.lsuL1Coherency) return ""
-      List("", "--with-rvZcbm").randomPick(random)
+      if(!state.lsuL1Enable) return ""
+      List("", state.lsuL1Coherency.mux("--with-rvZcbm-llc", "--with-rvZcbm")).randomPick(random)
+    }
+  }
+
+  dimensions += new Dimensions[ParamSimple]("privileges") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(state.xlen == 32 && state.withRvd && !state.lsuL1Enable) return "" // LsuCachelessPlugin 64 bits doesn't support mmu access
+      List("", "--with-supervisor", "--with-user").randomPick(random)
     }
   }
 
 
   // Generate a bunch of random VexiiRiscv configuration and run the tests on them.
-  val random = new Random(42)
-  for(i <- 0 until 50){
+  val random = new Random(61)
+  for(i <- 0 until 100){
     val args = ArrayBuffer[String]()
     val p = new ParamSimple()
     val parser = new scopt.OptionParser[Unit]("VexiiRiscv") {

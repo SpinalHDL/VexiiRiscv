@@ -171,8 +171,6 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
           bus.a.address := write.cmd.address
         }
 
-        val beat = bus.a.beatCounter()
-        bus.a.address(log2Up(p.dataWidth/8), widthOf(beat) bits) := beat
         bus.a.source.allowOverride()
         bus.a.source.msb := sel
 
@@ -278,7 +276,6 @@ case class LsuL1Bus(p : LsuL1BusParameter) extends Bundle with IMasterSlave {
 
         val beat = bus.c.beatCounter()
         bus.c << arbiter.io.output
-        bus.c.address(log2Up(p.dataWidth/8), widthOf(beat) bits) := beat
       }
 
 
