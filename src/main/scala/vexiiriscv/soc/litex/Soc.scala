@@ -240,8 +240,10 @@ class Soc(c : SocConfig) extends Component {
       }
 
       val aplic = withAPlic generate new Area {
+        val param = if(vexiiParam.privParam.withImsic) APlicGenParam.full else APlicGenParam.direct
+
         val m = new Area {
-          val intc = new TilelinkAPlicFiber(APlicDomainParam.root(APlicGenParam.direct))
+          val intc = new TilelinkAPlicFiber(APlicDomainParam.root(param))
           intc.node at 0xF0C00000l of bus
 
           for (vexii <- vexiis) {
@@ -250,7 +252,7 @@ class Soc(c : SocConfig) extends Component {
         }
 
         val s = withSupervisor generate new Area {
-          val intc = new TilelinkAPlicFiber(APlicDomainParam.S(APlicGenParam.direct))
+          val intc = new TilelinkAPlicFiber(APlicDomainParam.S(param))
           intc.node at 0xF0E00000l of bus
 
           m.intc.addChildCtrl(intc)
@@ -260,6 +262,42 @@ class Soc(c : SocConfig) extends Component {
 
           for (vexii <- vexiis) {
             vexii.bind(intc)
+          }
+        }
+      }
+
+      val sender = vexiiParam.privParam.withImsic && withAPlic generate new Area {
+        val m = new Area {
+          val sender = TilelinkAPlicMsiSenderFiber()
+          ioBus << sender.node
+          sender.createMsiStreamConsumer() << aplic.m.intc.createMsiStreamProducer()
+        }
+
+        val s = withSupervisor generate new Area {
+          val sender = TilelinkAPlicMsiSenderFiber()
+          ioBus << sender.node
+          sender.createMsiStreamConsumer() << aplic.s.intc.createMsiStreamProducer()
+        }
+      }
+
+      val imsic = vexiiParam.privParam.withImsic generate new Area {
+        assert(withAPlic, s"Imsic rely on aplic, but --with-aplic is $withAPlic.")
+
+        val m = new Area {
+          val msi = TilelinkImsicTriggerFiber()
+          msi.node at 0xF1000000l of bus
+
+          for (vexii <- vexiis) {
+            vexii.bind(msi, 3)
+          }
+        }
+
+        val s = withSupervisor generate new Area {
+          val msi = TilelinkImsicTriggerFiber()
+          msi.node at 0xF1200000l of bus
+
+          for (vexii <- vexiis) {
+            vexii.bind(msi, 1)
           }
         }
       }
