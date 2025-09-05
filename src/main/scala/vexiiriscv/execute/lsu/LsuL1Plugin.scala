@@ -310,7 +310,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val slots = for (refillId <- 0 until refillCount) yield new Area {
         val id = refillId
         val valid = RegInit(False)
-        val dirty = Reg(Bool()) // Will preset the dirty flag (used when the refill is triggered by a store)
         val address = Reg(UInt(postTranslationWidth bits))
         val way = Reg(UInt(log2Up(wayCount) bits))
         val cmdSent = Reg(Bool())
@@ -354,7 +353,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val address = UInt(postTranslationWidth bits)
         val way = UInt(log2Up(wayCount) bits)
         val victim = Bits(writebackCount bits)
-        val dirty = Bool()
         val unique = Bool()
         val data = Bool()
       }
@@ -386,7 +384,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           slot.priority.setAll()
           slot.loadedCounter := 0
           slot.victim := push.victim
-          slot.dirty := push.dirty
           if (withCoherency) {
             slot.c.unique := push.unique
             slot.c.data := push.data
@@ -415,7 +412,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
 
         val rspAddress = slots.map(_.address).read(bus.read.rsp.id)
-        val dirty = slots.map(_.dirty).read(bus.read.rsp.id)
         val way = slots.map(_.way).read(bus.read.rsp.id)
         val wordIndex = KeepAttribute(Reg(UInt(log2Up(memWordPerLine) bits)) init (0))
         val rspWithData = withCoherency.mux(bus.read.rsp.withData, True)
@@ -903,7 +899,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         refill.push.data := askRefill
         refill.push.way := targetWay
         refill.push.victim := writeback.free.andMask(refillWayNeedWriteback && refillWayWasDirty)
-        refill.push.dirty := STORE
         when(askUpgrade) {
           refill.push.way := wayId
           refill.push.victim := 0
