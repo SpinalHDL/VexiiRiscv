@@ -9,6 +9,7 @@ import spinal.lib.{DataCc, StreamCCByToggle}
 import spinal.lib.bus.tilelink.fabric._
 import spinal.lib.cpu.riscv.RiscvHart
 import spinal.lib.cpu.riscv.debug.DebugHartBus
+import spinal.lib.misc.aia._
 import spinal.lib.misc.InterruptCtrlFiber
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.{ClintPort, Elf, InterruptCtrl, InterruptNode, TilelinkClintFiber}
@@ -72,6 +73,16 @@ class TilelinkVexiiRiscvFiber(val plugins : ArrayBuffer[Hostable]) extends Area 
     }
   }
 
+  def bind(aplic: TilelinkAPlicFiber) = priv match {
+    case Some(priv) => new Area {
+      val pp = priv.plugin
+      val intIdBase = pp.hartIds(0)
+      aplic.domainParam.isMDomain match {
+        case true => aplic.mapDownInterrupt(intIdBase, priv.mei)
+        case false => aplic.mapDownInterrupt(intIdBase, priv.sei)
+      }
+    }
+  }
 
   // Add the plugins to bridge the CPU toward Tilelink
   plugins.foreach {
