@@ -341,7 +341,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         loadedCounter := loadedCounter + U(loaded && !loadedDone && !lane.isFreezed()).resized
 
         val free = !valid && withCoherency.mux(!c.ackValid, True)
-        val fire = !lane.isFreezed() && loadedDone
+        val fire = valid && !lane.isFreezed() && loadedDone
         valid clearWhen (fire)
 
         val victim = Reg(Bits(writebackCount bits)) // Used to wait until the related writeback went far enough before emiting the read memory request
@@ -509,7 +509,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       val slots = for (writebackId <- 0 until writebackCount) yield new Area {
         val id = writebackId
         val fire = False
-        val valid = RegInit(False) clearWhen (fire)
+        val valid = RegInit(False)
         val busy = RegInit(False) clearWhen(fire)
         val address = Reg(UInt(postTranslationWidth bits))
         val way = Reg(UInt(log2Up(wayCount) bits))
@@ -527,13 +527,13 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           val counter = Reg(UInt(log2Up(counterMax + 1) bits))
           val done = counter === counterMax
           counter := counter + U(!done && !lane.isFreezed()).resized
-          valid clearWhen (this.done && (fire || !busy))
+          valid clearWhen (this.done && !lane.isFreezed() && (fire || !busy))
         }
 
         val free = !valid
       }
 
-      WRITEBACK_BUSY.set(B(slots.map(s => s.valid || s.fire)))
+      WRITEBACK_BUSY.set(B(slots.map(s => s.valid)))
       writebackBusy := slots.map(_.valid).orR
 
       val free = B(OHMasking.first(slots.map(_.free)))
@@ -871,17 +871,17 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val needFlushOh = OHMasking.firstV2(needFlushs)
         val needFlushSel = OHToUInt(needFlushOh)
 
-        val isAccess = !FLUSH && !CLEAN && !INVALID
+        val isAccess = !FLUSH && withCbm.mux(!CLEAN && !INVALID, True)
         val askRefill = isAccess && MISS && canRefill
         val askUpgrade = isAccess && MISS_UNIQUE && canRefill
         val askFlush = FLUSH && canFlush && needFlushs.orR
-        val askCbm =  WAYS_HIT && (INVALID || CLEAN && wasDirty)
+        val askCbm =  withCbm.mux(WAYS_HIT && (INVALID || CLEAN && wasDirty), False)
 
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
         val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
-        val doCbm = SEL && askCbm && wayWriteReservation.win && !writeback.full && !refillHazard && !writebackHazard
+        val doCbm = withCbm.mux(SEL && askCbm && wayWriteReservation.win && !writeback.full && !refillHazard && !writebackHazard, False)
 
         val wayId = OHToUInt(WAYS_HITS)
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))
@@ -962,7 +962,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
 
         FLUSH_HIT := needFlushs.orR
-        when(doFlush) {
+        when(doFlush) { //TODO no flush needed if coherency is enabled ? (fence.i)
           wayWriteReservation.takeIt()
 
           val reader = this (WAYS_TAGS).reader(needFlushSel)

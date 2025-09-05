@@ -6,6 +6,7 @@ import spinal.core.sim.SimDataPimper
 import spinal.lib
 import spinal.lib._
 import spinal.lib.bus.tilelink.M2sTransfers
+import spinal.lib.bus.tilelink.coherent.{FlushBus, FlushParam}
 import spinal.lib.fsm.{State, StateMachine}
 import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
@@ -20,7 +21,7 @@ import vexiiriscv.schedule.{DispatchPlugin, ScheduleService}
 import vexiiriscv.{Global, riscv}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu.AguPlugin._
-import vexiiriscv.execute.lsu.LsuL1.{HAZARD, INVALID}
+import vexiiriscv.execute.lsu.LsuL1.{HAZARD}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -67,6 +68,7 @@ class LsuPlugin(var layer : LaneLayer,
                 var pmpPortParameter : Any,
                 var softwarePrefetch: Boolean,
                 var withCbm: Boolean,
+                var withLlcFlush : Boolean = false,
                 var addressAt: Int = 0,
                 var triggerAt : Int = 1,
                 var pmaAt : Int = 1,
@@ -75,6 +77,8 @@ class LsuPlugin(var layer : LaneLayer,
                 var storeRs2At : Int = 0, //Note that currently, it only apply for integer store (not float store)
                 var storeBufferSlots : Int = 0,
                 var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuService with CmoService{
+  if(withLlcFlush) assert(withCbm)
+  def withL1Cmb = withCbm && !withLlcFlush
 
   override def accessRefillCount: Int = 0
   override def accessWake: Bits = B(0)
@@ -223,15 +227,15 @@ class LsuPlugin(var layer : LaneLayer,
 
         cap.readWrite(at, 4 -> cbie, 6 -> cbcfe)
         ds.addIllegalCheck{ ctrlLane =>
-          privLower && (ctrlLane(INVALID) && cbie === 0 || ctrlLane(CLEAN) && cbcfe === 0  && privLower)
+          privLower && (ctrlLane(INVALIDATE) && cbie === 0 || ctrlLane(CLEAN) && cbcfe === 0  && privLower)
         }
       }
 
       ds.addMicroOpDecodingDefault(CLEAN, False)
-      ds.addMicroOpDecodingDefault(INVALID, False)
+      ds.addMicroOpDecodingDefault(INVALIDATE, False)
       ds.addMicroOpDecoding(Rvi.CBM_CLEAN, CLEAN, True)
       ds.addMicroOpDecoding(Rvi.CBM_FLUSH, CLEAN, True)
-      ds.addMicroOpDecoding(Rvi.CBM_INVALIDATE, INVALID, True)
+      ds.addMicroOpDecoding(Rvi.CBM_INVALIDATE, INVALIDATE, True)
 
       val menvcfg = xenvcfg(3)
       val senvcfg = pp.implementSupervisor generate xenvcfg(1)
@@ -243,6 +247,7 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
     val bus = master(LsuCachelessBus(busParam)).simPublic()
+    val llcBus = withLlcFlush generate master(FlushBus(FlushParam(Global.PHYSICAL_WIDTH, 0)))
 
     accessRetainer.await()
     val l1 = LsuL1
@@ -503,6 +508,7 @@ class LsuPlugin(var layer : LaneLayer,
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
       arbiter.io.output.ready := !elp.isFreezed()
       l1.SEL := arbiter.io.output.valid
+      if(withLlcFlush) l1.SEL clearWhen(arbiter.io.output.clean || arbiter.io.output.invalidate) //Avoid enabling the L1 cache on flush
       l1.MIXED_ADDRESS := arbiter.io.output.address
       l1.MASK := AddressToMask(arbiter.io.output.address, arbiter.io.output.size, Riscv.LSLEN / 8)
       l1.SIZE := arbiter.io.output.size
@@ -754,15 +760,14 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code(1) setWhen (l1.STORE)
         }
 
-
-        val l1Failed = !onPma.CACHED_RSP.fault && (l1.HAZARD || (l1.MISS || l1.MISS_UNIQUE) && (l1.LOAD || l1.STORE))
+        val l1Failed = l1.SEL && (!onPma.CACHED_RSP.fault && (l1.HAZARD || (l1.MISS || l1.MISS_UNIQUE) && (l1.LOAD || l1.STORE)))
         when(withStoreBuffer.mux((l1Failed || wb.hit) && !wb.allowed, l1Failed)) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
         }
 
-        if(withCbm) when(l1.CBM_REDO) {
+        if(withL1Cmb) when(l1.CBM_REDO) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
@@ -792,7 +797,7 @@ class LsuPlugin(var layer : LaneLayer,
 
         trapPort.arg(0, 2 bits) := l1.STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
         trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
-        when(tpk.REFILL) {
+        when(tpk.REFILL) { // Could be ignored for llc flush
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.MMU_REFILL
@@ -851,17 +856,45 @@ class LsuPlugin(var layer : LaneLayer,
         if(withStoreBuffer) enable.setWhen((!storeBuffer.empty || !onAddress0.STORE_BUFFER_EMPTY))
       }
 
-      val cmbTrap = withCbm generate new Area{
-        val cmbTrigger = RegNext(isValid && SEL && (LsuL1.CLEAN || LsuL1.INVALID)) init(False)
-        val pendingWritebacks = Reg(LsuL1.WRITEBACK_BUSY.get) init(0)
-        pendingWritebacks := (pendingWritebacks & LsuL1.WRITEBACK_BUSY) | LsuL1.WRITEBACK_BUSY.andMask(cmbTrigger)
-        val pending = cmbTrigger || pendingWritebacks.orR
+      val onLlcFlush = withLlcFlush generate new Area{
+        val llcFlushBuffer = cloneOf(llcBus.cmd)
+        llcBus.cmd <-/< llcFlushBuffer
 
-        val valid = (l1.ATOMIC || FENCE) && pending
-        when(valid) {
+        val flushPendingMax = 16
+        assert(isPow2(flushPendingMax))
+
+        val flushTokens = Reg(UInt(log2Up(flushPendingMax + 1) bits)) init(flushPendingMax)
+        val flushFull = flushTokens === 0
+        val flushEmpty = flushTokens.msb
+        val flushEmptyBuffer = RegNextWhen(flushTokens.msb && !llcFlushBuffer.fire, isReady) init(False)
+        flushTokens := flushTokens - U(llcFlushBuffer.fire) + U(llcBus.rsp.fire)
+
+        llcFlushBuffer.valid := isValid && SEL && !lsuTrap && !isCancel && (l1.CLEAN || l1.INVALID)
+        llcFlushBuffer.address := l1.PHYSICAL_ADDRESS
+
+        val redo = (!llcFlushBuffer.ready || flushFull) && (l1.CLEAN || l1.INVALID)
+        when(redo) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
+        }
+
+        llcBus.rsp.ready := True
+
+        when(l1.ATOMIC || FENCE || l1.LOAD){
+          fenceTrap.doIt.setWhen(!flushEmptyBuffer)
+        }
+      }
+
+      val cmbTrap = withL1Cmb generate new Area{
+        val cmbTrigger = RegNextWhen(isValid && SEL && (l1.CLEAN || l1.INVALID), !elp.isFreezed()) init(False)
+        val pendingWritebacks = Reg(LsuL1.WRITEBACK_BUSY.get) init(0)
+        pendingWritebacks := (pendingWritebacks & LsuL1.WRITEBACK_BUSY.orMask(elp.isFreezed())) | LsuL1.WRITEBACK_BUSY.andMask(cmbTrigger)
+        val pending = cmbTrigger || pendingWritebacks.orR
+
+        val valid = (l1.ATOMIC || FENCE || l1.LOAD) && pending
+        when(valid) {
+          fenceTrap.doIt := True
         }
       }
 
@@ -891,8 +924,9 @@ class LsuPlugin(var layer : LaneLayer,
       abords += !l1.FLUSH && onPma.CACHED_RSP.fault
       abords += FROM_LSU && (!isValid || isCancel || FENCE)
       abords += mmuNeeded && MMU_FAILURE
-      if(withStoreBuffer && withCbm) abords += (l1.CLEAN || l1.INVALID) && wb.hit
-      if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.doIt || wb.selfHazard
+      abords += FROM_LSU && fenceTrap.doIt
+      if(withStoreBuffer && withL1Cmb) abords += (l1.CLEAN || l1.INVALID) && wb.hit
+      if(withStoreBuffer) abords += wb.loadHazard || wb.selfHazard
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
       skipsWrite += l1.FAULT
@@ -958,7 +992,7 @@ class LsuPlugin(var layer : LaneLayer,
       // Drive the commitProbe bus
       val commitProbeReq = down.isFiring && SEL && FROM_LSU
       val commitProbeToken = RegNextWhen(lsuTrap, commitProbeReq) init(False) // Avoid to spam on consicutive failure
-      commitProbe.valid := down.isFiring && SEL.mux[Bool](FROM_LSU  && (!lsuTrap || !commitProbeToken), FROM_PREFETCH && HAZARD) // && !l1.REFILL_HIT
+      commitProbe.valid := down.isFiring && SEL.mux[Bool](FROM_LSU && (!lsuTrap || !commitProbeToken) && (l1.LOAD || l1.STORE || l1.PREFETCH), FROM_PREFETCH && HAZARD) // && !l1.REFILL_HIT
       commitProbe.address := l1.MIXED_ADDRESS
       commitProbe.load := l1.LOAD
       commitProbe.store := l1.STORE
