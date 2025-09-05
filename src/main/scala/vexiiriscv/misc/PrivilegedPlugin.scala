@@ -5,6 +5,7 @@ import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.cpu.riscv.debug.{DebugDmToHartOp, DebugHartBus, DebugModule}
 import spinal.lib.fsm._
+import spinal.lib.misc.aia._
 import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global._
@@ -34,6 +35,7 @@ object PrivilegedParam{
     vendorId       = 0,
     archId         = 46, //As spike
     impId          = 0,
+    imsicInterrupts = 0,
     debugTriggers  = 0,
     debugTriggersLsu = false,
     withHartIdInputDefaulted = false
@@ -65,9 +67,13 @@ case class PrivilegedParam(var withSupervisor : Boolean,
                            var vendorId: Int,
                            var archId: Int,
                            var impId: Int,
+                           var imsicInterrupts: Int,
                            var withHartIdInputDefaulted : Boolean){
+  def withImsic = imsicInterrupts > 0
+
   def check(): Unit = {
     assert(!(withSupervisor && !withUser))
+    assert((imsicInterrupts == 0) || (isPow2(imsicInterrupts) && imsicInterrupts >= 64 && imsicInterrupts <= 2048))
   }
 }
 
@@ -134,6 +140,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
     val injs = host[InjectorService]
+    val withIndirectCsr = host.get[IndirectCsrPlugin].nonEmpty
+    val indirect = withIndirectCsr generate host[IndirectCsrPlugin]
     val buildBefore = retains(List(cap.csrLock, injs.injectRetainer, pcs.elaborationLock, tp.trapLock, dpp.elaborationLock, ss.elaborationLock) ++ withRam.option(crs.csrLock))
 
     awaitBuild()
@@ -156,6 +164,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
     val rdtime = in UInt (64 bits)
     val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
+      val indirectHart = withIndirectCsr generate indirect.logic.harts(hartId)
       val xretAwayFromMachine = False
       val commitMask = Bits(host.list[ExecuteLanePlugin].size bits)
       val int = new Area {
@@ -592,8 +601,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           readWrite(XLEN - 1 -> interrupt, 0 -> code)
         }
 
+        val imsic = p.withImsic generate genImsicArea(CSR.MIREG, CSR.MTOPEI, indirectHart.m.csrFilter(_, _))
+
         val ip = new api.Csr(CSR.MIP) {
-          val meip = RegNext(int.m.external) init (False)
+          val mext = if (p.withImsic) imsic.deliveryArbiter(int.m.external) else int.m.external
+
+          val meip = RegNext(mext) init (False)
           val mtip = RegNext(int.m.timer) init (False)
           val msip = RegNext(int.m.software) init (False)
           read(11 -> meip, 7 -> mtip, 3 -> msip)
@@ -688,9 +701,13 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val interrupt = if (p.withRdTime && p.withSSTC) logic.ip else False
         }
 
+        val imsic = p.withImsic generate genImsicArea(CSR.SIREG, CSR.STOPEI, indirectHart.s.csrFilter(_, _))
+
         val ip = new Area {
+          val sext = if (p.withImsic) imsic.deliveryArbiter(int.s.external) else int.s.external
+
           val seipSoft = RegInit(False)
-          val seipInput = RegNext(int.s.external)
+          val seipInput = RegNext(sext)
           val seipOr = seipSoft || seipInput
           val stipSoft = RegInit(False)
           val stipOr = Mux(sstc.envcfg.enable, sstc.interrupt, stipSoft)
@@ -761,6 +778,44 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             api.read(rdtime, CSR.UTIME)
             api.allowCsr(CSR.UTIME, accessable)
           }
+        }
+      }
+
+      def genImsicArea(ireg: Int, topei: Int, provider: (Int, Int) => CsrCondFilter) = new Area {
+        val file = ImsicFile(hartIds(hartId), 1 until p.imsicInterrupts)
+        val identity = file.identity
+        val triggers = in(file.triggers)
+
+        api.readWrite(file.threshold, provider(IndirectCSR.eithreshold, ireg))
+
+        val sources = for (interrupt <- file.interrupts) yield new Area {
+          val id = interrupt.id
+          val offset = id / XLEN * (1 + (XLEN == 64).toInt)
+
+          api.readWrite(interrupt.ie, provider(IndirectCSR.eie0 + offset, ireg), id % XLEN)
+          api.readWrite(interrupt.ip, provider(IndirectCSR.eip0 + offset, ireg), id % XLEN)
+        }
+
+        api.read(topei, 0 -> identity, 16 -> identity)
+        val claim = new Area {
+          val toClaim = RegInit(U(0, file.idWidth bits))
+          api.onRead(topei, false){
+            toClaim := identity
+          }
+          api.onWrite(topei, true) {
+            file.claim(toClaim)
+          }
+        }
+
+        val eidelivery = RegInit(U(0x40000000, XLEN bits))
+        api.readWrite(eidelivery, provider(IndirectCSR.eidelivery, ireg))
+
+        def deliveryArbiter(aplicTarget: Bool): Bool = {
+          eidelivery.mux(
+            1 -> (identity > 0),
+            0x40000000 -> aplicTarget,
+            default -> False
+          )
         }
       }
     }
