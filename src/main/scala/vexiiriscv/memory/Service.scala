@@ -20,10 +20,34 @@ object AddressTranslationPortUsage{
 case class AddressTranslationRefillCmd(storageWidth : Int) extends Bundle{
   val address = MIXED_ADDRESS()
   val storageId = UInt(storageWidth bits)
+  val storageEnable = Bool()
 }
 
 case class AddressTranslationRefillRsp() extends Bundle{
   val pageFault, accessFault = Bool()
+
+  val ae_ptw = Bool()
+  val ae_final = Bool()
+
+  val pf  = Bool()
+  val gf  = Bool()
+  val hr  = Bool()
+  val hw  = Bool()
+  val hx  = Bool()
+
+  val pte = new Bundle{
+    val ppn =  UInt(PHYSICAL_WIDTH - 12 bits)
+    val d = Bool()
+    val a = Bool()
+    val g = Bool()
+    val u = Bool()
+    val x = Bool()
+    val w = Bool()
+    val r = Bool()
+    val v = Bool()
+  }
+
+  val level = UInt(2 bits)
 }
 
 /**
@@ -32,6 +56,9 @@ case class AddressTranslationRefillRsp() extends Bundle{
 case class AddressTranslationRefill(storageWidth : Int) extends Bundle{
   val cmd = Stream(AddressTranslationRefillCmd(storageWidth))
   val rsp = Flow(AddressTranslationRefillRsp())
+
+  cmd.payload.setName("bits")
+  rsp.payload.setName("bits")
 }
 
 case class AddressTranslationInvalidationCmd() extends Bundle {

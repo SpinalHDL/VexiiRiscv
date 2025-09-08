@@ -366,12 +366,14 @@ class MmuPlugin(var spec : MmuSpec,
       val arbiter = StreamArbiterFactory().roundRobin.transactionLock.buildOn(refillPorts.map(_.cmd))
       val portOhReg = Reg(Bits(refillPorts.size bits))
       val storageOhReg = Reg(Bits(storages.size bits))
+      val storageEnable = Reg(Bool())
 
       arbiter.io.output.ready := False
       IDLE whenIsActive {
         when(arbiter.io.output.valid) {
           portOhReg := arbiter.io.chosenOH
           storageOhReg := UIntToOh(arbiter.io.output.storageId)
+          storageEnable := arbiter.io.output.storageEnable
           virtual := arbiter.io.output.address
           load.address := (satp.ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
           arbiter.io.output.ready := True
@@ -428,7 +430,40 @@ class MmuPlugin(var spec : MmuSpec,
         rsp.valid := False
         rsp.pageFault.assignDontCare()
         rsp.accessFault.assignDontCare()
+        rsp.pf.assignDontCare()
+        rsp.ae_ptw.assignDontCare()
+        rsp.ae_final.assignDontCare()
+        rsp.level.assignDontCare()
       }
+
+//      for((storage, sid) <- storages.zipWithIndex) {
+//        for(storageLevel <- storage.sl) {
+//          storageLevel.write.address := virtual(storageLevel.lineRange)
+//          storageLevel.write.data.valid := True
+//          storageLevel.write.data.allowRead := load.flags.R
+//          storageLevel.write.data.allowWrite := load.flags.W && load.flags.D
+//          storageLevel.write.data.allowExecute := load.flags.X
+//          storageLevel.write.data.allowUser := load.flags.U
+//        }
+//      }
+    refillPorts.map(_.rsp).foreach{o =>
+      o.gf  := False
+      o.hr  := False
+      o.hw  := False
+      o.hx  := False
+
+      o.pte.d := load.flags.D
+      o.pte.a := load.flags.A
+      o.pte.g := load.flags.G
+      o.pte.u := load.flags.U
+      o.pte.x := load.flags.X
+      o.pte.w := load.flags.W
+      o.pte.r := load.flags.R
+      o.pte.v := load.flags.V
+
+      o.pte.ppn := U(load.readed.dropLow(10)).resized
+    }
+
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
         val pteFault = (load.exception || load.levelException(levelId) || !load.flags.A)
         val pteReadError = load.rsp.error
@@ -437,6 +472,19 @@ class MmuPlugin(var spec : MmuSpec,
         val accessFault = pteReadError || !pteFault && leafAccessFault
 
         def doneLogic() : Unit = {
+          refillPorts.onMask(portOhReg){port =>
+            port.rsp.valid := True
+          }
+
+          refillPorts.map(_.rsp).foreach { o =>
+            o.pageFault := pageFault
+            o.accessFault := accessFault
+            o.pf  := pageFault
+            o.ae_ptw    := accessFault && !load.leaf
+            o.ae_final  := accessFault && load.leaf //Note so sure
+            o.level := levelId
+          }
+
           for((storage, sid) <- storages.zipWithIndex){
             val storageLevelId = storage.self.p.levels.filter(_.id <= levelId).map(_.id).max
             val storageLevel = storage.sl.find(_.slp.id == storageLevelId).get
@@ -452,16 +500,11 @@ class MmuPlugin(var spec : MmuSpec,
             storageLevel.write.data.allowWrite      := load.flags.W && load.flags.D
             storageLevel.write.data.allowExecute    := load.flags.X
             storageLevel.write.data.allowUser       := load.flags.U
-            storageLevel.allocId.increment()
 
-            when(pageFault || accessFault){
+            when(pageFault || accessFault || !storageEnable) {
               storageLevel.write.mask := 0
-            }
-
-            refillPorts.onMask(portOhReg){port =>
-              port.rsp.valid := True
-              port.rsp.pageFault := pageFault
-              port.rsp.accessFault := accessFault
+            } otherwise {
+              storageLevel.allocId.increment()
             }
           }
 

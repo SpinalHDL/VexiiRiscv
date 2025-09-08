@@ -374,6 +374,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val atsPorts = ats.mayNeedRedo generate new Area{
             val refill = ats.newRefillPort()
             refill.cmd.valid := False
+            refill.cmd.storageEnable := True
             refill.cmd.address := pending.state.tval.asUInt
             refill.cmd.storageId := pending.state.arg(2, ats.getStorageIdWidth() bits).asUInt
 
