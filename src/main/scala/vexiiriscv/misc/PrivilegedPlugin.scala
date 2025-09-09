@@ -29,6 +29,7 @@ object PrivilegedParam{
     withRdTime     = false,
     withSSTC       = false,
     withDebug      = false,
+    withXs         = false,
     mstatusFsInit  = 0,
     vendorId       = 0,
     archId         = 46, //As spike
@@ -57,6 +58,7 @@ case class PrivilegedParam(var withSupervisor : Boolean,
                            var withRdTime : Boolean,
                            var withSSTC : Boolean,
                            var withDebug: Boolean,
+                           var withXs : Boolean,
                            var mstatusFsInit : Int,
                            var debugTriggers : Int,
                            var debugTriggersLsu : Boolean,
@@ -549,6 +551,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val tsr, tvm = p.withSupervisor generate RegInit(False)
           val tw = p.withUser.mux(RegInit(False), False)
           val mprv = RegInit(False) clearWhen(xretAwayFromMachine)
+          val xs = p.withXs generate RegInit(U(p.mstatusFsInit, 2 bits))
 
           if (RVF) {
             fpuEnable(hartId) setWhen (fs =/= 0)
@@ -557,6 +560,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             }
           }
           if (withFs) sd setWhen (fs === 3)
+          if (p.withXs) sd setWhen (xs === 3)
 
 
           readWrite(7 -> mpie, 3 -> mie)
@@ -573,6 +577,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           read(XLEN - 1 -> sd)
           readWrite(17 -> mprv)
           if (withFs) readWrite(13 -> fs)
+          if (p.withXs) readWrite(15 -> xs)
           if (p.withUser && XLEN.get == 64) read(32 -> U"10")
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")
           if (p.withSupervisor) readWrite(22 -> tsr, 20 -> tvm)
