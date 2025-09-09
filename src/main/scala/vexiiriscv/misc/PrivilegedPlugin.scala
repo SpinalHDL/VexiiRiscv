@@ -708,7 +708,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val scratch = crs.readWriteRam(CSR.SSCRATCH)
 
         if (withFs) api.readWrite(CSR.SSTATUS, 13 -> m.status.fs)
-        if (withXs) api.readWrite(CSR.SSTATUS, 15 -> m.status.xs)
+        if (p.withXs) api.readWrite(CSR.SSTATUS, 15 -> m.status.xs)
 
         def mapMie(machineCsr: Int, supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
           api.read(reg, machineCsr, bitId)
