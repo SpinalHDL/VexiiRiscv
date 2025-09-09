@@ -200,16 +200,17 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         bus.resume.rsp.valid := False
 
+        val reseting = RegNext(False) init (True)
+        bus.haveReset := RegInit(False) setWhen (reseting) clearWhen (bus.ackReset)
         bus.running := hartRunning
         bus.halted := !hartRunning
-        bus.unavailable := BufferCC.withTag(ClockDomain.current.isResetActive)
+        bus.unavailable := reseting
 
         when(debugMode) {
           inhibateInterrupts(hartId)
         }
 
-        val reseting = RegNext(False) init (True)
-        bus.haveReset := RegInit(False) setWhen (reseting) clearWhen (bus.ackReset)
+
 
         val enterHalt = hartRunning.getAheadValue().fall(False)
         val doHalt = RegInit(False) setWhen (bus.haltReq && bus.running && !debugMode) clearWhen (enterHalt)
