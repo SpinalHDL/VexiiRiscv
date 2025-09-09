@@ -93,6 +93,7 @@ object VexiiSimdAddGen extends App {
   val report = sc.generateVerilog {
     val pa = param.pluginsArea()
     pa.plugins += new SimdAddPlugin(pa.early0)
+    ParamSimple.setPma(pa.plugins)
     VexiiRiscv(pa.plugins)
   }
 }
@@ -119,6 +120,7 @@ object VexiiSimdAddSim extends App{
   val compiled = simConfig.compile {
     val pa = param.pluginsArea()
     pa.plugins += new SimdAddPlugin(pa.early0)
+    ParamSimple.setPma(pa.plugins)
     VexiiRiscv(pa.plugins)
   }
   testOpt.test(compiled)
