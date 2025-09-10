@@ -127,6 +127,7 @@ class ParamSimple() {
   var withRvcbm = false
   var withRvZknAes = false
   var withRvcbmLlc = false
+  var withTesterPlugin = false
   var gshareBanks = 1
   var btbDualPortRam = true
   var fpuIgnoreSubnormal = false
@@ -585,6 +586,7 @@ class ParamSimple() {
     opt[Unit]("without-mmu") action { (v, c) => withMmu = false }
     opt[Unit]("without-mul") action { (v, c) => withMul = false }
     opt[Unit]("without-div") action { (v, c) => withDiv = false }
+    opt[Unit]("with-tester-plugin") action { (v, c) => withTesterPlugin = true }
     opt[Unit]("with-mul") action { (v, c) => withMul = true }
     opt[Unit]("with-div") action { (v, c) => withDiv = true }
     opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
@@ -992,6 +994,7 @@ class ParamSimple() {
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
     plugins += new PrivilegedPlugin(privParam, withHartIdInput.mux(null, hartId until hartId+hartCount))
     plugins += new TrapPlugin(trapAt = intWritebackAt)
+    if(withTesterPlugin) plugins += new TesterPlugin()
     plugins += new EnvPlugin(early0, executeAt = 0)
     if(embeddedJtagTap || embeddedJtagInstruction) plugins += new EmbeddedRiscvJtag(
       p = DebugTransportModuleParameter(
