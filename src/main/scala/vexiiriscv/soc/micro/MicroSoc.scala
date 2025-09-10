@@ -13,6 +13,7 @@ import spinal.lib.com.uart.TilelinkUartFiber
 import spinal.lib.misc.{Elf, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.MemoryConnection
+import vexiiriscv.execute.cfu.{CfuPlugin, CfuTest}
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 
 
@@ -62,12 +63,11 @@ class MicroSoc(p : MicroSocParam) extends Component {
         SpiXdrMasterCtrl.Parameters(8, 12, SpiXdrParameter(2, 2, 1)).addFullDuplex(0,1,false),
         xipEnableInit = true,
         xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 6)
-      )){
+      )) {
         plic.mapUpInterrupt(2, interrupt)
         ctrl at 0x10002000 of bus32
         xip at 0x20000000 of bus32
       }
-
 
       val demo = p.demoPeripheral.map(new PeripheralDemoFiber(_){
         node at 0x10003000 of bus32
@@ -79,7 +79,13 @@ class MicroSoc(p : MicroSocParam) extends Component {
       val cpuClint = cpu.bind(clint) // Timer interrupt + time reference + stop time connection
     }
 
-    val patcher = Fiber patch new Area{
+    val cfu = p.vexii.withCfu generate (Fiber patch new Area {
+      val cpuCfuBus = cpu.logic.core.host[CfuPlugin].logic.bus
+      val cfu = CfuTest() // If instead you want to export the CFU bus to the io, replace with : val bus = cpuCfuBus.toIo()
+      cfu.io.bus << cpuCfuBus
+    })
+
+    val patcher = Fiber patch new Area {
       p.ramElf.foreach(new Elf(_, p.vexii.xlen).init(ram.thread.logic.mem, 0x80000000l))
       println(MemoryConnection.getMemoryTransfers(cpu.dBus).mkString("\n"))
     }

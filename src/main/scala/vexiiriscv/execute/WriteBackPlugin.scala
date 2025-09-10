@@ -94,7 +94,7 @@ class WriteBackPlugin(val lane : ExecuteLaneService,
     val write = new writeCtrl.Area {
       val port = rfp.newWrite(false, sharingKey = laneName)
       port.valid := isValid && isReady && !isCancel && up(rfa.ENABLE) && SEL && Global.COMMIT
-      port.address := HART_ID @@ rfa.PHYS
+      port.address := HART_ID @@ rfa.PHYS(log2Up(rf.sizeArch) - 1 downto 0)
       port.data := DATA
       port.hartId := HART_ID
       port.uopId := UOP_ID

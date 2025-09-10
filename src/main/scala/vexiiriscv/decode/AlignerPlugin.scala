@@ -234,7 +234,7 @@ class AlignerPlugin(fetchAt : Int,
       val hm = Reg(HardMap(hmElements))
 
       slices.data.assignFromBits(up(Fetch.WORD) ## data)
-      slices.mask := up(FETCH_MASK) ## mask
+      slices.mask := up(FETCH_MASK).andMask(up.isValid) ## mask
       slices.last := up(FETCH_LAST) ## last
 
       when(!up.valid){

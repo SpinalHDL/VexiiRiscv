@@ -46,12 +46,14 @@ object SrcKeys extends AreaObject {
 }
 
 /**
- * This plugin takes the RS1/RS2/Instruction values early in the execute pipeline and produce SRC1/SRC2/ADD_SUB/LESS values out of it.
+ * This plugin takes the RS1/RS2/Instruction values early in the execute pipeline and produce SRC1/SRC2/ADD_SUB/LESS
+ * values out of it.
  *
- * Other plugins can specify what processing they are interested for SRC1/SRC2 in function of which instruction is being executed.
- * SRC1/SRC2 are muxed values between RS1/RS2 and literals in the instruction.
- * ADD_SUB can be either the addition or subtraction between SRC1 and SRC2
- * LESS specifies if SRC1 is less than SRC2 (unsigned or signed comparison)
+ * Other plugins can specify what processing they are interested for SRC1/SRC2 in function of which instruction is
+ * being executed.
+ *  - SRC1/SRC2 are muxed values between RS1/RS2 and literals in the instruction
+ *  - ADD_SUB can be either the addition or subtraction between SRC1 and SRC2
+ *  - LESS specifies if SRC1 is less than SRC2 (unsigned or signed comparison)
  */
 class SrcPlugin(val layer : LaneLayer,
                 var executeAt : Int,

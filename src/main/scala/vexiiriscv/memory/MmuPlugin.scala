@@ -90,7 +90,8 @@ object MmuSpec{
  * MMU miss will not by itself trigger a TLB refill. This is instead triggered by the TrapPlugin.
  */
 class MmuPlugin(var spec : MmuSpec,
-                var physicalWidth : Int) extends FiberPlugin with AddressTranslationService{
+                var physicalWidth : Int,
+                var asidWidth : Int) extends FiberPlugin with AddressTranslationService{
 
 
   override def mayNeedRedo: Boolean = true
@@ -198,12 +199,13 @@ class MmuPlugin(var spec : MmuSpec,
 
     assert(HART_COUNT.get == 1)
     val satp = new Area {
-      val (modeOffset, modeWidth, ppnWidth) = XLEN.get match {
-        case 32 => (31, 1, 20) //20 instead of 22 to avoid 34 physical bits
-        case 64 => (60, 4, 44)
+      val (modeOffset, modeWidth, ppnWidth, asidOffset, asidWidthMax) = XLEN.get match {
+        case 32 => (31, 1, 20, 22, 9) //20 instead of 22 to avoid 34 physical bits
+        case 64 => (60, 4, 44, 44, 16)
       }
+      assert(asidWidth <= asidWidthMax, "asidWidth is too big")
       val mode = Reg(Bits(modeWidth bits)) init(0)
-      //val asid = Reg(Bits(9 bits))         init(0)
+      val asid = Reg(Bits(asidWidth bits)) init(0)
       val ppn =  Reg(UInt(ppnWidth bits))  init(0)
     }
     val status = new Area{
@@ -213,7 +215,7 @@ class MmuPlugin(var spec : MmuSpec,
 
     for(offset <- List(CSR.MSTATUS, CSR.SSTATUS)) csr.readWrite(offset, 19 -> status.mxr, 18 -> status.sum)
 
-    csr.readWrite(CSR.SATP, satp.modeOffset -> satp.mode/*, 22 -> satp.asid*/, 0 -> satp.ppn)
+    csr.readWrite(CSR.SATP, satp.modeOffset -> satp.mode, satp.asidOffset -> satp.asid, 0 -> satp.ppn)
     val satpModeWrite = csr.bus.write.bits(satp.modeOffset, satp.modeWidth bits)
     csr.writeCancel(CSR.SATP, satpModeWrite =/= 0 && satpModeWrite =/= spec.satpMode)
 

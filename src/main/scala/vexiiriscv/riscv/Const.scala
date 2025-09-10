@@ -94,6 +94,8 @@ object CSR {
   def MCAUSE    = 0x342 // MRW Machine trap cause.
   def MTVAL     = 0x343 // MRW Machine bad address.
   def MIP       = 0x344 // MRW Machine interrupt pending.
+  def MENVCFG   = 0x30A // MRW Machine environment configuration register.
+  def MENVCFGH  = 0x31A // MRW Machine environment configuration register.
   def MBASE     = 0x380 // MRW Base register.
   def MBOUND    = 0x381 // MRW Bound register.
   def MIBASE    = 0x382 // MRW Instruction base register.
@@ -126,6 +128,8 @@ object CSR {
   val SCAUSE      = 0x142
   val STVAL       = 0x143
   val SIP         = 0x144
+  val STIMECMP    = 0x14D
+  val STIMECMPH   = 0x15D
   val SATP        = 0x180
   val SCOUNTOVF   = 0xDA0
 
@@ -160,3 +164,12 @@ object CSR {
   val FCSR = 0x3
 }
 
+object InterruptInfo {
+  val defaultOrder = List[Int] (
+    11, 3, 7,   // Machine interrupts: external, software, timer
+    9, 1, 5,    // Supervisor interrupts: external, software, timer
+    12,         // Supervisor guest external interrupt
+    10, 2, 6,   // VS interrupts: external, software, timer
+    13          // Local interrupt: counter overflow
+  )
+}

@@ -367,5 +367,9 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     }
     csrRetainer.release()
 //    trapLock.release()
+
+    if(priv.p.withDebug) when(priv.logic.harts(0).debugMode){
+      commitCount := 0
+    }
   }
 }

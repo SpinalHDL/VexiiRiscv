@@ -22,26 +22,28 @@ import vexiiriscv.execute._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-/**
- * Implements an LSU without any cache.
- * The tricky thing about this implementation, is the withSpeculativeLoadFlush parameter, which allows the plugin
- * to speculatively emit non-io memory load to the memory system, even if the load result may be trashed away.
- *
- * The plugin does support MMU as well as atomic instruction. This allows to run linux without data cache :D.
- * This is useful from a verification perspective.
- *
- * To get good timings on FPGA in a SoC, consider setting :
- * - forkAt = 1
- * - joinAt = 2
- *
- * This allows the memory bus CMD to have very relaxed timings by avoiding the XLEN bits adder as well as the PMA data path.
- * The down side is that the memory bus response data path timings are stressed, but as this only impact the data path (no control path),
- * it seems to be generally better.
- */
-
+/** Implements an LSU without any cache.
+  * 
+  * The tricky thing about this implementation, is the withSpeculativeLoadFlush parameter, which 
+  * allows the plugin to speculatively emit non-io memory load to the memory system, even if the load
+  * result may be trashed away.
+  *
+  * The plugin does support MMU as well as atomic instructions. This allows to run linux without data
+  * cache :D. This is useful from a verification perspective.
+  *
+  * To get good timings on FPGA in a SoC, consider setting :
+  * - forkAt = 1
+  * - joinAt = 2
+  *
+  * This allows the memory bus CMD to have very relaxed timings by avoiding the XLEN bits adder
+  * as well as the PMA data path. The down side is that the memory bus response data path timings
+  * are stressed, but as this only impact the data path (no control path), it seems to be generally better.
+  */
 class LsuCachelessPlugin(var layer : LaneLayer,
                          var withAmo : Boolean,
-                         var withSpeculativeLoadFlush : Boolean, // WARNING, the fork cmd may be flushed out of existence before firing if any plugin doesn't flush from the first cycle after !freeze
+                         // WARNING, the fork cmd may be flushed out of existence before firing if 
+                         // any plugin doesn't flush from the first cycle after !freeze.
+                         var withSpeculativeLoadFlush : Boolean,
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
                          var pmpPortParameter : Any,
@@ -105,7 +107,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         case None =>
       }
 
-      op.mayFlushUpTo(forkAt) // page fault / trap
+      op.mayFlushUpTo(forkAt) // Page fault / trap
       withSpeculativeLoadFlush match {
         case true =>
         case false => op.dontFlushFrom(forkAt + 1)
@@ -155,7 +157,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       if(Riscv.withFpu) when(FLOAT) {
         WRITE_DATA(0, FLEN bits) := up(elp(FloatRegFile, riscv.RS2))
       }
-      // write data come from DSP
     }
 
     val onAddress = new addressCtrl.Area {
@@ -213,7 +214,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       val askFenceReg = RegNextWhen(isValid && SEL && ATOMIC, !elp.isFreezed()) init(False) // Implement atomic fencing (pessimistic)
       val askFence = isValid && (FENCE || SEL && ATOMIC || askFenceReg)
-      val doFence = askFence && cmdInflights //Not ideal, because if the first cycle is freezed, then it will also consider the send cmd as something to fence
+      val doFence = askFence && cmdInflights // Not ideal, because if the first cycle is freezed, then it will also consider the send cmd as something to fence
 
       val cmdCounter = Counter(bufferSize, bus.cmd.fire)
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
@@ -413,7 +414,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
       if (withAmo) when(ATOMIC && !LOAD) {
         iwb.payload(0) := onJoin.SC_MISS
-        iwb.payload(7 downto 1) := 0
+        iwb.payload(7 downto 1) := 0 // other bits set to 0 by using `LoadSpec(8, ...)` for the instruction
       }
 
       fpwb.foreach{p =>

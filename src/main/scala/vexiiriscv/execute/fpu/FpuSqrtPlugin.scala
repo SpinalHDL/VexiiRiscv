@@ -63,14 +63,16 @@ class FpuSqrtPlugin(val layer : LaneLayer,
     val sqrt = FpuSqrt(internalMantissaSize)
 
     val onExecute = new layer.Execute(exeAt) {
+      val isZero = RegInit(False) setWhen (fup.unpackingDone(exeAt) && RS1_FP.isZero) clearWhen (isReady)
+
       val cmdSent = RegInit(False) setWhen (sqrt.io.input.fire) clearWhen (isReady)
-      sqrt.io.input.valid := isValid && SEL && fup.unpackingDone(exeAt)&& !cmdSent
+      sqrt.io.input.valid := isValid && SEL && fup.unpackingDone(exeAt) && !RS1_FP.isZero && !cmdSent
       sqrt.io.input.a := U(RS1_FP.exponent.raw.lsb ? (B"1" ## RS1_FP.mantissa ## B"0") | (B"01" ## RS1_FP.mantissa))
       sqrt.io.flush := isReady
       sqrt.io.output.ready := False
 
       val unscheduleRequest = RegNext(isCancel) clearWhen (isReady) init (False)
-      val freeze = isValid && SEL && !sqrt.io.output.valid & !unscheduleRequest
+      val freeze = isValid && SEL && !sqrt.io.output.valid & !unscheduleRequest && !isZero
       layer.lane.freezeWhen(freeze)
 
       val exp = (RS1_FP.exponent >>| 1)

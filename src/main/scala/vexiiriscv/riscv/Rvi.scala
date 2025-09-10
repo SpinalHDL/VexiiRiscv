@@ -162,6 +162,8 @@ object Rvi extends AreaObject {
   val SFENCE_VMA         = TypeNone(M"0001001----------000000001110011")
 
   val FLUSH_DATA         = TypeNone(M"-------00000-----101-----0001111")
+  
+  val ZKN_AES            = TypeR(M"--10--1----------000-----0110011")
 
   case class LoadSpec(width: Int, signed: Boolean)
   val loadSpec = mutable.LinkedHashMap[MicroOp, LoadSpec]()

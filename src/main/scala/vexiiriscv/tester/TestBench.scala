@@ -36,7 +36,7 @@ import scala.collection.mutable.ArrayBuffer
 /**
  * This is the main VexiiRiscv testbench, you can invoke it from command line and is based on the TestOptions class
  */
-object TestBench extends App{
+object TestBench extends App {
   doIt()
 
   def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
@@ -93,15 +93,20 @@ object TestBench extends App{
 
     val genConfig = SpinalConfig()
     val simConfig = SpinalSimConfig()
-    simConfig.withFstWave
     simConfig.withTestFolder
     simConfig.withConfig(genConfig)
+    simConfig.withWave
 
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
       help("help").text("prints this usage text")
+      simConfig.addOptions(this)
       testOpt.addOptions(this)
       param.addOptions(this)
     }.parse(args, ()).nonEmpty)
+
+    if(simConfig._backend == SpinalSimBackendSel.VERILATOR){
+      simConfig.withFstWave
+    }
 
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
@@ -115,9 +120,9 @@ object TestBench extends App{
 /**
  * This class store a bunch of options about how to run a VexiiRiscv testbench, including which binaries need to be loaded in memory.
  *
- * It also include a "test" function actualy contains the simulation code itself, and when invoked will run the whole simulation.
+ * It also include a "test" function actually contains the simulation code itself, and when invoked will run the whole simulation.
  */
-class TestOptions{
+class TestOptions {
   var dualSim = false // Double simulation, one ahead of the other which will trigger wave capture of the second simulation when it fail
   var traceWave = false
   var traceKonata = false
@@ -223,9 +228,9 @@ class TestOptions{
     }
 
     val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), "konata.log")))
-    delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registred last
+    delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registered last
 
-    // Collect traces from the CPUs behaviour
+    // Collect traces from the CPUs behavior
     val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
     if (withRvlsCheck) probe.add(rvls)
     probe.enabled = withProbe
@@ -317,6 +322,18 @@ class TestOptions{
       cmb.mem = mem
     }
     peripheral.withStdIn = withStdIn
+
+
+
+    dut.host.get[LsuPlugin].filter(_.withLlcFlush).map{p =>
+      val bus = p.logic.llcBus
+      val rspQueue = StreamDriver.queue(bus.rsp, cd)
+
+      StreamReadyRandomizer(bus.cmd, cd)
+      StreamMonitor(bus.cmd, cd){p =>
+        rspQueue._2.enqueue {p => }
+      }
+    }
 
 
     var forceProbe = Option.empty[Long => Unit]
@@ -720,7 +737,7 @@ class TestOptions{
       }
     })
 
-    val hal = new FsmHal{
+    val hal = new FsmHal {
       override def next(): Unit = {
         if (fsmTasks.nonEmpty) fsmTasks.dequeue()
         if (fsmTasks.nonEmpty) fsmTasks.head.start(this)
@@ -730,7 +747,7 @@ class TestOptions{
     if (fsmTasks.nonEmpty) fsmTasks.head.start(hal)
     peripheral.putcListeners += (c => if (fsmTasks.nonEmpty) fsmTasks.head.getc(hal, c))
 
-    dut.host.services.foreach{
+    dut.host.services.foreach {
       case p : EmbeddedRiscvJtag => {
         p.debugCd.resetSim #= true
         delayed(20) (p.debugCd.resetSim #= false)
@@ -799,7 +816,7 @@ class TestOptions{
       }
     }
 
-    if(printStats) onSimEnd{
+    if(printStats) onSimEnd {
       println(probe.getStats())
     }
   }

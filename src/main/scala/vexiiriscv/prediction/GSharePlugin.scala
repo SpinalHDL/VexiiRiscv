@@ -24,6 +24,7 @@ class GSharePlugin(var historyWidth : Int,
                    var readAt : Int = 0,
                    var counterWidth : Int = 2,
                    var readAsync : Boolean = false,
+                   var banksCount : Int = 1,
                    var bootMemClear: Boolean) extends FiberPlugin with FetchConditionalPrediction with HistoryUser with InitService {
 
   override def useHistoryAt = readAt
@@ -61,12 +62,20 @@ class GSharePlugin(var historyWidth : Int,
     def hashWidth = log2Up(words)
     def gshareHash(address : UInt, history : Bits) = address(SLICE_RANGE.get.high + 1, hashWidth bits).reversed ^ U(history).resized
 
+    val bankRange = log2Up(words/banksCount) + log2Up(banksCount) - 1 downto log2Up(words/banksCount)
     val mem = new Area{
-      val counter = Mem.fill(words)(GSHARE_COUNTER)
-      val write = counter.writePort
+      assert(isPow2(banksCount))
+      val banks = Array.fill(banksCount)(Mem.fill(words/banksCount)(GSHARE_COUNTER))
+      val write = Flow(MemWriteCmd(GSHARE_COUNTER, log2Up(words)))
+      val writes = banks.map(_.writePort)
+      for((sink, i) <- writes.zipWithIndex){
+        sink.valid := write.valid && write.address(bankRange) === i
+        sink.address := write.address.resized
+        sink.data := write.data
+      }
       if (GenerationFlags.simulation) {
         val rand = new Random(42)
-        counter.initBigInt(List.fill(counter.wordCount)(BigInt(counter.width, rand)))
+        banks.foreach(counter => counter.initBigInt(List.fill(counter.wordCount)(BigInt(counter.width, rand))))
       }
     }
 
@@ -80,10 +89,13 @@ class GSharePlugin(var historyWidth : Int,
 
     val readRsp = new fpp.Fetch(readAt+1){
       def readMem[T <: Data](mem : Mem[T]) = readAsync match {
-        case false => mem.readSync(readCmd(HASH), readCmd.isReady)
-        case true  => mem.readAsync(readCmd(HASH))
+        case false => mem.readSync(readCmd(HASH).resized, readCmd.isReady)
+        case true  => mem.readAsync(readCmd(HASH).resized)
       }
-      this(GSHARE_COUNTER) := readMem(mem.counter)
+
+      val readed = Vec(for(counter <- mem.banks) yield readMem(counter))
+
+      this (GSHARE_COUNTER) := readed.read(this(HASH)(bankRange))
       // Unlike the BTB, here we handle the read durring write using a bypass mux.
       when(BYPASS.valid && this(BYPASS).address === HASH){
         this(GSHARE_COUNTER) := this(BYPASS).data

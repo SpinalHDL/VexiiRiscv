@@ -85,8 +85,8 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
     val rfaKeys = mutable.LinkedHashMap[RfAccess, AccessKeys]()
     for(rfa <- rfAccesses){
-      val physWidth = 5
       val rfMapping = resources.collect{case r : RfResource /*if r.access == rfa*/ => r.rf }.toList //Commenting if r.access == rfa ensure all rfa mappings have the same RFID mapping
+      val physWidth = log2Up(rfMapping.map(_.sizeArch).max)
       val ak = AccessKeys(rfa, physWidth, rfMapping)
       ak.setPartialName(rfa)
       rfaKeys(rfa) = ak
@@ -169,7 +169,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
           case RS2 => riscv.Const.rs2Range
           case RS3 => riscv.Const.rs3Range
           case RD  => riscv.Const.rdRange
-        }).asUInt
+        }).asUInt(keys.physWidth-1 downto 0)
       }
 
       LEGAL := Symplify(Decode.INSTRUCTION, encodings.all) && !Decode.DECOMPRESSION_FAULT

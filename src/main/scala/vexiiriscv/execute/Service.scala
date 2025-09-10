@@ -86,7 +86,7 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   }
 
   def addRsSpec(rfRead : RfRead, executeAt : Int) = {
-    assert(!rs.contains(rfRead))
+    assert(!rs.contains(rfRead), s"$rfRead was already added for the spec of $uop")
     val rf = uop.resources.collectFirst{
       case r : RfResource if r.access == rfRead => r.rf
     }.get
@@ -108,18 +108,22 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
     }
   }
 
+  /** Set from which point in the pipeline the instruction can be considered as done */ 
   def setCompletion(executeCtrlId: Int): this.type = {
-    assert(completion.isEmpty)
+    assert(completion.isEmpty, s"completion is already set at ${completion.get} for $uop")
     completion = Some(executeCtrlId + el.executeAt)
     this
   }
 
-  def mayFlushUpTo(executeCtrlId: Int): Unit = {
+  /** Set until which point in the pipeline the instruction may flush younger instructions */
+  def mayFlushUpTo(executeCtrlId: Int) : this.type = {
     var at = executeCtrlId + el.executeAt
     mayFlushUpTo.foreach(v => v max at)
     mayFlushUpTo = Some(at)
+    this
   }
 
+  /** Set from which point in the pipeline the instruction should not be flushed anymore because it already had produced side effects */
   def dontFlushFrom(executeCtrlId: Int): Unit = {
     var at = executeCtrlId + el.executeAt
     dontFlushFrom.foreach(v => v min at)

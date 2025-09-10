@@ -5,6 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.{AsyncJob, MultithreadedFunSuite}
+import vexiiriscv.execute.lsu.LsuL1Plugin
 import vexiiriscv.memory.{MmuPlugin, PmpPlugin}
 import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
 import vexiiriscv.riscv.Riscv
@@ -344,7 +345,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     args.name(s"regular/$name")
   }
 
-  if(rvzcbm) {
+  if(rvzcbm && dut.host.get[LsuL1Plugin].map(p => !p.withCoherency).getOrElse(true)) {
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/cbm/build/$arch/cbm.elf"))
     args.failAfter(600000000)
