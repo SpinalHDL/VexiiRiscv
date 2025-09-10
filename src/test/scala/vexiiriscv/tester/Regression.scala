@@ -165,6 +165,11 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
     }
   }
 
+  dimensions += new Dimensions[ParamSimple]("testerPlugin") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      List("", "--with-tester-plugin").randomPick(random)
+    }
+  }
 
   // Generate a bunch of random VexiiRiscv configuration and run the tests on them.
   val random = new Random(61)

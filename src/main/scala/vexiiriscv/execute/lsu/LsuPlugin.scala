@@ -847,7 +847,9 @@ class LsuPlugin(var layer : LaneLayer,
       val fenceTrap = new Area{
         val enable = False
         val doIt = (l1.ATOMIC || FENCE) && enable
-        when(doIt) {
+        val doItReg = RegInit(False) setWhen(doIt) clearWhen(!elp.isFreezed())
+
+        when(doIt || doItReg) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO

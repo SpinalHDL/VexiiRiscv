@@ -668,17 +668,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
             val accessable =  withMachinePrivilege || (mcounteren.tm && envcfg.enable)
 
-            val filter = CsrCondFilter(CSR.STIMECMP, accessable)
-            val filterh = CsrCondFilter(CSR.STIMECMPH, accessable)
-
             if (XLEN.get == 32) {
-              api.read(cmp(31 downto 0), filter)
-              api.write(cmp(31 downto 0), filter)
-              api.read(cmp(63 downto 32), filterh)
-              api.write(cmp(63 downto 32), filterh)
+              api.readWrite(cmp(31 downto 0), CSR.STIMECMP)
+              api.readWrite(cmp(63 downto 32), CSR.STIMECMPH)
+              api.allowCsr(CSR.STIMECMP, accessable)
+              api.allowCsr(CSR.STIMECMPH, accessable)
             } else {
-              api.read(cmp, filter)
-              api.write(cmp, filter)
+              api.readWrite(cmp, CSR.STIMECMP)
+              api.allowCsr(CSR.STIMECMP, accessable)
             }
           }
 
@@ -741,16 +738,16 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       val time = p.withRdTime generate new Area {
         val accessable =  withMachinePrivilege || mcounteren.tm
 
-        val filter = CsrCondFilter(CSR.UTIME, accessable)
-        val filterh = CsrCondFilter(CSR.UTIMEH, accessable)
-
         XLEN.get match {
           case 32 => {
-            api.read(rdtime(31 downto 0), filter)
-            api.read(rdtime(63 downto 32), filterh)
+            api.read(rdtime(31 downto 0), CSR.UTIME)
+            api.read(rdtime(63 downto 32), CSR.UTIMEH)
+            api.allowCsr(CSR.UTIME, accessable)
+            api.allowCsr(CSR.UTIMEH, accessable)
           }
           case 64 => {
-            api.read(rdtime, filter)
+            api.read(rdtime, CSR.UTIME)
+            api.allowCsr(CSR.UTIME, accessable)
           }
         }
       }
