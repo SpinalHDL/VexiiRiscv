@@ -33,6 +33,7 @@ case class CsrDecode() extends Bundle {
   val address = UInt(12 bits)
   val trap = Bool()
   val trapCode = Global.CODE()
+  val fence = Bool()
 
   def doException(): Unit = {
     exception := True
@@ -73,6 +74,7 @@ case class CsrBus() extends Bundle {
     decode.exception := False
     decode.trap := False
     decode.trapCode.assignDontCare()
+    decode.fence := False
     read.halt := False
     write.halt := False
     this
