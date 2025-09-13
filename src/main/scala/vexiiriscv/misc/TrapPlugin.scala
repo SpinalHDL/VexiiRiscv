@@ -227,6 +227,17 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
         val privilegeIndexedTriggers = privilegs.zip(privilegeTriggers)
 
+        /* Link xTOPI register */
+        val xtopi = privilegeIndexedTriggers.map{case (p, i) => new Area {
+          val triggered = i.triggered
+          val int = B(triggered.id).andMask(triggered.valid).resized
+
+          p match {
+            case 3 => csr.m.topi.interrupt := int
+            case 1 => csr.s.topi.interrupt := int
+          }
+        }}
+
         val result = privilegeIndexedTriggers.map{case (p, i) => {
           val int = InterruptState(CODE_WIDTH)
           val triggered = i.triggered

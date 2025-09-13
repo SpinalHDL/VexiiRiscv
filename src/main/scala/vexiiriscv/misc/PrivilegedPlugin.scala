@@ -622,6 +622,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = 3, delegators = Nil)
         spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = 3, delegators = Nil)
         spec.addInterrupt(ip.meip && ie.meie, id = 11, privilege = 3, delegators = Nil)
+
+        val topi = new Area {
+          val interrupt = Global.CODE().assignDontCare()
+          val priority = Mux(interrupt === B(0), B(0), B(1))
+          api.read(CSR.MTOPI, 0 -> priority, 16 -> interrupt)
+        }
       }
 
       val mcounteren = p.withRdTime generate new Area {
@@ -733,6 +739,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = 1, delegators = List(Delegator(m.ideleg.se, 3)))
 
         for ((id, enable) <- m.edeleg.mapping) spec.exception += ExceptionSpec(id, List(Delegator(enable, 3)))
+
+        val topi = new Area {
+          val interrupt = Global.CODE().assignDontCare()
+          val priority = Mux(interrupt === B(0), B(0), B(1))
+          api.read(CSR.STOPI, 0 -> priority, 16 -> interrupt)
+        }
       }
 
       val time = p.withRdTime generate new Area {
