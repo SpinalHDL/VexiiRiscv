@@ -101,6 +101,7 @@ object CSR {
   def MIREG4    = 0x354 // MRW Machine indirect register alias 4.
   def MIREG5    = 0x355 // MRW Machine indirect register alias 5.
   def MIREG6    = 0x356 // MRW Machine indirect register alias 6.
+  def MTOPEI    = 0x35C // MRW Machine top external interrupt.
   def MENVCFG   = 0x30A // MRW Machine environment configuration register.
   def MENVCFGH  = 0x31A // MRW Machine environment configuration register.
   def MBASE     = 0x380 // MRW Base register.
@@ -144,6 +145,7 @@ object CSR {
   val SIREG4      = 0x154
   val SIREG5      = 0x155
   val SIREG6      = 0x156
+  val STOPEI      = 0x15C
   val STIMECMPH   = 0x15D
   val SATP        = 0x180
   val SCOUNTOVF   = 0xDA0
@@ -188,4 +190,11 @@ object InterruptInfo {
     10, 2, 6,   // VS interrupts: external, software, timer
     13          // Local interrupt: counter overflow
   )
+}
+
+object IndirectCSR{
+  val eidelivery  = 0x70
+  val eithreshold = 0x72
+  val eip0        = 0x80
+  val eie0        = 0xC0
 }
