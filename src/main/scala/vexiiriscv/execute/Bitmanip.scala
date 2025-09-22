@@ -170,9 +170,9 @@ class ZbbCountPlugin(val layer: LaneLayer,
       val masked = Vec(Bool(), Riscv.XLEN.get)
       masked(masked.size - 1) := flipped.msb
       for(i <- 0 until Riscv.XLEN.get - 1) {
-        masked(i) := flipped(i) & (masked(i+1) | !MASK)
+        masked(i) := flipped(i) & (masked(i+1))
       }
-      MASKED := Cat(masked)
+      MASKED := MASK.mux(Cat(masked), flipped)
     }
 
     val format = new el.Execute(formatAt) {
