@@ -208,7 +208,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
 
     val onFork = new forkCtrl.Area {
-      val RS2 = elp(IntRegFile, riscv.RS2)
+      val RS2 = up(elp(IntRegFile, riscv.RS2))
 
       val skip = False
 

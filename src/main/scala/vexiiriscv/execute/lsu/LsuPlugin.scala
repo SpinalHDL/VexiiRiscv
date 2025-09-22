@@ -673,7 +673,7 @@ class LsuPlugin(var layer : LaneLayer,
           op = UOP(29, 3 bits),
           swap = UOP(27),
           mem = srcBuffer,
-          rf = elp(IntRegFile, riscv.RS2),
+          rf = up(elp(IntRegFile, riscv.RS2)),
           isWord = l1.SIZE === 2
         )
         val aluBuffer = RegNext(alu.result)

@@ -9,7 +9,7 @@ import spinal.lib.{DataCc, StreamCCByToggle}
 import spinal.lib.bus.tilelink.fabric._
 import spinal.lib.cpu.riscv.RiscvHart
 import spinal.lib.cpu.riscv.debug.DebugHartBus
-import spinal.lib.misc.plic.InterruptCtrlFiber
+import spinal.lib.misc.InterruptCtrlFiber
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.{ClintPort, Elf, InterruptCtrl, InterruptNode, TilelinkClintFiber}
 import spinal.lib.sim.SparseMemory

@@ -214,7 +214,7 @@ class TestOptions {
 //        enableSimWave()
 //        sleep(1000)
 //        disableSimWave()
-//        sleep(100000)
+//        sleep(1000000)
 //      }
 //    }
 
