@@ -64,7 +64,7 @@ class ZbaPlugin(val layer: LaneLayer,
     uopRetainer.release()
 
     val execute = new el.Execute(executeAt) {
-      val rs1 = el(IntRegFile, RS1).asSInt
+      val rs1 = up(el(IntRegFile, RS1)).asSInt
       if (Riscv.XLEN.get == 64) {
         when(UW) {
           rs1(63 downto 32) := 0
@@ -75,7 +75,7 @@ class ZbaPlugin(val layer: LaneLayer,
       val sh2 = rs1 |<< 2
       val sh3 = rs1 |<< 3
       val sh = MuxOH(MUX, Seq(rs1, sh1, sh2, sh3))
-      RESULT := el(IntRegFile, RS2).asSInt + sh
+      RESULT := up(el(IntRegFile, RS2)).asSInt + sh
     }
 
     val format = new el.Execute(formatAt) {
@@ -106,8 +106,8 @@ class ZbbLogicPlugin(val layer: LaneLayer,
     uopRetainer.release()
 
     val execute = new el.Execute(executeAt) {
-      val rs1 = el(IntRegFile, RS1).asBits
-      val rs2 = el(IntRegFile, RS2).asBits
+      val rs1 = up(el(IntRegFile, RS1)).asBits
+      val rs2 = up(el(IntRegFile, RS2)).asBits
 
       RESULT := OP.muxDc(
         0 -> (rs1 & ~rs2),
@@ -157,7 +157,7 @@ class ZbbCountPlugin(val layer: LaneLayer,
 
     val count = new el.Execute(executeAt) {
       // TODO explicitly build tree instead of the long combinatorial path...
-      val rs1 = CombInit(this(el(IntRegFile, RS1)))
+      val rs1 = CombInit(up(el(IntRegFile, RS1)))
       if (Riscv.XLEN.get == 64) {
         when(WORD) {
           rs1(63 downto 32) := 0
@@ -293,7 +293,7 @@ class ZbbOrPlugin(val layer: LaneLayer,
     uopRetainer.release()
 
     val combine = new el.Execute(executeAt) {
-      val bits = Cat(el(IntRegFile, RS1).subdivideIn(8 bit).map(_.orR))
+      val bits = Cat(up(el(IntRegFile, RS1)).subdivideIn(8 bit).map(_.orR))
       RESULT := bits
     }
 
@@ -316,7 +316,7 @@ class ZbbByteReversePlugin(val layer: LaneLayer,
 
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
-      wb.payload := Cat(el(IntRegFile, RS1).subdivideIn(8 bit).reverse)
+      wb.payload := Cat(up(el(IntRegFile, RS1)).subdivideIn(8 bit).reverse)
     }
   }
 }
@@ -340,7 +340,7 @@ class ZbbExtendPlugin(val layer: LaneLayer,
 
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
-      wb.payload := el(IntRegFile, RS1)
+      wb.payload := up(el(IntRegFile, RS1))
     }
   }
 }
@@ -374,10 +374,10 @@ class ZbcPlugin(val layer: LaneLayer,
     uopRetainer.release()
 
     val execute = new el.Execute(executeAt) {
-      val rs1 = this(el(IntRegFile, RS1))
-      val rs2 = this(el(IntRegFile, RS2))
+      val rs1 = up(el(IntRegFile, RS1))
+      val rs2 = up(el(IntRegFile, RS2))
       val multiplicand = FLIP ? rs1.reversed | rs1
-      val rs2_flipped = el(IntRegFile, RS2).reversed
+      val rs2_flipped = up(el(IntRegFile, RS2)).reversed
       val multiplier = (this(SHIFT_RS2) ## this(MASK_RS2)).muxDc(
         0 -> rs2,
         1 -> rs2_flipped,
@@ -436,7 +436,7 @@ class ZbsPlugin(val layer: LaneLayer,
     }
 
     val execute = new el.Execute(executeAt) {
-      val rs1 = CombInit(this(el(IntRegFile, RS1)))
+      val rs1 = CombInit(up(el(IntRegFile, RS1)))
       RESULT := INSTRUCTION.mux(
         0 -> (rs1 & ~MASK),
         1 -> B(0, Riscv.XLEN-1 bit) ## (rs1 & MASK).orR,
