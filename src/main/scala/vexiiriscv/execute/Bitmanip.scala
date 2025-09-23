@@ -7,28 +7,48 @@ package vexiiriscv.execute
 import spinal.core._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
+import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv
 
+import scala.collection.mutable.ArrayBuffer
+
 object ZbPlugin {
   def make(layer: LaneLayer,
-           executeAt: Int = 0,
-           formatAt: Int = 0) = {
-    val plugins = Seq(
-      new ZbaPlugin(layer, executeAt, formatAt),
+           zba : Boolean,
+           zbb : Boolean,
+           zbc : Boolean,
+           zbs : Boolean,
+           executeAt: Int,
+           formatAt: Int) = {
+    val plugins = ArrayBuffer[FiberPlugin]()
+
+    if(zba) plugins ++= List(
+      new ZbaPlugin(layer, executeAt, formatAt)
+    )
+
+    if(zbb) plugins ++= List(
       new ZbbLogicPlugin(layer, executeAt, formatAt),
       new ZbbCountPlugin(layer, executeAt, formatAt),
       new ZbbMinMaxPlugin(layer, executeAt, formatAt),
       new ZbbRotatePlugin(layer, executeAt, formatAt),
       new ZbbOrPlugin(layer, executeAt, formatAt),
       new ZbbByteReversePlugin(layer, formatAt),
-      new ZbbExtendPlugin(layer, formatAt),
+      new ZbbExtendPlugin(layer, formatAt)
+    )
+
+    if(zbc) plugins ++= List(
       new ZbcPlugin(layer, executeAt, formatAt),
+    )
+
+    if(zbs) plugins ++= List(
       new ZbsPlugin(layer, executeAt, executeAt, formatAt)
     )
-    plugins.head.during setup {
+
+    if(zbb) plugins.head.during setup {
       Riscv.RVZbb.set(true)
     }
+
     plugins
   }
 }
