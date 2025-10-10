@@ -67,6 +67,11 @@ object CSR {
     val INSTRUCTION_ACCESS_FAULT = 1
     val INSTRUCTION_PAGE_FAULT = 12
 
+    val VIRTUAL_INSTRUCTION = 22
+    val INSTRUCTION_GUEST_PAGE_FAULT = 20
+    val LOAD_GUEST_PAGE_FAULT = 21
+    val STORE_GUEST_PAGE_FAULT = 23
+
     def isPageFault(code : UInt) : Bool = List(INSTRUCTION_PAGE_FAULT, LOAD_PAGE_FAULT, STORE_PAGE_FAULT).map(code === U(_)).orR
   }
 
@@ -96,6 +101,7 @@ object CSR {
   def MTVEC     = 0x305 // MRW Machine trap-handler base address. Machine Trap Handling
   def MVIEN     = 0x308 // MRW Machine virtual interrupt enables.
   def MVIP      = 0x309 // MRW Machine virtual interrupt-pending bits.
+  def MSTATUSH  = 0x310 // MRW Upper 32 bits of mstatus, RV32I only.
   def MIDELEGH  = 0x313 // MRW Upper 32 bits of mideleg, RV32I only.
   def MIEH      = 0x314 // Upper 32 bits of mie, RV32I only.
   def MVIENH    = 0x318 // Upper 32 bits of mvien, RV32I only.
@@ -105,6 +111,8 @@ object CSR {
   def MCAUSE    = 0x342 // MRW Machine trap cause.
   def MTVAL     = 0x343 // MRW Machine bad address.
   def MIP       = 0x344 // MRW Machine interrupt pending.
+  def MTINST    = 0x34A // MRW Machine trap instruction (transformed).
+  def MTVAL2    = 0x34B // MRW Machine second trap value.
   def MIPH      = 0x354 // Upper 32 bits of mip, RV32I only.
   def MISELECT  = 0x350 // MRW Machine indirect register select.
   def MIREG     = 0x351 // MRW Machine indirect register alias.
@@ -162,6 +170,45 @@ object CSR {
   val SATP        = 0x180
   val SCOUNTOVF   = 0xDA0
   val STOPI       = 0xDB0
+
+  def HSTATUS     = 0x600 // HRW Hypervisor status register.
+  def HEDELEG     = 0x602 // HRW Hypervisor exception delegation register.
+  def HIDELEG     = 0x603 // HRW Hypervisor interrupt delegation register.
+  def HIE         = 0x604 // HRW Hypervisor interrupt-enable register.
+  def HCOUNTEREN  = 0x606 // HRW Hypervisor counter enable.
+  def HGEIE       = 0x607 // HRW Hypervisor guest external interrupt-enable register.
+  def HEDELEGH    = 0x612 // HRW Upper 32 bits of hedeleg, RV32 only.
+  def HTVAL       = 0x643 // HRW Hypervisor trap value.
+  def HIP         = 0x644 // HRW Hypervisor interrupt pending.
+  def HVIP        = 0x645 // HRW Hypervisor virtual interrupt pending.
+  def HTINST      = 0x645 // HRW Hypervisor trap instruction (transformed).
+  def HGEIP       = 0xE12 // HRO Hypervisor guest external interrupt pending.
+  def HENVCFG     = 0x60A // HRW Hypervisor environment configuration register.
+  def HENVCFGH    = 0x61A // HRW Upper 32 bits of henvcfg, RV32 only.
+  def HGATP       = 0x680 // HRW Hypervisor guest address translation and protection.
+  def HTIMEDELTA  = 0x605 // HRW Delta for VS/VU-mode timer.
+  def HTIMEDELTAH = 0x615 // HRW Upper 32 bits of htimedelta, RV32 only.
+
+  val VSSTATUS    = 0x200
+  val VSIE        = 0x204
+  val VSTVEC      = 0x205
+  val VSSCRATCH   = 0x240
+  val VSEPC       = 0x241
+  val VSCAUSE     = 0x242
+  val VSTVAL      = 0x243
+  val VSIP        = 0x244
+  val VSISELECT   = 0x250
+  val VSATP       = 0x280
+  val VSIREG      = 0x251
+  val VSIREG2     = 0x252
+  val VSIREG3     = 0x253
+  val VSIREG4     = 0x254
+  val VSIREG5     = 0x255
+  val VSIREG6     = 0x256
+  val VSTIMECMP   = 0x24D
+  val VSTIMECMPH  = 0x25D
+  val VSTOPEI     = 0x25C
+  val VSTOPI      = 0xEB0
 
   def UCYCLE   = 0xC00 // UR Machine ucycle counter.
   def UCYCLEH  = 0xC80
