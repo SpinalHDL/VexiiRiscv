@@ -23,9 +23,11 @@ import spinal.lib.cpu.riscv.debug.{DebugModuleFiber, DebugModuleSocFiber}
 import spinal.lib.eda.bench.{Bench, Rtl}
 import spinal.lib.graphic.YcbcrConfig
 import spinal.lib.graphic.vga.{TilelinkVgaCtrlFiber, TilelinkVgaCtrlSpec, Vga, VgaRgbToYcbcr, VgaYcbcrPix2}
+import spinal.lib.misc.aia._
 import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.misc.test.DualSimTracer
+import spinal.lib.misc.{InterruptNode, InterruptCtrlFiber}
 import spinal.lib.sim.SparseMemory
 import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, memPimped, slave, traversableOncePimped}
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
@@ -86,6 +88,7 @@ class SocConfig(){
   val video = ArrayBuffer[TilelinkVgaCtrlSpec]()
   val macSg = ArrayBuffer[MacSgFiberSpec]()
   var withCpuCd = false
+  var withAPlic = false
 
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
@@ -106,6 +109,7 @@ class SocConfig(){
     opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
     opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
     opt[Unit]("with-debug-probe-pc0") text("Allows to profile the CPU via JTAG. See ElfMapper.") action { (v, c) => withDebugProbePc0 = true }
+    opt[Unit]("with-aplic") action { (v, c) => withAPlic = true }
 
     opt[Seq[String]]("memory-region").unbounded() action { (v, c) =>
       assert(v.length == 4, "--memory-region need 4 parameters")
@@ -162,6 +166,7 @@ class Soc(c : SocConfig) extends Component {
   val system = cpuCd on new AreaRoot {
     val mainDataWidth = vexiiParam.memDataWidth
     val withCoherency = vexiiParam.lsuL1Coherency
+    val withSupervisor = vexiiParam.privParam.withSupervisor
     val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
     for (vexii <- vexiis) {
       if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection { (down, up) =>
@@ -230,24 +235,93 @@ class Soc(c : SocConfig) extends Component {
       val clint = new TilelinkClintFiber()
       clint.node at 0xF0010000l of bus
 
-      val plic = new TilelinkPlicFiber()
-      plic.node at 0xF0C00000l of bus
+      for (vexii <- vexiis) {
+        vexii.bind(clint)
+      }
 
+      val aplic = withAPlic generate new Area {
+        val param = if(vexiiParam.privParam.withImsic) APlicGenParam.full else APlicGenParam.direct
+
+        val m = new Area {
+          val intc = new TilelinkAPlicFiber(APlicDomainParam.root(param))
+          intc.node at 0xF0C00000l of bus
+
+          for (vexii <- vexiis) {
+            vexii.bind(intc)
+          }
+        }
+
+        val s = withSupervisor generate new Area {
+          val intc = new TilelinkAPlicFiber(APlicDomainParam.S(param))
+          intc.node at 0xF0E00000l of bus
+
+          m.intc.addChildCtrl(intc)
+
+          intc.mmsiaddrcfg := m.intc.mmsiaddrcfg
+          intc.smsiaddrcfg := m.intc.smsiaddrcfg
+
+          for (vexii <- vexiis) {
+            vexii.bind(intc)
+          }
+        }
+      }
+
+      val sender = vexiiParam.privParam.withImsic && withAPlic generate new Area {
+        val m = new Area {
+          val sender = TilelinkAPlicMsiSenderFiber()
+          ioBus << sender.node
+          sender.createMsiStreamConsumer() << aplic.m.intc.createMsiStreamProducer()
+        }
+
+        val s = withSupervisor generate new Area {
+          val sender = TilelinkAPlicMsiSenderFiber()
+          ioBus << sender.node
+          sender.createMsiStreamConsumer() << aplic.s.intc.createMsiStreamProducer()
+        }
+      }
+
+      val imsic = vexiiParam.privParam.withImsic generate new Area {
+        assert(withAPlic, s"Imsic rely on aplic, but --with-aplic is $withAPlic.")
+
+        val m = new Area {
+          val msi = TilelinkImsicTriggerFiber()
+          msi.node at 0xF1000000l of bus
+
+          for (vexii <- vexiis) {
+            vexii.bind(msi, 3)
+          }
+        }
+
+        val s = withSupervisor generate new Area {
+          val msi = TilelinkImsicTriggerFiber()
+          msi.node at 0xF1200000l of bus
+
+          for (vexii <- vexiis) {
+            vexii.bind(msi, 1)
+          }
+        }
+      }
+
+      val plic = !withAPlic generate new Area {
+        val intc = new TilelinkPlicFiber()
+        intc.node at 0xF0C00000l of bus
+
+        for (vexii <- vexiis) {
+          vexii.bind(intc)
+        }
+      }
+
+      val intc: InterruptCtrlFiber = if (withAPlic) aplic.m.intc else plic.intc
       val externalInterrupts = new Area {
         val port = in Bits (32 bits)
         val toPlic = for (i <- 0 to 31) yield (i != 0) generate new Area {
-          val node = plic.createInterruptSlave(i)
+          val node = intc.createInterruptSlave(i)
           node.withUps = false
           node.flag := port(i)
         }
       }
 
-      val fromArgs = new PeriphTilelinkFiber(periph, bus, plic)
-
-      for (vexii <- vexiis) {
-        vexii.bind(clint)
-        vexii.bind(plic)
-      }
+      val fromArgs = new PeriphTilelinkFiber(periph, bus, intc)
 
       val toAxiLite4 = new fabric.AxiLite4Bridge
       toAxiLite4.up << bus
@@ -319,8 +393,10 @@ class Soc(c : SocConfig) extends Component {
         rxCd = rxResetCtrl.cd
       )
       fiber.ctrl at spec.ctrlAddress of ioBus
-      peripheral.plic.mapUpInterrupt(spec.txInterruptId, fiber.txInterrupt)
-      peripheral.plic.mapUpInterrupt(spec.rxInterruptId, fiber.rxInterrupt)
+
+      peripheral.intc.mapUpInterrupt(spec.txInterruptId, fiber.txInterrupt)
+      peripheral.intc.mapUpInterrupt(spec.rxInterruptId, fiber.rxInterrupt)
+
       dmaFilter.up << fiber.txMem
       dmaFilter.up << fiber.rxMem
       dmaFilter.down.setDownConnection(a = StreamPipe.M2S, d = StreamPipe.M2S)

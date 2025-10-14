@@ -202,6 +202,10 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     }
   }
 
+  def onRead(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = csrService.onRead(csrFilter, onlyOnFire){
+    when(csrService.writingHartId(hartId)){ body }
+  }
+
   def onWrite(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = csrService.onWrite(csrFilter, onlyOnFire){
     when(csrService.writingHartId(hartId)){ body }
   }
