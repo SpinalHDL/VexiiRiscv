@@ -64,7 +64,7 @@ object SocSim extends App{
   val bins = ArrayBuffer[(Long, File)]()
   var bootstrapOpensbi = Option.empty[(Long, Long)] // Allows to inject a small bootloader which will setup things and then jump to opensbi
   val fsmTasksGen = mutable.Queue[() => FsmTask]() // Allow to script stimulus from the command line (putc / getc)
-  var withRvlsCheck = true
+  var withRvlsCheck = false
   var traceWave = false
   var traceKonata = false
   var traceRvlsLog = false
