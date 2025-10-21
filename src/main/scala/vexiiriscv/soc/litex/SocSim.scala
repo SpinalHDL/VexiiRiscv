@@ -73,6 +73,8 @@ object SocSim extends App{
   var seed = 32
   var litexPeripheral = true
   var simPeripheral = false
+  var passSymbolName = Option.empty[String]
+  var failSymbolName = Option.empty[String]
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
@@ -86,6 +88,8 @@ object SocSim extends App{
     opt[Unit]("trace-spike") action { (v, c) => traceSpikeLog = true }
     opt[Unit]("trace-rvls") action { (v, c) => traceRvlsLog = true }
     opt[Unit]("trace-wave") action { (v, c) => traceWave = true }
+    opt[String]("pass-symbol") action { (v, c) => passSymbolName = Some(v) }
+    opt[String]("fail-symbol") action { (v, c) => failSymbolName = Some(v) }
     socConfig.addOptions(this)
     FsmOption(this, fsmTasksGen)
   }.parse(args, ()).nonEmpty)
@@ -107,6 +111,22 @@ object SocSim extends App{
   def test(dut : Soc, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
     killRandom()
     dut.litexCd.withSyncReset().forkStimulus(10000)
+
+    //Load pass / fail symbol from the elfs
+    val withPass = passSymbolName.nonEmpty
+    var passPc = -1l
+    var failPc = -1l
+    for (elfName <- elfs) {
+      val elf = new Elf(elfName, socConfig.vexiiParam.xlen)
+      if(passSymbolName.nonEmpty){
+        val sym = elf.getELFSymbol(passSymbolName.get)
+        if (sym != null) passPc = sym.st_value
+      }
+      if(failSymbolName.nonEmpty){
+        val sym = elf.getELFSymbol(failSymbolName.get)
+        if (sym != null) failPc = sym.st_value
+      }
+    }
 
     // Will load a little bootloader which will initialise a0 a1 a2 to and then jump to opensbi
     val bootstrapBytes = bootstrapOpensbi.map { case (dts, opensbi) => Riscv.bootToOpensbi(dts, opensbi) }
@@ -137,6 +157,13 @@ object SocSim extends App{
       for(backend <- traceBackends) backend.setPc(hartId, vexiiParam.resetVector)
       trace = false
       livenessThreshold = 21000l // Because reset controllers hold the system quite a bit
+
+      if(passPc != -1l || failPc != -1l) {
+        commitsCallbacks += { (hartId, pc) =>
+          if (pc == passPc) delayed(1)(simSuccess())
+          if (pc == failPc) delayed(1)(simSuccess())
+        }
+      }
     }
 
     if(tracerFile.nonEmpty) probes.foreach(p => p.backends.remove(p.backends.indexOf(tracerFile.get)))
