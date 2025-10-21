@@ -89,6 +89,7 @@ class SocConfig(){
   val macSg = ArrayBuffer[MacSgFiberSpec]()
   var withCpuCd = false
   var withAPlic = false
+  var axiLiteForce32 = true
 
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
@@ -110,6 +111,7 @@ class SocConfig(){
     opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
     opt[Unit]("with-debug-probe-pc0") text("Allows to profile the CPU via JTAG. See ElfMapper.") action { (v, c) => withDebugProbePc0 = true }
     opt[Unit]("with-aplic") action { (v, c) => withAPlic = true }
+    opt[Unit]("with-axilite-xlen") action { (v, c) => axiLiteForce32 = false }
 
     opt[Seq[String]]("memory-region").unbounded() action { (v, c) =>
       assert(v.length == 4, "--memory-region need 4 parameters")
@@ -324,7 +326,8 @@ class Soc(c : SocConfig) extends Component {
       val fromArgs = new PeriphTilelinkFiber(periph, bus, intc)
 
       val toAxiLite4 = new fabric.AxiLite4Bridge
-      toAxiLite4.up << bus
+      toAxiLite4.up << axiLiteForce32.mux(bus, ioBus)
+      if(!axiLiteForce32) toAxiLite4.up.forceDataWidth(vexiiParam.xlen)
 
       val axiLiteRegions = regions.filter(e => e.onPeripheral)
       val virtualRegions = for (region <- axiLiteRegions) yield new VirtualEndpoint(toAxiLite4.down, region.mapping) {
@@ -412,6 +415,7 @@ class Soc(c : SocConfig) extends Component {
       ioBus.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.NONE)
       if(withMem) mem.toAxi4.up << mBus
       peripheral.bus << mBus
+      if(!axiLiteForce32) peripheral.toAxiLite4.up << mBus
 
       val nc = !withCoherency generate new Area {
         for (vexii <- vexiis) {
@@ -490,7 +494,12 @@ class Soc(c : SocConfig) extends Component {
       val debug = out(Delay(debugIn, 2))
       debugIn := 0
 
+      println("DBUS => ")
+      println(MemoryConnection.getMemoryTransfers(vexiis(0).lsuL1Bus).mkString("\n"))
+      println("PBUS => ")
       println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus).mkString("\n"))
+      println("IBUS => ")
+      println(MemoryConnection.getMemoryTransfers(vexiis(0).iBus).mkString("\n"))
     }
   }
 

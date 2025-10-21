@@ -40,7 +40,7 @@ import vexiiriscv.riscv.Riscv
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 import vexiiriscv.soc.micro.MicroSocSim.{elfFile, traceKonata, withRvlsCheck}
-import vexiiriscv.test.{VexiiRiscvProbe, WhiteboxerPlugin}
+import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe, WhiteboxerPlugin}
 import vexiiriscv.tester.{FsmHal, FsmHalGen, FsmOption, FsmTask}
 
 import java.awt.{Dimension, Graphics}
@@ -54,7 +54,7 @@ import scala.collection.mutable.ArrayBuffer
 /*
 SocSim is a simple developpment testbench of the SoC. This is not meant to be used as a regression tool.
 Here is an example of arguments :
-  --mmu-sync-read --with-mul --with-div --allow-bypass-from=0 --performance-counters=0 --fetch-l1 --fetch-l1-ways=2 --lsu-l1 --lsu-l1-ways=2 --with-lsu-bypass --relaxed-branch --with-rva --with-supervisor --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-ways=4 --lsu-l1-mem-data-width-min=64 --xlen=32 --fma-reduced-accuracy --fpu-ignore-subnormal --with-btb --with-ras --with-gshare --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2 --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128 --lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4 --relaxed-div --reset-vector 2147483648 --cpu-count=1 --l2-bytes=524288 --l2-ways=4 --litedram-width=128 --memory-region=0,131072,rxc,p --memory-region=268435456,8192,rwxc,p --memory-region=3758096384,1048576,rw,p --memory-region=2147483648,1073741824,rwxc,m --memory-region=4026531840,65536,rw,p --with-jtag-tap --lsu-l1-coherency --mac-sg name=eth,address=0xF1000000,txIrq=40,rxIrq=41 --load-elf /media/data2/proj/vexii/VexiiRiscv/ext/NaxSoftware/baremetal/macSg/build/rv32ima/macSg.elf
+  --sim-peripheral --regfile-async --with-rvm --with-rva --with-rvc --with-rvd --allow-bypass-from=0 --performance-counters=0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --with-lsu-bypass --relaxed-branch --with-supervisor --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-ways=4 --lsu-l1-mem-data-width-min=64 --xlen=64 --fma-reduced-accuracy --fpu-ignore-subnormal --with-btb --with-ras --with-gshare --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2 --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128 --lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4 --relaxed-div --reset-vector 2147483648 --cpu-count=1 --l2-bytes=524288 --l2-ways=4 --litedram-width=128 --memory-region=268435456,131072,rwx,p --memory-region=2147483648,1073741824,rwxc,m --with-jtag-tap --lsu-l1-coherency --max-ipc --decoders=2 --lanes=2 --load-elf ext/NaxSoftware/baremetal/dhrystone_vexii/build/rv64imafdc/dhrystone_vexii.elf --trace-rvls --trace-konata --trace-spike --trace-wave --reset-vector=0x80000000
  */
 object SocSim extends App{
   val socConfig = new SocConfig()
@@ -71,6 +71,8 @@ object SocSim extends App{
   var traceSpikeLog = false
   var dualSim = false
   var seed = 32
+  var litexPeripheral = true
+  var simPeripheral = false
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
@@ -78,6 +80,7 @@ object SocSim extends App{
     opt[Seq[String]]("load-bin").unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
     opt[Seq[String]]("opensbi-bootstrap").unbounded() action { (v, c) => bootstrapOpensbi = Some(java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Long.parseLong(v(1).replace("0x", ""), 16)) }
     opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
+    opt[Unit]("sim-peripheral") action { (v, c) => simPeripheral = true; litexPeripheral = false }
     opt[Unit]("check-rvls") action { (v, c) => withRvlsCheck = true}
     opt[Unit]("trace-konata") action { (v, c) => traceKonata = true }
     opt[Unit]("trace-spike") action { (v, c) => traceSpikeLog = true }
@@ -184,7 +187,7 @@ object SocSim extends App{
     sleep(1)
 
     // Implements a very minimal model of the Litex peripherals, enough to get linux to run (serial port without interrupts)
-    val onPbus = new Area {
+    val onPbusLitex = litexPeripheral generate new Area {
       val axi = dut.system.patcher.pBus
       val UART_REG            = 0xF0001000l
       val UART_REG_RXTX		    = UART_REG + 0*4
@@ -217,6 +220,31 @@ object SocSim extends App{
             case UART_REG_EV_PENDING =>
             case UART_REG_EV_ENABLE =>
           }
+        }
+      }
+    }
+
+    val onPbusSim = simPeripheral generate new Area {
+      val axi = dut.system.patcher.pBus
+      val emu = new PeripheralEmulator(0x10000000, null, null) {
+        override def getClintTime() = simTime()/10000
+      }
+      new AxiLite4ReadOnlySlaveAgent(axi.ar, axi.r, dut.litexCd){
+        override def doRead(addr: BigInt) = {
+          super.doRead(addr)
+          axi.r.payload.data.randomize()
+          val data = Array.fill[Byte](axi.config.bytePerWord)(0)
+          emu.access(false, addr.toLong, data)
+          axi.r.payload.data #= data
+        }
+      }
+      val woa = new AxiLite4WriteOnlySlaveAgent(axi.aw, axi.w, axi.b, dut.litexCd) {
+        override def onWrite(addr: BigInt, data: BigInt, strb: BigInt) = {
+          super.onWrite(addr, data, strb)
+          axi.r.payload.data.randomize()
+          val buffer = Array.fill[Byte](axi.config.bytePerWord)(0)
+          buffer(0) = data.toByte
+          emu.access(true, addr.toLong, buffer)
         }
       }
     }
