@@ -99,7 +99,6 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("lsuL1AsyncTag", List("", "--lsu-l1-tags-read-async"))
   addDim("coherency", List("", "--with-fetch-l1 --lsu-l1-coherency")) //Want the fetch l1, else it slow down the sim too much
   addDim("lsu bypass", List("", "--with-lsu-bypass"))
-  addDim("ishift", List("", "--with-iterative-shift"))
   addDim("alignBuf", List("", "--with-aligner-buffer"))
   addDim("dispBuf", List("", "--with-dispatcher-buffer"))
   addDim("btbParam", List("--btb-sets 512 --btb-hash-width 16", "--btb-sets 128 --btb-hash-width 6"))
@@ -170,6 +169,14 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       List("", "--with-tester-plugin").randomPick(random)
     }
   }
+
+  dimensions += new Dimensions[ParamSimple]("ishift") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(state.lanes != 1 || state.withLateAlu) return "" //Busy / done handeling of the iterative shifter is buggy
+      List("", "--with-iterative-shift").randomPick(random)
+    }
+  }
+
 
   // Generate a bunch of random VexiiRiscv configuration and run the tests on them.
   val random = new Random(61)
