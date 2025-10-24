@@ -65,4 +65,24 @@ class TesterPlugin extends FiberPlugin{
       el.freezeIt()
     }
   })
+
+
+  val freezer = during build new Area{
+    val execute = host[ExecutePipelinePlugin]
+
+    val freezeIt = False
+
+    val random = new Lsfr(seed = 0x4937295)
+    random.enable := True
+    val timer = Timeout(100)
+    timer.clearWhen(random.value(5, 10 bits) === 0)
+    freezeIt setWhen(!timer.state)
+
+    val random2 = new Lsfr(seed = 0x9123756)
+    random2.enable := True
+    freezeIt setWhen(random2.value(6,6 bits) === 0)
+
+    execute.freezeWhen(freezeIt)
+  }
+
 }

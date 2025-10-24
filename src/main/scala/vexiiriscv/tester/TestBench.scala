@@ -202,7 +202,7 @@ class TestOptions {
   def test(dut : VexiiRiscv, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
     val fsmTasks =  mutable.Queue[FsmTask]()
     for(gen <- fsmTasksGen) fsmTasks += gen()
-    val cd = dut.clockDomain
+    val cd = dut.clockDomain.withSyncReset()
     cd.forkStimulus(10)
     simSpeedPrinter.foreach(cd.forkSimSpeedPrinter)
 
