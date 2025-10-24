@@ -1,9 +1,9 @@
 package vexiiriscv.misc
 
 import spinal.core._
-import spinal.lib.Timeout
+import spinal.lib.{CounterUpDown, Timeout}
 import spinal.lib.misc.plugin.FiberPlugin
-import vexiiriscv.execute.{CsrService, ExecutePipelinePlugin}
+import vexiiriscv.execute.{CsrService, ExecuteLanePlugin, ExecutePipelinePlugin}
 import vexiiriscv.execute.lsu.LsuPlugin
 import vexiiriscv.memory.{AddressTranslationService, MmuPlugin}
 
@@ -50,6 +50,20 @@ class TesterPlugin extends FiberPlugin{
     ptw.cmd.address := address.value.asSInt.resize(widthOf(ptw.cmd.address)).asUInt
     ptw.cmd.storageId := 0
     ptw.cmd.storageEnable := False
+
+    val pending = CounterUpDown(4, ptw.cmd.fire, ptw.rsp.fire)
+    when(pending.mayOverflow){
+      ptw.cmd.valid := False
+    }
+
+    val timeout = Timeout(10000)
+    when(pending === 0 || ptw.rsp.fire){
+      timeout.clear()
+    }
+    val el = host[ExecutePipelinePlugin]
+    when(timeout.state){
+      el.freezeIt()
+    }
   })
 
 
