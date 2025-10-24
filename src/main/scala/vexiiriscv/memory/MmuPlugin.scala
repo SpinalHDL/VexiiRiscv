@@ -75,7 +75,7 @@ object MmuSpec{
     virtualWidth   = 39,
     physicalWidth  = 56,
     satpMode   = 8,
-    pteReserved = 0x1FC0000000000000l
+    pteReserved = 0xFFC0000000000000l
   )
 }
 
