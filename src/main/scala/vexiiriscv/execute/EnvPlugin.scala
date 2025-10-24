@@ -9,7 +9,7 @@ import vexiiriscv.riscv.{CSR, Rvi}
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.decode.Decode
-import vexiiriscv.schedule.ReschedulePlugin
+import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -63,7 +63,7 @@ class EnvPlugin(layer : LaneLayer,
 
       trapPort.valid := False
       trapPort.exception := True
-      trapPort.tval := B(PC).andMask(OP === EnvPluginOp.EBREAK) //That's what spike do
+      trapPort.tval := B(PC).andMask(OP === EnvPluginOp.EBREAK)  | Decode.UOP.andMask(List(EnvPluginOp.PRIV_RET, EnvPluginOp.WFI, EnvPluginOp.SFENCE_VMA).map(_ === this(OP)).orR).resized
       trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
       trapPort.arg.assignDontCare()
       trapPort.laneAge := Execute.LANE_AGE
