@@ -62,7 +62,7 @@ class TesterPlugin extends FiberPlugin{
     }
     val el = host[ExecutePipelinePlugin]
     when(timeout.state){
-//      el.freezeIt() // Issue is that the store buffer prevent the mmu from getting fresh data (lsu arbiter)
+      el.freezeIt()
     }
   })
 
