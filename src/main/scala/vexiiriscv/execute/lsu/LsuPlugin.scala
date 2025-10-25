@@ -450,6 +450,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.invalidate := False
         port.op := LsuL1CmdOpcode.ACCESS
         port.storeId := 0
+
+        host[DispatchPlugin].haltDispatchWhen(sbWaiter)
       }
 
       // Accesses comming from the TrapPlugin (ex : fence.i)
