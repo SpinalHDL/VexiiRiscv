@@ -98,9 +98,9 @@ object CSR {
   def MIREG     = 0x351 // MRW Machine indirect register alias.
   def MIREG2    = 0x352 // MRW Machine indirect register alias 2.
   def MIREG3    = 0x353 // MRW Machine indirect register alias 3.
-  def MIREG4    = 0x354 // MRW Machine indirect register alias 4.
-  def MIREG5    = 0x355 // MRW Machine indirect register alias 5.
-  def MIREG6    = 0x356 // MRW Machine indirect register alias 6.
+  def MIREG4    = 0x355 // MRW Machine indirect register alias 4.
+  def MIREG5    = 0x356 // MRW Machine indirect register alias 5.
+  def MIREG6    = 0x357 // MRW Machine indirect register alias 6.
   def MTOPEI    = 0x35C // MRW Machine top external interrupt.
   def MENVCFG   = 0x30A // MRW Machine environment configuration register.
   def MENVCFGH  = 0x31A // MRW Machine environment configuration register.
