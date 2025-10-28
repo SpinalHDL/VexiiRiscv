@@ -713,7 +713,7 @@ class LsuPlugin(var layer : LaneLayer,
             age := age + 1
           }
 
-          when(age.msb || io.cmdSent){ // io.cmdSent ensure we do not create external deadlock
+          when(age.msb || io.cmdSent || l1.freezeUnlock){ // io.cmdSent ensure we do not create external deadlock
             reserved := False
             age := 0
           }
