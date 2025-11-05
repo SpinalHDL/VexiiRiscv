@@ -45,6 +45,7 @@ object LsuL1 extends AreaObject {
   val REFILL_BUSY = blocking[Bits]
   val lockPort = blocking[LockPort]
   val ackUnlock = blocking[Bool]
+  val freezeUnlock = blocking[Bool]
   val coherency = blocking[Boolean]
 }
 
@@ -306,6 +307,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     val slotsFreezeHazard = False
     val slotsFreeze = lane.isFreezed && !slotsFreezeHazard
+    freezeUnlock.set(slotsFreezeHazard)
 
 
     // Implements all the cache refills logic
@@ -1061,7 +1063,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     // Implements the pipeline which handle memory probe request comming from the SoC (L2)
     val c = withCoherency generate new Area{
       //freezeTimeout is there to ensure that we keep the memory coherency alive, even if the execute pipeline is frozen for extended time. This can avoid dead locks
-      val freezeTimeout = Timeout(60)
+      val freezeTimeout = Timeout(70)
       freezeTimeout.clearWhen(!lane.isFreezed)
       slotsFreezeHazard.setWhen(freezeTimeout.state)
 
