@@ -952,8 +952,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           when(doCbm){
             wayWriteReservation.takeIt()
 
-            val reader = this (WAYS_TAGS).reader(needFlushSel)
-            val tag = reader(_.address)
+            val reader = this (WAYS_TAGS).reader(WAYS_HITS)
 
             shared.write.valid := True
             shared.write.data.dirty.asBools.onMask(WAYS_HITS){_ := False}
@@ -961,11 +960,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             waysWrite.mask := WAYS_HITS
             waysWrite.address := PHYSICAL_ADDRESS(lineRange)
             waysWrite.tag.loaded := !INVALID
-            waysWrite.tag.address := tag
+            waysWrite.tag.address := PHYSICAL_ADDRESS(tagRange)
             waysWrite.tag.fault := reader(_.fault)
 
             writeback.push.valid := CLEAN && wasDirty
-            writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low
+            writeback.push.address := (PHYSICAL_ADDRESS(tagRange) @@ MIXED_ADDRESS(lineRange)) << lineRange.low
             writeback.push.way := wayId
 
             assert(!withCoherency)
