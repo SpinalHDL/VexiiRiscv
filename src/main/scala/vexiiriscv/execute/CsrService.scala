@@ -220,7 +220,7 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     ret
   }
 
-  def writeWhen[T <: Data](value: T, cond: Bool, csrId: Int, bitOffset: Int = 0): Unit = {
+  def writeWhen[T <: Data](value: T, cond: Bool, csrId: Any, bitOffset: Int = 0): Unit = {
     onWrite(csrId, true) {
       when(cond) {
         value.assignFromBits(csrService.bus.write.bits(bitOffset, widthOf(value) bits))
