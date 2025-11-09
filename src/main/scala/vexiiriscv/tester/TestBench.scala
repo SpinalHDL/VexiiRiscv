@@ -321,6 +321,9 @@ class TestOptions {
       override def getClintTime(): BigInt = probe.cycle
       cmb.mem = mem
     }
+    cd.onSamplings {
+      host.logic.rdtime #= probe.cycle
+    }
     peripheral.withStdIn = withStdIn
 
 
