@@ -784,7 +784,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           }
 
           mapMie(CSR.MIE, CSR.SIE, 9, ie.seie, m.ideleg.se)
-          mapMie(CSR.MIE, CSR.SIE, 5, ie.stie, m.ideleg.st)
+          // mapMie(CSR.MIE, CSR.SIE, 5, ie.stie, m.ideleg.st)
+          api.read(ie.stie && m.ideleg.st, CSR.SIE, 9)
+          api.writeWhen(ie.stie, m.ideleg.st, CSR.SIE, 9)
           mapMie(CSR.MIE, CSR.SIE, 1, ie.ssie, m.ideleg.ss)
           mapVie(CSR.SIE, 9, ieShadow.seie, m.ideleg.se, vie.seie)
           mapVie(CSR.SIE, 1, ieShadow.ssie, m.ideleg.ss, vie.ssie)
