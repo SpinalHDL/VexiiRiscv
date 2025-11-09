@@ -318,7 +318,7 @@ class TestOptions {
     val host = dut.host[PrivilegedPlugin]
     val priv = host.hart(0)
     val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
-      override def getClintTime(): Long = probe.cycle
+      override def getClintTime(): BigInt = probe.cycle
       cmb.mem = mem
     }
     peripheral.withStdIn = withStdIn
