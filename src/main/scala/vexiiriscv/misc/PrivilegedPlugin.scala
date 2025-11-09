@@ -755,25 +755,21 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         if (p.withXs) api.readWrite(CSR.SSTATUS, 15 -> m.status.xs)
 
         val iepNoFilter = !p.withInterrutpFilter generate new Area {
-          def mapMie(machineCsr: Int, supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
-            api.read(reg, machineCsr, bitId)
-            api.write(reg, machineCsr, bitId)
+          def mapSie(supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
             api.read(reg && machineDeleg, supervisorCsr, bitId)
             if (sWrite) api.writeWhen(reg, machineDeleg, supervisorCsr, bitId)
           }
 
-          mapMie(CSR.MIE, CSR.SIE, 9, ie.seie, m.ideleg.se)
-          mapMie(CSR.MIE, CSR.SIE, 5, ie.stie, m.ideleg.st)
-          mapMie(CSR.MIE, CSR.SIE, 1, ie.ssie, m.ideleg.ss)
+          mapSie(CSR.SIE, 9, ie.seie, m.ideleg.se)
+          mapSie(CSR.SIE, 5, ie.stie, m.ideleg.st)
+          mapSie(CSR.SIE, 1, ie.ssie, m.ideleg.ss)
 
           api.read(ip.seipOr && m.ideleg.se, CSR.SIP, 9)
-          mapMie(CSR.MIP, CSR.SIP, 1, ip.ssip, m.ideleg.ss)
+          mapSie(CSR.SIP, 1, ip.ssip, m.ideleg.ss)
         }
 
         val iepFilter = p.withInterrutpFilter generate new Area {
-          def mapMie(machineCsr: Int, supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
-            api.read(reg, machineCsr, bitId)
-            api.write(reg, machineCsr, bitId)
+          def mapSie(supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
             api.read(reg, CsrCondFilter(supervisorCsr, machineDeleg), bitId)
             if (sWrite) api.write(reg, CsrCondFilter(supervisorCsr, machineDeleg), bitId)
           }
@@ -783,12 +779,12 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             if (sWrite) api.writeWhen(reg, virtualEnable, CsrCondFilter(supervisorCsr, !machineDeleg), bitId)
           }
 
-          mapMie(CSR.MIE, CSR.SIE, 9, ie.seie, m.ideleg.se)
+          mapSie(CSR.SIE, 9, ie.seie, m.ideleg.se)
+          mapVie(CSR.SIE, 9, ieShadow.seie, m.ideleg.se, vie.seie)
           // mapMie(CSR.MIE, CSR.SIE, 5, ie.stie, m.ideleg.st)
           api.read(ie.stie && m.ideleg.st, CSR.SIE, 9)
           api.writeWhen(ie.stie, m.ideleg.st, CSR.SIE, 9)
-          mapMie(CSR.MIE, CSR.SIE, 1, ie.ssie, m.ideleg.ss)
-          mapVie(CSR.SIE, 9, ieShadow.seie, m.ideleg.se, vie.seie)
+          mapSie(CSR.SIE, 1, ie.ssie, m.ideleg.ss)
           mapVie(CSR.SIE, 1, ieShadow.ssie, m.ideleg.ss, vie.ssie)
 
           // seip
@@ -797,17 +793,19 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           api.writeWhen(vip.seip, vie.seie, CsrCondFilter(CSR.SIP, !m.ideleg.se), 9)
 
           // ssip
-          mapMie(CSR.MIP, CSR.SIP, 1, ip.ssip, m.ideleg.ss)
+          mapSie(CSR.SIP, 1, ip.ssip, m.ideleg.ss)
           api.read(vip.ssip && vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 9)
           api.writeWhen(vip.ssip, vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 9)
           mapVie(CSR.SIP, 1, vip.ssip, m.ideleg.ss, vie.ssie)
         }
 
+        api.readWrite(CSR.MIE, 9 -> ie.seie, 5 -> ie.stie, 1 -> ie.ssie)
         api.read(ip.seipOr, CSR.MIP, 9)
         api.write(ip.seipSoft, CSR.MIP, 9)
         api.read(ip.stipOr, CSR.MIP, 5)
         api.writeWhen(ip.stipSoft, !sstc.envcfg.enable, CSR.MIP, 5)
         api.read(ip.stipOr && m.ideleg.st, CSR.SIP, 5)
+        api.readWrite(ip.ssip, CSR.MIP, 1)
         api.readToWrite(ip.seipSoft, CSR.MIP, 9) //Avoid an external interrupt value to propagate to the soft external interrupt register.
 
         spec.addInterrupt(ip.ssip && ie.ssie, id = 1, privilege = 1, delegators = List(Delegator(m.ideleg.ss, 3)))
