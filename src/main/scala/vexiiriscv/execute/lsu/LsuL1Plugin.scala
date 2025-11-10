@@ -1062,7 +1062,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     // Implements the pipeline which handle memory probe request comming from the SoC (L2)
     val c = withCoherency generate new Area{
       //freezeTimeout is there to ensure that we keep the memory coherency alive, even if the execute pipeline is frozen for extended time. This can avoid dead locks
-      val freezeTimeout = Timeout(70)
+      val freezeTimeout = Timeout(80)
       freezeTimeout.clearWhen(!lane.isFreezed)
       slotsFreezeHazard.setWhen(freezeTimeout.state)
 
