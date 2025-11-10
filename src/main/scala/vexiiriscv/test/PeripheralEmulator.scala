@@ -34,7 +34,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   val CMB_DATA = 0x108
   val RANDOM = 0xA8
 
-  var cmp = 0l
+  var cmp = BigInt(0)
   val cmb = new {
     var mem : SparseMemory = null
     var address = 0l
@@ -52,7 +52,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   }
 
 
-  def getClintTime() : Long
+  def getClintTime() : BigInt
 
   val putcListeners = ArrayBuffer[Char => Unit]()
   def putc(c : Char) : Unit = {putcListeners.foreach(_(c))}
@@ -74,7 +74,8 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   def access(write : Boolean, address : Long, data : Array[Byte]) : Boolean = {
     val addressPatched = address - offset
     if(write) {
-      val v = BigInt(data.map(_.toByte).reverse.toArray).toLong
+      val raw = BigInt(data.map(_.toByte).reverse.toArray)
+      val v = raw.toLong
       addressPatched.toInt match {
         case PUTC => {
           val c = data(0).toChar
@@ -90,8 +91,8 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
         case CLINT_BASE => msi #= (data(0).toInt & 1).toBoolean
         case CLINT_CMP => {
           data.size match {
-            case 4 => cmp = cmp & 0xFFFFFFFF00000000l | v
-            case 8 => cmp = v
+            case 4 => cmp = (cmp & BigInt("FFFFFFFF00000000", 16)) | (raw & BigInt("00000000FFFFFFFF", 16))
+            case 8 => cmp = raw & BigInt("FFFFFFFFFFFFFFFF", 16)
           }
         }
         case CLINT_CMPH => cmp = cmp & 0xFFFFFFFFl | (BigInt(data.map(_.toByte).reverse.toArray).toLong << 32)
@@ -125,8 +126,8 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
         }
         case GETC => getc(data)
         case RANDOM => simRandom.nextBytes(data)
-        case CLINT_TIME => readLong(getClintTime())
-        case CLINT_TIMEH => readLong(getClintTime() >> 32)
+        case CLINT_TIME => readLong(getClintTime().toLong)
+        case CLINT_TIMEH => readLong((getClintTime() >> 32).toLong)
         case CMB_DATA => cmb.mem.readBytes(cmb.address, data.size, data, 0)
         case _ => {
           val message = f"In PeripheralEmulator, invalid read at address 0x$address%x"
