@@ -38,7 +38,8 @@ object PrivilegedParam{
     imsicInterrupts = 0,
     debugTriggers  = 0,
     debugTriggersLsu = false,
-    withHartIdInputDefaulted = false
+    withHartIdInputDefaulted = false,
+    withInterrutpFilter = false
   )
 }
 
@@ -61,6 +62,7 @@ case class PrivilegedParam(var withSupervisor : Boolean,
                            var withSSTC : Boolean,
                            var withDebug: Boolean,
                            var withXs : Boolean,
+                           var withInterrutpFilter : Boolean,
                            var mstatusFsInit : Int,
                            var debugTriggers : Int,
                            var debugTriggersLsu : Boolean,
@@ -722,6 +724,28 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val seie, stie, ssie = RegInit(False)
         }
 
+        // IE bits when mideleg = 0 and mvien = 1
+        val ieShadow = p.withInterrutpFilter generate new Area {
+          val seie, ssie = RegInit(False)
+        }
+
+        val vie = p.withInterrutpFilter generate new api.Csr(CSR.MVIEN) {
+          val seie, ssie = RegInit(False)
+          readWrite(9 -> seie, 1 -> ssie)
+        }
+
+        val vip = p.withInterrutpFilter generate new Area {
+          val seip, ssip = RegInit(False)
+
+          api.readWrite(seip, CsrCondFilter(CSR.MVIP, vie.seie), 9)
+          api.read(ip.seipOr, CsrCondFilter(CSR.MVIP, !vie.seie), 9)
+          api.write(ip.seipSoft, CsrCondFilter(CSR.MVIP, !vie.seie), 9)
+          api.readWrite(ssip, CsrCondFilter(CSR.MVIP, vie.ssie), 1)
+          api.readWrite(ip.ssip, CsrCondFilter(CSR.MVIP, !vie.ssie), 1)
+          api.read(ip.stipOr, CSR.MVIP, 5)
+          api.writeWhen(ip.stipSoft, !sstc.envcfg.enable, CSR.MVIP, 5)
+        }
+
         val tvec = crs.readWriteRam(CSR.STVEC)
         val tval = crs.readWriteRam(CSR.STVAL)
         val epc = crs.readWriteRam(CSR.SEPC)
@@ -730,30 +754,67 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         if (withFs) api.readWrite(CSR.SSTATUS, 13 -> m.status.fs)
         if (p.withXs) api.readWrite(CSR.SSTATUS, 15 -> m.status.xs)
 
-        def mapMie(machineCsr: Int, supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
-          api.read(reg, machineCsr, bitId)
-          api.write(reg, machineCsr, bitId)
-          api.read(reg && machineDeleg, supervisorCsr, bitId)
-          if (sWrite) api.writeWhen(reg, machineDeleg, supervisorCsr, bitId)
+        val iepNoFilter = !p.withInterrutpFilter generate new Area {
+          def mapSie(supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
+            api.read(reg && machineDeleg, supervisorCsr, bitId)
+            if (sWrite) api.writeWhen(reg, machineDeleg, supervisorCsr, bitId)
+          }
+
+          mapSie(CSR.SIE, 9, ie.seie, m.ideleg.se)
+          mapSie(CSR.SIE, 5, ie.stie, m.ideleg.st)
+          mapSie(CSR.SIE, 1, ie.ssie, m.ideleg.ss)
+
+          api.read(ip.seipOr && m.ideleg.se, CSR.SIP, 9)
+          mapSie(CSR.SIP, 1, ip.ssip, m.ideleg.ss)
         }
 
-        mapMie(CSR.MIE, CSR.SIE, 9, ie.seie, m.ideleg.se)
-        mapMie(CSR.MIE, CSR.SIE, 5, ie.stie, m.ideleg.st)
-        mapMie(CSR.MIE, CSR.SIE, 1, ie.ssie, m.ideleg.ss)
+        val iepFilter = p.withInterrutpFilter generate new Area {
+          def mapSie(supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
+            api.read(reg, CsrCondFilter(supervisorCsr, machineDeleg), bitId)
+            if (sWrite) api.write(reg, CsrCondFilter(supervisorCsr, machineDeleg), bitId)
+          }
 
+          def mapVie(supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, virtualEnable: Bool, sWrite: Boolean = true): Unit = {
+            api.read(reg && virtualEnable, CsrCondFilter(supervisorCsr, !machineDeleg), bitId)
+            if (sWrite) api.writeWhen(reg, virtualEnable, CsrCondFilter(supervisorCsr, !machineDeleg), bitId)
+          }
+
+          mapSie(CSR.SIE, 9, ie.seie, m.ideleg.se)
+          mapVie(CSR.SIE, 9, ieShadow.seie, m.ideleg.se, vie.seie)
+          // mapMie(CSR.MIE, CSR.SIE, 5, ie.stie, m.ideleg.st)
+          api.read(ie.stie && m.ideleg.st, CSR.SIE, 9)
+          api.writeWhen(ie.stie, m.ideleg.st, CSR.SIE, 9)
+          mapSie(CSR.SIE, 1, ie.ssie, m.ideleg.ss)
+          mapVie(CSR.SIE, 1, ieShadow.ssie, m.ideleg.ss, vie.ssie)
+
+          // seip
+          api.read(ip.seipOr, CsrCondFilter(CSR.SIP, m.ideleg.se), 9)
+          api.read(vip.seip && vie.seie, CsrCondFilter(CSR.SIP, !m.ideleg.se), 9)
+          api.writeWhen(vip.seip, vie.seie, CsrCondFilter(CSR.SIP, !m.ideleg.se), 9)
+
+          // ssip
+          mapSie(CSR.SIP, 1, ip.ssip, m.ideleg.ss)
+          api.read(vip.ssip && vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 9)
+          api.writeWhen(vip.ssip, vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 9)
+          mapVie(CSR.SIP, 1, vip.ssip, m.ideleg.ss, vie.ssie)
+        }
+
+        api.readWrite(CSR.MIE, 9 -> ie.seie, 5 -> ie.stie, 1 -> ie.ssie)
         api.read(ip.seipOr, CSR.MIP, 9)
         api.write(ip.seipSoft, CSR.MIP, 9)
-        api.read(ip.seipOr && m.ideleg.se, CSR.SIP, 9)
-        api.writeWhen(ip.stipSoft, !sstc.envcfg.enable, CSR.MIP, 5)
         api.read(ip.stipOr, CSR.MIP, 5)
+        api.writeWhen(ip.stipSoft, !sstc.envcfg.enable, CSR.MIP, 5)
         api.read(ip.stipOr && m.ideleg.st, CSR.SIP, 5)
-        mapMie(CSR.MIP, CSR.SIP, 1, ip.ssip, m.ideleg.ss)
+        api.readWrite(ip.ssip, CSR.MIP, 1)
         api.readToWrite(ip.seipSoft, CSR.MIP, 9) //Avoid an external interrupt value to propagate to the soft external interrupt register.
-
 
         spec.addInterrupt(ip.ssip && ie.ssie, id = 1, privilege = 1, delegators = List(Delegator(m.ideleg.ss, 3)))
         spec.addInterrupt(ip.stipOr && ie.stie, id = 5, privilege = 1, delegators = List(Delegator(m.ideleg.st, 3)))
         spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = 1, delegators = List(Delegator(m.ideleg.se, 3)))
+        if (p.withInterrutpFilter) {
+          spec.addInterrupt(!m.ideleg.se && vip.seip && vie.seie && ieShadow.seie, id = 9, privilege = 1, delegators = List(Delegator(True, 3)))
+          spec.addInterrupt(!m.ideleg.ss && vip.ssip && vie.ssie && ieShadow.ssie, id = 1, privilege = 1, delegators = List(Delegator(True, 3)))
+        }
 
         for ((id, enable) <- m.edeleg.mapping) spec.exception += ExceptionSpec(id, List(Delegator(enable, 3)))
 
