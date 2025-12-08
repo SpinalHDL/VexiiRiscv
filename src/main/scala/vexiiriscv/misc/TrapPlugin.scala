@@ -41,7 +41,7 @@ case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
 case class InterruptState(width: Int) extends Bundle {
   val id = UInt(width bits)
   val priority = UInt(width bits)
-  val privilege = UInt(2 bits)
+  val privilege = PrivilegeMode.TYPE()
   val valid = Bool()
 }
 
@@ -151,7 +151,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
     invalidationLocks.release()
 
-    val trapArgWidths = ArrayBuffer[Int](2)
+    val trapArgWidths = ArrayBuffer[Int](3)
     if(ats.mayNeedRedo) trapArgWidths += 2+ats.getStorageIdWidth()
     TRAP_ARG_WIDTH.set(trapArgWidths.max)
 
@@ -174,7 +174,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
         write.data.assignDontCare()
       }
 
-      def privilegeMux[T <: Data](privValue: UInt)(machine: => T, supervisor: => T): T = {
+      def privilegeMux[T <: Data](privValue: SInt)(machine: => T, supervisor: => T): T = {
         val ret = CombInit(machine)
         switch(privValue) {
           if (priv.p.withSupervisor) is(1) {
@@ -283,17 +283,17 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val slices = Reg(UInt(INSTRUCTION_SLICE_COUNT_WIDTH+1 bits))
 
           val xret = new Area {
-            val sourcePrivilege = state.arg(1 downto 0).asUInt
+            val sourcePrivilege = state.arg(2 downto 0).asSInt
             val targetPrivilege = privilegeMux(sourcePrivilege)(
-              csr.m.status.mpp,
-              U"0" @@ csr.s.status.spp
+              (U"0" ## csr.m.status.mpp).asSInt,
+              (U"00" ## csr.s.status.spp).asSInt
             )
           }
         }
 
         val exception = new Area {
           /* TODO: replace this "11" with PrivilegeMode value */
-          val exceptionTargetPrivilegeUncapped = U"11"
+          val exceptionTargetPrivilegeUncapped = S"011"
           val code = CombInit(pending.state.code)
           switch(code) {
             for (s <- csr.spec.exception) {
@@ -628,7 +628,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               is(PrivilegeMode.M) {
                 csr.m.status.mie := False
                 csr.m.status.mpie := csr.m.status.mie
-                if (priv.p.withUser) csr.m.status.mpp := csr.privilege
+                if (priv.p.withUser) csr.m.status.mpp := csr.privilege(1 downto 0).asUInt
 
                 csr.m.cause.code := buffer.trap.code
                 csr.m.cause.interrupt := buffer.trap.interrupt
@@ -636,7 +636,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               priv.p.withSupervisor generate is(PrivilegeMode.S) {
                 csr.s.status.sie := False
                 csr.s.status.spie := csr.s.status.sie
-                if (priv.p.withUser) csr.s.status.spp := csr.privilege(0, 1 bits)
+                if (priv.p.withUser) csr.s.status.spp := csr.privilege(0, 1 bits).asUInt
 
                 csr.s.cause.code := buffer.trap.code
                 csr.s.cause.interrupt := buffer.trap.interrupt
@@ -693,7 +693,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
             }
           }
 
-          val xretPrivilege = U(pending.state.arg(1 downto 0))
+          val xretPrivilege = pending.state.arg(2 downto 0).asSInt
           XRET_EPC.whenIsActive{
             crsPorts.read.valid := True
             crsPorts.read.address := privilegeMux(xretPrivilege)(
@@ -711,7 +711,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
             csr.privilege := pending.xret.targetPrivilege
             csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege =/= PrivilegeMode.M)
-            switch(pending.state.arg(1 downto 0)) {
+            switch(pending.state.arg(2 downto 0)) {
               is(PrivilegeMode.M) {
                 if(priv.p.withUser) csr.m.status.mpp := 0
                 csr.m.status.mie := csr.m.status.mpie
@@ -741,4 +741,3 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
     initHold := host.list[InitService].map(_.initHold()).orR
   }
 }
-

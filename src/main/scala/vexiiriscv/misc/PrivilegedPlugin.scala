@@ -25,6 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 object PrivilegedParam{
   def base = PrivilegedParam(
     withSupervisor = false,
+    withHypervisor = false,
     withUser       = false,
     withUserTrap   = false,
     withRdTime     = false,
@@ -56,6 +57,7 @@ trait LsuTriggerService{
 }
 
 case class PrivilegedParam(var withSupervisor : Boolean,
+                           var withHypervisor : Boolean,
                            var withUser: Boolean,
                            var withUserTrap: Boolean,
                            var withRdTime : Boolean,
@@ -94,7 +96,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
   def implementUser = p.withUser
   def implementUserTrap = p.withUserTrap
 
-  def getPrivilege(hartId : UInt) : UInt = logic.harts.map(_.privilege).read(hartId)
+  def getPrivilege(hartId : UInt) : SInt = logic.harts.map(_.privilege).read(hartId)
   def isMachine(hartId : UInt) : Bool = getPrivilege(hartId) === PrivilegeMode.M
   def isSupervisor(hartId : UInt) : Bool = getPrivilege(hartId) === PrivilegeMode.S
   def isUSer(hartId : UInt) : Bool = getPrivilege(hartId) === PrivilegeMode.U
@@ -159,7 +161,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     if (p.withSupervisor) addMisa('S')
 
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
-    CODE_WIDTH.set((4 +: causesWidthMins).max)
+    CODE_WIDTH.set((5 +: causesWidthMins).max)
 
     assert(HART_COUNT.get == 1)
     api.get
@@ -283,7 +285,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         val dpc = crs.readWriteRam(CSR.DPC)
         val dcsr = new Area {
-          val prv       = RegInit(U"11")
+          val prv       = Reg(PrivilegeMode.TYPE()) init(PrivilegeMode.M)
           val step      = RegInit(False) //TODO
           val nmip      = False
           val mprven    = True
@@ -884,7 +886,19 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     val defaultTrap = new Area {
       val csrPrivilege = cap.bus.decode.address(8, 2 bits)
       val csrReadOnly = cap.bus.decode.address(10, 2 bits) === U"11"
-      when(csrReadOnly && cap.bus.decode.write || csrPrivilege > harts.reader(cap.bus.decode.hartId)(_.privilege)) {
+      // todo
+      val hartPrivilege = harts.reader(cap.bus.decode.hartId)(_.privilege)
+      val adjustPrivilege = UInt(2 bits)
+
+      p.withHypervisor generate {
+        adjustPrivilege := Mux(hartPrivilege === S(PrivilegeMode.S), U"10", hartPrivilege(1 downto 0).asUInt)
+      }
+
+      !p.withHypervisor generate {
+        adjustPrivilege := hartPrivilege(1 downto 0).asUInt
+      }
+
+      when(csrReadOnly && cap.bus.decode.write || csrPrivilege > adjustPrivilege) {
         cap.bus.decode.doException()
       }
     }

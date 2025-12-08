@@ -43,8 +43,26 @@ object PrivilegeMode {
   val M = 3
   val S = 1
   val U = 0
+  val VS = -3
+  val VU = -4
 
-  val TYPE = HardType(UInt(2 bits))
+  val TYPE = HardType(SInt(3 bits))
+
+  def isGuest(privilege: SInt): Bool = privilege(2)
+
+  def apply(isGuest: Bool, privilege: Bits): SInt = {
+    val mode = TYPE()
+
+    assert(widthOf(privilege) == 2)
+
+    mode(2).assignFromBits((privilege === PrivilegeMode.M).mux(False, isGuest).asBits)
+    mode(1 downto 0).assignFromBits(privilege.asBits)
+
+    mode
+  }
+
+  def apply(isGuest: Bool, privilege: UInt): SInt =
+    apply(isGuest, privilege.asBits)
 }
 
 object CSR {

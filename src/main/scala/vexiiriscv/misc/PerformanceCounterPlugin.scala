@@ -58,6 +58,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 
       val mcounteren = csr.readWrite(RegInit(False), CSR.MCOUNTEREN, counterId)
       val scounteren = priv.p.withSupervisor generate csr.readWrite(RegInit(False), CSR.SCOUNTEREN, counterId)
+      val hcounteren = priv.p.withHypervisor generate csr.readWrite(RegInit(False), CSR.HCOUNTEREN, counterId)
       val mcountinhibit = csr.readWrite(RegInit(False), CSR.MCOUNTINHIBIT, counterId)
     }
     case class Mapping(csrId : Int, alloc : CsrRamAllocation, offset : Int)
@@ -322,7 +323,9 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val addr = csr.bus.decode.address(0, log2Up(counterCount + 1) bits)
       val mok = addr.muxListDc(counters.list.map(e => e.counterId -> e.mcounteren))
       val sok = priv.p.withSupervisor.mux(addr.muxListDc(counters.list.map(e => e.counterId -> e.scounteren)), True)
-      val privOk = (priv.getPrivilege(csr.bus.decode.hartId) | U(mok ## sok)).andR
+      val vok = priv.p.withHypervisor.mux(addr.muxListDc(counters.list.map(e => e.counterId -> e.hcounteren)), True)
+      val privilege = priv.getPrivilege(csr.bus.decode.hartId)
+      val privOk = ((privilege.asBits ^ B(1 << 2)) | (vok ## mok ## sok)).andR
       csr.onDecode(csrFilter){ //TODO test
         when(csr.bus.decode.address(9 downto 8) === PrivilegeMode.U){
           when(csr.bus.decode.write || !privOk){
