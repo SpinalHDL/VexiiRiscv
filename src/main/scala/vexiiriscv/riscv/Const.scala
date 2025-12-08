@@ -43,6 +43,8 @@ object PrivilegeMode {
   val M = 3
   val S = 1
   val U = 0
+
+  val TYPE = HardType(UInt(2 bits))
 }
 
 object CSR {

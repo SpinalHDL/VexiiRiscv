@@ -12,7 +12,7 @@ import spinal.lib.misc.pipeline.{NodeBaseApi, Payload}
 import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamService}
 import vexiiriscv.memory.AddressTranslationPortUsage.{FETCH, LOAD_STORE}
 import vexiiriscv.misc.{PerformanceCounterService, PipelineBuilderPlugin, PrivilegedPlugin, TrapReason}
-import vexiiriscv.riscv.CSR
+import vexiiriscv.riscv.{CSR, PrivilegeMode}
 import vexiiriscv.riscv.Riscv._
 
 import scala.collection.mutable.ArrayBuffer
@@ -265,9 +265,9 @@ class MmuPlugin(var spec : MmuSpec,
     }
 
     assert(HART_COUNT.get == 1)
-    val isMachine = priv.getPrivilege(0) === U"11"
-    val isSupervisor = priv.getPrivilege(0) === U"01"
-    val isUser = priv.getPrivilege(0) === U"00"
+    val isMachine = priv.getPrivilege(0) === PrivilegeMode.M
+    val isSupervisor = priv.getPrivilege(0) === PrivilegeMode.S
+    val isUser = priv.getPrivilege(0) === PrivilegeMode.U
     def mprv = priv.logic.harts(0).m.status.mprv
 
     api.fetchTranslationEnable := satp.mode === spec.satpMode

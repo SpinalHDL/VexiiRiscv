@@ -292,6 +292,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
         }
 
         val exception = new Area {
+          /* TODO: replace this "11" with PrivilegeMode value */
           val exceptionTargetPrivilegeUncapped = U"11"
           val code = CombInit(pending.state.code)
           switch(code) {

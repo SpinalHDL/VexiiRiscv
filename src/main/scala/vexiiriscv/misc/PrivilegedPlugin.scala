@@ -197,9 +197,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
       val api = cap.hart(hartId)
       val withFs = RVF || p.withSupervisor
-      val privilege = RegInit(U"11")
-      val withMachinePrivilege = privilege >= U"11"
-      val withSupervisorPrivilege = privilege >= U"01"
+      val privilege = Reg(PrivilegeMode.TYPE()) init(PrivilegeMode.M)
+      val withMachinePrivilege = privilege >= PrivilegeMode.M
+      val withSupervisorPrivilege = privilege >= PrivilegeMode.S
 
       val hartRunning = RegInit(True).allowUnsetRegToAvoidLatch()
       val debugMode = !hartRunning
