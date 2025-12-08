@@ -219,7 +219,7 @@ class LsuPlugin(var layer : LaneLayer,
       val invalIntoClean = False
       def xenvcfg(priv : Int) = new Area{
         val at = 0x00A + priv * 0x100
-        if(priv == 3) cap.allowCsr(at + 0x10) //Allow menvcfgh
+        if(priv == PrivilegeMode.M) cap.allowCsr(at + 0x10) //Allow menvcfgh
         val privLower = pp.getPrivilege(0) < priv
         val cbie = RegInit(B"00")
         val cbcfe = RegInit(B"0")
@@ -237,8 +237,8 @@ class LsuPlugin(var layer : LaneLayer,
       ds.addMicroOpDecoding(Rvi.CBM_FLUSH, CLEAN, True)
       ds.addMicroOpDecoding(Rvi.CBM_INVALIDATE, INVALIDATE, True)
 
-      val menvcfg = xenvcfg(3)
-      val senvcfg = pp.implementSupervisor generate xenvcfg(1)
+      val menvcfg = xenvcfg(PrivilegeMode.M)
+      val senvcfg = pp.implementSupervisor generate xenvcfg(PrivilegeMode.S)
     }
 
     val injectCtrl = elp.ctrl(0)
@@ -604,7 +604,7 @@ class LsuPlugin(var layer : LaneLayer,
       val io = new Area {
         // Give one cycle delay, allowing trap to happen before the IO access is emitted.
         val tooEarly = RegNext(True) clearWhen(elp.isFreezed()) init(False)
-         
+
         val allowIt = RegNext(False) setWhen(!lsuTrap && !isCancel && FROM_LSU && !l1.CLEAN && !l1.INVALID) init(False)
         val doIt = isValid && l1.SEL && onPma.IO
         val doItReg = RegNext(doIt) init(False)

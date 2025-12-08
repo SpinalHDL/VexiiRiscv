@@ -6,7 +6,7 @@ import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamAllocation, CsrRamPlugin, CsrRamService}
-import vexiiriscv.riscv.{CSR, Riscv}
+import vexiiriscv.riscv.{CSR, PrivilegeMode, Riscv}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -115,8 +115,8 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       priv.logic.harts(0).spec.addInterrupt(
         ip && ie,
         id = 13,
-        privilege = priv.implementSupervisor.mux(1, 3),
-        delegators = priv.implementSupervisor.mux(List(Delegator(sup.deleg, 3)), Nil)
+        privilege = priv.implementSupervisor.mux(PrivilegeMode.S, PrivilegeMode.M),
+        delegators = priv.implementSupervisor.mux(List(Delegator(sup.deleg, PrivilegeMode.M)), Nil)
       )
     }
 
@@ -156,15 +156,15 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       ofRead clearWhen(!counter.mcounteren && !privValue(1))
 
       csr.readWrite(eb, 63-eo -> OF, 62-eo -> MINH)
-      inhibit.setWhen(privValue === 3 && MINH)
+      inhibit.setWhen(privValue === PrivilegeMode.M && MINH)
       if (priv.p.withSupervisor) {
         csr.readWrite(eb, 61 - eo -> SINH)
-        inhibit.setWhen(privValue === 1 && SINH)
+        inhibit.setWhen(privValue === PrivilegeMode.S && SINH)
         ofRead clearWhen(!counter.scounteren && !privValue(0))
       }
       if (priv.p.withUser) {
         csr.readWrite(eb, 60 - eo -> UINH)
-        inhibit.setWhen(privValue === 0 && UINH)
+        inhibit.setWhen(privValue === PrivilegeMode.U && UINH)
       }
     }
 
@@ -324,7 +324,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val sok = priv.p.withSupervisor.mux(addr.muxListDc(counters.list.map(e => e.counterId -> e.scounteren)), True)
       val privOk = (priv.getPrivilege(csr.bus.decode.hartId) | U(mok ## sok)).andR
       csr.onDecode(csrFilter){ //TODO test
-        when(csr.bus.decode.address(9 downto 8) === 0){
+        when(csr.bus.decode.address(9 downto 8) === PrivilegeMode.U){
           when(csr.bus.decode.write || !privOk){
             csr.bus.decode.doException()
           }

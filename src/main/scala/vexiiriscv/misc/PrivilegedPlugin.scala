@@ -95,9 +95,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
   def implementUserTrap = p.withUserTrap
 
   def getPrivilege(hartId : UInt) : UInt = logic.harts.map(_.privilege).read(hartId)
-  def isMachine(hartId : UInt) : Bool = getPrivilege(hartId) === 3
-  def isSupervisor(hartId : UInt) : Bool = getPrivilege(hartId) === 1
-  def isUSer(hartId : UInt) : Bool = getPrivilege(hartId) === 0
+  def isMachine(hartId : UInt) : Bool = getPrivilege(hartId) === PrivilegeMode.M
+  def isSupervisor(hartId : UInt) : Bool = getPrivilege(hartId) === PrivilegeMode.S
+  def isUSer(hartId : UInt) : Bool = getPrivilege(hartId) === PrivilegeMode.U
 
 
   override def getCommitMask(hartId: Int): Bits = logic.harts(hartId).commitMask
@@ -430,9 +430,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             val m, s, u = RegInit(False)
             val action = RegInit(U(0, p.withDebug.toInt bits))
             val privilegeHit = !debugMode && privilege.mux(
-              0 -> u,
-              1 -> s,
-              3 -> m,
+              PrivilegeMode.U -> u,
+              PrivilegeMode.S -> s,
+              PrivilegeMode.M -> m,
               default -> False
             )
             val hit = RegInit(False)
@@ -579,9 +579,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           if (p.withUser) {
             onWrite(true) {
               switch(cap.bus.write.bits(12 downto 11)) {
-                is(3) { mpp := 3 }
-                if (p.withSupervisor) is(1) { mpp := 1 }
-                is(0) { mpp := 0 }
+                is(PrivilegeMode.M) { mpp := PrivilegeMode.M }
+                if (p.withSupervisor) is(PrivilegeMode.S) { mpp := PrivilegeMode.S }
+                is(PrivilegeMode.U) { mpp := PrivilegeMode.U }
               }
             }
           }
@@ -634,9 +634,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val epc  = crs.readWriteRam(CSR.MEPC)
         val scratch = crs.readWriteRam(CSR.MSCRATCH)
 
-        spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = 3, delegators = Nil)
-        spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = 3, delegators = Nil)
-        spec.addInterrupt(ip.meip && ie.meie, id = 11, privilege = 3, delegators = Nil)
+        spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = PrivilegeMode.M, delegators = Nil)
+        spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = PrivilegeMode.M, delegators = Nil)
+        spec.addInterrupt(ip.meip && ie.meie, id = 11, privilege = PrivilegeMode.M, delegators = Nil)
 
         val topi = new Area {
           val interrupt = Global.CODE().assignDontCare()
@@ -808,15 +808,15 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         api.readWrite(ip.ssip, CSR.MIP, 1)
         api.readToWrite(ip.seipSoft, CSR.MIP, 9) //Avoid an external interrupt value to propagate to the soft external interrupt register.
 
-        spec.addInterrupt(ip.ssip && ie.ssie, id = 1, privilege = 1, delegators = List(Delegator(m.ideleg.ss, 3)))
-        spec.addInterrupt(ip.stipOr && ie.stie, id = 5, privilege = 1, delegators = List(Delegator(m.ideleg.st, 3)))
-        spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = 1, delegators = List(Delegator(m.ideleg.se, 3)))
+        spec.addInterrupt(ip.ssip && ie.ssie, id = 1, privilege = PrivilegeMode.S, delegators = List(Delegator(m.ideleg.ss, PrivilegeMode.M)))
+        spec.addInterrupt(ip.stipOr && ie.stie, id = 5, privilege = PrivilegeMode.S, delegators = List(Delegator(m.ideleg.st, PrivilegeMode.M)))
+        spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = PrivilegeMode.S, delegators = List(Delegator(m.ideleg.se, PrivilegeMode.M)))
         if (p.withInterrutpFilter) {
-          spec.addInterrupt(!m.ideleg.se && vip.seip && vie.seie && ieShadow.seie, id = 9, privilege = 1, delegators = List(Delegator(True, 3)))
-          spec.addInterrupt(!m.ideleg.ss && vip.ssip && vie.ssie && ieShadow.ssie, id = 1, privilege = 1, delegators = List(Delegator(True, 3)))
+          spec.addInterrupt(!m.ideleg.se && vip.seip && vie.seie && ieShadow.seie, id = 9, privilege = PrivilegeMode.S, delegators = List(Delegator(True, PrivilegeMode.M)))
+          spec.addInterrupt(!m.ideleg.ss && vip.ssip && vie.ssie && ieShadow.ssie, id = 1, privilege = PrivilegeMode.S, delegators = List(Delegator(True, PrivilegeMode.M)))
         }
 
-        for ((id, enable) <- m.edeleg.mapping) spec.exception += ExceptionSpec(id, List(Delegator(enable, 3)))
+        for ((id, enable) <- m.edeleg.mapping) spec.exception += ExceptionSpec(id, List(Delegator(enable, PrivilegeMode.M)))
 
         val topi = new Area {
           val interrupt = Global.CODE().assignDontCare()
