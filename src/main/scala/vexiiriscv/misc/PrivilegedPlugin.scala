@@ -25,9 +25,9 @@ import scala.collection.mutable.ArrayBuffer
 object PrivilegedParam{
   def base = PrivilegedParam(
     withSupervisor = false,
-    withHypervisor = false,
     withUser       = false,
     withUserTrap   = false,
+    withHypervisor = false,
     withRdTime     = false,
     withSSTC       = false,
     withDebug      = false,
@@ -57,9 +57,9 @@ trait LsuTriggerService{
 }
 
 case class PrivilegedParam(var withSupervisor : Boolean,
-                           var withHypervisor : Boolean,
                            var withUser: Boolean,
                            var withUserTrap: Boolean,
+                           var withHypervisor : Boolean,
                            var withRdTime : Boolean,
                            var withSSTC : Boolean,
                            var withDebug: Boolean,
@@ -79,6 +79,7 @@ case class PrivilegedParam(var withSupervisor : Boolean,
     assert(!(withSupervisor && !withUser))
     assert((withSSTC && withSupervisor && withRdTime) || !withSSTC)
     assert((imsicInterrupts == 0) || (isPow2(imsicInterrupts) && imsicInterrupts >= 64 && imsicInterrupts <= 2048))
+    assert(!withHypervisor || (withSupervisor && withRdTime))
   }
 }
 
@@ -160,6 +161,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     if (RVM) addMisa('M')
     if (p.withUser) addMisa('U')
     if (p.withSupervisor) addMisa('S')
+    if (p.withHypervisor) addMisa('H')
 
     val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
     CODE_WIDTH.set((5 +: causesWidthMins).max)
@@ -560,12 +562,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val status = new api.Csr(CSR.MSTATUS) {
           val mie, mpie = RegInit(False)
           val mpp = p.withUser.mux(RegInit(U"00"), U"11")
+          val mpv = p.withHypervisor.mux(RegInit(False), False)
           val fs = withFs generate RegInit(U(p.mstatusFsInit, 2 bits))
           val sd = False
           val tsr, tvm = p.withSupervisor generate RegInit(False)
           val tw = p.withUser.mux(RegInit(False), False)
           val mprv = RegInit(False) clearWhen(xretAwayFromMachine)
           val xs = p.withXs generate RegInit(U(p.mstatusFsInit, 2 bits))
+          val gva = p.withHypervisor generate RegInit(False)
 
           if (RVF) {
             fpuEnable(hartId) setWhen (fs =/= 0)
@@ -596,8 +600,17 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")
           if (p.withSupervisor) readWrite(22 -> tsr, 20 -> tvm)
           if (p.withUser) readWrite(21 -> tw)
+          if (p.withHypervisor && XLEN.get == 64) readWrite(38 -> gva, 39 -> mpv)
 
           cap.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUS)) // Status can have various side effect on the MMU and FPU
+        }
+
+        val statush = new api.Csr(CSR.MSTATUSH) {
+          import status._
+
+          if (p.withHypervisor && XLEN.get == 32) readWrite(6 -> gva, 7 -> mpv)
+
+          cap.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUSH)) // Status can have various side effect on the MMU and FPU
         }
 
         val cause = new api.Csr(CSR.MCAUSE) {
@@ -636,6 +649,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val tval = crs.readWriteRam(CSR.MTVAL)
         val epc  = crs.readWriteRam(CSR.MEPC)
         val scratch = crs.readWriteRam(CSR.MSCRATCH)
+
+        val tval2 = p.withHypervisor generate crs.readWriteRam(CSR.MTVAL2)
+        val tinst = p.withHypervisor generate crs.readWriteRam(CSR.MTINST)
 
         spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = PrivilegeMode.M, delegators = Nil)
         spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = PrivilegeMode.M, delegators = Nil)
