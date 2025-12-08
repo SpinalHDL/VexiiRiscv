@@ -285,7 +285,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val xret = new Area {
             val sourcePrivilege = state.arg(2 downto 0).asSInt
             val targetPrivilege = privilegeMux(sourcePrivilege)(
-              (U"0" ## csr.m.status.mpp).asSInt,
+              (csr.m.status.mpv ## csr.m.status.mpp).asSInt,
               (U"00" ## csr.s.status.spp).asSInt
             )
           }
