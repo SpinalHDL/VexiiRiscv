@@ -39,6 +39,11 @@ case class IMM(instruction  : Bits) extends Area{
   def j_sext = S(j ## False).resize(Riscv.XLEN)
 }
 
+object PrivilegeMode {
+  val M = 3
+  val S = 1
+  val U = 0
+}
 
 object CSR {
   val MCAUSE_ENUM = new {
