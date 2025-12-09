@@ -205,6 +205,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       val privilege = Reg(PrivilegeMode.TYPE()) init(PrivilegeMode.M)
       val withMachinePrivilege = privilege >= PrivilegeMode.M
       val withSupervisorPrivilege = privilege >= PrivilegeMode.S
+      val withGuestPrivilege = PrivilegeMode.isGuest(privilege)
+      val withHostPrivilege = !withGuestPrivilege
 
       val hartRunning = RegInit(True).allowUnsetRegToAvoidLatch()
       val debugMode = !hartRunning
@@ -572,8 +574,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val gva = p.withHypervisor generate RegInit(False)
 
           if (RVF) {
-            fpuEnable(hartId) setWhen (fs =/= 0)
-            when(host.list[FpuDirtyService].map(_.gotDirty()).orR){
+            fpuEnable(hartId) setWhen (fs =/= 0 && p.withHypervisor.mux(withHostPrivilege, True))
+            when(withHostPrivilege && host.list[FpuDirtyService].map(_.gotDirty()).orR){
               fs := 3
             }
           }
@@ -637,12 +639,19 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         val edeleg = p.withSupervisor generate new api.Csr(CSR.MEDELEG) {
           val iam, bp, eu, es, ipf, lpf, spf = RegInit(False)
-          val mapping = mutable.LinkedHashMap(0 -> iam, 3 -> bp, 8 -> eu, 9 -> es, 12 -> ipf, 13 -> lpf, 15 -> spf)
+          val eh, vi, igpf, lgpf, sgpf = p.withHypervisor generate RegInit(False)
+          val mapping = mutable.LinkedHashMap(0 -> iam, 3 -> bp, 8 -> eu, 9 -> es, 12 -> ipf, 13 -> lpf, 15 -> spf) ++ p.withHypervisor.mux(
+            mutable.LinkedHashMap(10 -> eh, 20 -> igpf, 21 -> lgpf, 22 -> vi, 23 -> sgpf),
+            mutable.LinkedHashMap()
+          )
           for ((id, enable) <- mapping) readWrite(id -> enable)
         }
+
         val ideleg = p.withSupervisor generate new api.Csr(CSR.MIDELEG) {
           val st, se, ss = RegInit(False)
           readWrite(9 -> se, 5 -> st, 1 -> ss)
+
+          if (p.withHypervisor) readWrite(10 -> True, 6 -> True, 2 -> True)
         }
 
         val tvec = crs.readWriteRam(CSR.MTVEC)
@@ -667,6 +676,37 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       val mcounteren = p.withRdTime generate new Area {
         val tm = Reg(True)
         api.readWrite(tm, CSR.MCOUNTEREN, 1)
+      }
+
+      val h = p.withHypervisor generate new Area {
+        val status = new api.Csr(CSR.HSTATUS) {
+          val vtsr, vtvm = RegInit(False)
+          val vtw = RegInit(False)
+          val gva = RegInit(False)
+          val spv, spvp = RegInit(False)
+
+          readWrite(6 -> gva, 7 -> spv, 8 -> spvp, 20 -> vtvm, 21 -> vtw, 22 -> vtsr)
+          if (XLEN.get == 64) read(32 -> U"10")
+        }
+
+        val edeleg = new api.Csr(CSR.HEDELEG) {
+          val bp, eu, ipf, lpf, spf = RegInit(False)
+          val mapping = mutable.LinkedHashMap(3 -> bp, 8 -> eu, 12 -> ipf, 13 -> lpf, 15 -> spf)
+          for ((id, enable) <- mapping) readWrite(id -> enable)
+        }
+
+        val ideleg = new api.Csr(CSR.HIDELEG) {
+          val vst, vse, vss = RegInit(False)
+          readWrite(10 -> vse, 6 -> vst, 2 -> vss)
+        }
+
+        val vip = new api.Csr(CSR.HVIP) {
+          val vseip, vstip, vssip = RegInit(False)
+          readWrite(10 -> vseip, 6 -> vstip, 2 -> vssip)
+        }
+
+        val tval = crs.readWriteRam(CSR.HTVAL)
+        val tinst = crs.readWriteRam(CSR.HTINST)
       }
 
       val s = p.withSupervisor generate new Area {
@@ -842,6 +882,34 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val priority = Mux(interrupt === B(0), B(0), B(1))
           api.read(CSR.STOPI, 0 -> priority, 16 -> interrupt)
         }
+      }
+
+      val vs = p.withHypervisor generate new Area {
+        val status = new api.Csr(CSR.VSSTATUS) {
+          val sie, spie = RegInit(False)
+          val spp = RegInit(U"0")
+          val fs = withFs generate RegInit(U(p.mstatusFsInit, 2 bits))
+          val xs = p.withXs generate RegInit(U(p.mstatusFsInit, 2 bits))
+          val sd = False
+
+          if (RVF) {
+            fpuEnable(hartId) setWhen (withGuestPrivilege && fs =/= 0)
+            when(withGuestPrivilege && host.list[FpuDirtyService].map(_.gotDirty()).orR){
+              fs := 3
+            }
+          }
+
+          if (withFs) sd setWhen (fs === 3)
+          if (p.withXs) sd setWhen (xs === 3)
+
+          readWrite(8 -> spp, 5 -> spie, 1 -> sie)
+          read(XLEN - 1 -> sd)
+          if (withFs) readWrite(13 -> fs)
+          if (p.withXs) readWrite(15 -> xs)
+          if (XLEN.get == 64) read(32 -> U"10")
+          cap.trapNextOnWrite += CsrListFilter(List(CSR.VSSTATUS))
+        }
+        api.remapWhen(CSR.SSTATUS, CSR.VSSTATUS, withGuestPrivilege)
       }
 
       val time = p.withRdTime generate new Area {
