@@ -136,6 +136,8 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val MINH = RegInit(False)
       val SINH = RegInit(False)
       val UINH = RegInit(False)
+      val VSINH = RegInit(False)
+      val VUINH = RegInit(False)
 
       interrupt.ip.setWhen(overflowEvent && !OF)
 
@@ -166,6 +168,12 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       if (priv.p.withUser) {
         csr.readWrite(eb, 60 - eo -> UINH)
         inhibit.setWhen(privValue === PrivilegeMode.U && UINH)
+      }
+      if (priv.p.withHypervisor) {
+        csr.readWrite(eb, 59 - eo -> VSINH, 58 - eo -> VUINH)
+        inhibit.setWhen(privValue === PrivilegeMode.VS && VSINH)
+        inhibit.setWhen(privValue === PrivilegeMode.VU && VUINH)
+        ofRead clearWhen((!counter.hcounteren || !counter.scounteren) && !privValue(0))
       }
     }
 
