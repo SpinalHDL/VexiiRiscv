@@ -1008,7 +1008,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         }
       }
 
-      def HostCsrFilter(id: Int, cond: Bool = True) = CsrCondFilter(id, withHostPrivilege && cond)
+      def HostCsrFilter(id: Int): Any = p.withHypervisor.mux(HostCsrFilter(id, True), id)
+      def HostCsrFilter(id: Int, cond: Bool) = CsrCondFilter(id, withHostPrivilege && cond)
       def GuestCsrFilter(id: Int, cond: Bool = True) = CsrCondFilter(id, withGuestPrivilege && cond)
     }
 
