@@ -201,6 +201,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           ??? // privilegeAllowInterrupts += 1 -> ((ustatus.UIE && !setup.supervisorPrivilege))
         }
 
+        if (priv.p.withHypervisor) {
+          privilegs = PrivilegeMode.VS :: privilegs
+          privilegeAllowInterrupts += PrivilegeMode.VS -> ((csr.vs.status.sie && csr.withGuestPrivilege) || !csr.withVirtualSupervisorPrivilege)
+        }
+
         val privilegeTriggers = privilegs.map(p => new Area {
           val interrupts = csr.spec.interrupt.filter(
             i => (i.privilege <= p) && //EX : Machine timer interrupt can't go into
@@ -233,8 +238,9 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val int = B(triggered.id).andMask(triggered.valid).resized
 
           p match {
-            case PrivilegeMode.M => csr.m.topi.interrupt := int
-            case PrivilegeMode.S => csr.s.topi.interrupt := int
+            case PrivilegeMode.M  => csr.m.topi.interrupt := int
+            case PrivilegeMode.S  => csr.s.topi.interrupt := int
+            case PrivilegeMode.VS => csr.vs.topi.interrupt := int
           }
         }}
 
@@ -298,7 +304,16 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           switch(code) {
             for (s <- csr.spec.exception) {
               is(s.id) {
-                var exceptionPrivilegs = if (priv.p.withSupervisor) List(PrivilegeMode.S, PrivilegeMode.M) else List(PrivilegeMode.M)
+                var exceptionPrivilegs: List[Int] = List(PrivilegeMode.M)
+
+                if (priv.p.withSupervisor) {
+                  exceptionPrivilegs = PrivilegeMode.S :: exceptionPrivilegs
+                }
+
+                if (priv.p.withHypervisor) {
+                  exceptionPrivilegs = PrivilegeMode.VS :: exceptionPrivilegs
+                }
+
                 while (exceptionPrivilegs.length != 1) {
                   val p = exceptionPrivilegs.head
                   if (exceptionPrivilegs.tail.forall(e => s.delegators.exists(_.privilege == e))) {
