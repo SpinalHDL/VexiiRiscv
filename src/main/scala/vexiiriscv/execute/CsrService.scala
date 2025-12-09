@@ -266,24 +266,14 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     }
   }
 
-  def readWrite[T <: Data](value: T, csrId: Int, bitOffset: Int = 0): Unit = {
+  def readWrite[T <: Data](value: T, csrId: Any, bitOffset: Int = 0): Unit = {
     read(value, csrId, bitOffset)
     write(value, csrId, bitOffset)
   }
 
-  def readWrite[T <: Data](value: T, csrId: CsrFilter, bitOffset: Int): Unit = {
-    read(value, csrId, bitOffset)
-    write(value, csrId, bitOffset)
-  }
-  def readWrite[T <: Data](value: T, csrId: CsrFilter): Unit = readWrite(value, csrId, 0)
-
-  def readWrite(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, csrId, that._1)
-  def write(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, csrId, that._1)
-  def read(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, csrId, that._1)
-
-  def readWrite(csrId: CsrFilter, thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, csrId, that._1)
-  def write(csrId: CsrFilter, thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, csrId, that._1)
-  def read(csrId: CsrFilter, thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, csrId, that._1)
+  def readWrite(csrId: Any, thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, csrId, that._1)
+  def write(csrId: Any, thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, csrId, that._1)
+  def read(csrId: Any, thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, csrId, that._1)
 
   def remapWhen(from: Int, to: Int, cond: Bool): Unit = csrService.remapWhen(from, to, cond && csrService.accessHartId(hartId))
 
