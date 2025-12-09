@@ -690,6 +690,35 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           if (XLEN.get == 64) read(32 -> U"10")
         }
 
+        val counteren = p.withRdTime generate new Area {
+          val tm = RegInit(False)
+          api.readWrite(tm, CSR.HCOUNTEREN, 1)
+        }
+
+        val timedelta = p.withRdTime generate new Area {
+          val delta = RegInit(U(0, 64 bits))
+          val calibrated = rdtime + delta
+          val accessable = mcounteren.tm && counteren.tm
+
+          XLEN.get match {
+            case 32 => {
+              api.readWrite(delta(31 downto 0), CSR.HTIMEDELTA)
+              api.readWrite(delta(63 downto 32), CSR.HTIMEDELTAH)
+
+              api.read(calibrated(31 downto 0), GuestCsrFilter(CSR.UTIME))
+              api.read(calibrated(63 downto 32), GuestCsrFilter(CSR.UTIMEH))
+              api.allowCsr(GuestCsrFilter(CSR.UTIME), accessable)
+              api.allowCsr(GuestCsrFilter(CSR.UTIMEH), accessable)
+            }
+            case 64 => {
+              api.readWrite(delta, CSR.HTIMEDELTA)
+
+              api.read(calibrated, GuestCsrFilter(CSR.UTIME))
+              api.allowCsr(GuestCsrFilter(CSR.UTIME), accessable)
+            }
+          }
+        }
+
         val edeleg = new api.Csr(CSR.HEDELEG) {
           val bp, eu, ipf, lpf, spf = RegInit(False)
           val mapping = mutable.LinkedHashMap(3 -> bp, 8 -> eu, 12 -> ipf, 13 -> lpf, 15 -> spf)
@@ -979,14 +1008,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         XLEN.get match {
           case 32 => {
-            api.read(rdtime(31 downto 0), CSR.UTIME)
-            api.read(rdtime(63 downto 32), CSR.UTIMEH)
-            api.allowCsr(CSR.UTIME, accessable)
-            api.allowCsr(CSR.UTIMEH, accessable)
+            api.read(rdtime(31 downto 0), HostCsrFilter(CSR.UTIME))
+            api.read(rdtime(63 downto 32), HostCsrFilter(CSR.UTIMEH))
+            api.allowCsr(HostCsrFilter(CSR.UTIME), accessable)
+            api.allowCsr(HostCsrFilter(CSR.UTIMEH), accessable)
           }
           case 64 => {
-            api.read(rdtime, CSR.UTIME)
-            api.allowCsr(CSR.UTIME, accessable)
+            api.read(rdtime, HostCsrFilter(CSR.UTIME))
+            api.allowCsr(HostCsrFilter(CSR.UTIME), accessable)
           }
         }
       }
