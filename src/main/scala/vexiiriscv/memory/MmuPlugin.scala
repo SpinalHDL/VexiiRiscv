@@ -348,7 +348,7 @@ class MmuPlugin(var spec : MmuSpec,
     // Implement the TLB storage refill FSM
     val refill = new StateMachine{
       val IDLE = new State
-      val CMD, RSP = List.fill(spec.levels.size)(new State)
+      val CMD, RSP, DONE = List.fill(spec.levels.size)(new State)
 
       val busy = !isActive(IDLE)
       val virtual = Reg(UInt(MIXED_WIDTH bits))
@@ -393,7 +393,8 @@ class MmuPlugin(var spec : MmuSpec,
 
         def cmd = accessBus.cmd
         val rspUnbuffered = accessBus.rsp
-        val rsp = rspUnbuffered.stage()
+        val rsp = rspUnbuffered.toStream.stage()
+        rsp.ready := False
         val readed = rsp.data.subdivideIn(spec.entryBytes*8 bits).read((address >> log2Up(spec.entryBytes)).resized)
 
         when(rspUnbuffered.valid && rspUnbuffered.redo) {
@@ -524,24 +525,31 @@ class MmuPlugin(var spec : MmuSpec,
           if(levelId == 0) load.exception setWhen(!load.leaf)
           when(load.rsp.valid){
             when(load.rsp.redo){
+              load.rsp.ready := True
               goto(CMD(levelId))
             } otherwise {
               levelId match {
-                case 0 => doneLogic
+                case 0 => goto(DONE(levelId))
                 case _ => {
                   when(load.leaf || load.exception) {
-                    doneLogic
+                    goto(DONE(levelId))
                   } otherwise {
                     val targetLevelId = levelId - 1
                     val targetLevel = spec.levels(targetLevelId)
                     load.address := load.nextLevelBase
                     load.address(log2Up(spec.entryBytes), targetLevel.physicalWidth bits) := targetLevel.vpn(virtual)
+                    load.rsp.ready := True
                     goto(CMD(targetLevelId))
                   }
                 }
               }
             }
           }
+        }
+
+        DONE(levelId) whenIsActive{
+          load.rsp.ready := True
+          doneLogic
         }
       }
     }
