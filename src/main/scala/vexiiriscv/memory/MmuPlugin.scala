@@ -97,8 +97,7 @@ class MmuPlugin(var spec : MmuSpec,
   override def mayNeedRedo: Boolean = true
 
   case class PortSpec(stages: Seq[NodeBaseApi],
-                      preAddress: Payload[UInt],
-                      forcePhysical : Payload[Bool],
+                      req: AddressTranslationReq,
                       usage : AddressTranslationPortUsage,
                       pp: MmuPortParameter,
                       ss : StorageSpec,
@@ -125,8 +124,7 @@ class MmuPlugin(var spec : MmuSpec,
   }
 
   override def newTranslationPort(stages: Seq[NodeBaseApi],
-                                  preAddress: Payload[UInt],
-                                  forcePhysical : Payload[Bool],
+                                  req: AddressTranslationReq,
                                   usage : AddressTranslationPortUsage,
                                   portSpec: Any,
                                   storageSpec: Any) = {
@@ -135,8 +133,7 @@ class MmuPlugin(var spec : MmuSpec,
     portSpecs.addRet(
       new PortSpec(
         stages      = stages,
-        preAddress  = preAddress,
-        forcePhysical = forcePhysical,
+        req         = req,
         usage       = usage,
         pp          = pp,
         ss          = ss,
@@ -287,10 +284,10 @@ class MmuPlugin(var spec : MmuSpec,
 
       val storage = storages.find(_.self == ps.ss).get
       val read = for (sl <- storage.sl) yield new Area {
-        val readAddress = readStage(ps.preAddress)(sl.lineRange)
+        val readAddress = readStage(ps.req.PRE_ADDRESS)(sl.lineRange)
         for ((way, wayId) <- sl.ways.zipWithIndex) {
           readStage(sl.keys.ENTRIES)(wayId) := way.readAsync(readAddress)
-          hitsStage(sl.keys.HITS_PRE_VALID)(wayId) := hitsStage(sl.keys.ENTRIES)(wayId).hit(hitsStage(ps.preAddress))
+          hitsStage(sl.keys.HITS_PRE_VALID)(wayId) := hitsStage(sl.keys.ENTRIES)(wayId).hit(hitsStage(ps.req.PRE_ADDRESS))
           ctrlStage(sl.keys.HITS)(wayId) := ctrlStage(sl.keys.HITS_PRE_VALID)(wayId) && ctrlStage(sl.keys.ENTRIES)(wayId).valid
         }
       }
@@ -309,13 +306,13 @@ class MmuPlugin(var spec : MmuSpec,
         val lineAllowRead    = entriesMux(_.allowRead)
         val lineAllowWrite   = entriesMux(_.allowWrite)
         val lineAllowUser    = entriesMux(_.allowUser)
-        val lineTranslated   = entriesMux(_.physicalAddressFrom(ps.preAddress))
+        val lineTranslated   = entriesMux(_.physicalAddressFrom(ps.req.PRE_ADDRESS))
 
         val requireMmuLockup  = CombInit(ps.usage match {
           case LOAD_STORE => api.lsuTranslationEnable
           case FETCH => api.fetchTranslationEnable
         })
-        requireMmuLockup clearWhen(ps.forcePhysical)
+        requireMmuLockup clearWhen(ps.req.FORCE_PHYSICAL)
 
         import ps.rsp.keys._
         when(requireMmuLockup) {
@@ -330,18 +327,18 @@ class MmuPlugin(var spec : MmuSpec,
         } otherwise {
           HAZARD        := False
           REFILL        := False
-          TRANSLATED    := ps.preAddress.resized
+          TRANSLATED    := ps.req.PRE_ADDRESS.resized
           ALLOW_EXECUTE := True
           ALLOW_READ    := True
           ALLOW_WRITE   := True
           PAGE_FAULT    := False
-          ACCESS_FAULT  := ps.preAddress.drop(physicalWidth) =/= 0
+          ACCESS_FAULT  := ps.req.PRE_ADDRESS.drop(physicalWidth) =/= 0
         }
 
 
         BYPASS_TRANSLATION := !requireMmuLockup
         WAYS_OH       := oh
-        (WAYS_PHYSICAL, entries.map(_.physicalAddressFrom(ps.preAddress))).zipped.foreach(_ := _)
+        (WAYS_PHYSICAL, entries.map(_.physicalAddressFrom(ps.req.PRE_ADDRESS))).zipped.foreach(_ := _)
       }
     }
 

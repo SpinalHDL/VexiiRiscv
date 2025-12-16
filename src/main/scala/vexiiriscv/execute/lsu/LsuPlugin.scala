@@ -13,7 +13,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.{Decode, DecoderService}
 import vexiiriscv.decode.Decode.UOP
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import vexiiriscv.riscv._
@@ -402,10 +402,10 @@ class LsuPlugin(var layer : LaneLayer,
     // Collect the different request and interface them with the L1 cache as well as the MMU
     val onAddress0 = new elp.Execute(addressAt){
       FORCE_PHYSICAL := FROM_ACCESS || FROM_WB
+      val request = AddressTranslationReq(l1.MIXED_ADDRESS, FORCE_PHYSICAL)
       val translationPort = ats.newTranslationPort(
         nodes = Seq(elp.execute(addressAt).down, elp.execute(addressAt+1).down),
-        rawAddress = l1.MIXED_ADDRESS,
-        forcePhysical = FORCE_PHYSICAL,
+        req = request,
         usage = AddressTranslationPortUsage.LOAD_STORE,
         portSpec = translationPortParameter,
         storageSpec = translationStorage

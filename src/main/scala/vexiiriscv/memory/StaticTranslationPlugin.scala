@@ -22,23 +22,20 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
   override def getStorageIdWidth(): Int = 0
 
   case class PortSpec(stages: Seq[NodeBaseApi],
-                      preAddress: Payload[UInt],
-                      forcePhysical: Payload[Bool],
+                      req: AddressTranslationReq,
                       usage: AddressTranslationPortUsage,
                       rsp: AddressTranslationRsp)
 
   val portSpecs = ArrayBuffer[PortSpec]()
   override def newTranslationPort(stages: Seq[NodeBaseApi],
-                                  rawAddress: Payload[UInt],
-                                  forcePhysical: Payload[Bool],
+                                  req: AddressTranslationReq,
                                   usage: AddressTranslationPortUsage,
                                   portSpec: Any,
                                   storageSpec: Any): AddressTranslationRsp = {
     portSpecs.addRet(
       new PortSpec(
         stages = stages,
-        preAddress = rawAddress,
-        forcePhysical = forcePhysical,
+        req = req,
         usage = usage,
         rsp = new AddressTranslationRsp(this, 0)
       )
@@ -67,12 +64,12 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
       // Implement a pass through
       REFILL := False
       HAZARD := False
-      TRANSLATED := spec.preAddress.resized //PC RESIZED
+      TRANSLATED := spec.req.PRE_ADDRESS.resized //PC RESIZED
       ALLOW_EXECUTE := True
       ALLOW_READ := True
       ALLOW_WRITE := True
       PAGE_FAULT := False
-      ACCESS_FAULT := spec.preAddress.drop(physicalWidth) =/= 0
+      ACCESS_FAULT := spec.req.PRE_ADDRESS.drop(physicalWidth) =/= 0
       BYPASS_TRANSLATION := True
     }
   }

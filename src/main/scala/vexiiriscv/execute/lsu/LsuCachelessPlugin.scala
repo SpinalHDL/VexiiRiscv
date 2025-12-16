@@ -10,7 +10,7 @@ import spinal.core.fiber.{Handle, Retainer}
 import spinal.core.sim.SimDataPimper
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
@@ -23,8 +23,8 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 /** Implements an LSU without any cache.
-  * 
-  * The tricky thing about this implementation, is the withSpeculativeLoadFlush parameter, which 
+  *
+  * The tricky thing about this implementation, is the withSpeculativeLoadFlush parameter, which
   * allows the plugin to speculatively emit non-io memory load to the memory system, even if the load
   * result may be trashed away.
   *
@@ -41,7 +41,7 @@ import scala.collection.mutable.ArrayBuffer
   */
 class LsuCachelessPlugin(var layer : LaneLayer,
                          var withAmo : Boolean,
-                         // WARNING, the fork cmd may be flushed out of existence before firing if 
+                         // WARNING, the fork cmd may be flushed out of existence before firing if
                          // any plugin doesn't flush from the first cycle after !freeze.
                          var withSpeculativeLoadFlush : Boolean,
                          var translationStorageParameter: Any,
@@ -161,11 +161,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     val onAddress = new addressCtrl.Area {
       val RAW_ADDRESS = insert(srcp.ADD_SUB.asUInt)
+      val request = AddressTranslationReq(RAW_ADDRESS, insert(False))
 
       val translationPort = ats.newTranslationPort(
         nodes = Seq(addressCtrl.down),
-        rawAddress = RAW_ADDRESS,
-        forcePhysical = insert(False),
+        req = request,
         usage = AddressTranslationPortUsage.LOAD_STORE,
         portSpec = translationPortParameter,
         storageSpec = translationStorage
@@ -220,7 +220,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val cmdSent = RegInit(False) setWhen(bus.cmd.fire) clearWhen(!elp.isFreezed())
       bus.cmd.assertPersistence()
       bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip && !doFence
-      bus.cmd.id := cmdCounter  
+      bus.cmd.id := cmdCounter
       bus.cmd.write := STORE
       bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>

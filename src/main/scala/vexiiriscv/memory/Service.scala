@@ -88,8 +88,7 @@ trait AddressTranslationService extends Area {
 
   // New Address translation interfaces are directly bound into a provided pipeline (nodes)
   def newTranslationPort(nodes: Seq[NodeBaseApi],
-                         rawAddress: Payload[UInt],
-                         forcePhysical: Payload[Bool],
+                         req: AddressTranslationReq,
                          usage: AddressTranslationPortUsage,
                          portSpec: Any,
                          storageSpec: Any): AddressTranslationRsp
@@ -100,6 +99,11 @@ trait AddressTranslationService extends Area {
   val invalidationPorts = ArrayBuffer[AddressTranslationInvalidation]()
   def newInvalidationPort() = invalidationPorts.addRet(AddressTranslationInvalidation())
 }
+
+case class AddressTranslationReq(
+  PRE_ADDRESS: Payload[UInt],
+  FORCE_PHYSICAL: Payload[Bool]
+)
 
 class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) extends Area {
   val keys = new Area {
