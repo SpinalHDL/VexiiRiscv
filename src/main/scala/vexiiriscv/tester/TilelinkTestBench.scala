@@ -263,7 +263,7 @@ object TlTbSim extends App{
     }
 
     val peripheral = new PeripheralEmulator(0, null, null, null, null, cd = dut.mainResetCtrl.cd) {
-      override def getClintTime(): Long = 0
+      override def getClintTime(): BigInt = 0
       val onBus = bind(dut.main.peripheral.eBus.node.bus, dut.main.peripheral.eBus.node.clockDomain)
     }
 

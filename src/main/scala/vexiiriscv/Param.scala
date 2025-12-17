@@ -586,7 +586,8 @@ class ParamSimple() {
     opt[Unit]("with-rvZcbm") action { (v, c) => withRvcbm = true }
     opt[Unit]("with-rvZcbm-llc") action { (v, c) => withRvcbm = true; withRvcbmLlc = true }
     opt[Unit]("with-rvZknAes") action { (v, c) => withRvZknAes = true }
-    opt[Int]("imsic-interrupt-number") action { (v, c) => withIndirectCsr = true; privParam.imsicInterrupts = v }
+    opt[Unit]("with-sxaia") action { (v, c) => privParam.withInterrutpFilter = true }
+    opt[Int]("imsic-interrupt-number") action { (v, c) => withIndirectCsr = true; privParam.withInterrutpFilter = true; privParam.imsicInterrupts = v }
     opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
     opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
     opt[Unit]("with-hart-id-input-defaulted") action { (v, c) => privParam.withHartIdInputDefaulted = true }

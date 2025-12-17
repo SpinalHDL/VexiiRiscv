@@ -29,7 +29,7 @@ class IndirectCsrPlugin(val withSupervisor : Boolean) extends FiberPlugin {
         val iselect = RegInit(U(0, XLEN bits))
         api.readWrite(iselect, CSR.MISELECT)
 
-        val iregs = for (i <- 0 until 6) yield (i + CSR.MIREG)
+        val iregs = Seq(CSR.MIREG, CSR.MIREG2, CSR.MIREG3, CSR.MIREG4, CSR.MIREG5, CSR.MIREG6)
 
         def csrFilter(indirectId: Int, targetCsr: Int, cond: Bool = True): CsrCondFilter = {
           assert(iregs.contains(targetCsr), s"${targetCsr} is not an indirect CSR alias")
@@ -42,7 +42,7 @@ class IndirectCsrPlugin(val withSupervisor : Boolean) extends FiberPlugin {
         val iselect = RegInit(U(0, XLEN bits))
         api.readWrite(iselect, CSR.SISELECT)
 
-        val iregs = for (i <- 0 until 6) yield (i + CSR.SIREG)
+        val iregs = Seq(CSR.SIREG, CSR.SIREG2, CSR.SIREG3, CSR.SIREG4, CSR.SIREG5, CSR.SIREG6)
 
         def csrFilter(indirectId: Int, targetCsr: Int, cond: Bool = True): CsrCondFilter = {
           assert(iregs.contains(targetCsr), s"${targetCsr} is not an indirect CSR alias")

@@ -952,8 +952,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           when(doCbm){
             wayWriteReservation.takeIt()
 
-            val reader = this (WAYS_TAGS).reader(needFlushSel)
-            val tag = reader(_.address)
+            val reader = this (WAYS_TAGS).reader(WAYS_HITS)
 
             shared.write.valid := True
             shared.write.data.dirty.asBools.onMask(WAYS_HITS){_ := False}
@@ -961,11 +960,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             waysWrite.mask := WAYS_HITS
             waysWrite.address := PHYSICAL_ADDRESS(lineRange)
             waysWrite.tag.loaded := !INVALID
-            waysWrite.tag.address := tag
+            waysWrite.tag.address := PHYSICAL_ADDRESS(tagRange)
             waysWrite.tag.fault := reader(_.fault)
 
             writeback.push.valid := CLEAN && wasDirty
-            writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low
+            writeback.push.address := (PHYSICAL_ADDRESS(tagRange) @@ MIXED_ADDRESS(lineRange)) << lineRange.low
             writeback.push.way := wayId
 
             assert(!withCoherency)
@@ -1063,7 +1062,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     // Implements the pipeline which handle memory probe request comming from the SoC (L2)
     val c = withCoherency generate new Area{
       //freezeTimeout is there to ensure that we keep the memory coherency alive, even if the execute pipeline is frozen for extended time. This can avoid dead locks
-      val freezeTimeout = Timeout(70)
+      val freezeTimeout = Timeout(80)
       freezeTimeout.clearWhen(!lane.isFreezed)
       slotsFreezeHazard.setWhen(freezeTimeout.state)
 
