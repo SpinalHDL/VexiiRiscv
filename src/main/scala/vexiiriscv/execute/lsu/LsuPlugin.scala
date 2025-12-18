@@ -472,6 +472,22 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
+      // Accesses comming from the hardware prefetcher
+      val fromHp = hp.nonEmpty generate new Area {
+        val feed = hp.get.io.get
+        val port = ports.addRet(Stream(LsuL1Cmd()))
+        port.arbitrationFrom(feed)
+        port.op := LsuL1CmdOpcode.PREFETCH
+        port.address := feed.address
+        port.store := feed.unique
+        port.size := 0
+        port.load := False
+        port.atomic := False
+        port.clean := False
+        port.invalidate := False
+        port.storeId := 0
+      }
+
       // Accesses comming from the store buffer which attempts to retry a failed store
       val sb = withStoreBuffer generate new Area {
         val isHead = storeBuffer.pop.ptr === storeBuffer.ops.freePtr
@@ -489,23 +505,7 @@ class LsuPlugin(var layer : LaneLayer,
         storeBuffer.pop.ready := port.ready || flush
         port.storeId := storeBuffer.pop.op.storeId
       }
-
-      // Accesses comming from the hardware prefetcher
-      val fromHp = hp.nonEmpty generate new Area {
-        val feed = hp.get.io.get
-        val port = ports.addRet(Stream(LsuL1Cmd()))
-        port.arbitrationFrom(feed)
-        port.op := LsuL1CmdOpcode.PREFETCH
-        port.address := feed.address
-        port.store := feed.unique
-        port.size := 0
-        port.load := False
-        port.atomic := False
-        port.clean := False
-        port.invalidate := False
-        port.storeId := 0
-      }
-
+      
       // Let's arbitrate all those request and connect the atrbitred output to the pipeline / L1
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
       arbiter.io.output.ready := !elp.isFreezed()
