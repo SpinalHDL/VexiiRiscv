@@ -43,23 +43,26 @@ class PrefetcherNextLinePlugin extends PrefetcherPlugin {
  * Implements load/store predictor for the LSU.
  * See https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Memory/index.html#prefetchrptplugin for more details
  */
-class PrefetcherRptPlugin(sets : Int,
-                          bootMemClear : Boolean,
-                          readAt : Int = 0,
-                          tagAt: Int = 1,
-                          ctrlAt: Int = 2,
-                          addAt: Int = 1,
-                          prefetchAt: Int = 1,
-                          tagWidth: Int = 15,
-                          addressWidth: Int = 16,
-                          strideWidth: Int = 12,
-                          blockAheadMax: Int = 4,
-                          scoreMax: Int = 31,
-                          scorePass: Int = 1,
-                          scoreFailShift: Int = 1,
-                          scoreConflict: Int = 2,
-                          scoreOffset: Int = 3,
-                          scoreShift: Int = 0) extends PrefetcherPlugin  with InitService {
+class PrefetcherRptParam {
+  var sets : Int = 128
+  var readAt : Int = 0
+  var tagAt: Int = 1
+  var ctrlAt: Int = 2
+  var addAt: Int = 1
+  var prefetchAt: Int = 1
+  var tagWidth: Int = 15
+  var addressWidth: Int = 16
+  var strideWidth: Int = 12
+  var blockAheadMax: Int = 4
+  var scoreMax: Int = 31
+  var scorePass: Int = 1
+  var scoreFailShift: Int = 1
+  var scoreConflict: Int = 2
+  var scoreOffset: Int = 3
+  var scoreShift: Int = 0
+}
+class PrefetcherRptPlugin(p : PrefetcherRptParam,  bootMemClear : Boolean = false) extends PrefetcherPlugin  with InitService {
+  import p._
 
   override def initHold(): Bool = bootMemClear.mux(logic.initializer.busy, False)
 
