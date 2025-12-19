@@ -997,14 +997,14 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       // Drive the commitProbe bus
-      val commitProbeReq = down.isFiring && SEL && FROM_LSU
-      val commitProbeToken = RegNextWhen(lsuTrap, commitProbeReq) init(False) // Avoid to spam on consicutive failure
-      commitProbe.valid := down.isFiring && SEL.mux[Bool](FROM_LSU && (!lsuTrap || !commitProbeToken) && (l1.LOAD || l1.STORE || l1.PREFETCH), FROM_PREFETCH && HAZARD) // && !l1.REFILL_HIT
+      val commitProbeReq = down.isFiring && SEL && FROM_LSU && (l1.LOAD || l1.STORE) && !l1.PREFETCH && !l1.ATOMIC  && !l1.FLUSH && !l1.CLEAN && !l1.INVALID
+      val commitProbeToken = RegNextWhen(lsuTrap, commitProbeReq) init(False) // Avoid to spam on consecutive failure
+      commitProbe.valid := commitProbeReq && !commitProbeToken
       commitProbe.address := l1.MIXED_ADDRESS
       commitProbe.load := l1.LOAD
       commitProbe.store := l1.STORE
       commitProbe.trap := lsuTrap
-      commitProbe.miss := l1.MISS && !l1.HAZARD && !MMU_FAILURE
+      commitProbe.miss := (l1.MISS || l1.MISS_UNIQUE || l1.HAZARD) && !MMU_FAILURE && withStoreBuffer.mux(!(l1.STORE && wb.hit), True) //We threat most L1 failure as a miss (pessimistic)
       commitProbe.io := onPma.IO
       commitProbe.prefetchFailed := FROM_PREFETCH
       commitProbe.pc := Global.PC
