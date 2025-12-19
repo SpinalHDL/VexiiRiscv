@@ -195,6 +195,7 @@ class ParamSimple() {
   var mulKeepSrc = false
   var withCfu = false
   var gshareBytes = 4 KiB
+  val prefetcherRptParam = new PrefetcherRptParam()
 
   var fetchTsp = MmuStorageParameter(
     levels = List(
@@ -646,6 +647,7 @@ class ParamSimple() {
     opt[Unit]("lsu-l1-tags-read-async") action { (v, c) =>  lsuL1TagsReadAsync = true }
     opt[String]("lsu-hardware-prefetch") action { (v, c) => lsuHardwarePrefetch = v }
     opt[Unit]("lsu-software-prefetch") action { (v, c) => lsuSoftwarePrefetch = true }
+    opt[Int]("lsu-rpt-block-ahead-max") action { (v, c) => prefetcherRptParam.blockAheadMax = v }
     opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
     opt[Int]("lsu-l1-writeback-count") action { (v, c) => lsuL1WritebackCount = v }
     opt[Int]("lsu-l1-mem-data-width-min").unbounded() action { (v, c) => lsuMemDataWidthMin = v }
@@ -979,7 +981,7 @@ class ParamSimple() {
         case "none" =>
         case "nl" => plugins += new lsu.PrefetcherNextLinePlugin
         case "rpt" => plugins += new lsu.PrefetcherRptPlugin(
-          sets = 128,
+          p = prefetcherRptParam,
           bootMemClear = bootMemClear
         )
       }

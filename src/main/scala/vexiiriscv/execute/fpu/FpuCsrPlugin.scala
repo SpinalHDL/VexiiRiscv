@@ -67,7 +67,7 @@ class FpuCsrPlugin(lanes : Seq[ExecuteLaneService], dirtyAt : Int) extends Fiber
     }
 
     //Flush the pipeline if the rounding mode changed
-    cp.trapNextOnWrite += CsrListFilter(List(CSR.FRM, CSR.FCSR))
+    cp.trapNextOnWrite += CsrListFilter(List(CSR.FRM, CSR.FCSR, CSR.FFLAGS))
 
     buildBefore.release()
   }

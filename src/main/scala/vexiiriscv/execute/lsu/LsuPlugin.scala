@@ -472,6 +472,22 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
+      // Accesses comming from the hardware prefetcher
+      val fromHp = hp.nonEmpty generate new Area {
+        val feed = hp.get.io.get
+        val port = ports.addRet(Stream(LsuL1Cmd()))
+        port.arbitrationFrom(feed)
+        port.op := LsuL1CmdOpcode.PREFETCH
+        port.address := feed.address
+        port.store := feed.unique
+        port.size := 0
+        port.load := False
+        port.atomic := False
+        port.clean := False
+        port.invalidate := False
+        port.storeId := 0
+      }
+
       // Accesses comming from the store buffer which attempts to retry a failed store
       val sb = withStoreBuffer generate new Area {
         val isHead = storeBuffer.pop.ptr === storeBuffer.ops.freePtr
@@ -489,23 +505,7 @@ class LsuPlugin(var layer : LaneLayer,
         storeBuffer.pop.ready := port.ready || flush
         port.storeId := storeBuffer.pop.op.storeId
       }
-
-      // Accesses comming from the hardware prefetcher
-      val fromHp = hp.nonEmpty generate new Area {
-        val feed = hp.get.io.get
-        val port = ports.addRet(Stream(LsuL1Cmd()))
-        port.arbitrationFrom(feed)
-        port.op := LsuL1CmdOpcode.PREFETCH
-        port.address := feed.address
-        port.store := feed.unique
-        port.size := 0
-        port.load := False
-        port.atomic := False
-        port.clean := False
-        port.invalidate := False
-        port.storeId := 0
-      }
-
+      
       // Let's arbitrate all those request and connect the atrbitred output to the pipeline / L1
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
       arbiter.io.output.ready := !elp.isFreezed()
@@ -997,14 +997,14 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       // Drive the commitProbe bus
-      val commitProbeReq = down.isFiring && SEL && FROM_LSU
-      val commitProbeToken = RegNextWhen(lsuTrap, commitProbeReq) init(False) // Avoid to spam on consicutive failure
-      commitProbe.valid := down.isFiring && SEL.mux[Bool](FROM_LSU && (!lsuTrap || !commitProbeToken) && (l1.LOAD || l1.STORE || l1.PREFETCH), FROM_PREFETCH && HAZARD) // && !l1.REFILL_HIT
+      val commitProbeReq = down.isFiring && SEL && FROM_LSU && (l1.LOAD || l1.STORE) && !l1.PREFETCH && !l1.ATOMIC  && !l1.FLUSH && !l1.CLEAN && !l1.INVALID
+      val commitProbeToken = RegNextWhen(lsuTrap, commitProbeReq) init(False) // Avoid to spam on consecutive failure
+      commitProbe.valid := commitProbeReq && !commitProbeToken
       commitProbe.address := l1.MIXED_ADDRESS
       commitProbe.load := l1.LOAD
       commitProbe.store := l1.STORE
       commitProbe.trap := lsuTrap
-      commitProbe.miss := l1.MISS && !l1.HAZARD && !MMU_FAILURE
+      commitProbe.miss := (l1.MISS || l1.MISS_UNIQUE || l1.HAZARD) && !MMU_FAILURE && withStoreBuffer.mux(!(l1.STORE && wb.hit), True) //We threat most L1 failure as a miss (pessimistic)
       commitProbe.io := onPma.IO
       commitProbe.prefetchFailed := FROM_PREFETCH
       commitProbe.pc := Global.PC
