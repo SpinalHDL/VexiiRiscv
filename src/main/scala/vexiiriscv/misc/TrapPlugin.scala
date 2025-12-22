@@ -174,11 +174,13 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
         write.data.assignDontCare()
       }
 
-      def privilegeMux[T <: Data](privValue: SInt)(machine: => T, supervisor: => T): T = {
-        val ret = CombInit(machine)
-        switch(privValue) {
-          if (priv.p.withSupervisor) is(1) {
-            ret := supervisor
+      def privilegeMux[T <: Data](payloads: mutable.LinkedHashMap[Int, T], privilege: SInt): T = {
+        val ret = CombInit(payloads(PrivilegeMode.M))
+        switch(privilege) {
+          for ((mode, data) <- payloads) {
+            is(mode) {
+              ret := data
+            }
           }
         }
         ret
@@ -290,10 +292,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
           val xret = new Area {
             val sourcePrivilege = state.arg(2 downto 0).asSInt
-            val targetPrivilege = privilegeMux(sourcePrivilege)(
-              (csr.m.status.mpv ## csr.m.status.mpp).asSInt,
-              (U"00" ## csr.s.status.spp).asSInt
+            val targetPrivilegeMapping = mutable.LinkedHashMap[Int, SInt](
+              PrivilegeMode.M -> (csr.m.status.mpv ## csr.m.status.mpp).asSInt
             )
+            if (priv.p.withSupervisor) targetPrivilegeMapping += PrivilegeMode.S -> (csr.h.status.spv ## csr.s.status.spp).asSInt
+            val targetPrivilege = privilegeMux(targetPrivilegeMapping, sourcePrivilege)
           }
         }
 
@@ -586,10 +589,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
           TRAP_TVAL.whenIsActive {
             crsPorts.write.valid := True
-            crsPorts.write.address := privilegeMux(buffer.trap.targetPrivilege)(
-              csr.m.tval.getAddress(),
-              csr.s.tval.getAddress()
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.tval.getAddress()
             )
+            if (priv.p.withSupervisor) addressMapping += PrivilegeMode.S -> csr.s.tval.getAddress()
+            crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
             crsPorts.write.data := Global.expendPc(buffer.trap.tval.asUInt, XLEN).asBits
             when(triggerEbreakReg){
               crsPorts.write.data := Global.expendPc(pending.pc, XLEN).asBits
@@ -601,10 +605,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
           TRAP_EPC.whenIsActive {
             crsPorts.write.valid := True
-            crsPorts.write.address := privilegeMux(buffer.trap.targetPrivilege)(
-              csr.m.epc.getAddress(),
-              csr.s.epc.getAddress()
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.epc.getAddress()
             )
+            if (priv.p.withSupervisor) addressMapping += PrivilegeMode.S -> csr.s.epc.getAddress()
+            crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
             if (priv.p.withDebug) when(trapEnterDebug) {  crsPorts.write.address := csr.debug.dpc.getAddress() }
             crsPorts.write.data := Global.expendPc(pending.pc, XLEN).asBits
             when(crsPorts.write.ready) {
@@ -618,10 +623,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val readed = RegNextWhen(crsPorts.read.data, crsPorts.read.valid && crsPorts.read.ready)
           TRAP_TVEC.whenIsActive {
             crsPorts.read.valid := True
-            crsPorts.read.address := privilegeMux(buffer.trap.targetPrivilege)(
-              csr.m.tvec.getAddress(),
-              csr.s.tvec.getAddress()
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.tvec.getAddress()
             )
+            if (priv.p.withSupervisor) addressMapping += PrivilegeMode.S -> csr.s.tvec.getAddress()
+            crsPorts.read.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
             when(crsPorts.read.ready) {
               goto(TRAP_WAIT)
             }
@@ -711,10 +717,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val xretPrivilege = pending.state.arg(2 downto 0).asSInt
           XRET_EPC.whenIsActive{
             crsPorts.read.valid := True
-            crsPorts.read.address := privilegeMux(xretPrivilege)(
-              csr.m.epc.getAddress(),
-              csr.s.epc.getAddress()
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+            PrivilegeMode.M -> csr.m.epc.getAddress()
             )
+            if (priv.p.withSupervisor) addressMapping += PrivilegeMode.S -> csr.s.epc.getAddress()
+            crsPorts.read.address := privilegeMux(addressMapping, xretPrivilege)
             when(crsPorts.read.ready) {
               goto(XRET_APPLY)
             }
