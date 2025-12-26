@@ -14,6 +14,7 @@ class RiscvPlugin(var xlen : Int,
                   var rvc: Boolean,
                   var rvf: Boolean,
                   var rvd: Boolean,
+                  var rvh: Boolean,
                   var rve: Boolean = false) extends FiberPlugin {
 
   val logic = during build new Area {
@@ -21,6 +22,7 @@ class RiscvPlugin(var xlen : Int,
     if(Riscv.RVM.isEmpty) Riscv.RVM.set(false)
     if(Riscv.RVF.isEmpty) Riscv.RVF.set(rvf)
     if(Riscv.RVD.isEmpty) Riscv.RVD.set(rvd)
+    if(Riscv.RVH.isEmpty) Riscv.RVH.set(rvh)
     if(Riscv.RVE.isEmpty) Riscv.RVE.set(rve)
     if(Riscv.RVZba.isEmpty) Riscv.RVZba.set(false)
     if(Riscv.RVZbb.isEmpty) Riscv.RVZbb.set(false)
