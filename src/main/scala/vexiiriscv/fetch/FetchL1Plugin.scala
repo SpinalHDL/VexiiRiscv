@@ -18,7 +18,7 @@ import Fetch._
 import spinal.core.fiber.{Handle, Retainer}
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.execute.lsu.LsuCommitProbe
-import vexiiriscv.riscv.CSR
+import vexiiriscv.riscv.{CSR, PrivilegeMode}
 import vexiiriscv.schedule.ReschedulePlugin
 
 import scala.collection.mutable.ArrayBuffer
@@ -75,6 +75,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val rp = host[ReschedulePlugin]
     val ts = host[TrapService]
     val ats = host[AddressTranslationService]
+    val priv = host[PrivilegedPlugin]
     val ps = host[PmpService]
     val pcs = host.get[PerformanceCounterService]
     val prefetcher = host.get[PrefetcherPlugin].map(_.io)
@@ -340,6 +341,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       LOAD           = pp.fetch(readAt).insert(False),
       STORE          = pp.fetch(readAt).insert(False),
       EXECUTE        = pp.fetch(readAt).insert(True),
+      FORCE_GUEST    = pp.fetch(readAt).insert(False),
       FORCE_PHYSICAL = pp.fetch(readAt).insert(False)
     )
 

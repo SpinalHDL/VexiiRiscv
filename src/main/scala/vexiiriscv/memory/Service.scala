@@ -105,6 +105,7 @@ case class AddressTranslationReq(
   LOAD: Payload[Bool],
   STORE: Payload[Bool],
   EXECUTE: Payload[Bool],
+  FORCE_GUEST: Payload[Bool],
   FORCE_PHYSICAL: Payload[Bool]
 )
 

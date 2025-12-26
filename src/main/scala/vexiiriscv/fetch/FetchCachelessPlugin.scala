@@ -13,8 +13,8 @@ import spinal.lib.system.tag.{MappedTransfers, PmaRegion}
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, PmaLoad, PmaLogic, PmaPort, PmpService}
-import vexiiriscv.misc.{PerformanceCounterService, TrapArg, TrapReason, TrapService}
-import vexiiriscv.riscv.CSR
+import vexiiriscv.misc.{PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
+import vexiiriscv.riscv.{CSR, PrivilegeMode}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -42,6 +42,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
     // * Plugins interlocking *
     val pp = host[FetchPipelinePlugin]
     val ps = host[PmpService]
+    val priv = host[PrivilegedPlugin]
     val ts = host[TrapService]
     val ats = host[AddressTranslationService]
     val buildBefore = retains(pp.elaborationLock, ats.portsLock, ps.portsLock)
@@ -96,6 +97,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
         LOAD           = insert(False),
         STORE          = insert(False),
         EXECUTE        = insert(True),
+        FORCE_GUEST    = insert(False),
         FORCE_PHYSICAL = insert(False)
       )
       val translationPort = ats.newTranslationPort(

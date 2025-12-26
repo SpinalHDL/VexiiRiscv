@@ -408,6 +408,7 @@ class LsuPlugin(var layer : LaneLayer,
         LOAD           = LOAD_MMU,
         STORE          = STORE,
         EXECUTE        = insert(False),
+        FORCE_GUEST    = GUEST,
         FORCE_PHYSICAL = FORCE_PHYSICAL
       )
       val translationPort = ats.newTranslationPort(

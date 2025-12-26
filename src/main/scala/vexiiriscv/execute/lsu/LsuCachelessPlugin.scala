@@ -11,7 +11,8 @@ import spinal.core.sim.SimDataPimper
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
-import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, TrapArg, TrapReason, TrapService}
+import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
+import vexiiriscv.riscv.PrivilegeMode
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
 import spinal.lib.system.tag.PmaRegion
@@ -76,6 +77,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host[AddressTranslationService]
     val ps = host[PmpService]
+    val pp = host[PrivilegedPlugin]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
     val buildBefore = retains(elp.pipelineLock, ats.portsLock, ps.portsLock)
@@ -166,6 +168,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         LOAD           = LOAD,
         STORE          = STORE,
         EXECUTE        = insert(False),
+        FORCE_GUEST    = GUEST,
         FORCE_PHYSICAL = insert(False)
       )
 
