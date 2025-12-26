@@ -630,6 +630,7 @@ class ParamSimple() {
     opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
     opt[Unit]("with-aligner-buffer").unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
+    opt[Unit]("with-hypervisor") action { (v, c) => addISA("h", "s", "u") }
     opt[Unit]("with-supervisor") action { (v, c) => addISA("s", "u") }
     opt[Unit]("with-user") action { (v, c) => addISA("u") }
     opt[Unit]("without-mmu") action { (v, c) => disableMmu = false }
