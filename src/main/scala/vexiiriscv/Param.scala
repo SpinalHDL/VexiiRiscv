@@ -480,6 +480,7 @@ class ParamSimple() {
   def withRvf = checkISA("f")
   def withRvd = checkISA("f", "d")
   def withRvc = checkISA("c")
+  def withRvh = checkISA("h")
   def withRvcbm = checkISA("zicbom")
   def withRvZknAes = checkISA("zkne") || checkISA("zknd")
   def withRvZba = checkISA("zba")
@@ -497,7 +498,7 @@ class ParamSimple() {
   def withRdTime = checkISA("zicntr")
   def withSupervisor = checkISA("s")
   def withUser = checkISA("u")
-  def withHypervisor = checkISA("h")
+  def withHypervisor = withRvh
   def withIndirectCsr = checkISA("smcsrind") || checkISA("sscsrind")
   def withPerformanceCounters = checkISA("zihpm") || checkISA("zicntr")
   def withPerformanceScountovf = checkISA("sscofpmf")
@@ -539,6 +540,7 @@ class ParamSimple() {
     if (withRva) isa += "a"
     if (withRvf) isa += "f"
     if (withRvd) isa += "d"
+    if (withRvh) isa += "h"
     if (withRvc) isa += "c"
     if (withRvZba) isa += "Zba"
     if (withRvZbb) isa += "Zbb"
@@ -754,7 +756,7 @@ class ParamSimple() {
 
     val intWritebackAt = 2 //Alias for "trap at" as well
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rve = withRve)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rvh = withRvh, rve = withRve)
     withMmu match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new vexiiriscv.memory.MmuPlugin(
