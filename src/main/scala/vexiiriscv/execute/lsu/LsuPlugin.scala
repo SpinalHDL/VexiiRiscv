@@ -419,6 +419,10 @@ class LsuPlugin(var layer : LaneLayer,
         storageSpec = translationStorage
       )
 
+      when(GUEST) {
+        bypass(SIZE) := Decode.UOP(27 downto 26).asUInt
+      }
+
       val ports = ArrayBuffer[Stream[LsuL1Cmd]]()
 
       // Accesses coming explicitly from the software
