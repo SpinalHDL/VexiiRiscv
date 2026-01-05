@@ -22,7 +22,7 @@ object LsuL1 extends AreaObject {
   // LSU -> L1
   val ABORD, SKIP_WRITE = Payload(Bool()) // Used on ctrl stage to prevent side effect
   val SEL = Payload(Bool()) // Enable the L1
-  val LOAD, STORE, ATOMIC, FLUSH, PREFETCH, CLEAN, INVALID = Payload(Bool()) // Specifies the kind of memory request
+  val LOAD, STORE, ATOMIC, FLUSH, PREFETCH, CLEAN, INVALID, GUEST = Payload(Bool()) // Specifies the kind of memory request
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS) // Address before the MMU, can only use the 4K page LSB
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))

@@ -152,7 +152,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
     invalidationLocks.release()
 
     val trapArgWidths = ArrayBuffer[Int](3)
-    if(ats.mayNeedRedo) trapArgWidths += 2+ats.getStorageIdWidth()
+    if(ats.mayNeedRedo) trapArgWidths += 3+ats.getStorageIdWidth()
     TRAP_ARG_WIDTH.set(trapArgWidths.max)
 
     trapLock.await()
@@ -410,9 +410,10 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val atsPorts = ats.mayNeedRedo generate new Area{
             val refill = ats.newRefillPort()
             refill.cmd.valid := False
+            refill.cmd.guest := pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId))
             refill.cmd.storageEnable := True
             refill.cmd.address := pending.state.tval.asUInt
-            refill.cmd.storageId := pending.state.arg(2, ats.getStorageIdWidth() bits).asUInt
+            refill.cmd.storageId := pending.state.arg(3, ats.getStorageIdWidth() bits).asUInt
 
             val invalidate = ats.newInvalidationPort()
             invalidate.cmd.valid := False

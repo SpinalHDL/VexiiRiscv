@@ -508,7 +508,8 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
 
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
-      trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      trapPort.arg(2) := False
+      trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REFILL) {
         allowRefill := False
         trapPort.valid := True

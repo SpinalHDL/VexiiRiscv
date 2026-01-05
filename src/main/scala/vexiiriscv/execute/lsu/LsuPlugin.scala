@@ -35,6 +35,7 @@ case class LsuL1Cmd() extends Bundle {
   val size = SIZE()
   val load, store, atomic = Bool()
   val clean, invalidate = Bool()
+  val guest = Bool()
   val storeId = Decode.STORE_ID()
 }
 
@@ -437,6 +438,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := ATOMIC
         port.clean := withCbm.mux(CLEAN || INVALIDATE && cbmCsr.invalIntoClean, False)
         port.invalidate := withCbm.mux(INVALIDATE, False)
+        port.guest := GUEST
         port.op := LsuL1CmdOpcode.LSU
         if(softwarePrefetch) when(LSU_PREFETCH) { port.op := LsuL1CmdOpcode.PREFETCH }
 
@@ -460,6 +462,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := False
         port.clean := False
         port.invalidate := False
+        port.guest := False
         port.op := LsuL1CmdOpcode.ACCESS
         port.storeId := 0
 
@@ -477,6 +480,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := False
         port.clean := False
         port.invalidate := False
+        port.guest := False
         port.op := LsuL1CmdOpcode.FLUSH
         port.storeId := 0
         when(port.fire) {
@@ -497,6 +501,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := False
         port.clean := False
         port.invalidate := False
+        port.guest := False
         port.storeId := 0
       }
 
@@ -513,6 +518,7 @@ class LsuPlugin(var layer : LaneLayer,
         port.atomic := False
         port.clean := False
         port.invalidate := False
+        port.guest := False
         port.op := LsuL1CmdOpcode.STORE_BUFFER
         storeBuffer.pop.ready := port.ready || flush
         port.storeId := storeBuffer.pop.op.storeId
@@ -531,6 +537,7 @@ class LsuPlugin(var layer : LaneLayer,
       l1.STORE := arbiter.io.output.store
       l1.CLEAN := arbiter.io.output.clean
       l1.INVALID := arbiter.io.output.invalidate
+      l1.GUEST := arbiter.io.output.guest
       l1.PREFETCH := arbiter.io.output.op === LsuL1CmdOpcode.PREFETCH
       l1.FLUSH := arbiter.io.output.op === LsuL1CmdOpcode.FLUSH
       Decode.STORE_ID := arbiter.io.output.storeId
@@ -813,7 +820,8 @@ class LsuPlugin(var layer : LaneLayer,
         }
 
         trapPort.arg(0, 2 bits) := l1.STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
-        trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+        trapPort.arg(2) := l1.GUEST
+        trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
         when(tpk.REFILL) { // Could be ignored for llc flush
           lsuTrap := True
           trapPort.exception := False

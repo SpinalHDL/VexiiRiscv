@@ -299,7 +299,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
 
       trapPort.arg(0, 2 bits) := STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
-      trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      trapPort.arg(2) := GUEST
+      trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REFILL) {
         skip := True
         trapPort.exception := False

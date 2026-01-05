@@ -19,6 +19,7 @@ object AddressTranslationPortUsage{
 
 case class AddressTranslationRefillCmd(storageWidth : Int) extends Bundle{
   val address = MIXED_ADDRESS()
+  val guest = Bool()
   val storageId = UInt(storageWidth bits)
   val storageEnable = Bool()
 }
