@@ -984,6 +984,7 @@ class ParamSimple() {
           p = prefetcherRptParam,
           bootMemClear = bootMemClear
         )
+        case _ =>
       }
       lsuL1Bus match {
         case LsuL1BusEnum.native =>
