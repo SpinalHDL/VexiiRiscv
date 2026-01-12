@@ -664,8 +664,8 @@ class ParamSimple() {
     opt[Unit]("debug-privileged") action { (v, c) => privParam.withDebug = true }
     opt[Int] ("debug-triggers") action { (v, c) => privParam.debugTriggers = v }
     opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
-    opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true }
-    opt[Unit]("debug-jtag-instruction") action { (v, c) => embeddedJtagInstruction = true }
+    opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true; privParam.withDebug = true }
+    opt[Unit]("debug-jtag-instruction") action { (v, c) => embeddedJtagInstruction = true; privParam.withDebug = true }
     opt[Unit]("with-boot-mem-init") action { (v, c) => bootMemClear = true }
     opt[Int]("physical-width") action { (v, c) => physicalWidth = v }
     opt[Unit]("mul-keep-src") action { (v, c) => mulKeepSrc = true }
