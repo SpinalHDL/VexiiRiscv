@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline._
 import vexiiriscv.misc.{PrivilegedPlugin, TrapReason, TrapService}
-import vexiiriscv.riscv.{CSR, Rvi}
+import vexiiriscv.riscv.{CSR, PrivilegeMode, Rvi}
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.decode.Decode
@@ -69,12 +69,12 @@ class EnvPlugin(layer : LaneLayer,
       trapPort.laneAge := Execute.LANE_AGE
 
       val privilege = ps.getPrivilege(HART_ID)
-      val xretPriv = Decode.UOP(29 downto 28).asUInt
+      val xretPriv = PrivilegeMode(PrivilegeMode.isGuest(privilege), Decode.UOP(29 downto 28))
       val commit = False
 
-      val retKo = ps.p.withSupervisor.mux(ps.logic.harts(0).m.status.tsr && privilege === 1 && xretPriv === 1, False)
-      val vmaKo = ps.p.withSupervisor.mux(privilege === 1 && ps.logic.harts(0).m.status.tvm || privilege === 0, False)
-      
+      val retKo = ps.p.withSupervisor.mux(ps.logic.harts(0).m.status.tsr && privilege === PrivilegeMode.S && xretPriv === PrivilegeMode.S, False)
+      val vmaKo = ps.p.withSupervisor.mux(privilege === PrivilegeMode.S && ps.logic.harts(0).m.status.tvm || privilege === PrivilegeMode.U, False)
+
       switch(this(OP)) {
         is(EnvPluginOp.EBREAK) {
           trapPort.code := CSR.MCAUSE_ENUM.BREAKPOINT
@@ -87,12 +87,12 @@ class EnvPlugin(layer : LaneLayer,
             commit := True
             trapPort.exception := False
             trapPort.code := TrapReason.PRIV_RET
-            trapPort.arg(1 downto 0) := xretPriv.asBits
+            trapPort.arg(2 downto 0) := xretPriv.asBits
           }
         }
 
         is(EnvPluginOp.WFI) {
-          when(privilege === 3 || !ps.logic.harts(0).m.status.tw && (Bool(!ps.implementSupervisor) || privilege === 1)) {
+          when(privilege === PrivilegeMode.M || !ps.logic.harts(0).m.status.tw && (Bool(!ps.implementSupervisor) || privilege === PrivilegeMode.S)) {
             commit := True
             trapPort.exception := False
             trapPort.code := TrapReason.WFI

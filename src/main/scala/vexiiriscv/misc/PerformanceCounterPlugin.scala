@@ -6,7 +6,7 @@ import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.execute.{CsrAccessPlugin, CsrListFilter, CsrRamAllocation, CsrRamPlugin, CsrRamService}
-import vexiiriscv.riscv.{CSR, Riscv}
+import vexiiriscv.riscv.{CSR, PrivilegeMode, Riscv}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -58,6 +58,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
 
       val mcounteren = csr.readWrite(RegInit(False), CSR.MCOUNTEREN, counterId)
       val scounteren = priv.p.withSupervisor generate csr.readWrite(RegInit(False), CSR.SCOUNTEREN, counterId)
+      val hcounteren = priv.p.withHypervisor generate csr.readWrite(RegInit(False), CSR.HCOUNTEREN, counterId)
       val mcountinhibit = csr.readWrite(RegInit(False), CSR.MCOUNTINHIBIT, counterId)
     }
     case class Mapping(csrId : Int, alloc : CsrRamAllocation, offset : Int)
@@ -115,8 +116,8 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       priv.logic.harts(0).spec.addInterrupt(
         ip && ie,
         id = 13,
-        privilege = priv.implementSupervisor.mux(1, 3),
-        delegators = priv.implementSupervisor.mux(List(Delegator(sup.deleg, 3)), Nil)
+        privilege = priv.implementSupervisor.mux(PrivilegeMode.S, PrivilegeMode.M),
+        delegators = priv.implementSupervisor.mux(List(Delegator(sup.deleg, PrivilegeMode.M)), Nil)
       )
     }
 
@@ -156,15 +157,15 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       ofRead clearWhen(!counter.mcounteren && !privValue(1))
 
       csr.readWrite(eb, 63-eo -> OF, 62-eo -> MINH)
-      inhibit.setWhen(privValue === 3 && MINH)
+      inhibit.setWhen(privValue === PrivilegeMode.M && MINH)
       if (priv.p.withSupervisor) {
         csr.readWrite(eb, 61 - eo -> SINH)
-        inhibit.setWhen(privValue === 1 && SINH)
+        inhibit.setWhen(privValue === PrivilegeMode.S && SINH)
         ofRead clearWhen(!counter.scounteren && !privValue(0))
       }
       if (priv.p.withUser) {
         csr.readWrite(eb, 60 - eo -> UINH)
-        inhibit.setWhen(privValue === 0 && UINH)
+        inhibit.setWhen(privValue === PrivilegeMode.U && UINH)
       }
     }
 
@@ -322,9 +323,11 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val addr = csr.bus.decode.address(0, log2Up(counterCount + 1) bits)
       val mok = addr.muxListDc(counters.list.map(e => e.counterId -> e.mcounteren))
       val sok = priv.p.withSupervisor.mux(addr.muxListDc(counters.list.map(e => e.counterId -> e.scounteren)), True)
-      val privOk = (priv.getPrivilege(csr.bus.decode.hartId) | U(mok ## sok)).andR
+      val vok = priv.p.withHypervisor.mux(addr.muxListDc(counters.list.map(e => e.counterId -> e.hcounteren)), True)
+      val privilege = priv.getPrivilege(csr.bus.decode.hartId)
+      val privOk = ((privilege.asBits ^ B(1 << 2)) | (vok ## mok ## sok)).andR
       csr.onDecode(csrFilter){ //TODO test
-        when(csr.bus.decode.address(9 downto 8) === 0){
+        when(csr.bus.decode.address(9 downto 8) === PrivilegeMode.U){
           when(csr.bus.decode.write || !privOk){
             csr.bus.decode.doException()
           }
