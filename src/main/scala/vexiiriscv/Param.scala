@@ -612,6 +612,7 @@ class ParamSimple() {
     opt[Unit]("btb-single-port-ram") action { (v, c) => btbDualPortRam = false }
     opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0; storeRs2Late = true }
     opt[Unit]("with-store-rs2-late") action { (v, c) => storeRs2Late = true }
+    opt[Unit]("without-late-alu") action { (v, c) => withLateAlu = false; storeRs2Late = false }
     opt[Int]("btb-sets") action { (v, c) => btbSets = v }
     opt[Int]("btb-hash-width") action { (v, c) => btbHashWidth = v }
     opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
