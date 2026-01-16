@@ -47,6 +47,7 @@ object PrivilegeMode {
   val VU = -4
 
   val TYPE = HardType(SInt(3 bits))
+  val PRIVILEGE_MASK = 0x3
 
   def isGuest(privilege: SInt): Bool = privilege(2)
 
@@ -61,8 +62,9 @@ object PrivilegeMode {
     mode
   }
 
-  def apply(isGuest: Bool, privilege: UInt): SInt =
-    apply(isGuest, privilege.asBits)
+  def apply(isGuest: Bool, privilege: UInt): SInt = apply(isGuest, privilege.asBits)
+
+  def apply(mode: Int): SInt = spinal.core.S(mode, 3 bit)
 }
 
 object CSR {
