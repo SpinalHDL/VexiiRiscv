@@ -316,22 +316,20 @@ class MmuPlugin(var spec : MmuSpec,
 
         import ps.rsp.keys._
         when(requireMmuLockup) {
+          val allow_execute = lineAllowExecute && !(lineAllowUser && isSupervisor)
+          val allow_read    = lineAllowRead || status.mxr && lineAllowExecute
+          val allow_write   = lineAllowWrite
+
           HAZARD        := False
           REFILL        := !hit
           TRANSLATED    := lineTranslated
-          ALLOW_EXECUTE := lineAllowExecute && !(lineAllowUser && isSupervisor)
-          ALLOW_READ    := lineAllowRead || status.mxr && lineAllowExecute
-          ALLOW_WRITE   := lineAllowWrite
-          PAGE_FAULT    := (lineAllowUser && isSupervisor && !status.sum) || (!lineAllowUser && isUser) || Mux(ps.req.LOAD, !ALLOW_READ, False) ||
-          Mux(ps.req.STORE, !ALLOW_WRITE, False) || Mux(ps.req.EXECUTE, !ALLOW_EXECUTE, False)
+          PAGE_FAULT    := (lineAllowUser && isSupervisor && !status.sum) || (!lineAllowUser && isUser) || Mux(ps.req.LOAD, !allow_read, False) ||
+          Mux(ps.req.STORE, !allow_write, False) || Mux(ps.req.EXECUTE, !allow_execute, False)
           ACCESS_FAULT  := False
         } otherwise {
           HAZARD        := False
           REFILL        := False
           TRANSLATED    := ps.req.PRE_ADDRESS.resized
-          ALLOW_EXECUTE := True
-          ALLOW_READ    := True
-          ALLOW_WRITE   := True
           PAGE_FAULT    := False
           ACCESS_FAULT  := ps.req.PRE_ADDRESS.drop(physicalWidth) =/= 0
         }

@@ -277,7 +277,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         trapPort.code(1) setWhen (STORE)
       }
 
-      when(tpk.PAGE_FAULT || STORE.mux( !tpk.ALLOW_WRITE, !tpk.ALLOW_READ)) {
+      when(tpk.PAGE_FAULT) {
         skip := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT

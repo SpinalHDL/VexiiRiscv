@@ -65,9 +65,6 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
       REFILL := False
       HAZARD := False
       TRANSLATED := spec.req.PRE_ADDRESS.resized //PC RESIZED
-      ALLOW_EXECUTE := True
-      ALLOW_READ := True
-      ALLOW_WRITE := True
       PAGE_FAULT := False
       ACCESS_FAULT := spec.req.PRE_ADDRESS.drop(physicalWidth) =/= 0
       BYPASS_TRANSLATION := True

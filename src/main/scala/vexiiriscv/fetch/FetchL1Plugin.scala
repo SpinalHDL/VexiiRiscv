@@ -491,7 +491,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
       }
 
-      when(tpk.PAGE_FAULT || !tpk.ALLOW_EXECUTE) {
+      when(tpk.PAGE_FAULT) {
         allowRefill := False
         trapPort.valid := True
         trapPort.exception := True

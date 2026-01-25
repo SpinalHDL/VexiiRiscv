@@ -187,7 +187,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
       }
 
-      when(tpk.PAGE_FAULT || !tpk.ALLOW_EXECUTE) {
+      when(tpk.PAGE_FAULT) {
         TRAP := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT

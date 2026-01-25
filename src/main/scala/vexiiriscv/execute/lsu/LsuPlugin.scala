@@ -588,7 +588,7 @@ class LsuPlugin(var layer : LaneLayer,
       val IO = insert(CACHED_RSP.fault && !IO_RSP.fault && !FENCE && !FROM_PREFETCH)
       val addressExtension = ats.getSignExtension(AddressTranslationPortUsage.LOAD_STORE, srcp.ADD_SUB.asUInt)
       val FROM_LSU_MSB_FAILED = insert(FROM_LSU && srcp.ADD_SUB.dropLow(Global.MIXED_WIDTH).asBools.map(_ =/= addressExtension).orR)
-      MMU_PAGE_FAULT := tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
+      MMU_PAGE_FAULT := tpk.PAGE_FAULT
       MMU_FAILURE := MMU_PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD || FROM_LSU_MSB_FAILED
     }
 
