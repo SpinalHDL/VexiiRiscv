@@ -402,7 +402,14 @@ class LsuPlugin(var layer : LaneLayer,
     // Collect the different request and interface them with the L1 cache as well as the MMU
     val onAddress0 = new elp.Execute(addressAt){
       FORCE_PHYSICAL := FROM_ACCESS || FROM_WB
-      val request = AddressTranslationReq(l1.MIXED_ADDRESS, FORCE_PHYSICAL)
+      val LOAD_MMU = insert(LOAD || CLEAN || INVALIDATE)
+      val request = AddressTranslationReq(
+        PRE_ADDRESS    = l1.MIXED_ADDRESS,
+        LOAD           = LOAD_MMU,
+        STORE          = STORE,
+        EXECUTE        = insert(False),
+        FORCE_PHYSICAL = FORCE_PHYSICAL
+      )
       val translationPort = ats.newTranslationPort(
         nodes = Seq(elp.execute(addressAt).down, elp.execute(addressAt+1).down),
         req = request,
@@ -505,7 +512,7 @@ class LsuPlugin(var layer : LaneLayer,
         storeBuffer.pop.ready := port.ready || flush
         port.storeId := storeBuffer.pop.op.storeId
       }
-      
+
       // Let's arbitrate all those request and connect the atrbitred output to the pipeline / L1
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
       arbiter.io.output.ready := !elp.isFreezed()

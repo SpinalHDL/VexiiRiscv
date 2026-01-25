@@ -335,7 +335,13 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
     }
 
-    val request = AddressTranslationReq(MIXED_PC_SOLVED, pp.fetch(readAt).insert(False))
+    val request = AddressTranslationReq(
+      PRE_ADDRESS    = MIXED_PC_SOLVED,
+      LOAD           = pp.fetch(readAt).insert(False),
+      STORE          = pp.fetch(readAt).insert(False),
+      EXECUTE        = pp.fetch(readAt).insert(True),
+      FORCE_PHYSICAL = pp.fetch(readAt).insert(False)
+    )
 
     val translationPort = ats.newTranslationPort(
       nodes = Seq(pp.fetch(readAt).down, pp.fetch(readAt+1).down),

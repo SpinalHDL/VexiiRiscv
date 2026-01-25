@@ -161,7 +161,13 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     val onAddress = new addressCtrl.Area {
       val RAW_ADDRESS = insert(srcp.ADD_SUB.asUInt)
-      val request = AddressTranslationReq(RAW_ADDRESS, insert(False))
+      val request = AddressTranslationReq(
+        PRE_ADDRESS    = RAW_ADDRESS,
+        LOAD           = LOAD,
+        STORE          = STORE,
+        EXECUTE        = insert(False),
+        FORCE_PHYSICAL = insert(False)
+      )
 
       val translationPort = ats.newTranslationPort(
         nodes = Seq(addressCtrl.down),
