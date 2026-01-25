@@ -322,7 +322,8 @@ class MmuPlugin(var spec : MmuSpec,
           ALLOW_EXECUTE := lineAllowExecute && !(lineAllowUser && isSupervisor)
           ALLOW_READ    := lineAllowRead || status.mxr && lineAllowExecute
           ALLOW_WRITE   := lineAllowWrite
-          PAGE_FAULT    := lineAllowUser && isSupervisor && !status.sum || !lineAllowUser && isUser
+          PAGE_FAULT    := (lineAllowUser && isSupervisor && !status.sum) || (!lineAllowUser && isUser) || Mux(ps.req.LOAD, !ALLOW_READ, False) ||
+          Mux(ps.req.STORE, !ALLOW_WRITE, False) || Mux(ps.req.EXECUTE, !ALLOW_EXECUTE, False)
           ACCESS_FAULT  := False
         } otherwise {
           HAZARD        := False
