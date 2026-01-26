@@ -91,7 +91,7 @@ class Backend(f : File) {
   bf.write("C=\t0\n")
 
   def refresh(): Unit = {
-    val cycleEnd = threads.map(_.cycleLock).min
+    val cycleEnd = if(threads.nonEmpty) threads.map(_.cycleLock).min else cycle
     var skips = 0l
 
     while(cycle != cycleEnd && pendings.nonEmpty){
