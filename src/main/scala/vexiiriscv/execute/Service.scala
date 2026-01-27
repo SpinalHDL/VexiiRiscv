@@ -118,7 +118,7 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   /** Set until which point in the pipeline the instruction may flush younger instructions */
   def mayFlushUpTo(executeCtrlId: Int) : this.type = {
     var at = executeCtrlId + el.executeAt
-    mayFlushUpTo.foreach(v => v max at)
+    assert(mayFlushUpTo.isEmpty || mayFlushUpTo.get == at)
     mayFlushUpTo = Some(at)
     this
   }
@@ -126,7 +126,7 @@ class UopLayerSpec(val uop: MicroOp, val elImpl : LaneLayer, val el : ExecuteLan
   /** Set from which point in the pipeline the instruction should not be flushed anymore because it already had produced side effects */
   def dontFlushFrom(executeCtrlId: Int): Unit = {
     var at = executeCtrlId + el.executeAt
-    dontFlushFrom.foreach(v => v min at)
+    assert(dontFlushFrom.isEmpty || dontFlushFrom.get == at)
     dontFlushFrom = Some(at)
   }
 }
