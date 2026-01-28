@@ -1,0 +1,34 @@
+//| mill-allow-nested-build-mill: true
+//| mvnDeps:
+//| - com.typesafe:config:1.4.3
+package build
+
+import mill._, scalalib._
+import build.project.SpinalVersion
+
+trait VexiiRiscvCross extends SbtModule with CrossSbtModule {
+  def moduleInfo = build.ext.SpinalHDL.SpinalModuleInfo(crossScalaVersion)
+  def moduleRefs = moduleInfo._1
+  def modulePluginOptions = moduleInfo._2()
+
+  override def moduleDeps = Seq(moduleRefs("core"), moduleRefs("lib"), moduleRefs("idslplugin"), moduleRefs("sim"))
+
+  override def scalacOptions = super.scalacOptions() ++ modulePluginOptions()
+
+  override def mvnDeps = Seq(
+    mvn"org.scalatest::scalatest:3.2.17",
+    mvn"org.yaml:snakeyaml:1.8",
+    mvn"net.fornwall:jelf:0.7.0",
+    mvn"org.scream3r:jssc:2.8.0",
+  )
+
+  override def moduleDir = super.moduleDir / os.up
+
+  def rvlsJniSource = Task.Sources("ext/rvls/bindings/jni")
+  def rvlsSpinalSource = Task.Sources("ext/rvls/bindings/spinal")
+  def sources = Task { super.sources() ++ rvlsJniSource() ++ rvlsSpinalSource() }
+}
+
+object Test extends Cross[VexiiRiscvCross](SpinalVersion.compilers) {
+  def defaultCrossSegments = Seq(SpinalVersion.compilers.head)
+}
