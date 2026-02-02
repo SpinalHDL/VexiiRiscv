@@ -885,7 +885,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     }
 
     val defaultTrap = new Area {
-      val csrPrivilege = cap.bus.decode.address(8, 2 bits)
+      val csrPrivilege = cap.bus.decode.privilege.asUInt
       val csrReadOnly = cap.bus.decode.address(10, 2 bits) === U"11"
       // todo
       val hartPrivilege = harts.reader(cap.bus.decode.hartId)(_.privilege)
