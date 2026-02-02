@@ -757,7 +757,7 @@ class LsuPlugin(var layer : LaneLayer,
         trapPort.code.assignDontCare()
         trapPort.arg.allowOverride() := 0
 
-        val accessFault = (onPma.CACHED_RSP.fault).mux[Bool](io.rsp.valid && io.rsp.error, l1.FAULT) || pmpPort.ACCESS_FAULT
+        val accessFault = (onPma.CACHED_RSP.fault).mux[Bool](io.rsp.valid && io.rsp.error, False) || pmpPort.ACCESS_FAULT
         when(accessFault) {
           lsuTrap := True
           trapPort.exception := True
@@ -936,7 +936,6 @@ class LsuPlugin(var layer : LaneLayer,
       if(withStoreBuffer) abords += wb.loadHazard || wb.selfHazard
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
-      skipsWrite += l1.FAULT
       skipsWrite += preCtrl.MISS_ALIGNED
       skipsWrite += FROM_LSU && (onTrigger.HIT || pmpPort.ACCESS_FAULT)
       skipsWrite += FROM_PREFETCH
@@ -971,7 +970,7 @@ class LsuPlugin(var layer : LaneLayer,
         val rsp = dbusAccesses.head.rsp
         rsp.valid    := l1.SEL && FROM_ACCESS && !elp.isFreezed()
         rsp.data     := loadData.RESULT.resized // loadData.RESULT instead of l1.READ_DATA (because it rv32fd)
-        rsp.error    := l1.FAULT || pmpPort.ACCESS_FAULT
+        rsp.error    := pmpPort.ACCESS_FAULT
         rsp.redo     := traps.l1Failed
         rsp.waitSlot := 0
         rsp.waitAny  := False //TODO

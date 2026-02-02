@@ -31,7 +31,7 @@ object LsuL1 extends AreaObject {
 
   // L1 -> LSU
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
-  val HAZARD, MISS, MISS_UNIQUE, FAULT, FLUSH_HAZARD, CBM_REDO = Payload(Bool()) // From the ctrl stage, provide the status of the request to the LSU
+  val HAZARD, MISS, MISS_UNIQUE, FLUSH_HAZARD, CBM_REDO = Payload(Bool()) // From the ctrl stage, provide the status of the request to the LSU
   val FLUSH_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
   val REFILL_HIT = Payload(Bool()) // A ongoing refill is on the same cache set (this is just an optional detail, HAZARD is already set)
   val WAIT_REFILL = Payload(cloneOf(REFILL_BUSY.get)) // Specifies which refill should be waited on before retrying the failed access (optional)
@@ -201,7 +201,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     case class Tag() extends Bundle {
       val loaded = Bool()
       val address = UInt(tagWidth bits)
-      val fault = Bool()
       val unique = withCoherency generate Bool()
     }
 
@@ -453,7 +452,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val hadError = RegInit(False) setWhen (bus.read.rsp.valid && bus.read.rsp.error)
         val fire = False
         val reservation = tagsWriteArbiter.create(0)
-        val faulty = hadError || bus.read.rsp.error
 
         // Track memory read responses progress and write the ways tag on completion.
         refillCompletions := 0
@@ -470,7 +468,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             reservation.takeIt()
             waysWrite.mask(way) := True
             waysWrite.address := rspAddress(lineRange)
-            waysWrite.tag.fault := faulty
             waysWrite.tag.address := rspAddress(tagRange)
             waysWrite.tag.loaded := True
             if (withCoherency) {
@@ -868,8 +865,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val flushHazardReg = RegNext(this (FLUSH_HAZARD) && lane.isFreezed()) init (False)
         FLUSH_HAZARD := flushHazardReg || flushHazard
         MISS := !WAYS_HIT
-        FAULT := WAYS_HIT && (WAYS_HITS & WAYS_TAGS.map(_.fault).asBits).orR && !FLUSH
-        MISS_UNIQUE := WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique && !e.fault).asBits).orR, False)
+        MISS_UNIQUE := WAYS_HIT && NEED_UNIQUE && withCoherency.mux((WAYS_HITS & WAYS_TAGS.map(e => !e.unique).asBits).orR, False)
         REFILL_HIT := refillHazard
 
         events.map{e =>
@@ -892,7 +888,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
-        val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
+        val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True)) && !SKIP_WRITE
         val doCbm = withCbm.mux(SEL && askCbm && wayWriteReservation.win && !writeback.full && !refillHazard && !writebackHazard, False)
 
         val wayId = OHToUInt(WAYS_HITS)
@@ -961,7 +957,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             waysWrite.address := PHYSICAL_ADDRESS(lineRange)
             waysWrite.tag.loaded := !INVALID
             waysWrite.tag.address := PHYSICAL_ADDRESS(tagRange)
-            waysWrite.tag.fault := reader(_.fault)
 
             writeback.push.valid := CLEAN && wasDirty
             writeback.push.address := (PHYSICAL_ADDRESS(tagRange) @@ MIXED_ADDRESS(lineRange)) << lineRange.low
@@ -984,7 +979,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           waysWrite.address := MIXED_ADDRESS(lineRange)
           waysWrite.tag.loaded := True
           waysWrite.tag.address := tag
-          waysWrite.tag.fault := reader(_.fault)
 
           writeback.push.valid := True
           writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low
@@ -1139,7 +1133,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val waysReader = this(WAYS_TAGS).reader(WAYS_HITS)
         val HIT_UNIQUE = insert(waysReader(_.unique))
-        val HIT_FAULT = insert(waysReader(_.fault))
         val HIT_DIRTY = insert((down(SHARED).dirty & WAYS_HITS).orR)
 
         val ASK_DATA = insert(HIT_DIRTY && !ALLOW_UNIQUE && ALLOW_PROBE_DATA) // If this create timings issues, it can be procssed on every ways and then muxed
@@ -1173,7 +1166,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
               waysWrite.address := PHYSICAL_ADDRESS(lineRange)
               waysWrite.tag.loaded := ALLOW_SHARED || ALLOW_UNIQUE
-              waysWrite.tag.fault := HIT_FAULT
               waysWrite.tag.unique := HIT_UNIQUE && ALLOW_UNIQUE
               waysWrite.tag.address := PHYSICAL_ADDRESS(tagRange)
 
