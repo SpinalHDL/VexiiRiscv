@@ -133,10 +133,22 @@ class CsrAccessPlugin(val layer : LaneLayer,
         val fire = False
       }
 
+      def csrAddressFix(csrId: UInt): UInt = {
+        val address = CombInit(csrId)
+
+        for(filter <- remapping) {
+          when(filter.from === csrId && filter.cond) {
+            address := filter.to
+          }
+        }
+
+        address
+      }
+
       val inject = new elp.Execute(injectAt){
         assert(!(up(LANE_SEL) && SEL && isCancel), "CsrAccessPlugin saw forbidden select && cancel request")
         val imm = IMM(UOP)
-        val csrAddress = UOP(Const.csrRange)
+        val csrAddress = csrAddressFix(UOP(Const.csrRange).asUInt)
         val immZero = imm.z === 0
         val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
         val csrWrite = !(CSR_MASK && srcZero)
@@ -165,7 +177,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         bus.decode.read := csrRead
         bus.decode.write := csrWrite
         bus.decode.hartId := Global.HART_ID
-        bus.decode.address := csrAddress.asUInt
+        bus.decode.address := csrAddress
 
         val unfreeze = RegNext(False) init(False)
         interface.hartId := Global.HART_ID
