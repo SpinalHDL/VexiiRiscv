@@ -149,6 +149,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         assert(!(up(LANE_SEL) && SEL && isCancel), "CsrAccessPlugin saw forbidden select && cancel request")
         val imm = IMM(UOP)
         val csrAddress = csrAddressFix(UOP(Const.csrRange).asUInt)
+        val csrPriv = UOP(Const.csrRange)(8, 2 bits)
         val immZero = imm.z === 0
         val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
         val csrWrite = !(CSR_MASK && srcZero)
@@ -178,6 +179,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         bus.decode.write := csrWrite
         bus.decode.hartId := Global.HART_ID
         bus.decode.address := csrAddress
+        bus.decode.privilege := csrPriv
 
         val unfreeze = RegNext(False) init(False)
         interface.hartId := Global.HART_ID

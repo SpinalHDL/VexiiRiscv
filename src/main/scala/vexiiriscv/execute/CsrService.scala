@@ -49,6 +49,7 @@ case class CsrDecode() extends Bundle {
   val read, write = Bool()
   val hartId = Global.HART_ID()
   val address = UInt(12 bits)
+  val privilege = Bits(2 bits)
   val trap = Bool()
   val trapCode = Global.CODE()
   val fence = Bool()
