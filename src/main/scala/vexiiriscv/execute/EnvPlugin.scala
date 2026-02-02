@@ -11,6 +11,7 @@ import vexiiriscv.Global._
 import vexiiriscv.decode.Decode
 import vexiiriscv.schedule.{DispatchPlugin, ReschedulePlugin}
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 
@@ -69,11 +70,38 @@ class EnvPlugin(layer : LaneLayer,
       trapPort.laneAge := Execute.LANE_AGE
 
       val privilege = ps.getPrivilege(HART_ID)
+      val isGuest = PrivilegeMode.isGuest(privilege)
       val xretPriv = PrivilegeMode(PrivilegeMode.isGuest(privilege), Decode.UOP(29 downto 28))
       val commit = False
 
-      val retKo = ps.p.withSupervisor.mux(ps.logic.harts(0).m.status.tsr && privilege === PrivilegeMode.S && xretPriv === PrivilegeMode.S, False)
-      val vmaKo = ps.p.withSupervisor.mux(privilege === PrivilegeMode.S && ps.logic.harts(0).m.status.tvm || privilege === PrivilegeMode.U, False)
+      def privilegeCheck(payloads: mutable.LinkedHashMap[Int, Bool], privilege: SInt): Bool = payloads.map{case (mode, cond) => privilege === mode && cond}.orR
+
+      val retKoMapping = mutable.LinkedHashMap[Int, Bool](
+        PrivilegeMode.S -> (ps.logic.harts(0).m.status.tsr && xretPriv === PrivilegeMode.S)
+      )
+      if (ps.p.withHypervisor) retKoMapping += (
+        PrivilegeMode.VS -> (ps.logic.harts(0).h.status.vtsr && xretPriv === PrivilegeMode.VS)
+      )
+      val retKo = ps.p.withSupervisor.mux(privilegeCheck(retKoMapping, privilege), False)
+
+      val wfiMapping = mutable.LinkedHashMap[Int, Bool](
+        PrivilegeMode.S -> True,
+        PrivilegeMode.U -> Bool(!ps.implementSupervisor)
+      )
+      if (ps.p.withHypervisor) wfiMapping += (
+        PrivilegeMode.VS -> !ps.logic.harts(0).h.status.vtw,
+        PrivilegeMode.VU -> False
+      )
+
+      val vmaKoMapping = mutable.LinkedHashMap[Int, Bool](
+        PrivilegeMode.S -> ps.logic.harts(0).m.status.tvm,
+        PrivilegeMode.U -> True
+      )
+      if (ps.p.withHypervisor) vmaKoMapping += (
+        PrivilegeMode.VS -> ps.logic.harts(0).h.status.vtvm,
+        PrivilegeMode.VU -> True
+      )
+      val vmaKo = ps.p.withSupervisor.mux(privilegeCheck(vmaKoMapping, privilege), False)
 
       switch(this(OP)) {
         is(EnvPluginOp.EBREAK) {
@@ -92,13 +120,23 @@ class EnvPlugin(layer : LaneLayer,
             trapPort.code := TrapReason.PRIV_RET
             trapPort.arg(2 downto 0) := xretPriv.asBits
           }
+          if(ps.p.withHypervisor) {
+            when(privilege === PrivilegeMode.VU || (privilege === PrivilegeMode.VS && retKoMapping(PrivilegeMode.VS))) {
+              trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
+            }
+          }
         }
 
         is(EnvPluginOp.WFI) {
-          when(privilege === PrivilegeMode.M || !ps.logic.harts(0).m.status.tw && (Bool(!ps.implementSupervisor) || privilege === PrivilegeMode.S)) {
+          when(privilege === PrivilegeMode.M || !ps.logic.harts(0).m.status.tw && privilegeCheck(wfiMapping, privilege)) {
             commit := True
             trapPort.exception := False
             trapPort.code := TrapReason.WFI
+          }
+          if(ps.p.withHypervisor) {
+            when(!ps.logic.harts(0).m.status.tw && (privilege === PrivilegeMode.VU || (privilege === PrivilegeMode.VS && !wfiMapping(PrivilegeMode.VS)))) {
+              trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
+            }
           }
         }
 
@@ -114,6 +152,11 @@ class EnvPlugin(layer : LaneLayer,
               commit := True
               trapPort.exception := False
               trapPort.code := TrapReason.SFENCE_VMA
+            }
+            if(ps.p.withHypervisor) {
+              when(privilege === PrivilegeMode.VU || privilege === PrivilegeMode.VS && vmaKoMapping(PrivilegeMode.VS)) {
+                trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
+              }
             }
           }
         }
