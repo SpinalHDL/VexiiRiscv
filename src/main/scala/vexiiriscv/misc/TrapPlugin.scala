@@ -372,7 +372,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
         val fsm = new StateMachine {
           val RESET = makeInstantEntry()
           val RUNNING, COMPUTE = new State()
-          val TRAP_EPC, TRAP_TVAL, TRAP_TVEC, TRAP_WAIT, TRAP_APPLY = new State()
+          val TRAP_EPC, TRAP_TVAL, TRAP_HTVAL, TRAP_HTINST, TRAP_TVEC, TRAP_WAIT, TRAP_APPLY = new State()
           val XRET_EPC, XRET_APPLY = new State()
           val ATS_RSP = ats.mayNeedRedo generate new State()
           val JUMP = new State()
@@ -602,6 +602,41 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
             when(triggerEbreakReg){
               crsPorts.write.data := Global.expendPc(pending.pc, XLEN).asBits
             }
+
+            when(crsPorts.write.ready) {
+              when(csr.withGuestPrivilege && !PrivilegeMode.isGuest(buffer.trap.targetPrivilege)) {
+                goto(TRAP_HTVAL)
+              }.otherwise {
+                goto(TRAP_EPC)
+              }
+            }
+          }
+
+          // TODO
+          // only guest-page-fault, write tval, tinst; otherwise, 0
+          if (priv.p.withHypervisor) TRAP_HTVAL.whenIsActive {
+            crsPorts.write.valid := True
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.tval2.getAddress(),
+              PrivilegeMode.S -> csr.h.tval.getAddress()
+            )
+            crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
+            crsPorts.write.data := B(0)
+
+            when(crsPorts.write.ready) {
+              goto(TRAP_HTINST)
+            }
+          }
+
+          if (priv.p.withHypervisor) TRAP_HTINST.whenIsActive {
+            crsPorts.write.valid := True
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.tinst.getAddress(),
+              PrivilegeMode.S -> csr.h.tinst.getAddress()
+            )
+            crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
+            crsPorts.write.data := B(0)
+
             when(crsPorts.write.ready) {
               goto(TRAP_EPC)
             }
