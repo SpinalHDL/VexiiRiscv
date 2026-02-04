@@ -7,7 +7,7 @@ import spinal.lib.fsm._
 import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global._
-import vexiiriscv.execute.{CsrAccessPlugin, CsrCondFilter, CsrListFilter, CsrRamPlugin, CsrRamService}
+import vexiiriscv.execute.{CsrAccessPlugin, CsrCondFilter, CsrListFilter, CsrRamPlugin, CsrRamService, ExecuteLanePlugin, LaneLayer}
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
@@ -15,7 +15,7 @@ import vexiiriscv._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class IndirectCsrPlugin(val withSupervisor : Boolean) extends FiberPlugin {
+class IndirectCsrPlugin(val withSupervisor : Boolean, val withHypervisor : Boolean) extends FiberPlugin {
   val logic = during setup new Area {
     val cap = host[CsrAccessPlugin]
     val buildBefore = retains(cap.csrLock)
@@ -43,6 +43,19 @@ class IndirectCsrPlugin(val withSupervisor : Boolean) extends FiberPlugin {
         api.readWrite(iselect, CSR.SISELECT)
 
         val iregs = Seq(CSR.SIREG, CSR.SIREG2, CSR.SIREG3, CSR.SIREG4, CSR.SIREG5, CSR.SIREG6)
+
+        def csrFilter(indirectId: Int, targetCsr: Int, cond: Bool = True): CsrCondFilter = {
+          assert(iregs.contains(targetCsr), s"${targetCsr} is not an indirect CSR alias")
+
+          CsrCondFilter(targetCsr, (iselect === indirectId) && cond)
+        }
+      }
+
+      val vs = withHypervisor generate new Area {
+        val iselect = RegInit(U(0, XLEN bits))
+        api.readWrite(iselect, CSR.VSISELECT)
+
+        val iregs = Seq(CSR.VSIREG, CSR.VSIREG2, CSR.VSIREG3, CSR.VSIREG4, CSR.VSIREG5, CSR.VSIREG6)
 
         def csrFilter(indirectId: Int, targetCsr: Int, cond: Bool = True): CsrCondFilter = {
           assert(iregs.contains(targetCsr), s"${targetCsr} is not an indirect CSR alias")
