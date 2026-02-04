@@ -1046,6 +1046,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         val tvec = crs.readWriteRam(CSR.VSTVEC)
         api.remapWhen(CSR.STVEC, CSR.VSTVEC, withGuestPrivilege)
+
+        if (withIndirectCsr) {
+          val iregs = Seq(CSR.VSIREG, CSR.VSIREG2, CSR.VSIREG3, CSR.VSIREG4, CSR.VSIREG5, CSR.VSIREG6)
+          for (ireg <- iregs) {
+            api.remapWhen(ireg - 0x100, ireg, withGuestPrivilege)
+          }
+          api.remapWhen(CSR.SISELECT, CSR.VSISELECT, withGuestPrivilege)
+        }
       }
 
       val time = p.withRdTime generate new Area {

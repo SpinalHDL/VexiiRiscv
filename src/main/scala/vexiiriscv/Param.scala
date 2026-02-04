@@ -491,6 +491,7 @@ class ParamSimple() {
   def withSscofpmf = checkISA("sscofpmf")
   def withSstc = checkISA("sstc")
   def withSxaia = checkISA("smaia") || checkISA("ssaia")
+  def withSscsrind = checkISA("sscsrind")
 
   def withMul = checkISA("m") || checkISA("zmmul")
   def withDiv = checkISA("m")
@@ -1060,7 +1061,7 @@ class ParamSimple() {
     plugins += new CsrRamPlugin()
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters, withScountovf = withSscofpmf)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    if(withIndirectCsr) plugins += new IndirectCsrPlugin(checkISA("sscsrind"))
+    if(withIndirectCsr) plugins += new IndirectCsrPlugin(withSscsrind, privParam.withHypervisor && withSscsrind)
     plugins += new PrivilegedPlugin(privParam, withHartIdInput.mux(null, hartId until hartId+hartCount))
     plugins += new TrapPlugin(trapAt = intWritebackAt)
     if(withTesterPlugin) plugins += new TesterPlugin()
