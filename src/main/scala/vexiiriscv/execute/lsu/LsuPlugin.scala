@@ -13,7 +13,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.{Decode, DecoderService}
 import vexiiriscv.decode.Decode.UOP
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import vexiiriscv.riscv._
@@ -402,10 +402,17 @@ class LsuPlugin(var layer : LaneLayer,
     // Collect the different request and interface them with the L1 cache as well as the MMU
     val onAddress0 = new elp.Execute(addressAt){
       FORCE_PHYSICAL := FROM_ACCESS || FROM_WB
+      val LOAD_MMU = insert(LOAD || CLEAN || INVALIDATE)
+      val request = AddressTranslationReq(
+        PRE_ADDRESS    = l1.MIXED_ADDRESS,
+        LOAD           = LOAD_MMU,
+        STORE          = STORE,
+        EXECUTE        = insert(False),
+        FORCE_PHYSICAL = FORCE_PHYSICAL
+      )
       val translationPort = ats.newTranslationPort(
         nodes = Seq(elp.execute(addressAt).down, elp.execute(addressAt+1).down),
-        rawAddress = l1.MIXED_ADDRESS,
-        forcePhysical = FORCE_PHYSICAL,
+        req = request,
         usage = AddressTranslationPortUsage.LOAD_STORE,
         portSpec = translationPortParameter,
         storageSpec = translationStorage
@@ -505,7 +512,7 @@ class LsuPlugin(var layer : LaneLayer,
         storeBuffer.pop.ready := port.ready || flush
         port.storeId := storeBuffer.pop.op.storeId
       }
-      
+
       // Let's arbitrate all those request and connect the atrbitred output to the pipeline / L1
       val arbiter = StreamArbiterFactory().noLock.lowerFirst.buildOn(ports)
       arbiter.io.output.ready := !elp.isFreezed()
@@ -581,7 +588,7 @@ class LsuPlugin(var layer : LaneLayer,
       val IO = insert(CACHED_RSP.fault && !IO_RSP.fault && !FENCE && !FROM_PREFETCH)
       val addressExtension = ats.getSignExtension(AddressTranslationPortUsage.LOAD_STORE, srcp.ADD_SUB.asUInt)
       val FROM_LSU_MSB_FAILED = insert(FROM_LSU && srcp.ADD_SUB.dropLow(Global.MIXED_WIDTH).asBools.map(_ =/= addressExtension).orR)
-      MMU_PAGE_FAULT := tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
+      MMU_PAGE_FAULT := tpk.PAGE_FAULT
       MMU_FAILURE := MMU_PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD || FROM_LSU_MSB_FAILED
     }
 
