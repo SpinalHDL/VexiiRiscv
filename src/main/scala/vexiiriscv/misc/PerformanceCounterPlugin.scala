@@ -334,11 +334,18 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val vok = priv.p.withHypervisor.mux(addr.muxListDc(counters.list.map(e => e.counterId -> e.hcounteren)), True)
       val privilege = priv.getPrivilege(csr.bus.decode.hartId)
       val privOk = ((privilege.asBits ^ B(1 << 2)) | (vok ## mok ## sok)).andR
+      val hyperOK = PrivilegeMode.isGuest(privilege) && (privilege(1 downto 0).asBits | (mok ## (vok || sok))).andR
       csr.onDecode(csrFilter){ //TODO test
         when(csr.bus.decode.address(9 downto 8) === PrivilegeMode.U){
-          when(csr.bus.decode.write || !privOk){
+          when(csr.bus.decode.write){
+            csr.bus.decode.doHostDenied()
+          }
+          when(!privOk){
             csr.bus.decode.doException()
           }
+        }
+        when(csr.bus.decode.address(9 downto 8) < PrivilegeMode.M && hyperOK){
+          csr.bus.decode.doVirtual()
         }
       }
     }
