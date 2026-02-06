@@ -173,7 +173,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
           }
         }
 
-        val trap = !implemented || bus.decode.exception
+        val trap = !implemented || bus.decode.exception || bus.decode.hostDenied
 
         bus.decode.read := csrRead
         bus.decode.write := csrWrite
@@ -209,6 +209,9 @@ class CsrAccessPlugin(val layer : LaneLayer,
         trapPort.tval := UOP.resized
         trapPort.arg := 0
         trapPort.laneAge := Execute.LANE_AGE
+        when(implemented && !bus.decode.hostDenied && bus.decode.virtual) {
+          trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
+        }
 
         val flushReg = RegInit(False) setWhen(flushPort.valid) clearWhen(!elp.isFreezed())
         when(flushReg) {
