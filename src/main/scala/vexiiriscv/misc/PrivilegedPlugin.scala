@@ -759,12 +759,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
               api.readWrite(cmp(31 downto 0), CSR.VSTIMECMP)
               api.readWrite(cmp(63 downto 32), CSR.VSTIMECMPH)
               api.allowCsr(CsrListFilter(Seq(CSR.VSTIMECMP, CSR.VSTIMECMPH)), accessable)
+              api.allowHostCsr(CsrListFilter(Seq(CSR.VSTIMECMP, CSR.VSTIMECMPH)), hostCheck)
 
               api.remapWhen(CSR.STIMECMP, CSR.VSTIMECMP, withGuestPrivilege)
               api.remapWhen(CSR.STIMECMPH, CSR.VSTIMECMPH, withGuestPrivilege)
             } else {
               api.readWrite(cmp, CSR.VSTIMECMP)
               api.allowCsr(CSR.VSTIMECMP, accessable)
+              api.allowHostCsr(CSR.VSTIMECMP, hostCheck)
 
               api.remapWhen(CSR.STIMECMP, CSR.VSTIMECMP, withGuestPrivilege)
             }
@@ -1131,8 +1133,25 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         adjustPrivilege := hartPrivilege(1 downto 0).asUInt
       }
 
-      when(csrReadOnly && cap.bus.decode.write || csrPrivilege > adjustPrivilege) {
+      when(csrPrivilege > adjustPrivilege) {
         cap.bus.decode.doException()
+      }
+
+      when(csrReadOnly && cap.bus.decode.write) {
+        cap.bus.decode.doHostDenied()
+      }
+    }
+
+    val defaultVirtual = p.withHypervisor generate new Area {
+      val csrPrivilege = cap.bus.decode.address(8, 2 bits)
+      val hartPrivilege = harts.reader(cap.bus.decode.hartId)(_.privilege)
+
+      when(PrivilegeMode.isGuest(hartPrivilege) && csrPrivilege === U"10") {
+        cap.bus.decode.doVirtual()
+      }
+
+      when(hartPrivilege === PrivilegeMode.VU && csrPrivilege === PrivilegeMode.S) {
+        cap.bus.decode.doVirtual()
       }
     }
 

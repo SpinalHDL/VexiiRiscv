@@ -53,9 +53,17 @@ case class CsrDecode() extends Bundle {
   val trap = Bool()
   val trapCode = Global.CODE()
   val fence = Bool()
+  val virtual = Bool()
+  val hostDenied = Bool()
 
+  def doVirtual(): Unit = {
+    virtual := True
+  }
   def doException(): Unit = {
     exception := True
+  }
+  def doHostDenied(): Unit = {
+    hostDenied := True
   }
   def doTrap(code: Int): Unit = {
     trap := True
@@ -94,6 +102,8 @@ case class CsrBus() extends Bundle {
     decode.trap := False
     decode.trapCode.assignDontCare()
     decode.fence := False
+    decode.virtual := False
+    decode.hostDenied := False
     read.halt := False
     write.halt := False
     this
@@ -124,6 +134,11 @@ trait CsrService {
   def allowCsr(csrFilter : Any, cond: Bool = True) = onDecode(csrFilter) {
     when(!cond) {
       bus.decode.doException()
+    }
+  }
+  def allowHostCsr(csrFilter : Any, cond: Bool = True) = onDecode(csrFilter) {
+    when(!cond) {
+      bus.decode.doHostDenied()
     }
   }
   def flushOnWrite(csrFilter : Any): Unit = {
@@ -206,6 +221,14 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     when(csrService.accessHartId(hartId)) {
       when (!cond) {
         csrService.bus.decode.doException()
+      }
+    }
+  }
+
+  def allowHostCsr(csrFilter : Any, cond: Bool) = csrService.onDecode(csrFilter) {
+    when(csrService.accessHartId(hartId)) {
+      when (!cond) {
+        csrService.bus.decode.doHostDenied()
       }
     }
   }
