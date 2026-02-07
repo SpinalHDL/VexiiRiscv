@@ -36,6 +36,8 @@ class IndirectCsrPlugin(val withSupervisor : Boolean, val withHypervisor : Boole
 
           CsrCondFilter(targetCsr, (iselect === indirectId) && cond)
         }
+
+        for (ireg <- iregs) api.allowCsr(CsrCondFilter(ireg, False), True)
       }
 
       val s = withSupervisor generate new Area {
@@ -49,6 +51,8 @@ class IndirectCsrPlugin(val withSupervisor : Boolean, val withHypervisor : Boole
 
           CsrCondFilter(targetCsr, (iselect === indirectId) && cond)
         }
+
+        for (ireg <- iregs) api.allowCsr(CsrCondFilter(ireg, False), True)
       }
 
       val vs = withHypervisor generate new Area {
@@ -62,6 +66,8 @@ class IndirectCsrPlugin(val withSupervisor : Boolean, val withHypervisor : Boole
 
           CsrCondFilter(targetCsr, (iselect === indirectId) && cond)
         }
+
+        for (ireg <- iregs) api.allowCsr(CsrCondFilter(ireg, False), True)
       }
     }
 
