@@ -112,6 +112,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
     }
 
     val grouped = spec.groupByLinked(_.csrFilter)
+    val condGrouped = grouped.keys.filter(_.isInstanceOf[CsrCondFilter]).map(_.asInstanceOf[CsrCondFilter]).groupByLinked(_.csrId)
 
     val fsm = new StateMachine{
       val IDLE = makeInstantEntry()
@@ -162,6 +163,8 @@ class CsrAccessPlugin(val layer : LaneLayer,
         })
         val implemented = sels.values.orR
 
+        val condImplemented = condGrouped.map(_._1 === csrAddress).orR
+
         val onDecodeDo = isValid && SEL && isActive(IDLE)
         val priorities = spec.collect { case e: CsrOnDecode => e.priority }.distinct.sorted
         for (priority <- priorities) {
@@ -209,7 +212,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         trapPort.tval := UOP.resized
         trapPort.arg := 0
         trapPort.laneAge := Execute.LANE_AGE
-        when(implemented && !bus.decode.hostDenied && bus.decode.virtual) {
+        when((implemented || condImplemented) && !bus.decode.hostDenied && bus.decode.virtual) {
           trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
         }
 
