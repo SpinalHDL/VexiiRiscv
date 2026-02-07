@@ -61,11 +61,6 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
             addressDecoder.addNeeds(mask, Masked(e.alloc.at + e.offset, ramAddressMask))
             selDecoder += csrId
           }
-          case filter: CsrCondFilter => {
-            val mask = Masked(filter.csrId, 0xFFF)
-            addressDecoder.addNeeds(mask, Masked(e.alloc.at + e.offset, ramAddressMask))
-            selDecoder += filter.csrId
-          }
           case csrId: Int => {
             is(csrId) {
               val mask = Masked(csrId, 0xFFF)
