@@ -503,6 +503,33 @@ class ParamSimple() {
   def withPerformanceScountovf = checkISA("sscofpmf")
   def withInterrutpFilter = checkISA("ssaia")
 
+  def fixIsaParams() = {
+    if(checkISA("h")) addISA("s")
+    if(checkISA("s")) addISA("u")
+
+    if(checkISA("g")) addISA("i", "m", "a", "f", "d", "s", "u")
+    if(checkISA("b")) {
+      addISA("zba", "zbb", "zbc", "zbs")
+      removeISA("b")
+    }
+
+    if(privParam.imsicInterrupts > 0) addISA("smaia", "ssaia")
+    if(withSxaia) addISA("smcsrind", "sscsrind")
+
+    if(!checkISA("s")) {
+      removeISA("sscsrind", "ssaia", "sstc")
+    }
+    if(checkISA("zihpm") || withSstc) addISA("zicntr")
+
+    if(withSupervisor) privParam.withSupervisor = true
+    if(withHypervisor) privParam.withHypervisor = true
+    if(withUser) privParam.withUser = true
+    if(withSstc) privParam.withSSTC = true
+    if(withRdTime) privParam.withRdTime = true
+    if(withInterrutpFilter) privParam.withInterrutpFilter = true
+    if(withRvc) withAlignerBuffer = true
+  }
+
   // Generate a human redable name from most of the supported configuration
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
@@ -585,7 +612,7 @@ class ParamSimple() {
     opt[Unit]("with-rva") action { (v, c) => addISA("a") }
     opt[Unit]("with-rvf") action { (v, c) => addISA("f") }
     opt[Unit]("with-rvd") action { (v, c) => addISA("f", "d") }
-    opt[Unit]("with-rvc") action { (v, c) => addISA("c"); withAlignerBuffer = true }
+    opt[Unit]("with-rvc") action { (v, c) => addISA("c") }
     opt[Unit]("with-rvZb") action { (v, c) => addISA("zba", "zbb", "zbc", "zbs") }
     opt[Unit]("with-rvZba") action { (v, c) => addISA("zba") }
     opt[Unit]("with-rvZbb") action { (v, c) => addISA("zbb") }
@@ -681,7 +708,7 @@ class ParamSimple() {
     opt[Int]("pmp-size") action { (v, c) => pmpParam.pmpSize = v }
     opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
     opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
-    opt[Unit]("with-rdtime") action { (v, c) => addISA("zicntr"); privParam.withRdTime = true }
+    opt[Unit]("with-rdtime") action { (v, c) => addISA("zicntr") }
     opt[Unit]("with-sstc") action { (v, c) => addISA("sstc") }
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
     opt[Int]("asid-width") action{ (v,c) => asidWidth = v }
@@ -712,6 +739,10 @@ class ParamSimple() {
       lsuSoftwarePrefetch = true
       lsuHardwarePrefetch = "rpt"
     }
+    checkConfig(c => {
+      fixIsaParams()
+      success
+    })
   }
 
   // Generate the VexiiRiscv plugin list out of the current SimpleParam configuration
@@ -1024,9 +1055,9 @@ class ParamSimple() {
     }
 
     plugins += new CsrRamPlugin()
-    if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
+    if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters, withScountovf = withSscofpmf)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    if(withIndirectCsr) plugins += new IndirectCsrPlugin(privParam.withSupervisor)
+    if(withIndirectCsr) plugins += new IndirectCsrPlugin(checkISA("sscsrind"))
     plugins += new PrivilegedPlugin(privParam, withHartIdInput.mux(null, hartId until hartId+hartCount))
     plugins += new TrapPlugin(trapAt = intWritebackAt)
     if(withTesterPlugin) plugins += new TesterPlugin()
