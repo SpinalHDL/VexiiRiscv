@@ -750,6 +750,8 @@ class ParamSimple() {
   def pluginsArea(hartId : Int = 0) = new Area {
     val plugins = ArrayBuffer[Hostable]()
     if(withLateAlu) assert(allowBypassFrom == 0)
+    if(withMmu && lsuL1Enable) assert(lsuL1Sets <= 64, "MMU require not more than 64 sets in the LSU L1")
+    if(withMmu && fetchL1Enable) assert(fetchL1Enable <= 64, "MMU require not more than 64 sets in the FETCH L1")
 
     val intWritebackAt = 2 //Alias for "trap at" as well
 
