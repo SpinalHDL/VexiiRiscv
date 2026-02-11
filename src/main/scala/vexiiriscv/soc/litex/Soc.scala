@@ -90,6 +90,14 @@ class SocConfig(){
   var withCpuCd = false
   var withAPlic = false
   var axiLiteForce32 = true
+  var deviceMapping = mutable.LinkedHashMap[String, BigInt](
+    "clint"   -> 0xF0010000l,
+    "plic"    -> 0xF0C00000l,
+    "aplic_m" -> 0xF0C00000l,
+    "aplic_s" -> 0xF0E00000l,
+    "imsic_m" -> 0xF1000000l,
+    "imsic_s" -> 0xF1200000l,
+  )
 
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
@@ -112,7 +120,7 @@ class SocConfig(){
     opt[Unit]("with-debug-probe-pc0") text("Allows to profile the CPU via JTAG. See ElfMapper.") action { (v, c) => withDebugProbePc0 = true }
     opt[Unit]("with-aplic") action { (v, c) => withAPlic = true }
     opt[Unit]("with-axilite-xlen") action { (v, c) => axiLiteForce32 = false }
-
+    opt[Map[String, BigInt]]("device-region").unbounded() action { (v, c) => deviceMapping ++= v }
     opt[Seq[String]]("memory-region").unbounded() action { (v, c) =>
       assert(v.length == 4, "--memory-region need 4 parameters")
       val r = new LitexMemoryRegion(SizeMapping(BigInt(v(0)), BigInt(v(1))), v(2), v(3))
@@ -235,7 +243,7 @@ class Soc(c : SocConfig) extends Component {
       bus.forceDataWidth(32)
 
       val clint = new TilelinkClintFiber()
-      clint.node at 0xF0010000l of bus
+      clint.node at deviceMapping("clint") of bus
 
       for (vexii <- vexiis) {
         vexii.bind(clint)
@@ -246,7 +254,7 @@ class Soc(c : SocConfig) extends Component {
 
         val m = new Area {
           val intc = new TilelinkAPlicFiber(APlicDomainParam.root(param))
-          intc.node at 0xF0C00000l of bus
+          intc.node at deviceMapping("aplic_m") of bus
 
           for (vexii <- vexiis) {
             vexii.bind(intc)
@@ -255,7 +263,7 @@ class Soc(c : SocConfig) extends Component {
 
         val s = withSupervisor generate new Area {
           val intc = new TilelinkAPlicFiber(APlicDomainParam.S(param))
-          intc.node at 0xF0E00000l of bus
+          intc.node at deviceMapping("aplic_s") of bus
 
           m.intc.addChildCtrl(intc)
 
@@ -287,7 +295,7 @@ class Soc(c : SocConfig) extends Component {
 
         val m = new Area {
           val msi = TilelinkImsicTriggerFiber()
-          msi.node at 0xF1000000l of bus
+          msi.node at deviceMapping("imsic_m") of bus
 
           for (vexii <- vexiis) {
             vexii.bind(msi, 3)
@@ -296,7 +304,7 @@ class Soc(c : SocConfig) extends Component {
 
         val s = withSupervisor generate new Area {
           val msi = TilelinkImsicTriggerFiber()
-          msi.node at 0xF1200000l of bus
+          msi.node at deviceMapping("imsic_s") of bus
 
           for (vexii <- vexiis) {
             vexii.bind(msi, 1)
@@ -306,7 +314,7 @@ class Soc(c : SocConfig) extends Component {
 
       val plic = !withAPlic generate new Area {
         val intc = new TilelinkPlicFiber()
-        intc.node at 0xF0C00000l of bus
+        intc.node at deviceMapping("plic") of bus
 
         for (vexii <- vexiis) {
           vexii.bind(intc)

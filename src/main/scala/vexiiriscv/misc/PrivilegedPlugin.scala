@@ -77,6 +77,7 @@ case class PrivilegedParam(var withSupervisor : Boolean,
 
   def check(): Unit = {
     assert(!(withSupervisor && !withUser))
+    assert((withSSTC && withSupervisor && withRdTime) || !withSSTC)
     assert((imsicInterrupts == 0) || (isPow2(imsicInterrupts) && imsicInterrupts >= 64 && imsicInterrupts <= 2048))
   }
 }
@@ -674,7 +675,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val sstc = new Area {
           val envcfg = new Area {
             val enable = RegInit(False)
-            val allowUpdate = Bool(p.withRdTime && p.withSSTC)
+            val allowUpdate = Bool(p.withSSTC)
 
             if (XLEN.get == 32) {
               api.read(enable, CSR.MENVCFGH, 31)
@@ -685,7 +686,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             }
           }
 
-          val logic = (p.withRdTime && p.withSSTC) generate new Area {
+          val logic = p.withSSTC generate new Area {
             val cmp = RegInit(U(64 bits, default -> true))
             val ip = RegNext(rdtime >= cmp)
 
@@ -702,7 +703,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             }
           }
 
-          val interrupt = if (p.withRdTime && p.withSSTC) logic.ip else False
+          val interrupt = if (p.withSSTC) logic.ip else False
         }
 
         val imsic = p.withImsic generate genImsicArea(CSR.SIREG, CSR.STOPEI, indirectHart.s.csrFilter(_, _))
