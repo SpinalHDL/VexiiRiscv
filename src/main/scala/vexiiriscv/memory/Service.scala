@@ -38,15 +38,10 @@ case class AddressTranslationRefillRsp() extends Bundle{
 
   val pte = new Bundle{
     val ppn =  UInt(PHYSICAL_WIDTH - 12 bits)
-    val d = Bool()
-    val a = Bool()
-    val g = Bool()
-    val u = Bool()
-    val x = Bool()
-    val w = Bool()
-    val r = Bool()
-    val v = Bool()
+    val flags = MmuEntryFlags()
   }
+
+  val address = UInt(PHYSICAL_WIDTH bits)
 
   val level = UInt(2 bits)
 }

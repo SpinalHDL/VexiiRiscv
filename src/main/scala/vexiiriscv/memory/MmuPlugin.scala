@@ -431,6 +431,7 @@ class MmuPlugin(var spec : MmuSpec,
         rsp.ae_ptw.assignDontCare()
         rsp.ae_final.assignDontCare()
         rsp.level.assignDontCare()
+        rsp.address.assignDontCare()
       }
 
 //      for((storage, sid) <- storages.zipWithIndex) {
@@ -449,15 +450,7 @@ class MmuPlugin(var spec : MmuSpec,
       o.hw  := False
       o.hx  := False
 
-      o.pte.d := load.flags.D
-      o.pte.a := load.flags.A
-      o.pte.g := load.flags.G
-      o.pte.u := load.flags.U
-      o.pte.x := load.flags.X
-      o.pte.w := load.flags.W
-      o.pte.r := load.flags.R
-      o.pte.v := load.flags.V
-
+      o.pte.flags := load.flags
       o.pte.ppn := U(load.readed.dropLow(10)).resized
     }
 
@@ -480,6 +473,7 @@ class MmuPlugin(var spec : MmuSpec,
             o.ae_ptw    := accessFault && !load.leaf
             o.ae_final  := accessFault && load.leaf //Note so sure
             o.level := spec.levels.size - 1 - levelId
+            o.address := load.levelToPhysicalAddress(levelId).resized
           }
 
           for((storage, sid) <- storages.zipWithIndex){
