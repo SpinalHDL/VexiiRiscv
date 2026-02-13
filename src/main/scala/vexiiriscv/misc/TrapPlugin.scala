@@ -414,6 +414,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
             refill.cmd.storageEnable := True
             refill.cmd.address := pending.state.tval.asUInt
             refill.cmd.storageId := pending.state.arg(3, ats.getStorageIdWidth() bits).asUInt
+            refill.rsp.ready := False
 
             val invalidate = ats.newInvalidationPort()
             invalidate.cmd.valid := False
@@ -591,6 +592,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           if(ats.mayNeedRedo) ATS_RSP.whenIsActive{
             when(atsPorts.refill.rsp.valid){
               api.harts(hartId).redo := True
+              atsPorts.refill.rsp.ready := True
               goto(JUMP) //improvment: shave one cycle
               when(atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
                 pending.state.exception := True

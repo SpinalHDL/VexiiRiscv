@@ -464,6 +464,11 @@ class MmuPlugin(var spec : MmuSpec,
         def doneLogic() : Unit = {
           refillPorts.onMask(portOhReg){port =>
             port.rsp.valid := True
+            load.rsp.ready := port.rsp.ready
+
+            when(port.rsp.ready) {
+              goto(IDLE)
+            }
           }
 
           refillPorts.map(_.rsp).foreach { o =>
@@ -475,8 +480,6 @@ class MmuPlugin(var spec : MmuSpec,
             o.level := spec.levels.size - 1 - levelId
             o.address := load.levelToPhysicalAddress(levelId).resized
           }
-
-          goto(IDLE)
         }
 
         CMD(levelId) whenIsActive{
@@ -541,7 +544,6 @@ class MmuPlugin(var spec : MmuSpec,
         }
 
         DONE(levelId) whenIsActive{
-          load.rsp.ready := True
           doneLogic
         }
       }

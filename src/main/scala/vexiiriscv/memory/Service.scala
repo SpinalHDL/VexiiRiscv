@@ -51,7 +51,7 @@ case class AddressTranslationRefillRsp() extends Bundle{
  */
 case class AddressTranslationRefill(storageWidth : Int) extends Bundle{
   val cmd = Stream(AddressTranslationRefillCmd(storageWidth))
-  val rsp = Flow(AddressTranslationRefillRsp())
+  val rsp = Stream(AddressTranslationRefillRsp())
 
   cmd.payload.setName("bits")
   rsp.payload.setName("bits")
