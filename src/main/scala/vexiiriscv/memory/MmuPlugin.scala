@@ -344,7 +344,7 @@ class MmuPlugin(var spec : MmuSpec,
     // Implement the TLB storage refill FSM
     val refill = new StateMachine{
       val IDLE = new State
-      val CMD, RSP, DONE = List.fill(spec.levels.size)(new State)
+      val CMD, RSP, REFILL, DONE = List.fill(spec.levels.size)(new State)
 
       val busy = !isActive(IDLE)
       val virtual = Reg(UInt(MIXED_WIDTH bits))
@@ -476,6 +476,45 @@ class MmuPlugin(var spec : MmuSpec,
             o.address := load.levelToPhysicalAddress(levelId).resized
           }
 
+          goto(IDLE)
+        }
+
+        CMD(levelId) whenIsActive{
+          when(cacheRefill === 0 && cacheRefillAny === False) {
+            load.cmd.valid := True
+            when(load.cmd.ready) {
+              goto(RSP(levelId))
+            }
+          }
+        }
+
+        RSP(levelId) whenIsActive{
+          if(levelId == 0) load.exception setWhen(!load.leaf)
+          when(load.rsp.valid){
+            when(load.rsp.redo){
+              load.rsp.ready := True
+              goto(CMD(levelId))
+            } otherwise {
+              levelId match {
+                case 0 => goto(REFILL(levelId))
+                case _ => {
+                  when(load.leaf || load.exception) {
+                    goto(REFILL(levelId))
+                  } otherwise {
+                    val targetLevelId = levelId - 1
+                    val targetLevel = spec.levels(targetLevelId)
+                    load.address := load.nextLevelBase
+                    load.address(log2Up(spec.entryBytes), targetLevel.physicalWidth bits) := targetLevel.vpn(virtual)
+                    load.rsp.ready := True
+                    goto(CMD(targetLevelId))
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        REFILL(levelId) whenIsActive {
           for((storage, sid) <- storages.zipWithIndex){
             val storageLevelId = storage.self.p.levels.filter(_.id <= levelId).map(_.id).max
             val storageLevel = storage.sl.find(_.slp.id == storageLevelId).get
@@ -498,43 +537,7 @@ class MmuPlugin(var spec : MmuSpec,
               storageLevel.allocId.increment()
             }
           }
-
-          goto(IDLE)
-        }
-
-        CMD(levelId) whenIsActive{
-          when(cacheRefill === 0 && cacheRefillAny === False) {
-            load.cmd.valid := True
-            when(load.cmd.ready) {
-              goto(RSP(levelId))
-            }
-          }
-        }
-
-        RSP(levelId) whenIsActive{
-          if(levelId == 0) load.exception setWhen(!load.leaf)
-          when(load.rsp.valid){
-            when(load.rsp.redo){
-              load.rsp.ready := True
-              goto(CMD(levelId))
-            } otherwise {
-              levelId match {
-                case 0 => goto(DONE(levelId))
-                case _ => {
-                  when(load.leaf || load.exception) {
-                    goto(DONE(levelId))
-                  } otherwise {
-                    val targetLevelId = levelId - 1
-                    val targetLevel = spec.levels(targetLevelId)
-                    load.address := load.nextLevelBase
-                    load.address(log2Up(spec.entryBytes), targetLevel.physicalWidth bits) := targetLevel.vpn(virtual)
-                    load.rsp.ready := True
-                    goto(CMD(targetLevelId))
-                  }
-                }
-              }
-            }
-          }
+          goto(DONE(levelId))
         }
 
         DONE(levelId) whenIsActive{
