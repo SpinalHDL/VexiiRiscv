@@ -141,21 +141,7 @@ class MmuTlbStorage(
   }
 }
 
-
-/**
- * Implement the RISC-V MMU using a N-way set associative TLB storage. This fit very well with FPGA which have distributed memories.
- * For FPGA that do not have that, the MmuPortParameter can be configured to have a low number of sets or use 1 cycle delay to be inferable as block ram.
- *
- * Plugins which uses the MmuPlugin can request TLB storage, then they can require the MmuPlugin to bind a new port on a existing pipeline using that TLB storage.
- * A given TLB storage can be used by multiple MMU ports.
- *
- * MMU miss will not by itself trigger a TLB refill. This is instead triggered by the TrapPlugin.
- */
-class MmuPlugin(var spec : MmuSpec,
-                var physicalWidth : Int,
-                var asidWidth : Int) extends FiberPlugin with AddressTranslationService{
-
-
+trait GenericMmuPlugin extends AddressTranslationService {
   override def mayNeedRedo: Boolean = true
 
   case class PortSpec(stages: Seq[NodeBaseApi],
@@ -202,7 +188,20 @@ class MmuPlugin(var spec : MmuSpec,
       )
     ).rsp
   }
+}
 
+/**
+ * Implement the RISC-V MMU using a N-way set associative TLB storage. This fit very well with FPGA which have distributed memories.
+ * For FPGA that do not have that, the MmuPortParameter can be configured to have a low number of sets or use 1 cycle delay to be inferable as block ram.
+ *
+ * Plugins which uses the MmuPlugin can request TLB storage, then they can require the MmuPlugin to bind a new port on a existing pipeline using that TLB storage.
+ * A given TLB storage can be used by multiple MMU ports.
+ *
+ * MMU miss will not by itself trigger a TLB refill. This is instead triggered by the TrapPlugin.
+ */
+class MmuPlugin(var spec : MmuSpec,
+                var physicalWidth : Int,
+                var asidWidth : Int) extends FiberPlugin with GenericMmuPlugin{
   val api = during build new Area{
     val fetchTranslationEnable = Bool()
     val lsuTranslationEnable = Bool()
