@@ -521,7 +521,9 @@ class MmuPlugin(var spec : MmuSpec,
               levelId match {
                 case 0 => goto(REFILL(levelId))
                 case _ => {
-                  when(load.leaf || load.exception) {
+                  when(load.exception) {
+                    goto(DONE(levelId))
+                  } elsewhen(load.leaf) {
                     goto(REFILL(levelId))
                   } otherwise {
                     val targetLevelId = levelId - 1
