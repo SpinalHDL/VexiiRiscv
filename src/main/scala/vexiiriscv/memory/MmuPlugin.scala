@@ -33,6 +33,7 @@ case class MmuPortParameter(var readAt : Int,
 
 }
 
+case class MmuStorageSpec(p: MmuStorageParameter, pmuEventId : Int) extends Nameable
 
 case class MmuSpec(levels : Seq[MmuLevel],
                    entryBytes : Int,
@@ -79,6 +80,67 @@ object MmuSpec{
   )
 }
 
+case class MmuTlbStorageEntryParam(checkUser: Boolean)
+
+class MmuTlbStorageEntry(
+  spec : MmuSpec,
+  physicalWidth : Int,
+  p : MmuTlbStorageEntryParam,
+  levelId : Int,
+  depth : Int
+) extends Bundle {
+  def vw = spec.levels.drop(levelId).map(_.virtualWidth).sum
+  def pw = spec.levels.drop(levelId).map(_.physicalWidth).sum-(spec.physicalWidth-physicalWidth)
+
+  val valid = Bool()
+  val virtualAddress  = UInt(vw-log2Up(depth) bits)
+  val physicalAddress = UInt(pw bits)
+  val allowRead, allowWrite, allowExecute = Bool()
+  val allowUser = p.checkUser generate Bool()
+
+  def hit(address : UInt) = /*valid && */virtualAddress === address(spec.levels(levelId).virtualOffset + log2Up(depth), vw - log2Up(depth) bits)
+  def physicalAddressFrom(address : UInt) = physicalAddress @@ address(0, spec.levels(levelId).physicalOffset bits)
+}
+
+class MmuTlbStorage(
+  spec : MmuSpec,
+  physicalWidth : Int,
+  tsp : MmuTlbStorageEntryParam,
+  ss : MmuStorageSpec
+) extends Composite(ss, "logic", false) {
+  def newTlbEntry(level: Int, depth: Int) = new MmuTlbStorageEntry(spec, physicalWidth, tsp, level, depth)
+
+  val sl = for(e <- ss.p.levels) yield new Area{
+    val slp = e
+    val level = spec.levels(slp.id)
+    def newEntry() = newTlbEntry(slp.id, slp.sets)
+    val ways = List.fill(slp.ways)(Mem.fill(slp.sets)(newEntry()))
+    val lineRange = level.virtualRange.low + log2Up(slp.sets) -1 downto level.virtualRange.low
+
+    val write = new Area{
+      val mask    = Bits(slp.ways bits)
+      val address = UInt(log2Up(slp.sets) bits)
+      val data    = newEntry()
+
+      mask := 0
+      address.assignDontCare()
+      data.assignDontCare()
+
+      for((way, sel) <- (ways, mask.asBools).zipped){
+        way.write(address, data, sel)
+      }
+    }
+    val allocId = Counter(slp.ways)
+
+    val keys = new Area {
+      setName(s"MMU_L${e.id}")
+      val ENTRIES = Payload(Vec.fill(slp.ways)(newEntry()))
+      val HITS_PRE_VALID = Payload(Bits(slp.ways bits))
+      val HITS = Payload(Bits(slp.ways bits))
+    }
+  }
+}
+
 
 /**
  * Implement the RISC-V MMU using a N-way set associative TLB storage. This fit very well with FPGA which have distributed memories.
@@ -100,7 +162,7 @@ class MmuPlugin(var spec : MmuSpec,
                       req: AddressTranslationReq,
                       usage : AddressTranslationPortUsage,
                       pp: MmuPortParameter,
-                      ss : StorageSpec,
+                      ss : MmuStorageSpec,
                       rsp : AddressTranslationRsp){
     val readStage = stages(pp.readAt)
     val hitsStage = stages(pp.hitsAt)
@@ -109,12 +171,11 @@ class MmuPlugin(var spec : MmuSpec,
   }
   val portSpecs = ArrayBuffer[PortSpec]()
 
-  case class StorageSpec(p: MmuStorageParameter, pmuEventId : Int) extends Nameable
-  val storageSpecs = ArrayBuffer[StorageSpec]()
+  val storageSpecs = ArrayBuffer[MmuStorageSpec]()
 
   override def newStorage(pAny: Any, pmuEventId : Int) : Any = {
     val p = pAny.asInstanceOf[MmuStorageParameter]
-    storageSpecs.addRet(StorageSpec(p, pmuEventId))
+    storageSpecs.addRet(MmuStorageSpec(p, pmuEventId))
   }
 
   override def getStorageId(s: Any): Int = storageSpecs.indexOf(s)
@@ -129,7 +190,7 @@ class MmuPlugin(var spec : MmuSpec,
                                   portSpec: Any,
                                   storageSpec: Any) = {
     val pp = portSpec.asInstanceOf[MmuPortParameter]
-    val ss = storageSpec.asInstanceOf[StorageSpec]
+    val ss = storageSpec.asInstanceOf[MmuStorageSpec]
     portSpecs.addRet(
       new PortSpec(
         stages      = stages,
@@ -182,18 +243,6 @@ class MmuPlugin(var spec : MmuSpec,
 
     def physCap(range : Range) = (range.high min physicalWidth-1) downto range.low
 
-    case class StorageEntry(levelId : Int, depth : Int) extends Bundle {
-      val vw = spec.levels.drop(levelId).map(_.virtualWidth).sum
-      val pw = spec.levels.drop(levelId).map(_.physicalWidth).sum-(spec.physicalWidth-physicalWidth)
-      val valid = Bool()
-      val virtualAddress  = UInt(vw-log2Up(depth) bits)
-      val physicalAddress = UInt(pw bits)
-      val allowRead, allowWrite, allowExecute, allowUser = Bool()
-
-      def hit(address : UInt) = /*valid && */virtualAddress === address(spec.levels(levelId).virtualOffset + log2Up(depth), vw - log2Up(depth) bits)
-      def physicalAddressFrom(address : UInt) = physicalAddress @@ address(0, spec.levels(levelId).physicalOffset bits)
-    }
-
     assert(HART_COUNT.get == 1)
     val satp = new Area {
       val (modeOffset, modeWidth, ppnWidth, asidOffset, asidWidthMax) = XLEN.get match {
@@ -229,37 +278,8 @@ class MmuPlugin(var spec : MmuSpec,
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
     // Implement the hardware for all the TLB storages
-    val storages = for(ss <- storageSpecs) yield new Composite(ss, "logic", false){
-      val sl = for(e <- ss.p.levels) yield new Area{
-        val slp = e
-        val level = spec.levels(slp.id)
-        def newEntry() = StorageEntry(slp.id, slp.sets)
-        val ways = List.fill(slp.ways)(Mem.fill(slp.sets)(newEntry()))
-        val lineRange = level.virtualRange.low + log2Up(slp.sets) -1 downto level.virtualRange.low
-
-        val write = new Area{
-          val mask    = Bits(slp.ways bits)
-          val address = UInt(log2Up(slp.sets) bits)
-          val data    = newEntry()
-
-          mask := 0
-          address.assignDontCare()
-          data.assignDontCare()
-
-          for((way, sel) <- (ways, mask.asBools).zipped){
-            way.write(address, data, sel)
-          }
-        }
-        val allocId = Counter(slp.ways)
-
-        val keys = new Area {
-          setName(s"MMU_L${e.id}")
-          val ENTRIES = Payload(Vec.fill(slp.ways)(newEntry()))
-          val HITS_PRE_VALID = Payload(Bits(slp.ways bits))
-          val HITS = Payload(Bits(slp.ways bits))
-        }
-      }
-    }
+    val tlbGenerateParam = MmuTlbStorageEntryParam(checkUser = true)
+    val storages = for(ss <- storageSpecs) yield new MmuTlbStorage(spec, physicalWidth, tlbGenerateParam, ss)
 
     assert(HART_COUNT.get == 1)
     val isMachine = priv.getPrivilege(0) === PrivilegeMode.M
@@ -301,7 +321,7 @@ class MmuPlugin(var spec : MmuSpec,
         val hit = hits.orR
         val oh = OHMasking.firstV2(hits)
 
-        def entriesMux[T <: Data](f : StorageEntry => T) : T = OhMux.or(oh, entries.map(f))
+        def entriesMux[T <: Data](f : MmuTlbStorageEntry => T) : T = OhMux.or(oh, entries.map(f))
         val lineAllowExecute = entriesMux(_.allowExecute)
         val lineAllowRead    = entriesMux(_.allowRead)
         val lineAllowWrite   = entriesMux(_.allowWrite)
