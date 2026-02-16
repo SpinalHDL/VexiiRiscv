@@ -202,6 +202,8 @@ trait GenericMmuPlugin extends AddressTranslationService {
 class MmuPlugin(var spec : MmuSpec,
                 var physicalWidth : Int,
                 var asidWidth : Int) extends FiberPlugin with GenericMmuPlugin{
+  override def isShadowMmu : Boolean = false
+
   val api = during build new Area{
     val fetchTranslationEnable = Bool()
     val lsuTranslationEnable = Bool()

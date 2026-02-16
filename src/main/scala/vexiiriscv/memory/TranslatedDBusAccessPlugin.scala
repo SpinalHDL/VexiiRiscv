@@ -12,26 +12,28 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
 
   val logic = during setup new Area{
     val access = host[DBusAccessService]
-    /* TODO: switch to stage 2 port */
-    val ats = host[AddressTranslationService]
+    val ats = host.findOption[AddressTranslationService](_.isShadowMmu)
     val accessLock = retains(access.accessRetainer)
-    val atsPortsLock = retains(ats.portsLock)
+    val withAts = ats.isDefined
+    val atsPortsLock = retains(Seq() ++ ats.map(_.portsLock))
 
     awaitBuild()
 
     val accessBus = access.newDBusAccess()
     accessLock.release()
 
-    val atsPort = ats.newRefillPort()
+    val atsPort = withAts generate ats.get.newRefillPort()
     atsPortsLock.release()
 
     accessRetainer.await()
 
-    atsPort.cmd.valid         := False
-    atsPort.cmd.address       := U(0)
-    atsPort.cmd.storageEnable := False
-    atsPort.cmd.storageId     := U(0)
-    atsPort.rsp.ready         := False
+    if (withAts){
+      atsPort.cmd.valid         := False
+      atsPort.cmd.address       := U(0)
+      atsPort.cmd.storageEnable := False
+      atsPort.cmd.storageId     := U(0)
+      atsPort.rsp.ready         := False
+    }
 
     val cmd = accessBus.cmd
     val rsp = accessBus.rsp
@@ -50,11 +52,12 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
     }
 
     val fsm = for (tda <- dbusAccesses) yield new StateMachine {
+      val generateTransPort = withAts && tda.requestGuest
       val CMD, RSP = new State
       val ATS = new State
       val tcmd = tda.cmd
       val trsp = tda.rsp
-      val size = tda.requestGuest generate Reg(cloneOf(tcmd.size))
+      val size = generateTransPort generate Reg(cloneOf(tcmd.size))
 
       setEntry(CMD)
 
@@ -63,7 +66,7 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
       CMD whenIsActive {
         when(tcmd.valid) {
           val guestCtx = WhenBuilder()
-          if(tda.requestGuest) guestCtx.when(tcmd.guest) {
+          if(generateTransPort) guestCtx.when(tcmd.guest) {
             atsPort.cmd.valid   := True
             atsPort.cmd.address := tcmd.address.resized
             when(atsPort.cmd.ready) {
@@ -84,7 +87,7 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
         }
       }
 
-      if(tda.requestGuest) ATS whenIsActive {
+      if(generateTransPort) ATS whenIsActive {
         when(atsPort.rsp.valid) {
           /* check permission */
           when (atsPort.rsp.pageFault || atsPort.rsp.accessFault) {

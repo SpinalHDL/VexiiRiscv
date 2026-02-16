@@ -72,6 +72,7 @@ case class AddressTranslationInvalidation() extends Bundle {
  * Implemented by the MmuPlugin, allows other plugins to create new address translation interfaces
  */
 trait AddressTranslationService extends Area {
+  def isShadowMmu : Boolean
   def mayNeedRedo : Boolean
   val storageLock = Retainer()
   val portsLock = Retainer()

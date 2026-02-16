@@ -15,7 +15,8 @@ import scala.collection.mutable.ArrayBuffer
  * That way, the plugins like the LSU/Fetch always have a MMU-like interface, which symplify their code.
  */
 
-class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with AddressTranslationService {
+class StaticTranslationPlugin(var physicalWidth: Int, val translationLevel : Int = 0) extends FiberPlugin with AddressTranslationService {
+  override def isShadowMmu : Boolean = translationLevel != 0
   override def mayNeedRedo: Boolean = false
   override def newStorage(pAny: Any, pmuStorageId : Int): Any = { }
   override def getStorageId(s: Any): Int = 0
