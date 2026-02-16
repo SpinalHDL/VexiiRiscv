@@ -138,7 +138,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
     val lsul1 = host.get[LsuL1Service]
     val pcs = host[PcService]
     val hp = host.get[HistoryPlugin]
-    val ats = host[AddressTranslationService]
+    val ats = host.find[AddressTranslationService](!_.isShadowMmu)
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
     val invalidationLocks = retains(fl1p.map(_.invalidationRetainer).toList ++ lsu.map(_.invalidationRetainer))

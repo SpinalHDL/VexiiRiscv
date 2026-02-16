@@ -32,7 +32,7 @@ class TesterPlugin extends FiberPlugin{
   }
 
   val ptw = during setup (host.get[MmuPlugin].nonEmpty generate new Area{
-    val ats = host[AddressTranslationService]
+    val ats = host.find[AddressTranslationService](!_.isShadowMmu)
     val earlyLock = retains(ats.portsLock)
 
     awaitBuild()

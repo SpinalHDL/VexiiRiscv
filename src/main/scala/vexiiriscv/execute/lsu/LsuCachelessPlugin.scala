@@ -75,7 +75,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
     val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
     val srcp = host.find[SrcPlugin](_.layer == layer)
-    val ats = host[AddressTranslationService]
+    val ats = host.find[AddressTranslationService](!_.isShadowMmu)
     val ps = host[PmpService]
     val pp = host[PrivilegedPlugin]
     val ts = host[TrapService]

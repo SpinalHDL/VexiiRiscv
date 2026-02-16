@@ -74,7 +74,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val pcp = host[PcService]
     val rp = host[ReschedulePlugin]
     val ts = host[TrapService]
-    val ats = host[AddressTranslationService]
+    val ats = host.find[AddressTranslationService](!_.isShadowMmu)
     val priv = host[PrivilegedPlugin]
     val ps = host[PmpService]
     val pcs = host.get[PerformanceCounterService]

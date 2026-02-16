@@ -45,7 +45,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
     val ps = host[PmpService]
     val priv = host[PrivilegedPlugin]
     val ts = host[TrapService]
-    val ats = host[AddressTranslationService]
+    val ats = host.find[AddressTranslationService]((!_.isShadowMmu))
     val buildBefore = retains(pp.elaborationLock, ats.portsLock, ps.portsLock)
     val atsStorageLock = retains(ats.storageLock)
     val trapLock =  ts.trapLock()

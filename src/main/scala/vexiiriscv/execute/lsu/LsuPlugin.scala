@@ -120,7 +120,7 @@ class LsuPlugin(var layer : LaneLayer,
     val elp = host.find[ExecuteLanePlugin](_ == layer.lane)
     val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
     val srcp = host.find[SrcPlugin](_.layer == layer)
-    val ats = host[AddressTranslationService]
+    val ats = host.find[AddressTranslationService](!_.isShadowMmu)
     val ps = host[PmpService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
