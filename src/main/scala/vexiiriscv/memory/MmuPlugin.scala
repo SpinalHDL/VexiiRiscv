@@ -218,7 +218,7 @@ class MmuPlugin(var spec : MmuSpec,
   val logic = during setup new Area{
     val priv = host[PrivilegedPlugin]
     val csr = host[CsrAccessPlugin]
-    val access = host[DBusAccessService]
+    val access = host[TranslatedDBusAccessService]
     val ram = host[CsrRamService]
     val pcs = host.get[PerformanceCounterService]
 
@@ -236,7 +236,7 @@ class MmuPlugin(var spec : MmuSpec,
     TVAL_WIDTH.set(MIXED_WIDTH)
     assert(VIRTUAL_WIDTH.get == XLEN.get || XLEN.get > VIRTUAL_WIDTH.get && VIRTUAL_WIDTH.get > physicalWidth)
 
-    val accessBus = access.newDBusAccess()
+    val accessBus = access.newDBusAccess(priv.implementHypervisor)
 
     accessLock.release()
 
@@ -420,11 +420,12 @@ class MmuPlugin(var spec : MmuSpec,
         cmd.valid             := False
         cmd.address           := address.resized
         cmd.size              := U(log2Up(spec.entryBytes))
+        cmd.guest             := False
 
         val flags = readed.resized.as(MmuEntryFlags())
         val leaf = flags.R || flags.X
         val reservedFault = (readed & spec.pteReserved).orR
-        val exception = !flags.V || (!flags.R && flags.W) || rsp.error || (!leaf && (flags.D | flags.A | flags.U)) || reservedFault
+        val exception = !flags.V || (!flags.R && flags.W) || rsp.error.orR || (!leaf && (flags.D | flags.A | flags.U)) || reservedFault
         val levelToPhysicalAddress = List.fill(spec.levels.size)(UInt(spec.physicalWidth bits))
         val levelException = List.fill(spec.levels.size)(False)
         val nextLevelBase = U(0, PHYSICAL_WIDTH bits)
@@ -475,7 +476,7 @@ class MmuPlugin(var spec : MmuSpec,
 
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
         val pteFault = (load.exception || load.levelException(levelId) || !load.flags.A) || (levelId == 0).mux(!load.leaf, False)
-        val pteReadError = load.rsp.error
+        val pteReadError = load.rsp.error.orR
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
         val pageFault = !pteReadError && pteFault
         val accessFault = pteReadError || !pteFault && leafAccessFault

@@ -94,6 +94,7 @@ case class ExceptionSpec(id: Int, delegators: List[Delegator])
  * - Debug interface (RISC-V debug spec)
  */
 class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends FiberPlugin with CommitService with LsuTriggerService{
+  def implementHypervisor = p.withHypervisor
   def implementSupervisor = p.withSupervisor
   def implementUser = p.withUser
   def implementUserTrap = p.withUserTrap

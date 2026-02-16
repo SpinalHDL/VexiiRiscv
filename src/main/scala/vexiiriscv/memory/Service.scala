@@ -164,3 +164,32 @@ case class DBusAccessRsp(refillCount : Int) extends Bundle {
   val waitAny  = Bool()
 }
 
+/*
+ * Two-stage translation abstract
+ */
+trait TranslatedDBusAccessService{
+  def accessRefillCount : Int
+  def accessWake: Bits
+  def newDBusAccess(requestGuest: Boolean) : TranslatedDBusAccess = dbusAccesses.addRet(new TranslatedDBusAccess(accessRefillCount, requestGuest))
+  val dbusAccesses = ArrayBuffer[TranslatedDBusAccess]()
+  val accessRetainer = Retainer()
+}
+
+case class TranslatedDBusAccess(refillCount : Int, requestGuest : Boolean) extends Bundle {
+  val cmd = Stream(TranslatedDBusAccessCmd(requestGuest))
+  val rsp = Flow(TranslatedDBusAccessRsp(refillCount))
+}
+
+case class TranslatedDBusAccessCmd(requestGuest : Boolean) extends Bundle {
+  val address = Global.PHYSICAL_ADDRESS()
+  val guest = requestGuest generate Bool()
+  val size = UInt(2 bits)
+}
+
+case class TranslatedDBusAccessRsp(refillCount : Int) extends Bundle {
+  val data = Bits(Riscv.XLEN bits)
+  val error = Bits(2 bits)
+  val redo = Bool()
+  val waitSlot = Bits(refillCount bits)
+  val waitAny  = Bool()
+}
