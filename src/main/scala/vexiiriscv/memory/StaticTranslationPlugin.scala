@@ -46,11 +46,13 @@ class StaticTranslationPlugin(var physicalWidth: Int, val translationLevel : Int
   override def getSignExtension(kind: AddressTranslationPortUsage, rawAddress: UInt): Bool = False
 
   val logic = during build new Area {
-    PHYSICAL_WIDTH.set(physicalWidth)
-    VIRTUAL_WIDTH.set(physicalWidth)
-    MIXED_WIDTH.set(physicalWidth)
-    PC_WIDTH.set(physicalWidth)
-    TVAL_WIDTH.set(physicalWidth)
+    if (!isShadowMmu) {
+      PHYSICAL_WIDTH.set(physicalWidth)
+      VIRTUAL_WIDTH.set(physicalWidth)
+      MIXED_WIDTH.set(physicalWidth)
+      PC_WIDTH.set(physicalWidth)
+      TVAL_WIDTH.set(physicalWidth)
+    }
 
     portsLock.await()
     assert(refillPorts.isEmpty)
