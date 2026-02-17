@@ -139,10 +139,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
     val pcs = host[PcService]
     val hp = host.get[HistoryPlugin]
     val ats = host.find[AddressTranslationService](!_.isShadowMmu)
+    val sats = host.find[AddressTranslationService](_.isShadowMmu)
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
     val invalidationLocks = retains(fl1p.map(_.invalidationRetainer).toList ++ lsu.map(_.invalidationRetainer))
-    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock) ++ hp.map(_.elaborationLock))
+    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock, sats.portsLock) ++ hp.map(_.elaborationLock))
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
 
@@ -153,6 +154,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
     val trapArgWidths = ArrayBuffer[Int](3)
     if(ats.mayNeedRedo) trapArgWidths += 3+ats.getStorageIdWidth()
+    if(sats.mayNeedRedo) trapArgWidths += 3+sats.getStorageIdWidth()
     TRAP_ARG_WIDTH.set(trapArgWidths.max)
 
     trapLock.await()
@@ -425,6 +427,23 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
             resetToRunConditions += invalidated
           }
 
+          val satsPorts = sats.mayNeedRedo generate new Area{
+            val refill = sats.newRefillPort()
+            refill.cmd.valid := False
+            refill.cmd.guest := pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId))
+            refill.cmd.storageEnable := True
+            refill.cmd.address := pending.state.tval.asUInt
+            refill.cmd.storageId := pending.state.arg(3, sats.getStorageIdWidth() bits).asUInt
+            refill.rsp.ready := False
+
+            val invalidate = sats.newInvalidationPort()
+            invalidate.cmd.valid := False
+            invalidate.cmd.hartId := hartId
+
+            val invalidated = RegInit(False) setWhen(invalidate.cmd.fire)
+            invalidate.cmd.valid setWhen(!invalidated)
+            resetToRunConditions += invalidated
+          }
 
           // Used to wait until everybody is ready after reset
           RESET.whenIsActive{

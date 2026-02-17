@@ -12,22 +12,22 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
 
   val logic = during setup new Area{
     val access = host[DBusAccessService]
-    val ats = host.findOption[AddressTranslationService](_.isShadowMmu)
+    val ats = host.find[AddressTranslationService](_.isShadowMmu)
     val accessLock = retains(access.accessRetainer)
-    val withAts = ats.isDefined
-    val atsPortsLock = retains(Seq() ++ ats.map(_.portsLock))
+    val withAtsRedo = ats.mayNeedRedo
+    val atsPortsLock = retains(ats.portsLock)
 
     awaitBuild()
 
     val accessBus = access.newDBusAccess()
     accessLock.release()
 
-    val atsPort = withAts generate ats.get.newRefillPort()
+    val atsPort = withAtsRedo generate ats.newRefillPort()
     atsPortsLock.release()
 
     accessRetainer.await()
 
-    if (withAts){
+    if (withAtsRedo) {
       atsPort.cmd.valid         := False
       atsPort.cmd.address       := U(0)
       atsPort.cmd.storageEnable := False
@@ -52,7 +52,7 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
     }
 
     val fsm = for (tda <- dbusAccesses) yield new StateMachine {
-      val generateTransPort = withAts && tda.requestGuest
+      val generateTransPort = withAtsRedo && tda.requestGuest
       val CMD, RSP = new State
       val ATS = new State
       val tcmd = tda.cmd

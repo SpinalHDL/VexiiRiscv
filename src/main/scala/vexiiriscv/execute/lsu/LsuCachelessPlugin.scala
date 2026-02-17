@@ -76,17 +76,19 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host.find[AddressTranslationService](!_.isShadowMmu)
+    val sats = host.find[AddressTranslationService](_.isShadowMmu)
     val ps = host[PmpService]
     val pp = host[PrivilegedPlugin]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
-    val buildBefore = retains(elp.pipelineLock, ats.portsLock, ps.portsLock)
-    val atsStorageLock = retains(ats.storageLock)
+    val buildBefore = retains(elp.pipelineLock, ats.portsLock, sats.portsLock, ps.portsLock)
+    val atsStorageLock = retains(ats.storageLock, sats.storageLock)
     val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))
     awaitBuild()
     Riscv.RVA.set(withAmo)
 
     val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.DCACHE_TLB_CYCLES)
+    val shadowTranslationStorage = sats.newStorage(translationStorageParameter, PerformanceCounterService.DCACHE_TLB_CYCLES)
     atsStorageLock.release()
 
     val trapPort = ts.newTrap(layer.lane.getExecuteAge(forkAt), Execute.LANE_AGE_WIDTH)

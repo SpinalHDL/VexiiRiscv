@@ -121,6 +121,7 @@ class LsuPlugin(var layer : LaneLayer,
     val ifp = host.find[IntFormatPlugin](_.lane == layer.lane)
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host.find[AddressTranslationService](!_.isShadowMmu)
+    val sats = host.find[AddressTranslationService](_.isShadowMmu)
     val ps = host[PmpService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
@@ -130,14 +131,15 @@ class LsuPlugin(var layer : LaneLayer,
     val pcs = host.get[PerformanceCounterService]
     val hp = host.get[PrefetcherPlugin]
     val fpwbp = host.findOption[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
-    val buildBefore = retains(elp.pipelineLock, ats.portsLock, ps.portsLock)
-    val earlyLock = retains(List(ats.storageLock) ++ pcs.map(_.elaborationLock).toList)
+    val buildBefore = retains(elp.pipelineLock, ats.portsLock, sats.portsLock, ps.portsLock)
+    val earlyLock = retains(List(ats.storageLock, sats.storageLock) ++ pcs.map(_.elaborationLock).toList)
     val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock, cap.csrLock, ds.elaborationLock) ++ fpwbp.map(_.elaborationLock))
     awaitBuild()
     Riscv.RVA.set(withRva)
 
     // * Instanciate a few hardware interfaces *
     val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.DCACHE_TLB_CYCLES)
+    val shadowTranslationStorage = sats.newStorage(translationStorageParameter, PerformanceCounterService.DCACHE_TLB_CYCLES)
     val fpwb = fpwbp.map(_.createPort(wbAt))
 
     val events = pcs.map(p => new Area {

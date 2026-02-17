@@ -46,8 +46,9 @@ class FetchCachelessPlugin(var wordWidth : Int,
     val priv = host[PrivilegedPlugin]
     val ts = host[TrapService]
     val ats = host.find[AddressTranslationService]((!_.isShadowMmu))
-    val buildBefore = retains(pp.elaborationLock, ats.portsLock, ps.portsLock)
-    val atsStorageLock = retains(ats.storageLock)
+    val sats = host.find[AddressTranslationService](_.isShadowMmu)
+    val buildBefore = retains(pp.elaborationLock, ats.portsLock, sats.portsLock, ps.portsLock)
+    val atsStorageLock = retains(ats.storageLock, sats.storageLock)
     val trapLock =  ts.trapLock()
     awaitBuild()
 
@@ -55,6 +56,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
     Fetch.WORD_WIDTH.set(wordWidth)
 
     val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
+    val shadowTranslationStorage = sats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
     atsStorageLock.release()
 
     val trapPort = ts.newTrap(pp.getAge(joinAt), 0)

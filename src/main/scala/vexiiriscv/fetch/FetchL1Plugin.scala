@@ -75,12 +75,13 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val rp = host[ReschedulePlugin]
     val ts = host[TrapService]
     val ats = host.find[AddressTranslationService](!_.isShadowMmu)
+    val sats = host.find[AddressTranslationService](_.isShadowMmu)
     val priv = host[PrivilegedPlugin]
     val ps = host[PmpService]
     val pcs = host.get[PerformanceCounterService]
     val prefetcher = host.get[PrefetcherPlugin].map(_.io)
-    val buildBefore = retains(pp.elaborationLock, ats.portsLock, ps.portsLock)
-    val atsStorageLock = retains(ats.storageLock)
+    val buildBefore = retains(pp.elaborationLock, ats.portsLock, sats.portsLock, ps.portsLock)
+    val atsStorageLock = retains(ats.storageLock, sats.storageLock)
     val setupLock = retains(List(ts.trapLock, pcp.elaborationLock, rp.elaborationLock) ++ pcs.map(_.elaborationLock).toList)
     awaitBuild()
 
@@ -92,6 +93,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     ))
 
     val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
+    val shadowTranslationStorage = sats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
     atsStorageLock.release()
 
     val age = pp.getAge(ctrlAt, false)
