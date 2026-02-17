@@ -12,7 +12,7 @@ import spinal.lib.bus.tilelink.DebugId
 import spinal.lib.system.tag.{MappedTransfers, PmaRegion}
 import vexiiriscv._
 import vexiiriscv.Global._
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort, PmpService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, PmaLoad, PmaLogic, PmaPort, PmpService}
 import vexiiriscv.misc.{PerformanceCounterService, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.CSR
 
@@ -91,10 +91,16 @@ class FetchCachelessPlugin(var wordWidth : Int,
     }
 
     val onAddress = new pp.Fetch(addressAt) {
+      val request = AddressTranslationReq(
+        PRE_ADDRESS    = Fetch.WORD_PC,
+        LOAD           = insert(False),
+        STORE          = insert(False),
+        EXECUTE        = insert(True),
+        FORCE_PHYSICAL = insert(False)
+      )
       val translationPort = ats.newTranslationPort(
         nodes = Seq(down),
-        rawAddress = Fetch.WORD_PC,
-        forcePhysical = insert(False),
+        req = request,
         usage = AddressTranslationPortUsage.FETCH,
         portSpec = translationPortParameter,
         storageSpec = translationStorage
@@ -181,7 +187,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
       }
 
-      when(tpk.PAGE_FAULT || !tpk.ALLOW_EXECUTE) {
+      when(tpk.PAGE_FAULT) {
         TRAP := True
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT

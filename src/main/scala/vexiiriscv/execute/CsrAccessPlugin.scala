@@ -212,7 +212,9 @@ class CsrAccessPlugin(val layer : LaneLayer,
           (interface.sels.values, sels.values).zipped.foreach(_ := _)
           when(onDecodeDo) {
             when(!trap && !bus.decode.trap) {
-              goto(READ)
+              when(!bus.decode.fence) {
+                goto(READ)
+              }
             }
             when(sampled) {
               when(trapReg) {
@@ -222,7 +224,9 @@ class CsrAccessPlugin(val layer : LaneLayer,
                 trapPort.valid := True
                 unfreeze := elp.isFreezed()
               } otherwise {
-                goto(READ)
+                when(!bus.decode.fence) {
+                  goto(READ)
+                }
                 when(busTrapReg) {
                   bypass(Global.TRAP) := True
                   flushPort.valid := True

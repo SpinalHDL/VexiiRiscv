@@ -20,10 +20,34 @@ object AddressTranslationPortUsage{
 case class AddressTranslationRefillCmd(storageWidth : Int) extends Bundle{
   val address = MIXED_ADDRESS()
   val storageId = UInt(storageWidth bits)
+  val storageEnable = Bool()
 }
 
 case class AddressTranslationRefillRsp() extends Bundle{
   val pageFault, accessFault = Bool()
+
+  val ae_ptw = Bool()
+  val ae_final = Bool()
+
+  val pf  = Bool()
+  val gf  = Bool()
+  val hr  = Bool()
+  val hw  = Bool()
+  val hx  = Bool()
+
+  val pte = new Bundle{
+    val ppn =  UInt(PHYSICAL_WIDTH - 12 bits)
+    val d = Bool()
+    val a = Bool()
+    val g = Bool()
+    val u = Bool()
+    val x = Bool()
+    val w = Bool()
+    val r = Bool()
+    val v = Bool()
+  }
+
+  val level = UInt(2 bits)
 }
 
 /**
@@ -32,6 +56,9 @@ case class AddressTranslationRefillRsp() extends Bundle{
 case class AddressTranslationRefill(storageWidth : Int) extends Bundle{
   val cmd = Stream(AddressTranslationRefillCmd(storageWidth))
   val rsp = Flow(AddressTranslationRefillRsp())
+
+  cmd.payload.setName("bits")
+  rsp.payload.setName("bits")
 }
 
 case class AddressTranslationInvalidationCmd() extends Bundle {
@@ -61,8 +88,7 @@ trait AddressTranslationService extends Area {
 
   // New Address translation interfaces are directly bound into a provided pipeline (nodes)
   def newTranslationPort(nodes: Seq[NodeBaseApi],
-                         rawAddress: Payload[UInt],
-                         forcePhysical: Payload[Bool],
+                         req: AddressTranslationReq,
                          usage: AddressTranslationPortUsage,
                          portSpec: Any,
                          storageSpec: Any): AddressTranslationRsp
@@ -74,13 +100,20 @@ trait AddressTranslationService extends Area {
   def newInvalidationPort() = invalidationPorts.addRet(AddressTranslationInvalidation())
 }
 
+case class AddressTranslationReq(
+  PRE_ADDRESS: Payload[UInt],
+  LOAD: Payload[Bool],
+  STORE: Payload[Bool],
+  EXECUTE: Payload[Bool],
+  FORCE_PHYSICAL: Payload[Bool]
+)
+
 class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) extends Area {
   val keys = new Area {
     setName("MMU")
     val TRANSLATED = Payload(PHYSICAL_ADDRESS)
     val HAZARD = Payload(Bool())
     val REFILL = Payload(Bool())
-    val ALLOW_READ, ALLOW_WRITE, ALLOW_EXECUTE = Payload(Bool())
     val PAGE_FAULT = Payload(Bool())
     val ACCESS_FAULT = Payload(Bool())
     val WAYS_OH  = Payload(Bits(wayCount bits))

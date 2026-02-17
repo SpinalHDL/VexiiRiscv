@@ -10,6 +10,7 @@ import vexiiriscv.riscv.Riscv
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+trait CsrFilter extends Nameable
 
 class CsrSpec(val csrFilter : Any)
 case class CsrIsReadingCsr(override val csrFilter : Any, value : Bool) extends CsrSpec(csrFilter)
@@ -22,9 +23,24 @@ case class CsrWriteCancel(override val csrFilter : Any, cond : Bool) extends Csr
 case class CsrOnReadData (bitOffset : Int, value : Bits)
 case class CsrIsReadingHartId(hartId : Int, value : Bool)
 
-
-case class CsrCondFilter(csrId : Int, cond : Bool) extends Nameable
-case class CsrListFilter(mapping : scala.collection.Seq[Int]) extends Nameable
+/**
+ * CSR filter which ckecks both CSR id and runtime condition
+ *
+ * The CSR filter serves as an enhanced csr filter with extra runtime check.
+ * It is designed to simplify CSR with complex access requirement (such as
+ * indirect CSR), or CSR needs to be mapped to different register with
+ * different condition.
+ *
+ * For a single CsrCondFilter, it is equivalent to performing the following:
+ *
+ * Read:  `csr.read(id)  + csr.allowCSR(id, cond)`
+ * Write: `csr.write(id) + csr.allowCSR(id, cond)`
+ *
+ * For multiple CsrCondFilter with the same id, its `cond` should be exclusive,
+ * otherwise some unexpected behavior may occur.
+ */
+case class CsrCondFilter(csrId : Int, cond : Bool) extends CsrFilter
+case class CsrListFilter(mapping : scala.collection.Seq[Int]) extends CsrFilter
 
 case class CsrDecode() extends Bundle {
   val exception = Bool()
@@ -33,6 +49,7 @@ case class CsrDecode() extends Bundle {
   val address = UInt(12 bits)
   val trap = Bool()
   val trapCode = Global.CODE()
+  val fence = Bool()
 
   def doException(): Unit = {
     exception := True
@@ -73,6 +90,7 @@ case class CsrBus() extends Bundle {
     decode.exception := False
     decode.trap := False
     decode.trapCode.assignDontCare()
+    decode.fence := False
     read.halt := False
     write.halt := False
     this
@@ -184,6 +202,10 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     }
   }
 
+  def onRead(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = csrService.onRead(csrFilter, onlyOnFire){
+    when(csrService.writingHartId(hartId)){ body }
+  }
+
   def onWrite(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = csrService.onWrite(csrFilter, onlyOnFire){
     when(csrService.writingHartId(hartId)){ body }
   }
@@ -198,7 +220,7 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     ret
   }
 
-  def writeWhen[T <: Data](value: T, cond: Bool, csrId: Int, bitOffset: Int = 0): Unit = {
+  def writeWhen[T <: Data](value: T, cond: Bool, csrId: Any, bitOffset: Int = 0): Unit = {
     onWrite(csrId, true) {
       when(cond) {
         value.assignFromBits(csrService.bus.write.bits(bitOffset, widthOf(value) bits))
@@ -241,9 +263,19 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     write(value, csrId, bitOffset)
   }
 
+  def readWrite[T <: Data](value: T, csrId: CsrFilter, bitOffset: Int): Unit = {
+    read(value, csrId, bitOffset)
+    write(value, csrId, bitOffset)
+  }
+  def readWrite[T <: Data](value: T, csrId: CsrFilter): Unit = readWrite(value, csrId, 0)
+
   def readWrite(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, csrId, that._1)
   def write(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, csrId, that._1)
   def read(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, csrId, that._1)
+
+  def readWrite(csrId: CsrFilter, thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, csrId, that._1)
+  def write(csrId: CsrFilter, thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, csrId, that._1)
+  def read(csrId: CsrFilter, thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, csrId, that._1)
 
   class Csr(csrFilter : Any) extends Area{
       def onWrite(onlyOnFire: Boolean)(body: => Unit) = CsrHartApi.this.onWrite(csrFilter, onlyOnFire) {

@@ -45,6 +45,7 @@ object LsuL1 extends AreaObject {
   val REFILL_BUSY = blocking[Bits]
   val lockPort = blocking[LockPort]
   val ackUnlock = blocking[Bool]
+  val freezeUnlock = blocking[Bool]
   val coherency = blocking[Boolean]
 }
 
@@ -223,6 +224,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val EVENT_WRITE_MASK = Payload(MASK)
     val BANKS_MUXES = Payload(Vec.fill(bankCount)(Bits(cpuWordWidth bits)))
     val HAZARD_FORCED = Payload(Bool())
+    val FREEZE_HAZARD = Payload(Bool())
 
     val tagsWriteArbiter = new Reservation()
     val bankWriteArbiter = new Reservation()
@@ -303,6 +305,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
       }
     }
 
+    val slotsFreezeHazard = False
+    val slotsFreeze = lane.isFreezed && !slotsFreezeHazard
+    freezeUnlock.set(slotsFreezeHazard)
+
+
     // Implements all the cache refills logic
     // Note, when coherency is enabled, a refill can just be about getting more permitions, and not carry any data.
     val refill = new Area {
@@ -323,7 +330,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           val ackTimerFull = ackTimer === 6 // Give enough time for the CPU to do a minimal amount of forward progress after having aquired a cache line
           val ackRequest = ackValid && ackTimerFull
           when(ackValid && !ackTimerFull) {
-            ackTimer := ackTimer + U(!lane.isFreezed || ackUnlock)
+            ackTimer := ackTimer + U(!slotsFreeze || ackUnlock)
           }
           when(!ackValid){
             ackTimer := 0
@@ -337,10 +344,10 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val loadedCounterMax = ctrlAt - Math.min(wayReadAt, bankReadAt)-1
         val loadedCounter = Reg(UInt(log2Up(loadedCounterMax + 1) bits))
         val loadedDone = loadedCounter === loadedCounterMax
-        loadedCounter := loadedCounter + U(loaded && !loadedDone && !lane.isFreezed()).resized
+        loadedCounter := loadedCounter + U(loaded && !loadedDone && !slotsFreeze).resized
 
         val free = !valid && withCoherency.mux(!c.ackValid, True)
-        val fire = valid && !lane.isFreezed() && loadedDone
+        val fire = valid && !slotsFreeze && loadedDone
         valid clearWhen (fire)
 
         val victim = Reg(Bits(writebackCount bits)) // Used to wait until the related writeback went far enough before emiting the read memory request
@@ -522,8 +529,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           val counterMax = ctrlAt - Math.min(wayReadAt, bankReadAt) - 1
           val counter = Reg(UInt(log2Up(counterMax + 1) bits))
           val done = counter === counterMax
-          counter := counter + U(!done && !lane.isFreezed()).resized
-          valid clearWhen (this.done && !lane.isFreezed() && (fire || !busy))
+          counter := counter + U(!done && !slotsFreeze).resized
+          valid clearWhen (this.done && !slotsFreeze && (fire || !busy))
         }
 
         val free = !valid
@@ -761,6 +768,15 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         }
       }
 
+      // Detects write to read hazards
+      val freezeHazards = new Area {
+        lane.execute(0).up(FREEZE_HAZARD) := False
+        for(eid <- (wayReadAt + 1 - tagsReadAsync.toInt) to ctrlAt) yield new Area {
+          val dst = lane.execute(eid)
+          dst.bypass(FREEZE_HAZARD) := dst.up(FREEZE_HAZARD) | slotsFreezeHazard
+        }
+      }
+
       // Emit ways/shared read commands
       val rt0 = new lane.Execute(wayReadAt){
         shared.lsuRead.cmd.valid := !lane.isFreezed()
@@ -848,7 +864,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         // For instance, a load miss may not trigger a refill, a flush may hit but may not trigger a flush. That is fine
         // as long as the CPU will retry later on.
         val hazardReg = RegNext(this(HAZARD) && lane.isFreezed()) init(False) // Ensure that once a hazard is triggered, it stays
-        HAZARD := hazardReg || loadHazard || refillHazard || storeHazard || coherencyHazard || HAZARD_FORCED
+        HAZARD := hazardReg || loadHazard || refillHazard || storeHazard || coherencyHazard || HAZARD_FORCED || FREEZE_HAZARD
         val flushHazardReg = RegNext(this (FLUSH_HAZARD) && lane.isFreezed()) init (False)
         FLUSH_HAZARD := flushHazardReg || flushHazard
         MISS := !WAYS_HIT
@@ -936,8 +952,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           when(doCbm){
             wayWriteReservation.takeIt()
 
-            val reader = this (WAYS_TAGS).reader(needFlushSel)
-            val tag = reader(_.address)
+            val reader = this (WAYS_TAGS).reader(WAYS_HITS)
 
             shared.write.valid := True
             shared.write.data.dirty.asBools.onMask(WAYS_HITS){_ := False}
@@ -945,11 +960,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
             waysWrite.mask := WAYS_HITS
             waysWrite.address := PHYSICAL_ADDRESS(lineRange)
             waysWrite.tag.loaded := !INVALID
-            waysWrite.tag.address := tag
+            waysWrite.tag.address := PHYSICAL_ADDRESS(tagRange)
             waysWrite.tag.fault := reader(_.fault)
 
             writeback.push.valid := CLEAN && wasDirty
-            writeback.push.address := (tag @@ MIXED_ADDRESS(lineRange)) << lineRange.low
+            writeback.push.address := (PHYSICAL_ADDRESS(tagRange) @@ MIXED_ADDRESS(lineRange)) << lineRange.low
             writeback.push.way := wayId
 
             assert(!withCoherency)
@@ -1046,6 +1061,11 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     // Implements the pipeline which handle memory probe request comming from the SoC (L2)
     val c = withCoherency generate new Area{
+      //freezeTimeout is there to ensure that we keep the memory coherency alive, even if the execute pipeline is frozen for extended time. This can avoid dead locks
+      val freezeTimeout = Timeout(80)
+      freezeTimeout.clearWhen(!lane.isFreezed)
+      slotsFreezeHazard.setWhen(freezeTimeout.state)
+
       val pip = new StageCtrlPipeline()
       val FORCE_HAZARD = Payload(Bool())
       // Feed the pipeline with probe.cmd requests

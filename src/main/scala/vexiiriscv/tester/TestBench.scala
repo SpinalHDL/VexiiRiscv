@@ -202,7 +202,7 @@ class TestOptions {
   def test(dut : VexiiRiscv, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
     val fsmTasks =  mutable.Queue[FsmTask]()
     for(gen <- fsmTasksGen) fsmTasks += gen()
-    val cd = dut.clockDomain
+    val cd = dut.clockDomain.withSyncReset()
     cd.forkStimulus(10)
     simSpeedPrinter.foreach(cd.forkSimSpeedPrinter)
 
@@ -214,7 +214,7 @@ class TestOptions {
 //        enableSimWave()
 //        sleep(1000)
 //        disableSimWave()
-//        sleep(100000)
+//        sleep(1000000)
 //      }
 //    }
 
@@ -318,8 +318,11 @@ class TestOptions {
     val host = dut.host[PrivilegedPlugin]
     val priv = host.hart(0)
     val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
-      override def getClintTime(): Long = probe.cycle
+      override def getClintTime(): BigInt = probe.cycle
       cmb.mem = mem
+    }
+    cd.onSamplings {
+      host.logic.rdtime #= probe.cycle
     }
     peripheral.withStdIn = withStdIn
 

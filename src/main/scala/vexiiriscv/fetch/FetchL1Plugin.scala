@@ -10,7 +10,7 @@ import spinal.lib.bus.amba4.axilite.{AxiLite4Config, AxiLite4ReadOnly}
 import spinal.lib.bus.bmb.{Bmb, BmbAccessParameter, BmbParameter, BmbSourceParameter}
 import spinal.lib.bus.tilelink.{M2sSupport, SizeRange}
 import spinal.lib.misc.Plru
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService, PmaLoad, PmaLogic, PmaPort, PmpService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, PmaLoad, PmaLogic, PmaPort, PmpService}
 import vexiiriscv.misc._
 import vexiiriscv._
 import vexiiriscv.Global._
@@ -335,10 +335,17 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
     }
 
+    val request = AddressTranslationReq(
+      PRE_ADDRESS    = MIXED_PC_SOLVED,
+      LOAD           = pp.fetch(readAt).insert(False),
+      STORE          = pp.fetch(readAt).insert(False),
+      EXECUTE        = pp.fetch(readAt).insert(True),
+      FORCE_PHYSICAL = pp.fetch(readAt).insert(False)
+    )
+
     val translationPort = ats.newTranslationPort(
       nodes = Seq(pp.fetch(readAt).down, pp.fetch(readAt+1).down),
-      rawAddress = MIXED_PC_SOLVED,
-      forcePhysical = pp.fetch(readAt).insert(False),
+      req = request,
       usage = AddressTranslationPortUsage.FETCH,
       portSpec = translationPortParameter,
       storageSpec = translationStorage
@@ -484,7 +491,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
       }
 
-      when(tpk.PAGE_FAULT || !tpk.ALLOW_EXECUTE) {
+      when(tpk.PAGE_FAULT) {
         allowRefill := False
         trapPort.valid := True
         trapPort.exception := True

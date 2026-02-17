@@ -1,4 +1,4 @@
-val spinalVersion = "1.13.0"
+val spinalVersion = "1.14.0"
 
 lazy val root =  (project in file(".")).settings(
   inThisBuild(List(

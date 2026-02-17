@@ -49,8 +49,8 @@ class SimdAddRawPlugin(val layer : LaneLayer) extends FiberPlugin {
     //Let's define some logic in the execute lane [0]
     val process = new layer.Execute(id = 0) {
       //Get the RISC-V RS1/RS2 values from the register file
-      val rs1 = layer.lane(IntRegFile, RS1).asUInt
-      val rs2 = layer.lane(IntRegFile, RS2).asUInt
+      val rs1 = up(layer.lane(IntRegFile, RS1)).asUInt
+      val rs2 = up(layer.lane(IntRegFile, RS2)).asUInt
 
       //Do some computation
       val rd = UInt(32 bits)
