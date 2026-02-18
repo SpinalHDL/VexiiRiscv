@@ -769,8 +769,14 @@ class ParamSimple() {
         asidWidth = asidWidth
       )
     }
-    /* TODO: add ShadowMmuPlugin */
-    plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth, 1)
+    (withRvh && withMmu) match {
+      case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth, 1)
+      case true => plugins += new vexiiriscv.memory.ShadowMmuPlugin(
+        spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
+        physicalWidth = physicalWidth,
+        vmidWidth = 0 /* TODO */
+      )
+    }
 
     plugins += new PmpPlugin(pmpParam)
 
