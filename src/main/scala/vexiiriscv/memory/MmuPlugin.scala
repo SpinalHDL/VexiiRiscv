@@ -521,12 +521,22 @@ class MmuPlugin(var spec : MmuSpec,
               goto(CMD(levelId))
             } otherwise {
               levelId match {
-                case 0 => goto(REFILL(levelId))
+                case 0 => {
+                  when(!storageEnable || load.exception) {
+                    goto(DONE(levelId))
+                  } otherwise {
+                    goto(REFILL(levelId))
+                  }
+                }
                 case _ => {
                   when(load.exception) {
                     goto(DONE(levelId))
                   } elsewhen(load.leaf) {
-                    goto(REFILL(levelId))
+                    when(!storageEnable) {
+                      goto(DONE(levelId))
+                    } otherwise {
+                      goto(REFILL(levelId))
+                    }
                   } otherwise {
                     val targetLevelId = levelId - 1
                     val targetLevel = spec.levels(targetLevelId)
@@ -558,11 +568,7 @@ class MmuPlugin(var spec : MmuSpec,
             storageLevel.write.data.allowExecute    := load.flags.X
             storageLevel.write.data.allowUser       := load.flags.U
 
-            when(pageFault || accessFault || !storageEnable) {
-              storageLevel.write.mask := 0
-            } otherwise {
-              storageLevel.allocId.increment()
-            }
+            storageLevel.allocId.increment()
           }
           goto(DONE(levelId))
         }
