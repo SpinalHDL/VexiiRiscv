@@ -136,6 +136,8 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val MINH = RegInit(False)
       val SINH = RegInit(False)
       val UINH = RegInit(False)
+      val VSINH = RegInit(False)
+      val VUINH = RegInit(False)
 
       interrupt.ip.setWhen(overflowEvent && !OF)
 
@@ -166,6 +168,12 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       if (priv.p.withUser) {
         csr.readWrite(eb, 60 - eo -> UINH)
         inhibit.setWhen(privValue === PrivilegeMode.U && UINH)
+      }
+      if (priv.p.withHypervisor) {
+        csr.readWrite(eb, 59 - eo -> VSINH, 58 - eo -> VUINH)
+        inhibit.setWhen(privValue === PrivilegeMode.VS && VSINH)
+        inhibit.setWhen(privValue === PrivilegeMode.VU && VUINH)
+        ofRead clearWhen((!counter.hcounteren || !counter.scounteren) && !privValue(0))
       }
     }
 
@@ -326,11 +334,18 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       val vok = priv.p.withHypervisor.mux(addr.muxListDc(counters.list.map(e => e.counterId -> e.hcounteren)), True)
       val privilege = priv.getPrivilege(csr.bus.decode.hartId)
       val privOk = ((privilege.asBits ^ B(1 << 2)) | (vok ## mok ## sok)).andR
+      val hyperOK = PrivilegeMode.isGuest(privilege) && (privilege(1 downto 0).asBits | (mok ## (vok || sok))).andR
       csr.onDecode(csrFilter){ //TODO test
         when(csr.bus.decode.address(9 downto 8) === PrivilegeMode.U){
-          when(csr.bus.decode.write || !privOk){
+          when(csr.bus.decode.write){
+            csr.bus.decode.doHostDenied()
+          }
+          when(!privOk){
             csr.bus.decode.doException()
           }
+        }
+        when(csr.bus.decode.address(9 downto 8) < PrivilegeMode.M && hyperOK){
+          csr.bus.decode.doVirtual()
         }
       }
     }

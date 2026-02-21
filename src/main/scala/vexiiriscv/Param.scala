@@ -480,6 +480,7 @@ class ParamSimple() {
   def withRvf = checkISA("f")
   def withRvd = checkISA("f", "d")
   def withRvc = checkISA("c")
+  def withRvh = checkISA("h")
   def withRvcbm = checkISA("zicbom")
   def withRvZknAes = checkISA("zkne") || checkISA("zknd")
   def withRvZba = checkISA("zba")
@@ -490,6 +491,7 @@ class ParamSimple() {
   def withSscofpmf = checkISA("sscofpmf")
   def withSstc = checkISA("sstc")
   def withSxaia = checkISA("smaia") || checkISA("ssaia")
+  def withSscsrind = checkISA("sscsrind")
 
   def withMul = checkISA("m") || checkISA("zmmul")
   def withDiv = checkISA("m")
@@ -497,7 +499,7 @@ class ParamSimple() {
   def withRdTime = checkISA("zicntr")
   def withSupervisor = checkISA("s")
   def withUser = checkISA("u")
-  def withHypervisor = checkISA("h")
+  def withHypervisor = withRvh
   def withIndirectCsr = checkISA("smcsrind") || checkISA("sscsrind")
   def withPerformanceCounters = checkISA("zihpm") || checkISA("zicntr")
   def withPerformanceScountovf = checkISA("sscofpmf")
@@ -539,6 +541,7 @@ class ParamSimple() {
     if (withRva) isa += "a"
     if (withRvf) isa += "f"
     if (withRvd) isa += "d"
+    if (withRvh) isa += "h"
     if (withRvc) isa += "c"
     if (withRvZba) isa += "Zba"
     if (withRvZbb) isa += "Zbb"
@@ -630,6 +633,7 @@ class ParamSimple() {
     opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
     opt[Unit]("with-aligner-buffer").unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
+    opt[Unit]("with-hypervisor") action { (v, c) => addISA("h", "s", "u") }
     opt[Unit]("with-supervisor") action { (v, c) => addISA("s", "u") }
     opt[Unit]("with-user") action { (v, c) => addISA("u") }
     opt[Unit]("without-mmu") action { (v, c) => disableMmu = false }
@@ -755,7 +759,7 @@ class ParamSimple() {
 
     val intWritebackAt = 2 //Alias for "trap at" as well
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rve = withRve)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rvh = withRvh, rve = withRve)
     withMmu match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new vexiiriscv.memory.MmuPlugin(
@@ -1059,7 +1063,7 @@ class ParamSimple() {
     plugins += new CsrRamPlugin()
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters, withScountovf = withSscofpmf)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    if(withIndirectCsr) plugins += new IndirectCsrPlugin(checkISA("sscsrind"))
+    if(withIndirectCsr) plugins += new IndirectCsrPlugin(withSscsrind, privParam.withHypervisor && withSscsrind)
     plugins += new PrivilegedPlugin(privParam, withHartIdInput.mux(null, hartId until hartId+hartCount))
     plugins += new TrapPlugin(trapAt = intWritebackAt)
     if(withTesterPlugin) plugins += new TesterPlugin()

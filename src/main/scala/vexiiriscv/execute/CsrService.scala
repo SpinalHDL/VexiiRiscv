@@ -23,6 +23,8 @@ case class CsrWriteCancel(override val csrFilter : Any, cond : Bool) extends Csr
 case class CsrOnReadData (bitOffset : Int, value : Bits)
 case class CsrIsReadingHartId(hartId : Int, value : Bool)
 
+case class CsrRemap(from: Int, to: Int, cond : Bool)
+
 /**
  * CSR filter which ckecks both CSR id and runtime condition
  *
@@ -47,12 +49,21 @@ case class CsrDecode() extends Bundle {
   val read, write = Bool()
   val hartId = Global.HART_ID()
   val address = UInt(12 bits)
+  val privilege = Bits(2 bits)
   val trap = Bool()
   val trapCode = Global.CODE()
   val fence = Bool()
+  val virtual = Bool()
+  val hostDenied = Bool()
 
+  def doVirtual(): Unit = {
+    virtual := True
+  }
   def doException(): Unit = {
     exception := True
+  }
+  def doHostDenied(): Unit = {
+    hostDenied := True
   }
   def doTrap(code: Int): Unit = {
     trap := True
@@ -91,6 +102,8 @@ case class CsrBus() extends Bundle {
     decode.trap := False
     decode.trapCode.assignDontCare()
     decode.fence := False
+    decode.virtual := False
+    decode.hostDenied := False
     read.halt := False
     write.halt := False
     this
@@ -104,6 +117,7 @@ trait CsrService {
   val csrLock = Retainer()
   val spec = ArrayBuffer[CsrSpec]()
   val reads = ArrayBuffer[CsrOnReadData]()
+  val remapping = ArrayBuffer[CsrRemap]()
   val isReadingCsrMap = mutable.LinkedHashMap[Any, CsrIsReadingCsr]()
   val onReadingHartIdMap = mutable.LinkedHashMap[Int, Bool]()
   val isReadingHartIdCsrMap = mutable.LinkedHashMap[(Int, Any), Bool]()
@@ -120,6 +134,11 @@ trait CsrService {
   def allowCsr(csrFilter : Any, cond: Bool = True) = onDecode(csrFilter) {
     when(!cond) {
       bus.decode.doException()
+    }
+  }
+  def allowHostCsr(csrFilter : Any, cond: Bool = True) = onDecode(csrFilter) {
+    when(!cond) {
+      bus.decode.doHostDenied()
     }
   }
   def flushOnWrite(csrFilter : Any): Unit = {
@@ -143,6 +162,8 @@ trait CsrService {
   def writingHartId(hartId: Int): Bool = {
     onWritingHartIdMap.getOrElseUpdate(hartId, Bool())
   }
+
+  def accessHartId(hartId: Int) = writingHartId(hartId) || readingHartId(hartId)
 
   def read[T <: Data](value: T, csrFilter: Any, bitOffset: Int = 0): Unit = {
     val converted = value match {
@@ -191,13 +212,23 @@ trait CsrService {
   }
 
   def hart(hartId : Int) = new CsrHartApi(this, hartId)
+
+  def remapWhen(from: Int, to: Int, cond: Bool): Unit = remapping += CsrRemap(from, to, cond)
 }
 
 class CsrHartApi(csrService: CsrService, hartId : Int){
   def allowCsr(csrFilter : Any, cond: Bool) = csrService.onDecode(csrFilter) {
-    when(csrService.readingHartId(hartId) || csrService.writingHartId(hartId)) {
+    when(csrService.accessHartId(hartId)) {
       when (!cond) {
         csrService.bus.decode.doException()
+      }
+    }
+  }
+
+  def allowHostCsr(csrFilter : Any, cond: Bool) = csrService.onDecode(csrFilter) {
+    when(csrService.accessHartId(hartId)) {
+      when (!cond) {
+        csrService.bus.decode.doHostDenied()
       }
     }
   }
@@ -258,24 +289,16 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     }
   }
 
-  def readWrite[T <: Data](value: T, csrId: Int, bitOffset: Int = 0): Unit = {
+  def readWrite[T <: Data](value: T, csrId: Any, bitOffset: Int = 0): Unit = {
     read(value, csrId, bitOffset)
     write(value, csrId, bitOffset)
   }
 
-  def readWrite[T <: Data](value: T, csrId: CsrFilter, bitOffset: Int): Unit = {
-    read(value, csrId, bitOffset)
-    write(value, csrId, bitOffset)
-  }
-  def readWrite[T <: Data](value: T, csrId: CsrFilter): Unit = readWrite(value, csrId, 0)
+  def readWrite(csrId: Any, thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, csrId, that._1)
+  def write(csrId: Any, thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, csrId, that._1)
+  def read(csrId: Any, thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, csrId, that._1)
 
-  def readWrite(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, csrId, that._1)
-  def write(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, csrId, that._1)
-  def read(csrId: Int, thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, csrId, that._1)
-
-  def readWrite(csrId: CsrFilter, thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, csrId, that._1)
-  def write(csrId: CsrFilter, thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, csrId, that._1)
-  def read(csrId: CsrFilter, thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, csrId, that._1)
+  def remapWhen(from: Int, to: Int, cond: Bool): Unit = csrService.remapWhen(from, to, cond && csrService.accessHartId(hartId))
 
   class Csr(csrFilter : Any) extends Area{
       def onWrite(onlyOnFire: Boolean)(body: => Unit) = CsrHartApi.this.onWrite(csrFilter, onlyOnFire) {

@@ -47,6 +47,7 @@ object PrivilegeMode {
   val VU = -4
 
   val TYPE = HardType(SInt(3 bits))
+  val PRIVILEGE_MASK = 0x3
 
   def isGuest(privilege: SInt): Bool = privilege(2)
 
@@ -61,8 +62,9 @@ object PrivilegeMode {
     mode
   }
 
-  def apply(isGuest: Bool, privilege: UInt): SInt =
-    apply(isGuest, privilege.asBits)
+  def apply(isGuest: Bool, privilege: UInt): SInt = apply(isGuest, privilege.asBits)
+
+  def apply(mode: Int): SInt = spinal.core.S(mode, 3 bit)
 }
 
 object CSR {
@@ -197,11 +199,21 @@ object CSR {
   def HIE         = 0x604 // HRW Hypervisor interrupt-enable register.
   def HCOUNTEREN  = 0x606 // HRW Hypervisor counter enable.
   def HGEIE       = 0x607 // HRW Hypervisor guest external interrupt-enable register.
+  def HVIEN       = 0x608 // Hypervisor virtual interrupt enables.
+  def HVICTL      = 0x609 // Hypervisor virtual interrupt control.
   def HEDELEGH    = 0x612 // HRW Upper 32 bits of hedeleg, RV32 only.
+  def HiDELEGH    = 0x613 // HRW Upper 32 bits of hideleg, RV32 only.
+  def HVIENH      = 0x618 // HRW Upper 32 bits of hvien, RV32 only.
   def HTVAL       = 0x643 // HRW Hypervisor trap value.
   def HIP         = 0x644 // HRW Hypervisor interrupt pending.
   def HVIP        = 0x645 // HRW Hypervisor virtual interrupt pending.
+  def HVIPRIO1    = 0x646 // HRW Hypervisor VS-level interrupt priorities.
+  def HVIPRIO2    = 0x647 // HRW Hypervisor VS-level interrupt priorities.
   def HTINST      = 0x645 // HRW Hypervisor trap instruction (transformed).
+  def HIPH        = 0x654 // HRW Upper 32 bits of hip, RV32 only.
+  def HVIPH       = 0x655 // HRW Upper 32 bits of hvip, RV32 only.
+  def HVIPRIO1H   = 0x646 // HRW Upper 32 bits of hviprio1, RV32 only.
+  def HVIPRIO2H   = 0x647 // HRW Upper 32 bits of hviprio2, RV32 only.
   def HGEIP       = 0xE12 // HRO Hypervisor guest external interrupt pending.
   def HENVCFG     = 0x60A // HRW Hypervisor environment configuration register.
   def HENVCFGH    = 0x61A // HRW Upper 32 bits of henvcfg, RV32 only.
@@ -212,12 +224,14 @@ object CSR {
   val VSSTATUS    = 0x200
   val VSIE        = 0x204
   val VSTVEC      = 0x205
+  val VSIEH       = 0x214
   val VSSCRATCH   = 0x240
   val VSEPC       = 0x241
   val VSCAUSE     = 0x242
   val VSTVAL      = 0x243
   val VSIP        = 0x244
   val VSISELECT   = 0x250
+  val VSIPH       = 0x254
   val VSATP       = 0x280
   val VSIREG      = 0x251
   val VSIREG2     = 0x252
