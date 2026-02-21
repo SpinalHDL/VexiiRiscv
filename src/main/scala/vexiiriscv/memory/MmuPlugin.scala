@@ -80,7 +80,10 @@ object MmuSpec{
   )
 }
 
-case class MmuTlbStorageEntryParam(checkUser: Boolean)
+case class MmuTlbStorageEntryParam(
+  checkUser: Boolean,
+  checkGuest: Boolean
+)
 
 class MmuTlbStorageEntry(
   spec : MmuSpec,
@@ -97,6 +100,7 @@ class MmuTlbStorageEntry(
   val physicalAddress = UInt(pw bits)
   val allowRead, allowWrite, allowExecute = Bool()
   val allowUser = p.checkUser generate Bool()
+  val guest = p.checkGuest generate Bool()
 
   def hit(address : UInt) = /*valid && */virtualAddress === address(spec.levels(levelId).virtualOffset + log2Up(depth), vw - log2Up(depth) bits)
   def physicalAddressFrom(address : UInt) = physicalAddress @@ address(0, spec.levels(levelId).physicalOffset bits)
@@ -279,7 +283,10 @@ class MmuPlugin(var spec : MmuSpec,
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
     // Implement the hardware for all the TLB storages
-    val tlbGenerateParam = MmuTlbStorageEntryParam(checkUser = true)
+    val tlbGenerateParam = MmuTlbStorageEntryParam(
+      checkUser   = true,
+      checkGuest  = true
+    )
     val storages = for(ss <- storageSpecs) yield new MmuTlbStorage(spec, physicalWidth, tlbGenerateParam, ss)
 
     assert(HART_COUNT.get == 1)
@@ -309,7 +316,8 @@ class MmuPlugin(var spec : MmuSpec,
         for ((way, wayId) <- sl.ways.zipWithIndex) {
           readStage(sl.keys.ENTRIES)(wayId) := way.readAsync(readAddress)
           hitsStage(sl.keys.HITS_PRE_VALID)(wayId) := hitsStage(sl.keys.ENTRIES)(wayId).hit(hitsStage(ps.req.PRE_ADDRESS))
-          ctrlStage(sl.keys.HITS)(wayId) := ctrlStage(sl.keys.HITS_PRE_VALID)(wayId) && ctrlStage(sl.keys.ENTRIES)(wayId).valid
+          ctrlStage(sl.keys.HITS)(wayId) := ctrlStage(sl.keys.HITS_PRE_VALID)(wayId) && ctrlStage(sl.keys.ENTRIES)(wayId).valid &&
+              (ctrlStage(sl.keys.ENTRIES)(wayId).guest === (ctrlStage(ps.req.FORCE_GUEST) || PrivilegeMode.isGuest(priv.getPrivilege(0))))
         }
       }
 
@@ -328,6 +336,7 @@ class MmuPlugin(var spec : MmuSpec,
         val lineAllowWrite   = entriesMux(_.allowWrite)
         val lineAllowUser    = entriesMux(_.allowUser)
         val lineTranslated   = entriesMux(_.physicalAddressFrom(ps.req.PRE_ADDRESS))
+        val lineIsGuest      = entriesMux(_.guest)
 
         val requireMmuLockup  = CombInit(ps.usage match {
           case LOAD_STORE => api.lsuTranslationEnable
@@ -580,6 +589,7 @@ class MmuPlugin(var spec : MmuSpec,
             storageLevel.write.data.allowWrite      := load.flags.W && load.flags.D
             storageLevel.write.data.allowExecute    := load.flags.X
             storageLevel.write.data.allowUser       := load.flags.U
+            storageLevel.write.data.guest           := isTwoStage
 
             storageLevel.allocId.increment()
           }
