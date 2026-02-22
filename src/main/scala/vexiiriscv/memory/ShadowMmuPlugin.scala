@@ -67,7 +67,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
     csr.allowHostCsr(CSR.HGATP, !priv.logic.harts(0).m.status.tvm || priv.isMachine(0))
 
     csr.onDecode(CSR.HGATP) {
-      /* TODO: trap HFENCE_GVMA */
+      csr.bus.decode.doTrap(TrapReason.HFENCE_GMA)
     }
 
     csr.onWrite(CSR.HGATP, true) {

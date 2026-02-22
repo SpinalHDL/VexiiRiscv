@@ -93,6 +93,7 @@ object TrapReason{
   val SFENCE_VMA = 6
   val MMU_REFILL = 7
   val WFI = 8
+  val HFENCE_GMA = 9
 }
 
 /**
@@ -471,6 +472,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               TrapReason.NEXT,
               TrapReason.FENCE_I,
               TrapReason.SFENCE_VMA,
+              TrapReason.HFENCE_GMA,
               TrapReason.WFI
             ).map(pending.state.code === _).orR
           )
@@ -578,6 +580,16 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                   atsPorts.refill.cmd.valid := True
                   when(atsPorts.refill.cmd.ready){
                     goto(ATS_RSP)
+                  }
+                }
+                is(TrapReason.HFENCE_GMA) {
+                  if(sats.mayNeedRedo) {
+                    satsPorts.invalidate.cmd.valid := True
+                    when(satsPorts.invalidate.cmd.ready) {
+                      goto(JUMP)
+                    }
+                  } else {
+                    goto(JUMP)
                   }
                 }
                 if(priv.p.debugTriggers > 0 ) is(TrapReason.DEBUG_TRIGGER) {
