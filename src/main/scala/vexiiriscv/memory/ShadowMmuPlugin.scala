@@ -254,6 +254,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
         rsp.valid := False
         rsp.pageFault.assignDontCare()
         rsp.accessFault.assignDontCare()
+        rsp.guestFault.assignDontCare()
         rsp.pf.assignDontCare()
         rsp.ae_ptw.assignDontCare()
         rsp.ae_final.assignDontCare()

@@ -25,7 +25,7 @@ case class AddressTranslationRefillCmd(storageWidth : Int) extends Bundle{
 }
 
 case class AddressTranslationRefillRsp() extends Bundle{
-  val pageFault, accessFault = Bool()
+  val pageFault, accessFault, guestFault = Bool()
 
   val ae_ptw = Bool()
   val ae_final = Bool()

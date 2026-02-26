@@ -246,7 +246,7 @@ class LsuPlugin(var layer : LaneLayer,
 
     val hsl = pp.implementHypervisor generate new Area {
       val privCheck = pp.getPrivilege(0) === PrivilegeMode.U && !pp.hart(0).h.status.hu
-      val virtCheck = pp.getPrivilege(0) <= PrivilegeMode.VS
+      val virtCheck = PrivilegeMode.isGuest(pp.getPrivilege(0))
 
       ds.addIllegalCheck(ctrlLane => ctrlLane(GUEST) && privCheck)
       ds.addVirtualInstructionCheck(ctrlLane => ctrlLane(GUEST) && virtCheck)

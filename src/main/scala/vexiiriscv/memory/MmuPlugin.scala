@@ -449,6 +449,7 @@ class MmuPlugin(var spec : MmuSpec,
         rsp.valid := False
         rsp.pageFault.assignDontCare()
         rsp.accessFault.assignDontCare()
+        rsp.guestFault.assignDontCare()
         rsp.pf.assignDontCare()
         rsp.ae_ptw.assignDontCare()
         rsp.ae_final.assignDontCare()
@@ -478,10 +479,12 @@ class MmuPlugin(var spec : MmuSpec,
 
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
         val pteFault = (load.exception || load.levelException(levelId) || !load.flags.A) || (levelId == 0).mux(!load.leaf, False)
-        val pteReadError = load.rsp.error.orR
+        val pteReadError = load.rsp.error(0)
+        val shadowReadError = load.rsp.error(1)
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
-        val pageFault = !pteReadError && pteFault
-        val accessFault = pteReadError || !pteFault && leafAccessFault
+        val pageFault = !shadowReadError && !pteReadError && pteFault
+        val accessFault = pteReadError || (!pteFault && leafAccessFault)
+        val guestFault = shadowReadError && !pteReadError
 
         def doneLogic() : Unit = {
           refillPorts.onMask(portOhReg){port =>
@@ -496,6 +499,7 @@ class MmuPlugin(var spec : MmuSpec,
           refillPorts.map(_.rsp).foreach { o =>
             o.pageFault := pageFault
             o.accessFault := accessFault
+            o.guestFault := shadowReadError
             o.pf  := pageFault
             o.ae_ptw    := accessFault && !load.leaf
             o.ae_final  := accessFault && load.leaf //Note so sure

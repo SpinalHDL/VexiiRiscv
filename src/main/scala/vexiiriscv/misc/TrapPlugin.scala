@@ -631,11 +631,14 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
           if(ats.mayNeedRedo) ATS_RSP.whenIsActive{
             when(atsPorts.refill.rsp.valid){
-              when(atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
+              when(atsPorts.refill.rsp.guestFault || atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
                 atsPorts.refill.rsp.ready := True
                 pending.state.exception := True
-                switch(atsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
+                switch(atsPorts.refill.rsp.guestFault ## atsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
+                  add(TrapArg.FETCH | 8, CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT)
+                  add(TrapArg.LOAD  | 8, CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
+                  add(TrapArg.STORE | 8, CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT)
                   add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
                   add(TrapArg.LOAD  | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
                   add(TrapArg.STORE | 4, CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT)
