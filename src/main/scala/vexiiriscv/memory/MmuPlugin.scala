@@ -384,6 +384,7 @@ class MmuPlugin(var spec : MmuSpec,
       val portOhReg = Reg(Bits(refillPorts.size bits))
       val storageOhReg = Reg(Bits(storages.size bits))
       val storageEnable = Reg(Bool())
+      val isTwoStage = Reg(Bool())
 
       arbiter.io.output.ready := False
       IDLE whenIsActive {
@@ -393,6 +394,7 @@ class MmuPlugin(var spec : MmuSpec,
           storageEnable := arbiter.io.output.storageEnable
           virtual := arbiter.io.output.address
           load.address := (satp.ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
+          isTwoStage := arbiter.io.output.guest
           arbiter.io.output.ready := True
           goto(CMD(spec.levels.size - 1))
         }
@@ -422,7 +424,7 @@ class MmuPlugin(var spec : MmuSpec,
         cmd.valid             := False
         cmd.address           := address.resized
         cmd.size              := U(log2Up(spec.entryBytes))
-        cmd.guest             := False
+        if (priv.implementHypervisor) cmd.guest := isTwoStage
 
         val flags = readed.resized.as(MmuEntryFlags())
         val leaf = flags.R || flags.X
