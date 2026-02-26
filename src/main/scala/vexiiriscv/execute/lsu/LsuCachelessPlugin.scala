@@ -8,11 +8,11 @@ import vexiiriscv.riscv.{CSR, Const, FloatRegFile, IntRegFile, MicroOp, RS1, RS2
 import AguPlugin._
 import spinal.core.fiber.{Handle, Retainer}
 import spinal.core.sim.SimDataPimper
-import vexiiriscv.decode.Decode
+import vexiiriscv.decode.{Decode, DecoderService}
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
-import vexiiriscv.riscv.PrivilegeMode
+import vexiiriscv.riscv.{PrivilegeMode, Rvh}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
 import spinal.lib.system.tag.PmaRegion
@@ -77,13 +77,15 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val srcp = host.find[SrcPlugin](_.layer == layer)
     val ats = host.find[AddressTranslationService](!_.isShadowMmu)
     val sats = host.find[AddressTranslationService](_.isShadowMmu)
+    val cap = host[CsrAccessPlugin]
+    val ds = host[DecoderService]
     val ps = host[PmpService]
     val pp = host[PrivilegedPlugin]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
     val buildBefore = retains(elp.pipelineLock, ats.portsLock, sats.portsLock, ps.portsLock)
     val atsStorageLock = retains(ats.storageLock, sats.storageLock)
-    val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock) ++ fpwbp.map(_.elaborationLock))
+    val retainer = retains(List(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock, cap.csrLock, ds.elaborationLock) ++ fpwbp.map(_.elaborationLock))
     awaitBuild()
     Riscv.RVA.set(withAmo)
 
@@ -136,6 +138,25 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     layer(Rvi.FENCE).setCompletion(forkAt)
 
     for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(joinAt)
+
+    val hsl = pp.implementHypervisor generate new Area {
+      val privCheck = pp.getPrivilege(0) === PrivilegeMode.U && !pp.hart(0).h.status.hu
+      val virtCheck = pp.getPrivilege(0) <= PrivilegeMode.VS
+
+      ds.addIllegalCheck(ctrlLane => ctrlLane(GUEST) && privCheck)
+      ds.addVirtualInstructionCheck(ctrlLane => ctrlLane(GUEST) && virtCheck)
+      ds.addMicroOpDecodingDefault(GUEST, False)
+
+      var ops = ArrayBuffer(
+        Rvh.HLV_B, Rvh.HLV_H, Rvh.HLV_W,
+        Rvh.HLV_BU, Rvh.HLV_HU,
+        Rvh.HLVX_HU, Rvh.HLVX_WU,
+        Rvh.HSV_B, Rvh.HSV_H, Rvh.HSV_W
+      )
+      if (XLEN.get == 64) ops ++= List(Rvh.HLV_D, Rvh.HLV_WU, Rvh.HSV_D)
+
+      for (op <- ops) ds.addMicroOpDecoding(op, GUEST, True)
+    }
 
     retainer.release()
 

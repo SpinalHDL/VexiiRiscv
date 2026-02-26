@@ -244,6 +244,25 @@ class LsuPlugin(var layer : LaneLayer,
       val senvcfg = pp.implementSupervisor generate xenvcfg(PrivilegeMode.S)
     }
 
+    val hsl = pp.implementHypervisor generate new Area {
+      val privCheck = pp.getPrivilege(0) === PrivilegeMode.U && !pp.hart(0).h.status.hu
+      val virtCheck = pp.getPrivilege(0) <= PrivilegeMode.VS
+
+      ds.addIllegalCheck(ctrlLane => ctrlLane(GUEST) && privCheck)
+      ds.addVirtualInstructionCheck(ctrlLane => ctrlLane(GUEST) && virtCheck)
+      ds.addMicroOpDecodingDefault(GUEST, False)
+
+      var ops = ArrayBuffer(
+        Rvh.HLV_B, Rvh.HLV_H, Rvh.HLV_W,
+        Rvh.HLV_BU, Rvh.HLV_HU,
+        Rvh.HLVX_HU, Rvh.HLVX_WU,
+        Rvh.HSV_B, Rvh.HSV_H, Rvh.HSV_W
+      )
+      if (XLEN.get == 64) ops ++= List(Rvh.HLV_D, Rvh.HLV_WU, Rvh.HSV_D)
+
+      for (op <- ops) ds.addMicroOpDecoding(op, GUEST, True)
+    }
+
     val injectCtrl = elp.ctrl(0)
     val inject = new injectCtrl.Area {
       SIZE := Decode.UOP(13 downto 12).asUInt

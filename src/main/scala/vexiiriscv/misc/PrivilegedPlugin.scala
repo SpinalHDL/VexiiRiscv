@@ -696,10 +696,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val status = new api.Csr(CSR.HSTATUS) {
           val vtsr, vtvm = RegInit(False)
           val vtw = RegInit(False)
+          val hu = RegInit(False)
           val gva = RegInit(False)
           val spv, spvp = RegInit(False)
 
-          readWrite(6 -> gva, 7 -> spv, 8 -> spvp, 20 -> vtvm, 21 -> vtw, 22 -> vtsr)
+          readWrite(6 -> gva, 7 -> spv, 8 -> spvp, 9 -> hu, 20 -> vtvm, 21 -> vtw, 22 -> vtsr)
           if (XLEN.get == 64) read(32 -> U"10")
         }
 

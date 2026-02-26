@@ -57,6 +57,11 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
     illegalCheckSpec += body
   }
 
+  val virtualCheckSpec = ArrayBuffer[CtrlLaneApi => Bool]()
+  override def addVirtualInstructionCheck(body: CtrlLaneApi => Bool): Unit = {
+    virtualCheckSpec += body
+  }
+
   val logic = during setup new Area{
     val dpp = host[DecodePipelinePlugin]
     val ts = host[TrapService]
@@ -186,6 +191,12 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
       for(e <- illegalCheckSpec) LEGAL clearWhen(e(this))
 
+      VIRTUAL := False
+      for(e <- virtualCheckSpec) {
+        VIRTUAL setWhen(e(this))
+        LEGAL clearWhen(e(this))
+      }
+
       val decodingCtx = new DecodingCtx(this.down, LEGAL)
       decodingLogics.foreach(_(decodingCtx))
 
@@ -198,6 +209,10 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       trapPort.laneAge := laneId
       trapPort.hartId := Global.HART_ID
       trapPort.arg := 0
+
+      when(VIRTUAL){
+        trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
+      }
 
       val fixer = withPredictionFixer generate new Area{
         val isJb = predictionSpec.any.build(Decode.INSTRUCTION, encodings.all)
