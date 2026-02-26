@@ -489,6 +489,10 @@ class MmuPlugin(var spec : MmuSpec,
         val guestFault = shadowReadError && !pteReadError
 
         def doneLogic() : Unit = {
+          val translationFault = pteFault || pteReadError || leafAccessFault || shadowReadError
+          val translatedAddress = load.levelToPhysicalAddress(levelId)
+          translatedAddress(0, level.virtualOffset bits) := virtual.resize(level.virtualOffset)
+
           refillPorts.onMask(portOhReg){port =>
             port.rsp.valid := True
             load.rsp.ready := port.rsp.ready
@@ -506,7 +510,10 @@ class MmuPlugin(var spec : MmuSpec,
             o.ae_ptw    := accessFault && !load.leaf
             o.ae_final  := accessFault && load.leaf //Note so sure
             o.level := spec.levels.size - 1 - levelId
-            o.address := load.levelToPhysicalAddress(levelId).resized
+            o.address := Mux(translationFault,
+              Mux(shadowReadError, load.readed.asUInt, U(0)),
+              translatedAddress
+            ).resized
           }
         }
 
