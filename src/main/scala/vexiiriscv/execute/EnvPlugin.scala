@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline._
 import vexiiriscv.misc.{PrivilegedPlugin, TrapReason, TrapService}
-import vexiiriscv.riscv.{CSR, PrivilegeMode, Rvi}
+import vexiiriscv.riscv.{CSR, PrivilegeMode, Rvi, Rvh}
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.decode.Decode
@@ -16,7 +16,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 object EnvPluginOp extends SpinalEnum {
-  val ECALL, EBREAK, PRIV_RET, FENCE_I, SFENCE_VMA, WFI = newElement()
+  val ECALL, EBREAK, PRIV_RET, FENCE_I, SFENCE_VMA, WFI, HFENCE_GVMA, HFENCE_VVMA = newElement()
 }
 
 /**
@@ -46,6 +46,10 @@ class EnvPlugin(layer : LaneLayer,
     add(Rvi.FENCE_I).decode(OP -> EnvPluginOp.FENCE_I)
     add(Rvi.WFI).decode(OP -> EnvPluginOp.WFI)
     if (ps.implementSupervisor) add(Rvi.SFENCE_VMA).decode(OP -> EnvPluginOp.SFENCE_VMA)
+    if (ps.implementHypervisor) {
+      add(Rvh.HFENCE_VVMA).decode(OP -> EnvPluginOp.HFENCE_VVMA)
+      add(Rvh.HFENCE_GVMA).decode(OP -> EnvPluginOp.HFENCE_GVMA)
+    }
 
     for (uop <- uopList; spec = layer(uop)) {
       spec.setCompletion(executeAt)
@@ -106,6 +110,12 @@ class EnvPlugin(layer : LaneLayer,
       )
       val vmaKo = ps.p.withSupervisor.mux(privilegeCheck(vmaKoMapping, privilege), False)
 
+      val gvmaKo = ps.p.withHypervisor.mux(
+        privilege < PrivilegeMode.S || privilege === PrivilegeMode.S && ps.logic.harts(0).m.status.tvm,
+        True
+      )
+      val vvmaKo = ps.p.withHypervisor.mux(privilege < PrivilegeMode.S, True)
+
       switch(this(OP)) {
         is(EnvPluginOp.EBREAK) {
           trapPort.code := CSR.MCAUSE_ENUM.BREAKPOINT
@@ -160,6 +170,30 @@ class EnvPlugin(layer : LaneLayer,
               when(privilege === PrivilegeMode.VU || privilege === PrivilegeMode.VS && vmaKoMapping(PrivilegeMode.VS)) {
                 trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
               }
+            }
+          }
+        }
+
+        if (ps.implementHypervisor) {
+          is(EnvPluginOp.HFENCE_GVMA) {
+            when(!gvmaKo) {
+              commit := True
+              trapPort.exception := False
+              trapPort.code := TrapReason.HFENCE_GMA
+            }
+            when(PrivilegeMode.isGuest(privilege)) {
+              trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
+            }
+          }
+
+          is(EnvPluginOp.HFENCE_VVMA) {
+            when(!vvmaKo) {
+              commit := True
+              trapPort.exception := False
+              trapPort.code := TrapReason.SFENCE_VMA
+            }
+            when(PrivilegeMode.isGuest(privilege)) {
+              trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
             }
           }
         }
