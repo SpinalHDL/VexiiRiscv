@@ -356,6 +356,8 @@ class MmuPlugin(var spec : MmuSpec,
         import ctrlStage._
 
         val isGuest = PrivilegeMode.isGuest(priv.getPrivilege(0)) || ps.req.FORCE_GUEST
+        val nominalSupervisor = priv.implementHypervisor.mux(ps.req.FORCE_GUEST.mux(priv.logic.harts(0).h.status.spvp, isSupervisor), isSupervisor)
+        val nominalUser = priv.implementHypervisor.mux(ps.req.FORCE_GUEST.mux(!priv.logic.harts(0).h.status.spvp, isUser), isUser)
         val hits = Cat(storage.sl.map(s => ctrlStage(s.keys.HITS)))
         val entries = storage.sl.flatMap(s => ctrlStage(s.keys.ENTRIES))
         val hit = hits.orR
@@ -370,7 +372,7 @@ class MmuPlugin(var spec : MmuSpec,
         val lineIsGuest      = entriesMux(_.guest)
 
         val requireMmuLockup  = CombInit(ps.usage match {
-          case LOAD_STORE => api.lsuTranslationEnable
+          case LOAD_STORE => ps.req.FORCE_GUEST.mux(vsatpValid, api.lsuTranslationEnable)
           case FETCH => api.fetchTranslationEnable
         })
         requireMmuLockup clearWhen(ps.req.FORCE_PHYSICAL)
@@ -379,15 +381,15 @@ class MmuPlugin(var spec : MmuSpec,
         when(requireMmuLockup) {
           val allow_mxr     = priv.implementHypervisor.mux(isGuest.mux(vsstatus.mxr, False), False) || status.mxr
           val allow_sum     = priv.implementHypervisor.mux(isGuest.mux(vsstatus.sum, status.sum), status.sum)
-          val allow_execute = lineAllowExecute && !(lineAllowUser && isSupervisor)
+          val allow_execute = lineAllowExecute && !(lineAllowUser && nominalSupervisor)
           val allow_read    = lineAllowRead || allow_mxr && lineAllowExecute
           val allow_write   = lineAllowWrite
 
           HAZARD        := False
           REFILL        := !hit
           TRANSLATED    := lineTranslated
-          PAGE_FAULT    := (lineAllowUser && isSupervisor && !allow_sum) ||
-                            (!lineAllowUser && isUser) ||
+          PAGE_FAULT    := (lineAllowUser && nominalSupervisor && !allow_sum) ||
+                            (!lineAllowUser && nominalUser) ||
                             Mux(ps.req.LOAD, !allow_read, False) ||
                             Mux(ps.req.STORE, !allow_write, False) ||
                             Mux(ps.req.EXECUTE, !allow_execute, False)
