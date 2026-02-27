@@ -291,6 +291,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val arbiter = new AgedArbiter(requests)
           val state = arbiter.down.toReg
           val pc = Reg(PC)
+          val uop = priv.p.withHypervisor generate Reg(Decode.UOP)
           val history = hp.nonEmpty generate Reg(Prediction.BRANCH_HISTORY)
           val slices = Reg(UInt(INSTRUCTION_SLICE_COUNT_WIDTH+1 bits))
 
@@ -351,6 +352,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val reader = lanes.map(_.execute(trapAt).down).reader(oh, true)
           when(valid) {
             pending.pc := reader(_(PC))
+            if(priv.p.withHypervisor) pending.uop := reader(_(Decode.UOP))
             if(hp.nonEmpty) pending.history := reader(_(Prediction.BRANCH_HISTORY))
             pending.slices := reader(_(INSTRUCTION_SLICE_COUNT)).resize(INSTRUCTION_SLICE_COUNT_WIDTH+1)+1
           }
@@ -407,6 +409,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               val tval = pending.state.tval.andMask(!interrupt)
               val code = interrupt.mux(i.code, pending.state.code)
               val tval2 = priv.p.withHypervisor generate Reg(TVAL)
+              val pseudoUop = priv.p.withHypervisor generate Reg(Decode.UOP)
             }
           }
 
@@ -461,7 +464,10 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           RUNNING.whenIsActive {
             when(trigger.valid) {
               buffer.sampleIt := True
-              if (priv.p.withHypervisor) buffer.trap.tval2 := 0
+              if (priv.p.withHypervisor) {
+                buffer.trap.tval2 := 0
+                buffer.trap.pseudoUop := 0
+              }
               goto(COMPUTE)
             }
             if (priv.p.withDebug) when(!csr.hartRunning && csr.debug.doResume) {
@@ -638,6 +644,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                 pending.state.exception := True
                 if (priv.p.withHypervisor) when(atsPorts.refill.rsp.guestFault) {
                   buffer.trap.tval2 := atsPorts.refill.rsp.address.dropLow(2).asBits.resized
+                  buffer.trap.pseudoUop := (XLEN.get == 32).mux(0x00002000, 0x00003000)
                 }
                 switch(atsPorts.refill.rsp.guestFault ## atsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
@@ -733,13 +740,15 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           }
 
           if (priv.p.withHypervisor) TRAP_HTINST.whenIsActive {
+            val writeUop = buffer.trap.pseudoUop
+
             crsPorts.write.valid := True
             val addressMapping = mutable.LinkedHashMap[Int, UInt](
               PrivilegeMode.M -> csr.m.tinst.getAddress(),
               PrivilegeMode.S -> csr.h.tinst.getAddress()
             )
             crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
-            crsPorts.write.data := B(0)
+            crsPorts.write.data := writeUop.resized
 
             when(crsPorts.write.ready) {
               goto(TRAP_EPC)
