@@ -406,6 +406,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               val targetPrivilege = interrupt.mux(i.targetPrivilege, exception.targetPrivilege)
               val tval = pending.state.tval.andMask(!interrupt)
               val code = interrupt.mux(i.code, pending.state.code)
+              val tval2 = priv.p.withHypervisor generate Reg(TVAL)
             }
           }
 
@@ -460,6 +461,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           RUNNING.whenIsActive {
             when(trigger.valid) {
               buffer.sampleIt := True
+              if (priv.p.withHypervisor) buffer.trap.tval2 := 0
               goto(COMPUTE)
             }
             if (priv.p.withDebug) when(!csr.hartRunning && csr.debug.doResume) {
@@ -634,6 +636,9 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               when(atsPorts.refill.rsp.guestFault || atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
                 atsPorts.refill.rsp.ready := True
                 pending.state.exception := True
+                if (priv.p.withHypervisor) when(atsPorts.refill.rsp.guestFault) {
+                  buffer.trap.tval2 := atsPorts.refill.rsp.address.dropLow(2).asBits.resized
+                }
                 switch(atsPorts.refill.rsp.guestFault ## atsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
                   add(TrapArg.FETCH | 8, CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT)
@@ -677,6 +682,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               goto(JUMP) //improvment: shave one cycle
               when(satsPorts.refill.rsp.pageFault || satsPorts.refill.rsp.accessFault){
                 pending.state.exception := True
+                buffer.trap.tval2 := satsPorts.refill.rsp.address.dropLow(2).asBits.resized
                 switch(pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
                   add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT)
@@ -719,7 +725,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               PrivilegeMode.S -> csr.h.tval.getAddress()
             )
             crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
-            crsPorts.write.data := B(0)
+            crsPorts.write.data := buffer.trap.tval2.resized
 
             when(crsPorts.write.ready) {
               goto(TRAP_HTINST)
