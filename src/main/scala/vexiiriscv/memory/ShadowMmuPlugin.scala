@@ -173,7 +173,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
 
     // Implement the TLB storage refill FSM
     val refill = new StateMachine{
-      val IDLE = new State
+      val IDLE, BARE = new State
       val CMD, RSP, REFILL, DONE = List.fill(spec.levels.size)(new State)
 
       val busy = !isActive(IDLE)
@@ -203,10 +203,35 @@ class ShadowMmuPlugin(var spec : MmuSpec,
           virtual := arbiter.io.output.address
           load.address := (hgatp.ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
           arbiter.io.output.ready := True
-          goto(CMD(spec.levels.size - 1))
+
+          when(hgatp.mode === spec.satpMode) {
+            goto(CMD(spec.levels.size - 1))
+          } otherwise {
+            goto(BARE)
+          }
         }
       }
 
+      BARE whenIsActive {
+        refillPorts.onMask(portOhReg){port =>
+          port.rsp.valid := True
+
+          when(port.rsp.ready) {
+            goto(IDLE)
+          }
+        }
+
+        refillPorts.map(_.rsp).foreach { o =>
+          o.bypass      := True
+          o.pageFault   := False
+          o.accessFault := False
+          o.pf          := False
+          o.ae_ptw      := False
+          o.ae_final    := False
+          o.level       := 0
+          o.address     := virtual.resized
+        }
+      }
 
       val events = pcs map (pcs => new Area {
         val onStorage = for((storage, sel) <- storageSpecs zip storageOhReg.asBools) yield new Area {
@@ -258,6 +283,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
         rsp.pageFault.assignDontCare()
         rsp.accessFault.assignDontCare()
         rsp.guestFault.assignDontCare()
+        rsp.bypass.assignDontCare()
         rsp.pf.assignDontCare()
         rsp.ae_ptw.assignDontCare()
         rsp.ae_final.assignDontCare()
@@ -366,6 +392,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
             translatedAddress(0, level.virtualOffset bits) := virtual.resize(level.virtualOffset)
 
             /* TODO: guestFault */
+            o.bypass      := False
             o.pageFault   := pageFault
             o.accessFault := accessFault
             o.pf          := pageFault

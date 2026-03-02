@@ -503,6 +503,7 @@ class MmuPlugin(var spec : MmuSpec,
         rsp.pageFault.assignDontCare()
         rsp.accessFault.assignDontCare()
         rsp.guestFault.assignDontCare()
+        rsp.bypass.assignDontCare()
         rsp.pf.assignDontCare()
         rsp.ae_ptw.assignDontCare()
         rsp.ae_final.assignDontCare()
@@ -554,6 +555,7 @@ class MmuPlugin(var spec : MmuSpec,
           }
 
           refillPorts.map(_.rsp).foreach { o =>
+            o.bypass := False
             o.pageFault := pageFault
             o.accessFault := accessFault
             o.guestFault := shadowReadError
