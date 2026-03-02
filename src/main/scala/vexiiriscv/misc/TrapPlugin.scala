@@ -690,8 +690,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               when(satsPorts.refill.rsp.pageFault || satsPorts.refill.rsp.accessFault){
                 pending.state.exception := True
                 buffer.trap.tval2 := satsPorts.refill.rsp.address.dropLow(2).asBits.resized
-                switch(pending.state.arg(1 downto 0)){
+                switch(satsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
+                  add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
+                  add(TrapArg.LOAD  | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
+                  add(TrapArg.STORE | 4, CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT)
                   add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT)
                   add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
                   add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT)
