@@ -90,13 +90,11 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
       if(generateTransPort) ATS whenIsActive {
         when(atsPort.rsp.valid) {
           /* check permission */
-          val exception = atsPort.rsp.pageFault || atsPort.rsp.accessFault
-          val permCheck = False
-          when (!atsPort.rsp.bypass && (exception || permCheck)) {
+          when (!atsPort.rsp.bypass && atsPort.rsp.pageFault || atsPort.rsp.accessFault) {
             trsp.valid          := True
             trsp.data           := atsPort.rsp.address.asBits.resized
-            trsp.error(1)       := True
-            trsp.error(0)       := permCheck
+            trsp.error(1)       := atsPort.rsp.pageFault
+            trsp.error(0)       := atsPort.rsp.accessFault
             trsp.redo           := False
             trsp.waitSlot       := B(0)
             trsp.waitAny        := False
