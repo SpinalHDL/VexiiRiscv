@@ -118,7 +118,7 @@ case class AddressTranslationReq(
 
 class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) extends Area {
   val keys = new Area {
-    setName("MMU")
+    // setName("MMU")
     val TRANSLATED = Payload(PHYSICAL_ADDRESS)
     val HAZARD = Payload(Bool())
     val REFILL = Payload(Bool())

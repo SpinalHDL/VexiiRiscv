@@ -137,7 +137,7 @@ class MmuTlbStorage(
     val allocId = Counter(slp.ways)
 
     val keys = new Area {
-      setName(s"MMU_L${e.id}")
+      // setName(s"MMU_L${e.id}")
       val ENTRIES = Payload(Vec.fill(slp.ways)(newEntry()))
       val HITS_PRE_VALID = Payload(Bits(slp.ways bits))
       val HITS = Payload(Bits(slp.ways bits))
