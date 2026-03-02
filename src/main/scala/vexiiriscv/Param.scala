@@ -233,12 +233,12 @@ class ParamSimple() {
   )
 
   var lsuL1PmpParam = new PmpPortParameter(
-    napotMatchAt = 1,
-    napotHitsAt = 1,
-    torCmpAt = 1,
-    torHitsAt = 2,
-    hitsAt = 2,
-    rspAt = 2
+    napotMatchAt = 1 + 1,
+    napotHitsAt = 1 + 1,
+    torCmpAt = 1 + 1,
+    torHitsAt = 2 + 1,
+    hitsAt = 2 + 1,
+    rspAt = 2 + 1
   )
 
   var lsuTsp = MmuStorageParameter(
@@ -757,7 +757,7 @@ class ParamSimple() {
     if(withMmu && lsuL1Enable) assert(lsuL1Sets <= 64, "MMU require not more than 64 sets in the LSU L1")
     if(withMmu && fetchL1Enable) assert(fetchL1Sets <= 64, "MMU require not more than 64 sets in the FETCH L1")
 
-    val intWritebackAt = 2 //Alias for "trap at" as well
+    val intWritebackAt = 3 //Alias for "trap at" as well
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rvh = withRvh, rve = withRve)
     if (withMmu) plugins += new TranslatedDBusAccessPlugin()
@@ -1001,6 +1001,10 @@ class ParamSimple() {
     }
     if(lsuL1Enable){
       plugins += new LsuPlugin(
+        pmaAt = 1 + 1,
+        triggerAt = 1 + 1,
+        ctrlAt = 2 + 1,
+        wbAt = 2 + 1,
         layer = early0,
         withRva = withRva,
         storeRs2At = storeRs2Late.mux(2, 0),
@@ -1009,7 +1013,7 @@ class ParamSimple() {
         softwarePrefetch = lsuSoftwarePrefetch,
         withCbm = withRvcbm,
         withLlcFlush = withRvcbmLlc,
-        pmpPortParameter = fetchL1PmpParam,
+        pmpPortParameter = lsuL1PmpParam,
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null
@@ -1028,7 +1032,12 @@ class ParamSimple() {
         withCoherency  = lsuL1Coherency,
         withCbm        = withRvcbm && !withRvcbmLlc,
         bootMemClear = bootMemClear,
-        tagsReadAsync  = lsuL1TagsReadAsync
+        tagsReadAsync  = lsuL1TagsReadAsync,
+        hitsAt = 1 + 1,
+        hitAt = 2 + 1,
+        bankMuxesAt = 1 + 1,
+        bankMuxAt = 2 + 1,
+        ctrlAt = 2 + 1,
       )
 
       lsuHardwarePrefetch match {
