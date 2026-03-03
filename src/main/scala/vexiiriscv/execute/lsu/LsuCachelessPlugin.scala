@@ -97,6 +97,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(forkAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
+    val MMU_FAILURE = Payload(Bool())
+
     val iwb = ifp.access(wbAt)
     val fpwb = fpwbp.map(_.createPort(wbAt))
     val amos = Riscv.RVA.get.option(frontend.amos.uops).toList.flatten
@@ -167,6 +169,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     // Hardware elaboration
     val addressCtrl = elp.execute(addressAt)
+    val addressCtrl1 = elp.execute(addressAt+1)
     val forkCtrl = elp.execute(forkAt)
     val joinCtrl = elp.execute(joinAt)
     val wbCtrl = elp.execute(wbAt)
@@ -208,10 +211,32 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         bypass(SIZE) := Decode.UOP(27 downto 26).asUInt
       }
     }
+
     val tpk = onAddress.translationPort.keys
+
+    val onAddress1 = new addressCtrl1.Area {
+      val request = AddressTranslationReq(
+        /* TODO: this should be a real physical with */
+        PRE_ADDRESS    = insert(tpk.TRANSLATED.resize(Global.MIXED_WIDTH)),
+        LOAD           = LOAD,
+        STORE          = STORE,
+        EXECUTE        = insert(False),
+        FORCE_GUEST    = GUEST,
+        FORCE_PHYSICAL = insert(False)
+      )
+      val translationPort = sats.newTranslationPort(
+        nodes = Seq(addressCtrl1.down),
+        req = request,
+        usage = AddressTranslationPortUsage.LOAD_STORE,
+        portSpec = translationPortParameter,
+        storageSpec = shadowTranslationStorage
+      )
+    }
+    val stpk = pp.implementHypervisor.mux(onAddress1.translationPort.keys, onAddress.translationPort.keys)
+
     val pmpPort = ps.createPmpPort(
       nodes = List.tabulate(forkAt+1)(elp.execute(_).down),
-      physicalAddress = tpk.TRANSLATED,
+      physicalAddress = stpk.TRANSLATED,
       forceCheck = _ => False,
       read = _(LOAD),
       write = _(STORE),
@@ -222,10 +247,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     val onPma = new elp.Execute(pmaAt) {
       val port = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN / 8)).map(1 << _), List(PmaLoad, PmaStore))
-      port.cmd.address := tpk.TRANSLATED
+      port.cmd.address := stpk.TRANSLATED
       port.cmd.size := SIZE.asBits
       port.cmd.op(0) := STORE
       val RSP = insert(port.rsp)
+      MMU_FAILURE := tpk.PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD
     }
 
     val cmdInflights = Bool()
@@ -258,7 +284,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       bus.cmd.valid := isValid && SEL && !cmdSent && !isCancel && !skip && !doFence
       bus.cmd.id := cmdCounter
       bus.cmd.write := STORE
-      bus.cmd.address := tpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
+      bus.cmd.address := stpk.TRANSLATED //TODO Overflow on TRANSLATED itself ?
       val mapping = (0 to log2Up(Riscv.LSLEN / 8)).map{size =>
         val w = (1 << size) * 8
         size -> onFirst.WRITE_DATA(0, w bits).#*(Riscv.LSLEN / w)
@@ -290,7 +316,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.hartId := Global.HART_ID
       trapPort.laneAge := Execute.LANE_AGE
       trapPort.tval := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
-      trapPort.tval2 := 0
+      trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
@@ -334,6 +360,36 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
+      }
+
+      if(pp.implementHypervisor) when(!MMU_FAILURE) {
+        when(stpk.PAGE_FAULT) {
+          skip := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT
+          trapPort.code(1) setWhen (STORE)
+        }
+
+        when(stpk.ACCESS_FAULT) {
+          skip := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+          trapPort.code(1) setWhen (STORE)
+        }
+
+        when(stpk.REFILL) {
+          skip := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.SMMU_REFILL
+          trapPort.arg(3, ats.getStorageIdWidth() bits) := sats.getStorageId(translationStorage)
+          trapPort.tval := tpk.TRANSLATED.asBits.resized
+        }
+
+        when(stpk.HAZARD) {
+          skip := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.REDO
+        }
       }
 
       when(onAddress.MISS_ALIGNED) {
