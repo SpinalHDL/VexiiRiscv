@@ -358,9 +358,30 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val tpk = onAddress0.translationPort.keys
 
+    val onAddress1 = new pp.Fetch(readAt + 1) {
+      val request = AddressTranslationReq(
+        PRE_ADDRESS    = insert(tpk.TRANSLATED.resize(Global.MIXED_WIDTH)),
+        LOAD           = insert(False),
+        STORE          = insert(False),
+        EXECUTE        = insert(True),
+        FORCE_GUEST    = insert(False),
+        FORCE_PHYSICAL = insert(False)
+      )
+
+      val translationPort = sats.newTranslationPort(
+        nodes = Seq(down, pp.fetch(readAt+2).down),
+        req = request,
+        usage = AddressTranslationPortUsage.FETCH,
+        portSpec = translationPortParameter,
+        storageSpec = translationStorage
+      )
+    }
+
+    val stpk = priv.implementHypervisor.mux(onAddress1.translationPort.keys, onAddress0.translationPort.keys)
+
     val pmpPort = ps.createPmpPort(
       nodes = List.tabulate(ctrlAt+1)(pp.fetch(_).down),
-      physicalAddress = tpk.TRANSLATED,
+      physicalAddress = stpk.TRANSLATED,
       forceCheck = _ => False,
       read = _ => False,
       write = _ => False,
@@ -437,12 +458,14 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val hits = new pp.Fetch(hitsAt){
       val withDirectHits = !hitsWithTranslationWays || onAddress0.translationPort.wayCount == 0
       val w = for((way, wayId) <- ways.zipWithIndex) yield new Area{
-        if (withDirectHits) WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === tpk.TRANSLATED(tagRange)
+        if (withDirectHits) WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === stpk.TRANSLATED(tagRange)
         val indirect = if(!withDirectHits) new Area{
-          val wayTlbHits = (0 until onAddress0.translationPort.wayCount) map (tlbWayId => WAYS_TAGS(wayId).address === tpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && tpk.WAYS_OH(tlbWayId))
+          val wayTlbHits = (0 until onAddress0.translationPort.wayCount) map (tlbWayId => WAYS_TAGS(wayId).address === stpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && stpk.WAYS_OH(tlbWayId))
           val translatedHits = wayTlbHits.orR
-          val bypassHits = WAYS_TAGS(wayId).address === MIXED_PC_SOLVED >> tagRange.low
-          WAYS_HITS(wayId) := (tpk.BYPASS_TRANSLATION ? bypassHits | translatedHits) & WAYS_TAGS(wayId).loaded
+          val bypassAddress = insert(tpk.TRANSLATED.resize(Global.MIXED_WIDTH bits))
+          when(tpk.BYPASS_TRANSLATION)(bypassAddress := MIXED_PC_SOLVED)
+          val bypassHits = WAYS_TAGS(wayId).address ===  bypassAddress >> tagRange.low
+          WAYS_HITS(wayId) := (stpk.BYPASS_TRANSLATION ? bypassHits | translatedHits) & WAYS_TAGS(wayId).loaded
         }
       }
     }
@@ -453,7 +476,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val ctrl = new pp.Fetch(ctrlAt){
       val pmaPort = new PmaPort(Global.PHYSICAL_WIDTH, List(lineSize), List(PmaLoad))
-      pmaPort.cmd.address := tpk.TRANSLATED
+      pmaPort.cmd.address := stpk.TRANSLATED
 
       val plruLogic = new Area {
         val core = new Plru(wayCount, false)
@@ -478,7 +501,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       trapPort.valid := False
       trapPort.tval := Fetch.WORD_PC.asBits
-      trapPort.tval2 := 0
+      trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
@@ -527,6 +550,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
       }
+
       when(Fetch.PC_FAULT) {
         allowRefill := False
         trapPort.valid := True
@@ -537,9 +561,37 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         }
       }
 
+      if(priv.implementHypervisor) when(!(tpk.PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD)) {
+        when(stpk.PAGE_FAULT) {
+          allowRefill := False
+          trapPort.valid := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT
+        }
+
+        when(stpk.ACCESS_FAULT) {
+          allowRefill := False
+          trapPort.valid := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
+        }
+
+        when(stpk.REFILL) {
+          allowRefill := False
+          trapPort.exception := False
+          trapPort.valid := True
+          trapPort.code := TrapReason.SMMU_REFILL
+          trapPort.arg(3, ats.getStorageIdWidth() bits) := sats.getStorageId(translationStorage)
+          trapPort.tval := tpk.TRANSLATED.asBits.resized
+        }
+
+        when(Fetch.PC_FAULT && !stpk.BYPASS_TRANSLATION) {
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT
+        }
+      }
 
       refill.start.valid := allowRefill && !trapSent
-      refill.start.address := tpk.TRANSLATED
+      refill.start.address := stpk.TRANSLATED
       refill.start.hartId := HART_ID
       refill.start.isIo := pmaPort.rsp.io
 
