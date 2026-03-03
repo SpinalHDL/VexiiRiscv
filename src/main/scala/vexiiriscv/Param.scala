@@ -206,12 +206,12 @@ class ParamSimple() {
   )
 
   var fetchNoL1PmpParam = new PmpPortParameter(
-    napotMatchAt = 0,
-    napotHitsAt = 1,
-    torCmpAt = 0,
-    torHitsAt = 1,
-    hitsAt = 1,
-    rspAt = 1
+    napotMatchAt = 0 + 1,
+    napotHitsAt = 1 + 1,
+    torCmpAt = 0 + 1,
+    torHitsAt = 1 + 1,
+    hitsAt = 1 + 1,
+    rspAt = 1 + 1
   )
 
   var lsuNoL1PmpParam = new PmpPortParameter(
@@ -272,7 +272,7 @@ class ParamSimple() {
   )
 
 
-  def alignerPluginFetchAt = fetchL1Enable.mux(2+1, 1+fetchForkAt)
+  def alignerPluginFetchAt = fetchL1Enable.mux(2+1, 1+fetchForkAt+1)
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
@@ -821,8 +821,9 @@ class ParamSimple() {
     plugins += new fetch.FetchPipelinePlugin()
     if(!fetchL1Enable) {
       plugins += new fetch.FetchCachelessPlugin(
-        forkAt = fetchForkAt,
-        joinAt = fetchForkAt+1, //You can for instance allow the external memory to have more latency by changing this
+        pmaAt = 0+1,
+        forkAt = fetchForkAt+1,
+        joinAt = fetchForkAt+1+1, //You can for instance allow the external memory to have more latency by changing this
         wordWidth = fetchMemDataWidth,
         pmpPortParameter = fetchNoL1PmpParam,
         translationStorageParameter = fetchTsp,
