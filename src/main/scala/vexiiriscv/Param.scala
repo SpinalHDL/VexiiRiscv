@@ -224,12 +224,12 @@ class ParamSimple() {
   )
 
   var fetchL1PmpParam = new PmpPortParameter(
-    napotMatchAt = 1,
-    napotHitsAt = 1,
-    torCmpAt = 1,
-    torHitsAt = 2,
-    hitsAt = 2,
-    rspAt = 2
+    napotMatchAt = 1 + 1,
+    napotHitsAt = 1 + 1,
+    torCmpAt = 1 + 1,
+    torHitsAt = 2 + 1,
+    hitsAt = 2 + 1,
+    rspAt = 2 + 1
   )
 
   var lsuL1PmpParam = new PmpPortParameter(
@@ -272,7 +272,7 @@ class ParamSimple() {
   )
 
 
-  def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt)
+  def alignerPluginFetchAt = fetchL1Enable.mux(2+1, 1+fetchForkAt)
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
@@ -860,7 +860,12 @@ class ParamSimple() {
           case false => null
           case true => fetchTpp
         },
-        pmpPortParameter = fetchL1PmpParam
+        pmpPortParameter = fetchL1PmpParam,
+        hitsAt = 1+1,
+        hitAt = 1+1,
+        bankMuxesAt = 1+1,
+        bankMuxAt = 2+1,
+        ctrlAt = 2+1
       )
 
       fetchL1Prefetch match {
