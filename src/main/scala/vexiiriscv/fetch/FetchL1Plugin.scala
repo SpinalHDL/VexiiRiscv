@@ -337,24 +337,26 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         }
       }
     }
+    val onAddress0 = new pp.Fetch(readAt) {
+      val request = AddressTranslationReq(
+        PRE_ADDRESS    = MIXED_PC_SOLVED,
+        LOAD           = insert(False),
+        STORE          = insert(False),
+        EXECUTE        = insert(True),
+        FORCE_GUEST    = insert(False),
+        FORCE_PHYSICAL = insert(False)
+      )
 
-    val request = AddressTranslationReq(
-      PRE_ADDRESS    = MIXED_PC_SOLVED,
-      LOAD           = pp.fetch(readAt).insert(False),
-      STORE          = pp.fetch(readAt).insert(False),
-      EXECUTE        = pp.fetch(readAt).insert(True),
-      FORCE_GUEST    = pp.fetch(readAt).insert(False),
-      FORCE_PHYSICAL = pp.fetch(readAt).insert(False)
-    )
+      val translationPort = ats.newTranslationPort(
+        nodes = Seq(down, pp.fetch(readAt+1).down),
+        req = request,
+        usage = AddressTranslationPortUsage.FETCH,
+        portSpec = translationPortParameter,
+        storageSpec = translationStorage
+      )
+    }
 
-    val translationPort = ats.newTranslationPort(
-      nodes = Seq(pp.fetch(readAt).down, pp.fetch(readAt+1).down),
-      req = request,
-      usage = AddressTranslationPortUsage.FETCH,
-      portSpec = translationPortParameter,
-      storageSpec = translationStorage
-    )
-    val tpk = translationPort.keys
+    val tpk = onAddress0.translationPort.keys
 
     val pmpPort = ps.createPmpPort(
       nodes = List.tabulate(ctrlAt+1)(pp.fetch(_).down),
@@ -433,11 +435,11 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     }
 
     val hits = new pp.Fetch(hitsAt){
-      val withDirectHits = !hitsWithTranslationWays || translationPort.wayCount == 0
+      val withDirectHits = !hitsWithTranslationWays || onAddress0.translationPort.wayCount == 0
       val w = for((way, wayId) <- ways.zipWithIndex) yield new Area{
         if (withDirectHits) WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === tpk.TRANSLATED(tagRange)
         val indirect = if(!withDirectHits) new Area{
-          val wayTlbHits = (0 until translationPort.wayCount) map (tlbWayId => WAYS_TAGS(wayId).address === tpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && tpk.WAYS_OH(tlbWayId))
+          val wayTlbHits = (0 until onAddress0.translationPort.wayCount) map (tlbWayId => WAYS_TAGS(wayId).address === tpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && tpk.WAYS_OH(tlbWayId))
           val translatedHits = wayTlbHits.orR
           val bypassHits = WAYS_TAGS(wayId).address === MIXED_PC_SOLVED >> tagRange.low
           WAYS_HITS(wayId) := (tpk.BYPASS_TRANSLATION ? bypassHits | translatedHits) & WAYS_TAGS(wayId).loaded
