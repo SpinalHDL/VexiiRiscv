@@ -215,12 +215,12 @@ class ParamSimple() {
   )
 
   var lsuNoL1PmpParam = new PmpPortParameter(
-    napotMatchAt = 0,
-    napotHitsAt = 0,
-    torCmpAt = 0,
-    torHitsAt = 0,
-    hitsAt = 0,
-    rspAt = 0
+    napotMatchAt = 0 + 1,
+    napotHitsAt = 0 + 1,
+    torCmpAt = 0 + 1,
+    torHitsAt = 0 + 1,
+    hitsAt = 0 + 1,
+    rspAt = 0 + 1
   )
 
   var fetchL1PmpParam = new PmpPortParameter(
@@ -988,10 +988,11 @@ class ParamSimple() {
         withAmo   = withRva,
         withSpeculativeLoadFlush = true,
         addressAt = 0,
-        pmaAt     = lsuPmaAt,
-        forkAt    = lsuForkAt+0,
-        joinAt    = lsuForkAt+1,
-        wbAt      = 2, //TODO
+        triggerAt = 0+1,
+        pmaAt     = lsuPmaAt+1,
+        forkAt    = lsuForkAt+0+1,
+        joinAt    = lsuForkAt+1+1,
+        wbAt      = 2+1, //TODO
         pmpPortParameter = lsuNoL1PmpParam,
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
