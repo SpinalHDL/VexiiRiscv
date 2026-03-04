@@ -210,6 +210,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
         trapPort.tval := UOP.resized
+        trapPort.tval2 := 0
         trapPort.arg := 0
         trapPort.laneAge := Execute.LANE_AGE
         when((implemented || condImplemented) && !bus.decode.hostDenied && bus.decode.virtual) {

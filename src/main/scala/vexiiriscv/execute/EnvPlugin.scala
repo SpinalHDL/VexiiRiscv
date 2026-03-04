@@ -69,6 +69,7 @@ class EnvPlugin(layer : LaneLayer,
       trapPort.valid := False
       trapPort.exception := True
       trapPort.tval := B(PC).andMask(OP === EnvPluginOp.EBREAK)  | Decode.UOP.andMask(List(EnvPluginOp.PRIV_RET, EnvPluginOp.WFI, EnvPluginOp.SFENCE_VMA).map(_ === this(OP)).orR).resized
+      trapPort.tval2 := 0
       trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
       trapPort.arg.assignDontCare()
       trapPort.laneAge := Execute.LANE_AGE

@@ -391,6 +391,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           trapPort.valid     := doIt
           trapPort.exception := False
           trapPort.tval      := B(OHToUInt(PC_TRIGGER_HITS)).resized
+          trapPort.tval2     := 0
           trapPort.code      := TrapReason.DEBUG_TRIGGER
           trapPort.arg       := 0
           trapPort.laneAge   := laneId

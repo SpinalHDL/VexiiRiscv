@@ -181,6 +181,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       TRAP := False
       trapPort.valid := TRAP && !trapSent
       trapPort.tval := Fetch.WORD_PC.asBits
+      trapPort.tval2 := 0
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()

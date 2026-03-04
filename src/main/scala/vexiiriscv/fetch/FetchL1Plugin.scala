@@ -476,6 +476,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       trapPort.valid := False
       trapPort.tval := Fetch.WORD_PC.asBits
+      trapPort.tval2 := 0
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()

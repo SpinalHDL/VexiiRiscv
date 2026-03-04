@@ -26,6 +26,7 @@ case class TrapSpec(bus : Flow[Trap], age : Int, subAge : Int)
 case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
   val exception = Bool()
   val tval = TVAL()
+  val tval2 = TVAL()
   val code = CODE()
   val arg = TRAP_ARG()
   val laneAge = full generate UInt(laneAgeWidth bits)
@@ -546,6 +547,16 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                   }
                 } otherwise {
                   goto(ENTER_DEBUG_WAIT)
+                }
+              }
+              if(priv.p.withHypervisor) {
+                val writeTval2 = List(
+                  CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT
+                ).map(pending.state.code === _).orR
+                when(writeTval2 && pending.state.exception && (pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId)))) {
+                  buffer.trap.tval2 := pending.state.tval2.resized
                 }
               }
             } otherwise {

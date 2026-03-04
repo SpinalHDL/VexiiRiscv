@@ -245,6 +245,7 @@ class BranchPlugin(val layer : LaneLayer,
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.FETCH_MISSALIGNED
         trapPort.tval := B(PC_TRUE)
+        trapPort.tval2 := 0
         trapPort.arg := 0
         trapPort.laneAge := Execute.LANE_AGE
 

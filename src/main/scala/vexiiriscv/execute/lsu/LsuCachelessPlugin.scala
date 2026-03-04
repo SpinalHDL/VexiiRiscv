@@ -290,6 +290,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.hartId := Global.HART_ID
       trapPort.laneAge := Execute.LANE_AGE
       trapPort.tval := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
+      trapPort.tval2 := 0
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0

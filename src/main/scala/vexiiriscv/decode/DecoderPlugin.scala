@@ -205,6 +205,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
       trapPort.valid := False
       trapPort.exception := True
       trapPort.tval := Decode.INSTRUCTION_RAW.resized
+      trapPort.tval2 := 0
       trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
       trapPort.laneAge := laneId
       trapPort.hartId := Global.HART_ID
