@@ -193,6 +193,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       val portOhReg = Reg(Bits(refillPorts.size bits))
       val storageOhReg = Reg(Bits(storages.size bits))
       val storageEnable = Reg(Bool())
+      val permission = Reg(cloneOf(arbiter.io.output.permission))
 
       arbiter.io.output.ready := False
       IDLE whenIsActive {
@@ -201,6 +202,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
           storageOhReg := UIntToOh(arbiter.io.output.storageId)
           storageEnable := arbiter.io.output.storageEnable
           virtual := arbiter.io.output.address
+          permission := arbiter.io.output.permission
           load.address := (hgatp.ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
           arbiter.io.output.ready := True
 
@@ -307,6 +309,9 @@ class ShadowMmuPlugin(var spec : MmuSpec,
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
         val pageFault = !pteReadError && pteFault
         val accessFault = pteReadError || !pteFault && leafAccessFault
+        val permissionFault = Mux(permission.read, !(load.flags.R || (load.flags.X && mmu.logic.status.mxr && !isImplicitAccess)), False) ||
+                              Mux(permission.write, !(load.flags.W && load.flags.D), False) ||
+                              Mux(permission.execute, !(load.flags.X), False)
 
         CMD(levelId) whenIsActive{
           when(cacheRefill === 0 && cacheRefillAny === False) {
@@ -393,14 +398,14 @@ class ShadowMmuPlugin(var spec : MmuSpec,
 
             /* TODO: guestFault */
             o.bypass      := False
-            o.pageFault   := pageFault
+            o.pageFault   := Mux(translationFault, pageFault, permissionFault)
             o.accessFault := accessFault
             o.pf          := pageFault
             o.ae_ptw      := accessFault && !load.leaf
             o.ae_final    := accessFault && load.leaf //Note so sure
             o.level       := spec.levels.size - 1 - levelId
-            /* TODO: error fill */
-            o.address     := Mux(translationFault, load.address, translatedAddress.resized)
+            o.address     := Mux(translationFault, load.address,
+                                  Mux(permissionFault, virtual, translatedAddress).resized)
           }
         }
       }

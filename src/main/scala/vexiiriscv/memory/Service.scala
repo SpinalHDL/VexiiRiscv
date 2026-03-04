@@ -17,11 +17,19 @@ object AddressTranslationPortUsage{
   object LOAD_STORE extends AddressTranslationPortUsage
 }
 
+case class AddressTranslationRefillCmdPerm() extends Bundle{
+  val read = Bool()
+  val write = Bool()
+  val execute = Bool()
+}
+
 case class AddressTranslationRefillCmd(storageWidth : Int) extends Bundle{
   val address = MIXED_ADDRESS()
   val guest = Bool()
   val storageId = UInt(storageWidth bits)
   val storageEnable = Bool()
+
+  val permission = AddressTranslationRefillCmdPerm()
 }
 
 case class AddressTranslationRefillRsp() extends Bundle{
