@@ -652,7 +652,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val st, se, ss = RegInit(False)
           readWrite(9 -> se, 5 -> st, 1 -> ss)
 
-          if (p.withHypervisor) readWrite(10 -> True, 6 -> True, 2 -> True)
+          if (p.withHypervisor) readWrite(12 -> True, 10 -> True, 6 -> True, 2 -> True)
         }
 
         val tvec = crs.readWriteRam(CSR.MTVEC)
@@ -789,8 +789,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         val ie = new api.Csr(CSR.HIE) {
           val vseie, vstie, vssie = RegInit(False)
-          readWrite(10 -> vseie, 6 -> vstie, 2 -> vssie)
-          api.readWrite(CSR.MIE, 10 -> vseie, 6 -> vstie, 2 -> vssie)
+          val geie = RegInit(False)
+          readWrite(12 -> geie, 10 -> vseie, 6 -> vstie, 2 -> vssie)
+          api.readWrite(CSR.MIE, 12 -> geie, 10 -> vseie, 6 -> vstie, 2 -> vssie)
         }
 
         val ip = new Area {
@@ -798,6 +799,10 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val vstipOr = vstipSoft || Mux(envcfg.stceOr, sstc.interrupt, False)
           val vseip, vssip = RegInit(False)
         }
+
+        // sgeip
+        api.read(False, CsrListFilter(List(CSR.MIP, CSR.HIP, CSR.HVIP)), 12)
+        api.allowCsr(CsrListFilter(List(CSR.HGEIE, CSR.HGEIP)), True)
 
         // vseip
         api.readWrite(ip.vseip, CSR.HVIP, 10)
