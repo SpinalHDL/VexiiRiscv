@@ -7,7 +7,7 @@ import spinal.lib.fsm._
 import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global._
-import vexiiriscv.execute.{CsrAccessPlugin, CsrCondFilter, CsrListFilter, CsrRamPlugin, CsrRamService}
+import vexiiriscv.execute.{CsrAccessPlugin, CsrCondFilter, CsrListFilter, CsrRamPlugin, CsrRamService, ExecuteLanePlugin, LaneLayer}
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv._
@@ -15,7 +15,7 @@ import vexiiriscv._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-class IndirectCsrPlugin(val withSupervisor : Boolean) extends FiberPlugin {
+class IndirectCsrPlugin(val withSupervisor : Boolean, val withHypervisor : Boolean) extends FiberPlugin {
   val logic = during setup new Area {
     val cap = host[CsrAccessPlugin]
     val buildBefore = retains(cap.csrLock)
@@ -36,6 +36,8 @@ class IndirectCsrPlugin(val withSupervisor : Boolean) extends FiberPlugin {
 
           CsrCondFilter(targetCsr, (iselect === indirectId) && cond)
         }
+
+        for (ireg <- iregs) api.allowCsr(CsrCondFilter(ireg, False), True)
       }
 
       val s = withSupervisor generate new Area {
@@ -49,6 +51,23 @@ class IndirectCsrPlugin(val withSupervisor : Boolean) extends FiberPlugin {
 
           CsrCondFilter(targetCsr, (iselect === indirectId) && cond)
         }
+
+        for (ireg <- iregs) api.allowCsr(CsrCondFilter(ireg, False), True)
+      }
+
+      val vs = withHypervisor generate new Area {
+        val iselect = RegInit(U(0, XLEN bits))
+        api.readWrite(iselect, CSR.VSISELECT)
+
+        val iregs = Seq(CSR.VSIREG, CSR.VSIREG2, CSR.VSIREG3, CSR.VSIREG4, CSR.VSIREG5, CSR.VSIREG6)
+
+        def csrFilter(indirectId: Int, targetCsr: Int, cond: Bool = True): CsrCondFilter = {
+          assert(iregs.contains(targetCsr), s"${targetCsr} is not an indirect CSR alias")
+
+          CsrCondFilter(targetCsr, (iselect === indirectId) && cond)
+        }
+
+        for (ireg <- iregs) api.allowCsr(CsrCondFilter(ireg, False), True)
       }
     }
 
