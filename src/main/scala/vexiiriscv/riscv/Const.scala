@@ -207,7 +207,7 @@ object CSR {
   def HVIP        = 0x645 // HRW Hypervisor virtual interrupt pending.
   def HVIPRIO1    = 0x646 // HRW Hypervisor VS-level interrupt priorities.
   def HVIPRIO2    = 0x647 // HRW Hypervisor VS-level interrupt priorities.
-  def HTINST      = 0x645 // HRW Hypervisor trap instruction (transformed).
+  def HTINST      = 0x64A // HRW Hypervisor trap instruction (transformed).
   def HIPH        = 0x654 // HRW Upper 32 bits of hip, RV32 only.
   def HVIPH       = 0x655 // HRW Upper 32 bits of hvip, RV32 only.
   def HVIPRIO1H   = 0x646 // HRW Upper 32 bits of hviprio1, RV32 only.
