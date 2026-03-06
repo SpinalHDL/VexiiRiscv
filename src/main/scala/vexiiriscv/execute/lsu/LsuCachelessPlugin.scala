@@ -193,7 +193,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         PRE_ADDRESS    = RAW_ADDRESS,
         LOAD           = LOAD,
         STORE          = STORE,
-        EXECUTE        = insert(False),
+        EXECUTE        = EXECUTE,
         FORCE_GUEST    = GUEST,
         FORCE_PHYSICAL = insert(False)
       )
@@ -220,7 +220,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         PRE_ADDRESS    = insert(tpk.TRANSLATED.resize(Global.MIXED_WIDTH)),
         LOAD           = LOAD,
         STORE          = STORE,
-        EXECUTE        = insert(False),
+        EXECUTE        = EXECUTE,
         FORCE_GUEST    = GUEST,
         FORCE_PHYSICAL = insert(False)
       )
@@ -238,9 +238,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       nodes = List.tabulate(forkAt+1)(elp.execute(_).down),
       physicalAddress = stpk.TRANSLATED,
       forceCheck = _ => False,
-      read = _(LOAD),
+      read = e => e(LOAD) || (e(EXECUTE) && e(GUEST)),
       write = _(STORE),
-      execute = _ => False,
+      execute = e => e(EXECUTE) && e(GUEST),
       portSpec = pmpPortParameter,
       storageSpec = null
     )
@@ -259,7 +259,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val onTrigger = new elp.Execute(triggerAt) {
       val bus = host[LsuTriggerService].getLsuTriggerBus
       bus.hartId := Global.HART_ID
-      bus.load := LOAD
+      bus.load := LOAD || EXECUTE
       bus.store := STORE
       bus.virtual := onAddress.RAW_ADDRESS.resized
       bus.size := SIZE
@@ -321,7 +321,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.code.assignDontCare()
       trapPort.arg.allowOverride() := 0
 
-      if(withSpeculativeLoadFlush) when(LOAD && onPma.RSP.io && elp.atRiskOfFlush(forkAt)) {
+      if(withSpeculativeLoadFlush) when((LOAD || EXECUTE) && onPma.RSP.io && elp.atRiskOfFlush(forkAt)) {
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
@@ -348,7 +348,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         trapPort.code(1) setWhen (STORE)
       }
 
-      trapPort.arg(0, 2 bits) := STORE.mux(B(TrapArg.STORE, 2 bits), B(TrapArg.LOAD, 2 bits))
+      trapPort.arg(0, 2 bits) := (B(EXECUTE) ## B(STORE)).mux(
+        0 -> B(TrapArg.LOAD, 2 bits),
+        1 -> B(TrapArg.STORE, 2 bits),
+        default -> B(TrapArg.FETCH_LSU, 2 bits)
+      )
       trapPort.arg(2) := GUEST
       trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REFILL) {
@@ -506,7 +510,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       iwb.valid := SEL && !FLOAT
       iwb.payload := rspShifted.resized
 
-      if (withAmo) when(ATOMIC && !LOAD) {
+      if (withAmo) when(ATOMIC && !(LOAD || EXECUTE)) {
         iwb.payload(0) := onJoin.SC_MISS
         iwb.payload(7 downto 1) := 0 // other bits set to 0 by using `LoadSpec(8, ...)` for the instruction
       }

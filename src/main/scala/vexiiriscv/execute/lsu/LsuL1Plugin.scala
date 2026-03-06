@@ -22,7 +22,7 @@ object LsuL1 extends AreaObject {
   // LSU -> L1
   val ABORD, SKIP_WRITE = Payload(Bool()) // Used on ctrl stage to prevent side effect
   val SEL = Payload(Bool()) // Enable the L1
-  val LOAD, STORE, ATOMIC, FLUSH, PREFETCH, CLEAN, INVALID, GUEST = Payload(Bool()) // Specifies the kind of memory request
+  val LOAD, STORE, EXECUTE, ATOMIC, FLUSH, PREFETCH, CLEAN, INVALID, GUEST = Payload(Bool()) // Specifies the kind of memory request
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS) // Address before the MMU, can only use the 4K page LSB
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
@@ -850,7 +850,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val writeToReadHazard = withBypass.mux(False, WRITE_TO_READ_HAZARDS.orR)
         val bankNotRead = (BANK_BUSY_REMAPPED & WAYS_HITS).orR
-        val loadHazard  = LOAD && !PREFETCH  && (bankNotRead || writeToReadHazard)
+        val loadHazard  = (LOAD || EXECUTE) && !PREFETCH  && (bankNotRead || writeToReadHazard)
         val storeHazard = STORE && !PREFETCH  && !bankWriteReservation.win
         val preventSideEffects = ABORD || lane.isFreezed()
 
@@ -873,7 +873,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         REFILL_HIT := refillHazard
 
         events.map{e =>
-          e.loadAccess := up.isFiring && SEL && LOAD
+          e.loadAccess := up.isFiring && SEL && (LOAD || EXECUTE)
           e.loadMiss   := e.loadAccess && !HAZARD && MISS
         }
 

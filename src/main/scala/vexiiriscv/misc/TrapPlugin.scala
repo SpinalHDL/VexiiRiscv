@@ -106,6 +106,8 @@ object TrapArg{
   val LOAD = 0
   val STORE = 1
   val FETCH = 2
+  /* Special Value for FETCH refill request from LSU (HLVX instruction) */
+  val FETCH_LSU = 3
 }
 
 /**
@@ -676,6 +678,9 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                   add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT)
                   add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT)
                   add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_PAGE_FAULT)
+                  add(TrapArg.FETCH_LSU, CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT)
+                  add(TrapArg.FETCH_LSU | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
+                  add(TrapArg.FETCH_LSU | 8, CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
                 }
                 goto(TRAP_TVAL)
               } otherwise {
@@ -717,6 +722,8 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                   add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT)
                   add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
                   add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT)
+                  add(TrapArg.FETCH_LSU | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
+                  add(TrapArg.FETCH_LSU, CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
                 }
                 goto(TRAP_TVAL)
               }

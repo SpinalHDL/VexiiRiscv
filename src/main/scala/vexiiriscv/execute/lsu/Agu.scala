@@ -16,6 +16,7 @@ object AguPlugin extends AreaObject {
   val SEL = Payload(Bool())
   val LOAD  = Payload(Bool())
   val STORE = Payload(Bool())
+  val EXECUTE = Payload(Bool())
   val ATOMIC = Payload(Bool()) // LR => ATOMIC && LOAD && !STORE, SC => ATOMIC && !LOAD && STORE, AMO => ATOMIC && LOAD && STORE
   val SIZE = Payload(UInt(2 bits)) // bytes = 1 << SIZE
   val FLOAT = Payload(Bool())
@@ -39,7 +40,7 @@ class AguFrontend(
   import AguPlugin._
   val sk = SrcKeys
 
-  val defaultsDecodings = mutable.LinkedHashMap(LOAD -> False, STORE -> False, ATOMIC -> False, FLOAT -> False, CLEAN -> False, INVALIDATE -> False, GUEST -> False)
+  val defaultsDecodings = mutable.LinkedHashMap(LOAD -> False, STORE -> False, EXECUTE -> False, ATOMIC -> False, FLOAT -> False, CLEAN -> False, INVALIDATE -> False, GUEST -> False)
   def dec(changed : (Payload[_ <: BaseType], Any)*) = {
     val ret =  mutable.LinkedHashMap[Payload[_ <: BaseType], Any]()
     ret ++= defaultsDecodings
@@ -59,10 +60,11 @@ class AguFrontend(
   for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(dec(LOAD -> True, FLOAT -> Bool(writeRfFloat.contains(op))))
 
   val writeRfGuest = ArrayBuffer[MicroOp]()
-  if (RVH) writeRfGuest ++= List(Rvh.HLV_B, Rvh.HLV_H,  Rvh.HLV_W, Rvh.HLV_BU, Rvh.HLV_HU, Rvh.HLVX_HU, Rvh.HLVX_WU)
+  if (RVH) writeRfGuest ++= List(Rvh.HLV_B, Rvh.HLV_H,  Rvh.HLV_W, Rvh.HLV_BU, Rvh.HLV_HU)
   if (RVH && XLEN.get == 64) writeRfGuest ++= List(Rvh.HLV_D, Rvh.HLV_WU)
   for (op <- writeRfGuest) writingRf += add(op).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(LOAD -> True, GUEST -> True)).uop
-  // GUEST -> Bool(writeRfGuest.contains(op))
+  val writeRfGuestExecute = ArrayBuffer[MicroOp](Rvh.HLVX_HU, Rvh.HLVX_WU)
+  if (RVH) for (op <- writeRfGuestExecute) writingRf += add(op).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(EXECUTE -> True, GUEST -> True)).uop
 
   // Store stuff
   val storeOps = List(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.S)
