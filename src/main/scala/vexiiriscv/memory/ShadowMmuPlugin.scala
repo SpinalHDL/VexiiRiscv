@@ -165,6 +165,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
         }
 
 
+        ADDRESS_EXTENSION := False
         BYPASS_TRANSLATION := !requireMmuLockup
         WAYS_OH       := oh
         (WAYS_PHYSICAL, entries.map(_.physicalAddressFrom(ps.req.PRE_ADDRESS))).zipped.foreach(_ := _)

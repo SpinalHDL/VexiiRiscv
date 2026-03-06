@@ -127,6 +127,7 @@ class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) e
     val WAYS_OH  = Payload(Bits(wayCount bits))
     val WAYS_PHYSICAL  = Payload(Vec.fill(wayCount)(PHYSICAL_ADDRESS()))
     val BYPASS_TRANSLATION = Payload(Bool())
+    val ADDRESS_EXTENSION = Payload(Bool())
   }
 }
 

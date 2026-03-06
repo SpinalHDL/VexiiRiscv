@@ -70,6 +70,7 @@ class StaticTranslationPlugin(var physicalWidth: Int, val translationLevel : Int
       TRANSLATED := spec.req.PRE_ADDRESS.resized //PC RESIZED
       PAGE_FAULT := False
       ACCESS_FAULT := spec.req.PRE_ADDRESS.drop(physicalWidth) =/= 0
+      ADDRESS_EXTENSION := False
       BYPASS_TRANSLATION := True
     }
   }

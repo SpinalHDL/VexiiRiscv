@@ -403,6 +403,7 @@ class MmuPlugin(var spec : MmuSpec,
         }
 
 
+        ADDRESS_EXTENSION := requireMmuLockup.mux(ps.req.PRE_ADDRESS(MIXED_WIDTH-1), False)
         BYPASS_TRANSLATION := !requireMmuLockup
         WAYS_OH       := oh
         (WAYS_PHYSICAL, entries.map(_.physicalAddressFrom(ps.req.PRE_ADDRESS))).zipped.foreach(_ := _)
