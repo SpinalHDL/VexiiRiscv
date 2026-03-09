@@ -112,6 +112,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
     }
 
     val grouped = spec.groupByLinked(_.csrFilter)
+    val condGrouped = grouped.keys.filter(_.isInstanceOf[CsrCondFilter]).map(_.asInstanceOf[CsrCondFilter]).groupByLinked(_.csrId)
 
     val fsm = new StateMachine{
       val IDLE = makeInstantEntry()
@@ -133,10 +134,23 @@ class CsrAccessPlugin(val layer : LaneLayer,
         val fire = False
       }
 
+      def csrAddressFix(csrId: UInt): UInt = {
+        val address = CombInit(csrId)
+
+        for(filter <- remapping) {
+          when(filter.from === csrId && filter.cond) {
+            address := filter.to
+          }
+        }
+
+        address
+      }
+
       val inject = new elp.Execute(injectAt){
         assert(!(up(LANE_SEL) && SEL && isCancel), "CsrAccessPlugin saw forbidden select && cancel request")
         val imm = IMM(UOP)
-        val csrAddress = UOP(Const.csrRange)
+        val csrAddress = csrAddressFix(UOP(Const.csrRange).asUInt)
+        val csrPriv = UOP(Const.csrRange)(8, 2 bits)
         val immZero = imm.z === 0
         val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
         val csrWrite = !(CSR_MASK && srcZero)
@@ -149,6 +163,8 @@ class CsrAccessPlugin(val layer : LaneLayer,
         })
         val implemented = sels.values.orR
 
+        val condImplemented = condGrouped.map(_._1 === csrAddress).orR
+
         val onDecodeDo = isValid && SEL && isActive(IDLE)
         val priorities = spec.collect { case e: CsrOnDecode => e.priority }.distinct.sorted
         for (priority <- priorities) {
@@ -160,12 +176,13 @@ class CsrAccessPlugin(val layer : LaneLayer,
           }
         }
 
-        val trap = !implemented || bus.decode.exception
+        val trap = !implemented || bus.decode.exception || bus.decode.hostDenied
 
         bus.decode.read := csrRead
         bus.decode.write := csrWrite
         bus.decode.hartId := Global.HART_ID
-        bus.decode.address := csrAddress.asUInt
+        bus.decode.address := csrAddress
+        bus.decode.privilege := csrPriv
 
         val unfreeze = RegNext(False) init(False)
         interface.hartId := Global.HART_ID
@@ -195,6 +212,9 @@ class CsrAccessPlugin(val layer : LaneLayer,
         trapPort.tval := UOP.resized
         trapPort.arg := 0
         trapPort.laneAge := Execute.LANE_AGE
+        when((implemented || condImplemented) && !bus.decode.hostDenied && bus.decode.virtual) {
+          trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
+        }
 
         val flushReg = RegInit(False) setWhen(flushPort.valid) clearWhen(!elp.isFreezed())
         when(flushReg) {
