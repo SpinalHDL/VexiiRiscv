@@ -454,6 +454,22 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
             ).map(pending.state.code === _).orR
           )
 
+          val writeGVA = List(
+            CSR.MCAUSE_ENUM.BREAKPOINT,
+            CSR.MCAUSE_ENUM.FETCH_MISSALIGNED,
+            CSR.MCAUSE_ENUM.LOAD_MISALIGNED,
+            CSR.MCAUSE_ENUM.STORE_MISALIGNED,
+            CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT,
+            CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT,
+            CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT,
+            CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.STORE_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT
+          ).map(pending.state.code === _).orR
+
           if (fl1p.nonEmpty) fetchL1Invalidate(hartId).cmd.valid := False
           if (lsu.nonEmpty) lsuL1Invalidate(hartId).cmd.valid := False
           val trapEnterDebug = RegInit(False)
@@ -692,6 +708,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                 csr.m.status.mie := False
                 csr.m.status.mpie := csr.m.status.mie
                 if (priv.p.withUser) csr.m.status.mpp := csr.privilege(1 downto 0).asUInt
+                if (priv.p.withHypervisor) csr.m.status.gva setWhen(writeGVA && PrivilegeMode.isGuest(csr.privilege))
                 if (priv.p.withHypervisor) csr.m.status.mpv := PrivilegeMode.isGuest(csr.privilege)
 
                 csr.m.cause.code := buffer.trap.code
@@ -702,6 +719,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                 csr.s.status.spie := csr.s.status.sie
                 if (priv.p.withUser) csr.s.status.spp := csr.privilege(0, 1 bits).asUInt
                 if (priv.p.withHypervisor) csr.h.status.spv := PrivilegeMode.isGuest(csr.privilege)
+                if (priv.p.withHypervisor) csr.h.status.gva setWhen(writeGVA && PrivilegeMode.isGuest(csr.privilege))
                 if (priv.p.withHypervisor) when(PrivilegeMode.isGuest(csr.privilege)) {
                   csr.h.status.spvp := csr.privilege(0, 1 bits).asBool
                 }
