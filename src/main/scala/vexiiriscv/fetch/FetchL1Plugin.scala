@@ -459,13 +459,30 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       val withDirectHits = !hitsWithTranslationWays || onAddress0.translationPort.wayCount == 0
       val w = for((way, wayId) <- ways.zipWithIndex) yield new Area{
         if (withDirectHits) WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === stpk.TRANSLATED(tagRange)
+
         val indirect = if(!withDirectHits) new Area{
-          val wayTlbHits = (0 until onAddress0.translationPort.wayCount) map (tlbWayId => WAYS_TAGS(wayId).address === stpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && stpk.WAYS_OH(tlbWayId))
-          val translatedHits = wayTlbHits.orR
-          val bypassAddress = insert(tpk.TRANSLATED.resize(Global.MIXED_WIDTH bits))
-          when(tpk.BYPASS_TRANSLATION)(bypassAddress := MIXED_PC_SOLVED)
-          val bypassHits = WAYS_TAGS(wayId).address ===  bypassAddress >> tagRange.low
-          WAYS_HITS(wayId) := (stpk.BYPASS_TRANSLATION ? bypassHits | translatedHits) & WAYS_TAGS(wayId).loaded
+          val stage1 = new Area {
+            val wayTlbHits = (0 until onAddress0.translationPort.wayCount) map {
+              tlbWayId => WAYS_TAGS(wayId).address === tpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && tpk.WAYS_OH(tlbWayId)
+            }
+            val translatedHits = wayTlbHits.orR
+            val bypassHits = WAYS_TAGS(wayId).address === MIXED_PC_SOLVED >> tagRange.low
+            val hit = tpk.BYPASS_TRANSLATION ? bypassHits | translatedHits
+          }
+
+          val stage2 = priv.implementHypervisor generate new Area {
+            val wayTlbHits = (0 until onAddress1.translationPort.wayCount) map {
+              tlbWayId => WAYS_TAGS(wayId).address === stpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && stpk.WAYS_OH(tlbWayId)
+            }
+            val translatedHits = wayTlbHits.orR
+
+            /* A success stage 2 require a valid stage 1 translation */
+            val firstHit = tpk.WAYS_OH.orR || tpk.BYPASS_TRANSLATION
+
+            val hit = stpk.BYPASS_TRANSLATION ? stage1.hit | (translatedHits & firstHit)
+          }
+
+          WAYS_HITS(wayId) := priv.implementHypervisor.mux(stage2.hit, stage1.hit) & WAYS_TAGS(wayId).loaded
         }
       }
     }
