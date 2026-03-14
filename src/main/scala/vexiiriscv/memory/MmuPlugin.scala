@@ -438,7 +438,7 @@ class MmuPlugin(var spec : MmuSpec,
       IDLE whenIsActive {
         when(arbiter.io.output.valid) {
           val ppn = priv.implementHypervisor.mux(
-            Mux(arbiter.io.output.guest, vsatp.ppn, satp.ppn),
+            Mux(arbiter.io.output.indirect, vsatp.ppn, satp.ppn),
             satp.ppn
           )
           portOhReg := arbiter.io.chosenOH
@@ -446,7 +446,7 @@ class MmuPlugin(var spec : MmuSpec,
           storageEnable := arbiter.io.output.storageEnable
           virtual := arbiter.io.output.address
           load.address := (ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
-          isTwoStage := arbiter.io.output.guest
+          isTwoStage := arbiter.io.output.indirect
           arbiter.io.output.ready := True
           goto(CMD(spec.levels.size - 1))
         }

@@ -421,9 +421,9 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           // Interface with the address translation service (MMU)
           val atsPorts = ats.mayNeedRedo generate new Area{
             val refill = ats.newRefillPort()
-            val isGuestRefill = pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId))
+            val isGuestRefill = pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId)) || (csr.m.status.mprv && csr.m.status.mpv)
             refill.cmd.valid := False
-            refill.cmd.guest := isGuestRefill
+            refill.cmd.indirect := isGuestRefill
             refill.cmd.permission.read := !pending.state.arg(1)
             refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
             refill.cmd.permission.execute := pending.state.arg(1)
@@ -444,7 +444,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val satsPorts = sats.mayNeedRedo generate new Area{
             val refill = sats.newRefillPort()
             refill.cmd.valid := False
-            refill.cmd.guest := True
+            refill.cmd.indirect := False
             refill.cmd.permission.read := !pending.state.arg(1)
             refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
             refill.cmd.permission.execute := pending.state.arg(1)

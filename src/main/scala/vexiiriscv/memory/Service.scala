@@ -25,7 +25,16 @@ case class AddressTranslationRefillCmdPerm() extends Bundle{
 
 case class AddressTranslationRefillCmd(storageWidth : Int) extends Bundle{
   val address = MIXED_ADDRESS()
-  val guest = Bool()
+  /*
+   * For first-stage MMU:
+   *    false : this request is a one-stage translation.
+   *    true  : this request is a two-stage translation.
+   *
+   * For shadow (second-stage) MMU
+   *    false : this request is for explicit memory access.
+   *    true  : this request is for implicit memory access.
+   */
+  val indirect = Bool()
   val storageId = UInt(storageWidth bits)
   val storageEnable = Bool()
 

@@ -195,6 +195,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       val storageOhReg = Reg(Bits(storages.size bits))
       val storageEnable = Reg(Bool())
       val permission = Reg(cloneOf(arbiter.io.output.permission))
+      val isImplicitAccess = Reg(Bool())
 
       arbiter.io.output.ready := False
       IDLE whenIsActive {
@@ -205,6 +206,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
           virtual := arbiter.io.output.address
           permission := arbiter.io.output.permission
           load.address := (hgatp.ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
+          isImplicitAccess := arbiter.io.output.indirect
           arbiter.io.output.ready := True
 
           when(hgatp.mode === spec.satpMode) {
@@ -405,8 +407,11 @@ class ShadowMmuPlugin(var spec : MmuSpec,
             o.ae_ptw      := accessFault && !load.leaf
             o.ae_final    := accessFault && load.leaf //Note so sure
             o.level       := spec.levels.size - 1 - levelId
-            o.address     := Mux(translationFault, load.address,
-                                  Mux(permissionFault, virtual, translatedAddress).resized)
+            o.address     := Mux(isImplicitAccess,
+              Mux(translationFault, load.address,
+                  Mux(permissionFault, virtual, translatedAddress).resized),
+              virtual
+            ).resized
           }
         }
       }
