@@ -174,6 +174,7 @@ object CSR {
   val SIE         = 0x104
   val STVEC       = 0x105
   val SCOUNTEREN  = 0x106
+  val SENVCFG     = 0x10A
   val SSCRATCH    = 0x140
   val SEPC        = 0x141
   val SCAUSE      = 0x142

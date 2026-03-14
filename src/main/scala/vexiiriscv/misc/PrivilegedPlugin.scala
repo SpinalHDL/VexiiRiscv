@@ -984,6 +984,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val priority = Mux(interrupt === B(0), B(0), B(1))
           api.read(CSR.STOPI, 0 -> priority, 16 -> interrupt)
         }
+
+        api.allowCsr(CSR.SENVCFG, True)
       }
 
       val vs = p.withHypervisor generate new Area {
