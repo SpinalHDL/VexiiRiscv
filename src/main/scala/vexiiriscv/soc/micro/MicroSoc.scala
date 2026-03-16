@@ -34,7 +34,7 @@ class MicroSoc(p : MicroSocParam) extends Component {
 
     val sysbus = (p.socCtrl.withDebug && p.withDebugSysBus) generate{
       val area = socCtrl.debugModule.dm.makeSysbusTilelink()
-      mainBus << area.node
+      mainBus << area.filter.down
     }
 
     val ram = new tilelink.fabric.RamFiber(p.ramBytes)
