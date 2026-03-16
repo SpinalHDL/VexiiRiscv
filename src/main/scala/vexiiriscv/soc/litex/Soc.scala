@@ -80,6 +80,7 @@ class SocConfig(){
   var l2Bytes = 0
   var l2Ways = 0
   var cpuCount = 1
+  var debugSysBus = false
   var litedramWidth = 32
   var withAxi3 = false
   var withPeripheralCd = false
@@ -112,6 +113,7 @@ class SocConfig(){
     opt[Int]("cpu-count") action { (v, c) => cpuCount = v }
     opt[Int]("l2-bytes") action { (v, c) => l2Bytes = v }
     opt[Int]("l2-ways") action { (v, c) => l2Ways = v }
+    opt[Boolean]("debug-sysbus") action { (v, c) => debugSysBus = v }
     opt[Unit]("with-dma") action { (v, c) => withDma = true }
     opt[Unit]("with-cpu-clk") action { (v, c) => withCpuCd = true }
     opt[Unit]("with-axi3") action { (v, c) => withAxi3 = true }
@@ -172,6 +174,12 @@ class Soc(c : SocConfig) extends Component {
   cpuResetCtrl.addAsyncReset(litexCd.isResetActive, HIGH)
   val cpuCd = cpuResetCtrl.cd
 
+  val debugReset = c.withDebug generate in.Bool()
+  val debug = c.withDebug generate ClockDomain(cpuCd.clock, debugReset)(new DebugModuleSocFiber(withJtagTap, withJtagInstruction) {
+    out(dm.ndmreset)
+    dm.dmp.withSysBus = c.debugSysBus
+  })
+  val debugSysBus = c.debugSysBus generate cpuCd(debug.dm.makeSysbusTilelink())
 
   val system = cpuCd on new AreaRoot {
     val mainDataWidth = vexiiParam.memDataWidth
@@ -430,6 +438,7 @@ class Soc(c : SocConfig) extends Component {
           mBus << List(vexii.iBus, vexii.lsuL1Bus)
           ioBus << List(vexii.dBus)
         }
+        if(c.debugSysBus) mBus << debugSysBus.filter.down
       }
 
       val wc = withCoherency generate new Area {
@@ -439,6 +448,8 @@ class Soc(c : SocConfig) extends Component {
           cBus << List(vexii.iBus, vexii.lsuL1Bus)
           ioBus << List(vexii.dBus)
         }
+
+        if(c.debugSysBus) cBus << debugSysBus.filter.down
 
         for (video <- video) cBus << video.ctrl.dma
         if(dmaFilter != null) cBus << dmaFilter.down
@@ -511,11 +522,7 @@ class Soc(c : SocConfig) extends Component {
     }
   }
 
-  val debugReset = c.withDebug generate in.Bool()
-  val debug = c.withDebug generate ClockDomain(cpuCd.clock, debugReset)(new DebugModuleSocFiber(withJtagTap, withJtagInstruction) {
-    out(dm.ndmreset)
-    system.vexiis.foreach(bindHart)
-  })
+  if(c.withDebug) system.vexiis.foreach(debug.bindHart)
 
   if(c.withDebugProbePc0) {
     debug.dm.p.probeWidth = 32
@@ -587,6 +594,7 @@ object PythonArgsGen extends App{
   assert(new scopt.OptionParser[Unit]("Vexii") {
     help("help").text("prints this usage text")
     vexiiParam.addOptions(this)
+    opt[Boolean]("debug-sysbus") action { (v, c) =>  }
     opt[String]("python-file") action { (v, c) => pythonPath = v }
 
   }.parse(args, ()).nonEmpty)
