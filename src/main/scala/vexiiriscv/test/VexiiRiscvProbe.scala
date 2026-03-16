@@ -615,7 +615,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
               if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))
               if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
             }
-            if(uop.commit) backends.foreach(_.commit(hartId, decode.pc))
+            if(uop.commit) backends.foreach(_.commit(hartId, decode.pc, uop.instruction))
             if (autoStoreBroadcast && uop.storeValid) {
               backends.foreach(_.storeBroadcast(hartId, uop.storeSqId))
             }
