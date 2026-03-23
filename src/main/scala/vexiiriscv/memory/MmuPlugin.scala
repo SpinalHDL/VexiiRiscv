@@ -481,7 +481,10 @@ class MmuPlugin(var spec : MmuSpec,
         val flags = readed.resized.as(MmuEntryFlags())
         val leaf = flags.R || flags.X
         val reservedFault = (readed & spec.pteReserved).orR
-        val exception = !flags.V || (!flags.R && flags.W) || rsp.error.orR || (!leaf && (flags.D | flags.A | flags.U)) || reservedFault
+        val exception = !flags.V || (!flags.R && flags.W) || rsp.error.orR ||
+                        (!leaf && (flags.D | flags.A | flags.U)) ||
+                        (leaf && !flags.A) ||
+                        reservedFault
         val levelToPhysicalAddress = List.fill(spec.levels.size)(UInt(spec.physicalWidth bits))
         val levelException = List.fill(spec.levels.size)(False)
         val nextLevelBase = U(0, PHYSICAL_WIDTH bits)
@@ -533,16 +536,16 @@ class MmuPlugin(var spec : MmuSpec,
     }
 
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
-        val pteFault = (load.exception || load.levelException(levelId) || !load.flags.A) || (levelId == 0).mux(!load.leaf, False)
+        val pteFault = (load.exception || load.levelException(levelId)) || (levelId == 0).mux(!load.leaf, False)
         val pteReadError = load.rsp.error(0)
         val shadowReadError = load.rsp.error(1)
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
         val pageFault = !shadowReadError && !pteReadError && pteFault
         val accessFault = pteReadError || (!pteFault && leafAccessFault)
         val guestFault = shadowReadError && !pteReadError
+        val translationFault = pteFault || leafAccessFault
 
         def doneLogic() : Unit = {
-          val translationFault = pteFault || pteReadError || leafAccessFault || shadowReadError
           val translatedAddress = load.levelToPhysicalAddress(levelId)
           translatedAddress(0, level.virtualOffset bits) := virtual.resize(level.virtualOffset)
 
@@ -589,7 +592,7 @@ class MmuPlugin(var spec : MmuSpec,
             } otherwise {
               levelId match {
                 case 0 => {
-                  when(!storageEnable || load.exception) {
+                  when(!storageEnable || translationFault) {
                     goto(DONE(levelId))
                   } otherwise {
                     goto(REFILL(levelId))
@@ -599,7 +602,7 @@ class MmuPlugin(var spec : MmuSpec,
                   when(load.exception) {
                     goto(DONE(levelId))
                   } elsewhen(load.leaf) {
-                    when(!storageEnable) {
+                    when(!storageEnable || translationFault) {
                       goto(DONE(levelId))
                     } otherwise {
                       goto(REFILL(levelId))

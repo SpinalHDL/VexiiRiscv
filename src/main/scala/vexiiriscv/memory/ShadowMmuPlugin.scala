@@ -265,7 +265,10 @@ class ShadowMmuPlugin(var spec : MmuSpec,
         val flags = readed.resized.as(MmuEntryFlags())
         val leaf = flags.R || flags.X
         val reservedFault = (readed & spec.pteReserved).orR
-        val exception = !flags.V || (!flags.R && flags.W) || rsp.error.orR || (!leaf && (flags.D | flags.A | flags.U)) || reservedFault
+        val exception = !flags.V || (!flags.R && flags.W) || rsp.error.orR ||
+                        (!leaf && (flags.D | flags.A | flags.U)) ||
+                        (leaf && (!flags.A | !flags.U)) ||
+                        reservedFault
         val levelToPhysicalAddress = List.fill(spec.levels.size)(UInt(spec.physicalWidth bits))
         val levelException = List.fill(spec.levels.size)(False)
         val nextLevelBase = U(0, PHYSICAL_WIDTH bits)
@@ -307,11 +310,12 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       }
 
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
-        val pteFault = load.exception || load.levelException(levelId) || !load.flags.A || !load.flags.U || (levelId == 0).mux(!load.leaf, False)
+        val pteFault = load.exception || load.levelException(levelId) || (levelId == 0).mux(!load.leaf, False)
         val pteReadError = load.rsp.error.orR
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
         val pageFault = !pteReadError && pteFault
         val accessFault = pteReadError || !pteFault && leafAccessFault
+        val translationFault = pteFault || leafAccessFault
         val permissionFault = Mux(permission.read, !(load.flags.R || (load.flags.X && mmu.logic.status.mxr && !isImplicitAccess)), False) ||
                               Mux(permission.write, !(load.flags.W && load.flags.D), False) ||
                               Mux(permission.execute, !(load.flags.X), False)
@@ -334,7 +338,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
             } otherwise {
               levelId match {
                 case 0 => {
-                  when(!storageEnable || load.exception) {
+                  when(!storageEnable || translationFault) {
                     goto(DONE(levelId))
                   } otherwise {
                     goto(REFILL(levelId))
@@ -344,7 +348,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
                   when(load.exception) {
                     goto(DONE(levelId))
                   } elsewhen(load.leaf) {
-                    when(!storageEnable) {
+                    when(!storageEnable || translationFault) {
                       goto(DONE(levelId))
                     } otherwise {
                       goto(REFILL(levelId))
@@ -395,7 +399,6 @@ class ShadowMmuPlugin(var spec : MmuSpec,
           }
 
           refillPorts.map(_.rsp).foreach { o =>
-            val translationFault = pteFault || pteReadError || leafAccessFault
             val translatedAddress = load.levelToPhysicalAddress(levelId)
             translatedAddress(0, level.virtualOffset bits) := virtual.resize(level.virtualOffset)
 
