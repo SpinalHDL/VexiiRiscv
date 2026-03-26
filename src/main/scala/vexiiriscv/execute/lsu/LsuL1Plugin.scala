@@ -57,6 +57,13 @@ case class LockPort() extends Bundle with IMasterSlave {
   override def asMaster() = out(this)
 }
 
+case class LsuL1TimingParameter(var bankReadAt: Int = 0,
+                                var wayReadAt: Int = 0,
+                                var hitsAt: Int = 1,
+                                var hitAt: Int = 2,
+                                var bankMuxesAt: Int = 1,
+                                var bankMuxAt: Int = 2,
+                                var ctrlAt: Int = 2)
 
 /*
 This is the L1 cache design of VexiiRiscv which originate in part from NaxRiscv.
@@ -77,6 +84,7 @@ List of hazard to take care of :
   - redo when detected
  */
 class LsuL1Plugin(val lane : ExecuteLaneService,
+                  val timingParameter: LsuL1TimingParameter,
                   var memDataWidth: Int,
                   var cpuDataWidth: Int,
                   var refillCount: Int,
@@ -84,13 +92,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var setCount: Int,
                   var wayCount: Int,
                   var lineSize: Int = 64,
-                  var bankReadAt: Int = 0,
-                  var wayReadAt: Int = 0,
-                  var hitsAt: Int = 1,
-                  var hitAt: Int = 2,
-                  var bankMuxesAt: Int = 1,
-                  var bankMuxAt: Int = 2,
-                  var ctrlAt: Int = 2,
                   var coherentReadAt: Int = 0,
                   var coherentHitsAt: Int = 1,
                   var coherentHitAt: Int = 1,
@@ -104,6 +105,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var probeIdWidth: Int = -1,
                   var ackIdWidth: Int = -1,
                   var bootMemClear : Boolean) extends FiberPlugin with InitService with LsuL1Service{
+  import timingParameter._
 
   override def initHold(): Bool = !logic.initializer.done || bootMemClear.mux(logic.initializerMem.busy, False)
 

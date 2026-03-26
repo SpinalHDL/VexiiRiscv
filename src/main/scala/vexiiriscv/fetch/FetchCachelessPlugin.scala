@@ -24,19 +24,23 @@ object FetchCachelessPlugin{
   val ID = blocking[Int]
 }
 
+case class FetchCachelessTimingParameter(var addressAt: Int = 0,
+                                         var pmaAt: Int = 0,
+                                         var forkAt : Int = 0,
+                                         var joinAt : Int = 1)
+
 /**
  * Implement the instruction fetch bus without L1 cache.
  * The main particularity of this implementation is that it support out of order memory busses
  */
 class FetchCachelessPlugin(var wordWidth : Int,
+                           val timingParameter: FetchCachelessTimingParameter,
                            var translationStorageParameter: Any,
                            var translationPortParameter: Any,
                            var pmpPortParameter : Any,
-                           var addressAt: Int = 0,
-                           var pmaAt: Int = 0,
-                           var forkAt : Int = 0,
-                           var joinAt : Int = 1,
                            var cmdForkPersistence : Boolean = true) extends FiberPlugin{
+  import timingParameter._
+
   val regions = Handle[ArrayBuffer[PmaRegion]]()
 
   val logic = during setup new Area{

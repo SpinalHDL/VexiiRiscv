@@ -34,6 +34,13 @@ trait FetchL1Service{
   def newInvalidationPort() = invalidationPorts.addRet(FetchL1InvalidationBus())
 }
 
+case class FetchL1TimingParameter(var readAt: Int = 0,
+                                  var hitsAt: Int = 1,
+                                  var hitAt: Int = 1,
+                                  var bankMuxesAt: Int = 1,
+                                  var bankMuxAt: Int = 2,
+                                  var ctrlAt: Int = 2)
+
 /**
  * Implement and bind a instruction L1 cache to the CPU
  * The main particularity of this implementation is that the cache is non-blocking and canc onnect to  prefetching plugins
@@ -41,22 +48,18 @@ trait FetchL1Service{
 class FetchL1Plugin(var translationStorageParameter: Any,
                     var translationPortParameter: Any,
                     var pmpPortParameter : Any,
+                    val timingParameter: FetchL1TimingParameter,
                     var memDataWidth : Int,
                     var fetchDataWidth : Int,
                     var setCount: Int,
                     var wayCount: Int,
                     var refillCount: Int = 1,
                     var lineSize: Int = 64,
-                    var readAt: Int = 0,
-                    var hitsAt: Int = 1,
-                    var hitAt: Int = 1,
-                    var bankMuxesAt: Int = 1,
-                    var bankMuxAt: Int = 2,
-                    var ctrlAt: Int = 2,
                     var hitsWithTranslationWays: Boolean = false,
                     var reducedBankWidth: Boolean = false,
                     var tagsReadAsync: Boolean = false,
                     var bootMemClear : Boolean) extends FiberPlugin with FetchL1Service with InitService {
+  import timingParameter._
 
   def getBusParameter() = FetchL1BusParam(
     physicalWidth = PHYSICAL_WIDTH,

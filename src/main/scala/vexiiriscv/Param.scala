@@ -25,6 +25,8 @@ import vexiiriscv.test.WhiteboxerPlugin
 import java.security.MessageDigest
 import scala.collection.mutable.{ArrayBuffer, Set}
 import scala.util.Random
+import vexiiriscv.fetch.FetchCachelessTimingParameter
+import vexiiriscv.fetch.FetchL1TimingParameter
 
 
 object FetchBusEnum extends Enumeration {
@@ -271,6 +273,88 @@ class ParamSimple() {
     rspAt = 1
   )
 
+  def fetchCachelessTiming = FetchCachelessTimingParameter(
+    addressAt = 0,
+    pmaAt     = 0,
+    forkAt    = fetchForkAt,
+    joinAt    = fetchForkAt+1 //You can for instance allow the external memory to have more latency by changing this
+  )
+  def fetchCachelessHypervisorTiming = FetchCachelessTimingParameter(
+    addressAt = 0,
+    pmaAt     = 1,
+    forkAt    = fetchForkAt+1,
+    joinAt    = fetchForkAt+2 //You can for instance allow the external memory to have more latency by changing this
+  )
+
+  def fetchL1Timing = FetchL1TimingParameter(
+    readAt      = 0,
+    hitsAt      = 1,
+    hitAt       = 1,
+    bankMuxesAt = 1,
+    bankMuxAt   = 2,
+    ctrlAt      = 2
+  )
+  def fetchL1HypervisorTiming = FetchL1TimingParameter(
+    readAt      = 0,
+    hitsAt      = 2,
+    hitAt       = 2,
+    bankMuxesAt = 2,
+    bankMuxAt   = 3,
+    ctrlAt      = 3
+  )
+
+  def lsuCachelessTiming = LsuCachelessTimingParameter(
+    addressAt = 0,
+    triggerAt = 0,
+    pmaAt     = lsuPmaAt,
+    forkAt    = lsuForkAt+0,
+    joinAt    = lsuForkAt+1,
+    wbAt      = 2 //TODO
+  )
+  def lsuCachelessHypervisorTiming = LsuCachelessTimingParameter(
+    addressAt = 0,
+    triggerAt = 1,
+    pmaAt     = lsuPmaAt+1,
+    forkAt    = lsuForkAt+1,
+    joinAt    = lsuForkAt+2,
+    wbAt      = 3 //TODO
+  )
+
+  def lsuTiming = LsuTimingParameter(
+    addressAt = 0,
+    pmaAt = 1,
+    triggerAt = 1,
+    ctrlAt = 2,
+    wbAt = 2,
+    addressLength = 1
+  )
+  def lsuHypervisorTiming = LsuTimingParameter(
+    addressAt = 0,
+    pmaAt = 2,
+    triggerAt = 2,
+    ctrlAt = 3,
+    wbAt = 3,
+    addressLength = 2
+  )
+
+  def lsuL1Timing = LsuL1TimingParameter(
+    bankReadAt = 0,
+    wayReadAt = 0,
+    hitsAt = 1,
+    hitAt = 2,
+    bankMuxesAt = 1,
+    bankMuxAt = 2,
+    ctrlAt = 2
+  )
+  def lsuL1HypervisorTiming = LsuL1TimingParameter(
+    bankReadAt = 0,
+    wayReadAt = 0,
+    hitsAt = 2,
+    hitAt = 3,
+    bankMuxesAt = 2,
+    bankMuxAt = 3,
+    ctrlAt = 3
+  )
 
   def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt) + withRvh.toInt
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
@@ -821,9 +905,10 @@ class ParamSimple() {
     plugins += new fetch.FetchPipelinePlugin()
     if(!fetchL1Enable) {
       plugins += new fetch.FetchCachelessPlugin(
-        pmaAt = 0+1,
-        forkAt = fetchForkAt+1,
-        joinAt = fetchForkAt+1+1, //You can for instance allow the external memory to have more latency by changing this
+        timingParameter = withRvh match {
+          case true => fetchCachelessHypervisorTiming
+          case false => fetchCachelessTiming
+        },
         wordWidth = fetchMemDataWidth,
         pmpPortParameter = fetchNoL1PmpParam.offset(withRvh.toInt),
         translationStorageParameter = fetchTsp,
@@ -862,11 +947,10 @@ class ParamSimple() {
           case true => fetchTpp
         },
         pmpPortParameter = fetchL1PmpParam.offset(withRvh.toInt),
-        hitsAt = 1+1,
-        hitAt = 1+1,
-        bankMuxesAt = 1+1,
-        bankMuxAt = 2+1,
-        ctrlAt = 2+1
+        timingParameter = withRvh match {
+          case true => fetchL1HypervisorTiming
+          case false => fetchL1Timing
+        }
       )
 
       fetchL1Prefetch match {
@@ -987,12 +1071,10 @@ class ParamSimple() {
         layer     = early0,
         withAmo   = withRva,
         withSpeculativeLoadFlush = true,
-        addressAt = 0,
-        triggerAt = 0+1,
-        pmaAt     = lsuPmaAt+1,
-        forkAt    = lsuForkAt+0+1,
-        joinAt    = lsuForkAt+1+1,
-        wbAt      = 2+1, //TODO
+        timingParameter = withRvh match {
+          case true => lsuCachelessHypervisorTiming
+          case false => lsuCachelessTiming
+        },
         pmpPortParameter = lsuNoL1PmpParam.offset(withRvh.toInt),
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
@@ -1008,10 +1090,10 @@ class ParamSimple() {
     }
     if(lsuL1Enable){
       plugins += new LsuPlugin(
-        pmaAt = 1 + 1,
-        triggerAt = 1 + 1,
-        ctrlAt = 2 + 1,
-        wbAt = 2 + 1,
+        timingParameter = withRvh match {
+          case true => lsuHypervisorTiming
+          case false => lsuTiming
+        },
         layer = early0,
         withRva = withRva,
         storeRs2At = storeRs2Late.mux(2, 0),
@@ -1040,11 +1122,10 @@ class ParamSimple() {
         withCbm        = withRvcbm && !withRvcbmLlc,
         bootMemClear = bootMemClear,
         tagsReadAsync  = lsuL1TagsReadAsync,
-        hitsAt = 1 + 1,
-        hitAt = 2 + 1,
-        bankMuxesAt = 1 + 1,
-        bankMuxAt = 2 + 1,
-        ctrlAt = 2 + 1,
+        timingParameter = withRvh match {
+          case true => lsuL1HypervisorTiming
+          case false => lsuL1Timing
+        }
       )
 
       lsuHardwarePrefetch match {

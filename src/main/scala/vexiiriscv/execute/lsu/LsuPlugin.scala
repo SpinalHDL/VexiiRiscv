@@ -46,6 +46,12 @@ case class StoreBufferOp() extends Bundle {
   val storeId = Decode.STORE_ID()
 }
 
+case class LsuTimingParameter(var addressAt : Int = 0,
+                              var triggerAt : Int = 1,
+                              var pmaAt : Int = 1,
+                              var ctrlAt : Int = 2,
+                              var wbAt : Int = 2,
+                              var addressLength : Int = 1)
 
 /**
  * The LsuPlugin does many things :
@@ -69,15 +75,13 @@ class LsuPlugin(var layer : LaneLayer,
                 var pmpPortParameter : Any,
                 var softwarePrefetch: Boolean,
                 var withCbm: Boolean,
+                val timingParameter: LsuTimingParameter,
                 var withLlcFlush : Boolean = false,
-                var addressAt: Int = 0,
-                var triggerAt : Int = 1,
-                var pmaAt : Int = 1,
-                var ctrlAt: Int = 2,
-                var wbAt : Int = 2,
                 var storeRs2At : Int = 0, //Note that currently, it only apply for integer store (not float store)
                 var storeBufferSlots : Int = 0,
                 var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuService with CmoService{
+  import timingParameter._
+
   if(withLlcFlush) assert(withCbm)
   def withL1Cmb = withCbm && !withLlcFlush
 
@@ -373,7 +377,7 @@ class LsuPlugin(var layer : LaneLayer,
       val CMD, COMPLETION = new State()
       val arbiter = StreamArbiterFactory().transactionLock.lowerFirst.buildOn(invalidationPorts.map(_.cmd))
       val cmdCounter = Reg(UInt(log2Up(l1.SETS) + 1 bits))
-      val inflight = (addressAt+2 to ctrlAt).map(elp.execute).map(e => e(l1.SEL) && e(l1.FLUSH)).orR
+      val inflight = (addressAt+addressLength to ctrlAt).map(elp.execute).map(e => e(l1.SEL) && e(l1.FLUSH)).orR
       val waiter = Reg(cloneOf(l1.WRITEBACK_BUSY.get))
 
       IDLE.whenIsActive{
@@ -606,7 +610,7 @@ class LsuPlugin(var layer : LaneLayer,
     }
     val stpk = pp.implementHypervisor.mux(onAddress1.translationPort.keys, onAddress0.translationPort.keys)
 
-    val onAddress2 = new elp.Execute(addressAt+2) {
+    val onAddress2 = pp.implementHypervisor generate new elp.Execute(addressAt+2) {
       bypass(l1.PHYSICAL_ADDRESS) := stpk.TRANSLATED
     }
 
@@ -621,7 +625,7 @@ class LsuPlugin(var layer : LaneLayer,
       storageSpec = null
     )
 
-    for(eid <- addressAt + 2 to ctrlAt) {
+    for(eid <- addressAt + addressLength to ctrlAt) {
       val e = elp.execute(eid)
       e.up(l1.SEL).setAsReg().init(False)
       when(e(FROM_LSU) && !e.isValid) {

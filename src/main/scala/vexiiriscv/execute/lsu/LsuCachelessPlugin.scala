@@ -23,6 +23,13 @@ import vexiiriscv.execute._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+case class LsuCachelessTimingParameter(var addressAt: Int = 0,
+                                       var triggerAt: Int = 0,
+                                       var pmaAt : Int = 0,
+                                       var forkAt: Int = 0,
+                                       var joinAt: Int = 1,
+                                       var wbAt: Int = 2)
+
 /** Implements an LSU without any cache.
   *
   * The tricky thing about this implementation, is the withSpeculativeLoadFlush parameter, which
@@ -45,15 +52,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
                          // WARNING, the fork cmd may be flushed out of existence before firing if
                          // any plugin doesn't flush from the first cycle after !freeze.
                          var withSpeculativeLoadFlush : Boolean,
+                         val timingParameter: LsuCachelessTimingParameter,
                          var translationStorageParameter: Any,
                          var translationPortParameter: Any,
-                         var pmpPortParameter : Any,
-                         var addressAt: Int = 0,
-                         var triggerAt: Int = 0,
-                         var pmaAt : Int = 0,
-                         var forkAt: Int = 0,
-                         var joinAt: Int = 1,
-                         var wbAt: Int = 2) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider {
+                         var pmpPortParameter : Any) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider {
+  import timingParameter._
 
   val WITH_RSP, WITH_ACCESS, FENCE = Payload(Bool())
   override def accessRefillCount: Int = 0
