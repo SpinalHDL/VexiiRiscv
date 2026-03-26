@@ -206,39 +206,39 @@ class ParamSimple() {
   )
 
   var fetchNoL1PmpParam = new PmpPortParameter(
-    napotMatchAt = 0 + 1,
-    napotHitsAt = 1 + 1,
-    torCmpAt = 0 + 1,
-    torHitsAt = 1 + 1,
-    hitsAt = 1 + 1,
-    rspAt = 1 + 1
+    napotMatchAt = 0,
+    napotHitsAt = 1,
+    torCmpAt = 0,
+    torHitsAt = 1,
+    hitsAt = 1,
+    rspAt = 1
   )
 
   var lsuNoL1PmpParam = new PmpPortParameter(
-    napotMatchAt = 0 + 1,
-    napotHitsAt = 0 + 1,
-    torCmpAt = 0 + 1,
-    torHitsAt = 0 + 1,
-    hitsAt = 0 + 1,
-    rspAt = 0 + 1
+    napotMatchAt = 0,
+    napotHitsAt = 0,
+    torCmpAt = 0,
+    torHitsAt = 0,
+    hitsAt = 0,
+    rspAt = 0
   )
 
   var fetchL1PmpParam = new PmpPortParameter(
-    napotMatchAt = 1 + 1,
-    napotHitsAt = 1 + 1,
-    torCmpAt = 1 + 1,
-    torHitsAt = 2 + 1,
-    hitsAt = 2 + 1,
-    rspAt = 2 + 1
+    napotMatchAt = 1,
+    napotHitsAt = 1,
+    torCmpAt = 1,
+    torHitsAt = 2,
+    hitsAt = 2,
+    rspAt = 2
   )
 
   var lsuL1PmpParam = new PmpPortParameter(
-    napotMatchAt = 1 + 1,
-    napotHitsAt = 1 + 1,
-    torCmpAt = 1 + 1,
-    torHitsAt = 2 + 1,
-    hitsAt = 2 + 1,
-    rspAt = 2 + 1
+    napotMatchAt = 1,
+    napotHitsAt = 1,
+    torCmpAt = 1,
+    torHitsAt = 2,
+    hitsAt = 2,
+    rspAt = 2
   )
 
   var lsuTsp = MmuStorageParameter(
@@ -272,7 +272,7 @@ class ParamSimple() {
   )
 
 
-  def alignerPluginFetchAt = fetchL1Enable.mux(2+1, 1+fetchForkAt+1)
+  def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt) + withRvh.toInt
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
@@ -757,7 +757,7 @@ class ParamSimple() {
     if(withMmu && lsuL1Enable) assert(lsuL1Sets <= 64, "MMU require not more than 64 sets in the LSU L1")
     if(withMmu && fetchL1Enable) assert(fetchL1Sets <= 64, "MMU require not more than 64 sets in the FETCH L1")
 
-    val intWritebackAt = 3 //Alias for "trap at" as well
+    val intWritebackAt = 2 + withRvh.toInt //Alias for "trap at" as well
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rvh = withRvh, rve = withRve)
     if (withMmu) plugins += new TranslatedDBusAccessPlugin()
@@ -825,7 +825,7 @@ class ParamSimple() {
         forkAt = fetchForkAt+1,
         joinAt = fetchForkAt+1+1, //You can for instance allow the external memory to have more latency by changing this
         wordWidth = fetchMemDataWidth,
-        pmpPortParameter = fetchNoL1PmpParam,
+        pmpPortParameter = fetchNoL1PmpParam.offset(withRvh.toInt),
         translationStorageParameter = fetchTsp,
         translationPortParameter = withMmu match {
           case false => null
@@ -861,7 +861,7 @@ class ParamSimple() {
           case false => null
           case true => fetchTpp
         },
-        pmpPortParameter = fetchL1PmpParam,
+        pmpPortParameter = fetchL1PmpParam.offset(withRvh.toInt),
         hitsAt = 1+1,
         hitAt = 1+1,
         bankMuxesAt = 1+1,
@@ -993,7 +993,7 @@ class ParamSimple() {
         forkAt    = lsuForkAt+0+1,
         joinAt    = lsuForkAt+1+1,
         wbAt      = 2+1, //TODO
-        pmpPortParameter = lsuNoL1PmpParam,
+        pmpPortParameter = lsuNoL1PmpParam.offset(withRvh.toInt),
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null
@@ -1020,7 +1020,7 @@ class ParamSimple() {
         softwarePrefetch = lsuSoftwarePrefetch,
         withCbm = withRvcbm,
         withLlcFlush = withRvcbmLlc,
-        pmpPortParameter = lsuL1PmpParam,
+        pmpPortParameter = lsuL1PmpParam.offset(withRvh.toInt),
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null
