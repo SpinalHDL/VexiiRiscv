@@ -209,6 +209,7 @@ class DispatchPlugin(var dispatchAt : Int,
       val laneLayerHits = Bits(lanesLayers.size bits)
       val hartId = Global.HART_ID()
       val uop = Decode.UOP()
+      val uopIsCompressed = Decode.UOP_IS_COMPRESSED()
       val hm = new HardMap()
       hmKeys.foreach(e => hm.add(e))
     }
@@ -364,6 +365,7 @@ class DispatchPlugin(var dispatchAt : Int,
       c.ctx.laneLayerHits := LANES_LAYER_HIT.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
       c.ctx.uop := Decode.UOP
+      c.ctx.uopIsCompressed := !Decode.INSTRUCTION_RAW(0, 2 bits).andR
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
       dispatchCtrl.link.down.ready clearWhen(isValid && !sent && !c.fire)
       when(Global.TRAP){ //TODO  May it could be injected futher down the arbitration ?
@@ -435,6 +437,7 @@ class DispatchPlugin(var dispatchAt : Int,
       insertNode(CtrlLaneApi.LANE_SEL) := oh.orR && !mux(_.cancel) && !api.haltDispatch
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.UOP := mux(_.ctx.uop)
+      Decode.UOP_IS_COMPRESSED := mux(_.ctx.uopIsCompressed)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
       when(!CtrlLaneApi.LANE_SEL || trap){
         //Allow to avoid having to check the valid down the pipeline
@@ -449,7 +452,7 @@ class DispatchPlugin(var dispatchAt : Int,
       val layer = layersOfInterest.map(e => B(eu.getLayerId(e._1), log2Up(eu.getLayers().size) bits) -> layerOhUnfiltred(e._2))
       eu.LAYER_SEL := OHMux.or(layer.map(_._2).asBits(), layer.map(_._1), true)
     }
-    
+
     val events = pcs map(pcs => new Area {
       val frontendStall = pcs.createEventPort(PerformanceCounterService.STALLED_CYCLES_FRONTEND, candidates.map(_.ctx.valid).norR)
       val backendStall = pcs.createEventPort(PerformanceCounterService.STALLED_CYCLES_BACKEND, candidates.map(_.ctx.valid).orR && candidates.map(_.fire).norR)

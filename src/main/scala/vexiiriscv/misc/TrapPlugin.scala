@@ -117,7 +117,7 @@ object TrapArg{
  * Also, as VexiiRiscv implements a few large CSR directly into a sharder memory (mepc, mtvec, ...), the TrapPlugin state-machine handles
  * the hardware read/write with those CSR (durring trap, mret, ...).
  */
-class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
+class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlugin with TrapService {
   override def trapHandelingAt: Int = trapAt
 
   def askWake(hartId : Int) = api.harts(hartId).askWake := True
@@ -295,6 +295,7 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val state = arbiter.down.toReg
           val pc = Reg(PC)
           val uop = priv.p.withHypervisor generate Reg(Decode.UOP)
+          val uopIsCompressed = priv.p.withHypervisor generate Reg(Decode.UOP_IS_COMPRESSED)
           val history = hp.nonEmpty generate Reg(Prediction.BRANCH_HISTORY)
           val slices = Reg(UInt(INSTRUCTION_SLICE_COUNT_WIDTH+1 bits))
 
@@ -355,7 +356,10 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val reader = lanes.map(_.execute(trapAt).down).reader(oh, true)
           when(valid) {
             pending.pc := reader(_(PC))
-            if(priv.p.withHypervisor) pending.uop := reader(_(Decode.UOP))
+            if(priv.p.withHypervisor) {
+              pending.uop := reader(_(Decode.UOP))
+              pending.uopIsCompressed := reader(_(Decode.UOP_IS_COMPRESSED))
+            }
             if(hp.nonEmpty) pending.history := reader(_(Prediction.BRANCH_HISTORY))
             pending.slices := reader(_(INSTRUCTION_SLICE_COUNT)).resize(INSTRUCTION_SLICE_COUNT_WIDTH+1)+1
           }
@@ -559,6 +563,28 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                 ).map(pending.state.code === _).orR
                 when(writeTval2 && pending.state.exception && (pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId)))) {
                   buffer.trap.tval2 := pending.state.tval2.resized
+                }
+
+                val writeHtinst = List(
+                  CSR.MCAUSE_ENUM.LOAD_MISALIGNED,
+                  CSR.MCAUSE_ENUM.STORE_MISALIGNED,
+                  CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT,
+                  CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT,
+                  CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT,
+                  CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.STORE_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT
+                ).map(pending.state.code === _).orR
+                if (recordHtinst) when(writeHtinst) {
+                  val transformer = RvhTransformer(
+                    uop = pending.uop,
+                    compressed = pending.uopIsCompressed,
+                    rvfd = RVF || RVD,
+                    rva = RVA,
+                    xlen = XLEN.get,
+                  )
+                  buffer.trap.pseudoUop := transformer.inst
                 }
               }
             } otherwise {

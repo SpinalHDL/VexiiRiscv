@@ -8,6 +8,7 @@ import spinal.core._
 import spinal.lib._
 
 object Const {
+  def opRange = 6 downto 0
   def funct7Range = 31 downto 25
   def rdRange = 11 downto 7
   def funct3Range = 14 downto 12
@@ -16,6 +17,35 @@ object Const {
   def rs3Range = 31 downto 27
   def csrRange = 31 downto 20
   def rsRange(id : Int) = List(rs1Range, rs2Range,rs3Range)(id)
+}
+
+object OpCode {
+  def LUI         = 0x37
+  def AUIPC       = 0x17
+  def JAL         = 0x6f
+  def JALR        = 0x67
+  def BRANCH      = 0x63
+  def LOAD        = 0x03
+  def STORE       = 0x23
+  def ARITH_IMM   = 0x13
+  def ARITH       = 0x33
+  def FENCE       = 0x0f
+  def SYSTEM      = 0x73
+
+  def ARITH_IMM_W = 0x1b
+  def ARITH_W     = 0x3b
+
+  def ATOMIC      = 0x2f
+
+  def FP_LOAD     = 0x7
+  def FP_STORE    = 0x27
+
+  def FMADD       = 0x43
+  def FMSUB       = 0x47
+  def FNMSUB      = 0x4b
+  def FNMADD      = 0x4f
+
+  def FP_ARITH    = 0x53
 }
 
 /**

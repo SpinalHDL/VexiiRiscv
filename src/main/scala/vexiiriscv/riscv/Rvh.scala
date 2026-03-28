@@ -41,3 +41,48 @@ object Rvh extends AreaObject {
   loadSpec(HLVX_HU) = LoadSpec(16, false)
   loadSpec(HLVX_WU) = LoadSpec(32, false)
 }
+
+object RvhTransformer {
+  def apply(uop: Bits, compressed: Bool, rvfd: Boolean, rva: Boolean, xlen: Int) = new Area {
+    import Const._
+    val inst = B(0, 32 bits)
+
+    var loadOps = mutable.ArrayBuffer[Int](OpCode.LOAD)
+    if (rvfd) loadOps += OpCode.FP_LOAD
+
+    /* Load/FP Load */
+    when (loadOps.map(uop(opRange) === _).reduce(_ || _)) {
+      inst := uop
+      inst(rs1Range) := 0
+      inst(rs2Range) := 0
+      inst(funct7Range) := 0
+    }
+
+    var storeOps = mutable.ArrayBuffer[Int](OpCode.STORE)
+    if (rvfd) storeOps += OpCode.FP_STORE
+
+    /* Store/FP Store */
+    when (storeOps.map(uop(opRange) === _).reduce(_ || _)) {
+      inst := uop
+      inst(rdRange) := 0
+      inst(rs1Range) := 0
+      inst(funct7Range) := 0
+    }
+
+    /* HLV/HSV */
+    when (uop(opRange) === OpCode.SYSTEM && uop(14 downto 12) === 4) {
+      inst := uop
+      inst(rs1Range) := 0
+    }
+
+    /* RVA */
+    if (rva) when (uop(opRange) === OpCode.ATOMIC) {
+      inst := uop
+      inst(rs1Range) := 0
+    }
+
+    when(compressed) {
+      inst(1) := False
+    }
+  }
+}
