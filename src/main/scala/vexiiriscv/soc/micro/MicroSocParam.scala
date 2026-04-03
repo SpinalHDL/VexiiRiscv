@@ -13,6 +13,7 @@ class MicroSocParam {
   var demoPeripheral = Option.empty[PeripheralDemoParam]
   val socCtrl = new SocCtrlParam()
   var withSpiFlash = false
+  var withSpiPhy = true
   var withDebugSysBus = false
 
   // Provide some sane default
@@ -29,6 +30,7 @@ class MicroSocParam {
     opt[Int]("ram-bytes") action { (v, c) => ramBytes = v }
     opt[String]("ram-elf") action { (v, c) => ramElf = Some(new File(v)) }
     opt[Boolean]("spi-flash") action { (v, c) => withSpiFlash = v  }
+    opt[Boolean]("spi-phy") action { (v, c) => withSpiPhy = v  }
     opt[Boolean]("debug-sysbus") action { (v, c) => withDebugSysBus = v  }
     opt[Map[String, String]]("demo-peripheral") action { (v, c) => demoPeripheral = Some(new PeripheralDemoParam(
       ledCount = v.getOrElse("leds", "8").toInt,

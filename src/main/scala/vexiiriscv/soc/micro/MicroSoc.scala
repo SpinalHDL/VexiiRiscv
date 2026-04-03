@@ -66,7 +66,7 @@ class MicroSoc(p : MicroSocParam) extends Component {
       plic.mapUpInterrupt(1, uart.interrupt)
 
       val spiFlash = p.withSpiFlash generate new TilelinkSpiXdrMasterFiber(SpiXdrMasterCtrl.MemoryMappingParameters(
-        SpiXdrMasterCtrl.Parameters(8, 12, SpiXdrParameter(2, 2, 1)).addFullDuplex(0,1,false),
+        SpiXdrMasterCtrl.Parameters(8, 12, SpiXdrParameter(2, 1, 1)).addFullDuplex(0,1,false),
         xipEnableInit = true,
         xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 6)
       )) {
@@ -94,6 +94,8 @@ class MicroSoc(p : MicroSocParam) extends Component {
     val patcher = Fiber patch new Area {
       p.ramElf.foreach(new Elf(_, p.vexii.xlen).init(ram.thread.logic.mem, 0x80000000l))
       println(MemoryConnection.getMemoryTransfers(cpu.dBus).mkString("\n"))
+
+      val spiFlash = p.withSpiPhy generate master(peripheral.spiFlash.logic.spi.setAsDirectionLess().toSpi().setName(""))
     }
   }
 }
