@@ -1,6 +1,7 @@
 package vexiiriscv.soc.micro
 
 import spinal.core._
+import spinal.lib.io.InOutWrapper
 import spinal.lib.system.tag.MemoryConnection
 import vexiiriscv.VexiiRiscv
 import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuCachelessTileLinkPlugin, LsuL1Plugin, LsuL1TileLinkPlugin, LsuPlugin, LsuTileLinkPlugin}
@@ -50,12 +51,21 @@ object Bsp {
 object MicroSocGen extends App{
   val p = new MicroSocParam()
 
+  var withInout = false
+
   assert(new scopt.OptionParser[Unit]("MicroSoc") {
     p.addOptions(this)
+    opt[Boolean]("inout") action { (v, c) => withInout = v  }
+
   }.parse(args, ()).nonEmpty)
   p.legalize()
 
-  val report = SpinalVerilog(new MicroSoc(p))
+  def patcher[T <: Component](c : T): T = {
+    if(!withInout) return c
+    InOutWrapper(c)
+  }
+
+  val report = SpinalVerilog(patcher(new MicroSoc(p)))
 
   Bsp(new File("."), report.toplevel.system.cpu)
 }
