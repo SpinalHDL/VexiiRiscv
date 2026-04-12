@@ -25,6 +25,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   val MACHINE_EXTERNAL_INTERRUPT_CTRL = 0x10
   val SUPERVISOR_EXTERNAL_INTERRUPT_CTRL = 0x18
   val GETC = 0x40
+  val GETC_EMPTY = 0x44
   val STATS_CAPTURE_ENABLE = 0x50
   val PUT_DEC = 0x60
   val INCR_COUNTER = 0x70
@@ -60,6 +61,9 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
 
   var withStdIn = true
   var getcQueue = mutable.Queue[Byte]()
+  def getcEmpty(data : Array[Byte]): Unit = {
+    data(0) = if (getcQueue.nonEmpty || (withStdIn && System.in.available() > 0)) 0 else 1
+  }
   def getc(data : Array[Byte]): Unit = {
     if(getcQueue.nonEmpty){
       data(0) = getcQueue.dequeue(); return
@@ -125,6 +129,7 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
           return true;
         }
         case GETC => getc(data)
+        case GETC_EMPTY => getcEmpty(data)
         case RANDOM => simRandom.nextBytes(data)
         case CLINT_TIME => readLong(getClintTime().toLong)
         case CLINT_TIMEH => readLong((getClintTime() >> 32).toLong)
