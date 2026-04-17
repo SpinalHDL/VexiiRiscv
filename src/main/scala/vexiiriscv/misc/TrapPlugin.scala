@@ -978,7 +978,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
               }
               priv.p.withHypervisor generate is(PrivilegeMode.VS) {
                 csr.vs.status.spp := U"0"
-                csr.vs.status.sie := csr.s.status.spie
+                csr.vs.status.sie := csr.vs.status.spie
                 csr.vs.status.spie := True
               }
             }

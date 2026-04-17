@@ -124,8 +124,8 @@ class EnvPlugin(layer : LaneLayer,
         is(EnvPluginOp.ECALL) {
           trapPort.code := PrivilegeMode.isGuest(privilege).mux(
             B((privilege.asBits << 1).resize(Global.CODE_WIDTH)),
-            B(privilege.resize(Global.CODE_WIDTH) | CSR.MCAUSE_ENUM.ECALL_USER)
-          )
+            B(privilege.resize(Global.CODE_WIDTH))
+          ) | CSR.MCAUSE_ENUM.ECALL_USER
         }
         is(EnvPluginOp.PRIV_RET) {
           when(xretPriv <= ps.getPrivilege(HART_ID) && !retKo) {
