@@ -159,7 +159,11 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
 
     val trapArgWidths = ArrayBuffer[Int](3)
     if(ats.mayNeedRedo) trapArgWidths += 3+ats.getStorageIdWidth()
-    if(sats.mayNeedRedo) trapArgWidths += 3+sats.getStorageIdWidth()
+    /*
+     * A standalone field is required, because there is no guarantee
+     * that ats.storageId == sats.storageId
+     */
+    if(sats.mayNeedRedo) trapArgWidths += 3+ats.getStorageIdWidth()+sats.getStorageIdWidth()
     TRAP_ARG_WIDTH.set(trapArgWidths.max)
 
     trapLock.await()
@@ -454,7 +458,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             refill.cmd.permission.execute := pending.state.arg(1)
             refill.cmd.storageEnable := True
             refill.cmd.address := pending.state.tval.asUInt
-            refill.cmd.storageId := pending.state.arg(3, sats.getStorageIdWidth() bits).asUInt
+            refill.cmd.storageId := pending.state.arg(3+ats.getStorageIdWidth(), sats.getStorageIdWidth() bits).asUInt
             refill.rsp.ready := False
 
             val invalidate = sats.newInvalidationPort()

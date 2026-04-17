@@ -376,7 +376,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         req = request,
         usage = AddressTranslationPortUsage.FETCH,
         portSpec = translationPortParameter,
-        storageSpec = translationStorage
+        storageSpec = shadowTranslationStorage
       )
     }
 
@@ -558,6 +558,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
       trapPort.arg(2) := False
       trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      if (priv.implementHypervisor) trapPort.arg(3 + ats.getStorageIdWidth(), sats.getStorageIdWidth() bits) := sats.getStorageId(shadowTranslationStorage)
       when(tpk.REFILL) {
         allowRefill := False
         trapPort.valid := True
@@ -601,7 +602,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
           trapPort.exception := False
           trapPort.valid := True
           trapPort.code := TrapReason.SMMU_REFILL
-          trapPort.arg(3, ats.getStorageIdWidth() bits) := sats.getStorageId(translationStorage)
           trapPort.tval := tpk.TRANSLATED.asBits.resized
         }
 

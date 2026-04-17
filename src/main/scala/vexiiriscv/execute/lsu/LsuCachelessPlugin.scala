@@ -358,6 +358,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       )
       trapPort.arg(2) := GUEST
       trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      if (pp.implementHypervisor) trapPort.arg(3 + ats.getStorageIdWidth(), sats.getStorageIdWidth() bits) := sats.getStorageId(shadowTranslationStorage)
+
       when(tpk.REFILL) {
         skip := True
         trapPort.exception := False
@@ -388,7 +390,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
           skip := True
           trapPort.exception := False
           trapPort.code := TrapReason.SMMU_REFILL
-          trapPort.arg(3, ats.getStorageIdWidth() bits) := sats.getStorageId(translationStorage)
           trapPort.tval := tpk.TRANSLATED.asBits.resized
         }
 

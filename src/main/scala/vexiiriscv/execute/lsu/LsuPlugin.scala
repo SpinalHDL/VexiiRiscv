@@ -883,6 +883,7 @@ class LsuPlugin(var layer : LaneLayer,
         )
         trapPort.arg(2) := l1.GUEST
         trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+        if (pp.implementHypervisor) trapPort.arg(3 + ats.getStorageIdWidth(), sats.getStorageIdWidth() bits) := sats.getStorageId(shadowTranslationStorage)
         when(tpk.REFILL) { // Could be ignored for llc flush
           lsuTrap := True
           trapPort.exception := False
@@ -919,7 +920,6 @@ class LsuPlugin(var layer : LaneLayer,
             lsuTrap := True
             trapPort.exception := False
             trapPort.code := TrapReason.SMMU_REFILL
-            trapPort.arg(3, ats.getStorageIdWidth() bits) := sats.getStorageId(translationStorage)
             trapPort.tval := tpk.TRANSLATED.asBits.resized
           }
           when(stpk.HAZARD) {

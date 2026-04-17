@@ -131,7 +131,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
         req = request,
         usage = AddressTranslationPortUsage.FETCH,
         portSpec = translationPortParameter,
-        storageSpec = translationStorage
+        storageSpec = shadowTranslationStorage
       )
     }
     val stpk = priv.implementHypervisor.mux(onAddress1.translationPort.keys, onAddress0.translationPort.keys)
@@ -231,6 +231,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
       trapPort.arg(2) := False
       trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      if (priv.implementHypervisor) trapPort.arg(3 + ats.getStorageIdWidth(), sats.getStorageIdWidth() bits) := sats.getStorageId(shadowTranslationStorage)
       when(tpk.REFILL) {
         TRAP := True
         trapPort.exception := False
@@ -259,7 +260,6 @@ class FetchCachelessPlugin(var wordWidth : Int,
           TRAP := True
           trapPort.exception := False
           trapPort.code := TrapReason.SMMU_REFILL
-          trapPort.arg(3, ats.getStorageIdWidth() bits) := sats.getStorageId(translationStorage)
           trapPort.tval := tpk.TRANSLATED.asBits.resized
         }
       }
