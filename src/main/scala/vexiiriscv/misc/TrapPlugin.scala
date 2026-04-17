@@ -859,7 +859,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                 csr.m.status.mie := False
                 csr.m.status.mpie := csr.m.status.mie
                 if (priv.p.withUser) csr.m.status.mpp := csr.privilege(1 downto 0).asUInt
-                if (priv.p.withHypervisor) csr.m.status.gva setWhen(writeGVA && PrivilegeMode.isGuest(csr.privilege))
+                if (priv.p.withHypervisor) csr.m.status.gva := writeGVA && PrivilegeMode.isGuest(csr.privilege)
                 if (priv.p.withHypervisor) csr.m.status.mpv := PrivilegeMode.isGuest(csr.privilege)
 
                 csr.m.cause.code := buffer.trap.code
@@ -870,7 +870,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                 csr.s.status.spie := csr.s.status.sie
                 if (priv.p.withUser) csr.s.status.spp := csr.privilege(0, 1 bits).asUInt
                 if (priv.p.withHypervisor) csr.h.status.spv := PrivilegeMode.isGuest(csr.privilege)
-                if (priv.p.withHypervisor) csr.h.status.gva setWhen(writeGVA && PrivilegeMode.isGuest(csr.privilege))
+                if (priv.p.withHypervisor) csr.h.status.gva := writeGVA && PrivilegeMode.isGuest(csr.privilege)
                 if (priv.p.withHypervisor) when(PrivilegeMode.isGuest(csr.privilege)) {
                   csr.h.status.spvp := csr.privilege(0, 1 bits).asBool
                 }
