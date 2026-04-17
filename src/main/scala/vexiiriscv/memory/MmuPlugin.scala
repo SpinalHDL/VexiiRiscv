@@ -344,11 +344,12 @@ class MmuPlugin(var spec : MmuSpec,
       val storage = storages.find(_.self == ps.ss).get
       val read = for (sl <- storage.sl) yield new Area {
         val readAddress = readStage(ps.req.PRE_ADDRESS)(sl.lineRange)
+        val forceGuest = ctrlStage(ps.req.FORCE_GUEST) || isGuest || (mprv && priv.logic.harts(0).m.status.mpv)
         for ((way, wayId) <- sl.ways.zipWithIndex) {
           readStage(sl.keys.ENTRIES)(wayId) := way.readAsync(readAddress)
           hitsStage(sl.keys.HITS_PRE_VALID)(wayId) := hitsStage(sl.keys.ENTRIES)(wayId).hit(hitsStage(ps.req.PRE_ADDRESS))
           ctrlStage(sl.keys.HITS)(wayId) := ctrlStage(sl.keys.HITS_PRE_VALID)(wayId) && ctrlStage(sl.keys.ENTRIES)(wayId).valid &&
-              (ctrlStage(sl.keys.ENTRIES)(wayId).guest === (ctrlStage(ps.req.FORCE_GUEST) || isGuest || (mprv && priv.logic.harts(0).m.status.mpv)))
+              (ctrlStage(sl.keys.ENTRIES)(wayId).guest === forceGuest)
         }
       }
 
