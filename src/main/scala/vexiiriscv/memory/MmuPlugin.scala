@@ -321,15 +321,16 @@ class MmuPlugin(var spec : MmuSpec,
     val isMachine = priv.getPrivilege(0) === PrivilegeMode.M
     val isSupervisor = priv.getPrivilege(0) === PrivilegeMode.S || priv.getPrivilege(0) === PrivilegeMode.VS
     val isUser = priv.getPrivilege(0) === PrivilegeMode.U || priv.getPrivilege(0) === PrivilegeMode.VU
+    val isGuest = PrivilegeMode.isGuest(priv.getPrivilege(0))
     def mprv = priv.logic.harts(0).m.status.mprv
 
     val satpValid = satp.mode === spec.satpMode
     val vsatpValid = priv.implementHypervisor.mux(vsatp.mode === spec.satpMode, False)
 
-    api.fetchTranslationEnable := Mux(PrivilegeMode.isGuest(priv.getPrivilege(0)), vsatpValid, satpValid)
+    api.fetchTranslationEnable := Mux(isGuest, vsatpValid, satpValid)
     api.fetchTranslationEnable clearWhen(isMachine)
 
-    api.lsuTranslationEnable := Mux(PrivilegeMode.isGuest(priv.getPrivilege(0)) || (mprv && priv.logic.harts(0).m.status.mpv), vsatpValid, satpValid)
+    api.lsuTranslationEnable := Mux(isGuest || (mprv && priv.logic.harts(0).m.status.mpv), vsatpValid, satpValid)
     when(isMachine) {
       api.lsuTranslationEnable clearWhen (!mprv || priv.logic.harts(0).m.status.mpp === PrivilegeMode.M)
     }
@@ -347,7 +348,7 @@ class MmuPlugin(var spec : MmuSpec,
           readStage(sl.keys.ENTRIES)(wayId) := way.readAsync(readAddress)
           hitsStage(sl.keys.HITS_PRE_VALID)(wayId) := hitsStage(sl.keys.ENTRIES)(wayId).hit(hitsStage(ps.req.PRE_ADDRESS))
           ctrlStage(sl.keys.HITS)(wayId) := ctrlStage(sl.keys.HITS_PRE_VALID)(wayId) && ctrlStage(sl.keys.ENTRIES)(wayId).valid &&
-              (ctrlStage(sl.keys.ENTRIES)(wayId).guest === (ctrlStage(ps.req.FORCE_GUEST) || PrivilegeMode.isGuest(priv.getPrivilege(0))) || (mprv && priv.logic.harts(0).m.status.mpv))
+              (ctrlStage(sl.keys.ENTRIES)(wayId).guest === (ctrlStage(ps.req.FORCE_GUEST) || isGuest || (mprv && priv.logic.harts(0).m.status.mpv)))
         }
       }
 
@@ -355,7 +356,7 @@ class MmuPlugin(var spec : MmuSpec,
       val ctrl = new Area{
         import ctrlStage._
 
-        val isGuest = PrivilegeMode.isGuest(priv.getPrivilege(0)) || ps.req.FORCE_GUEST
+        val isGuestAccess = isGuest || ps.req.FORCE_GUEST
         val nominalSupervisor = priv.implementHypervisor.mux(ps.req.FORCE_GUEST.mux(priv.logic.harts(0).h.status.spvp, isSupervisor), isSupervisor)
         val nominalUser = priv.implementHypervisor.mux(ps.req.FORCE_GUEST.mux(!priv.logic.harts(0).h.status.spvp, isUser), isUser)
         val hits = Cat(storage.sl.map(s => ctrlStage(s.keys.HITS)))
@@ -379,8 +380,8 @@ class MmuPlugin(var spec : MmuSpec,
 
         import ps.rsp.keys._
         when(requireMmuLockup) {
-          val allow_mxr     = priv.implementHypervisor.mux(isGuest.mux(vsstatus.mxr, False), False) || status.mxr
-          val allow_sum     = priv.implementHypervisor.mux(isGuest.mux(vsstatus.sum, status.sum), status.sum)
+          val allow_mxr     = priv.implementHypervisor.mux(isGuestAccess.mux(vsstatus.mxr, False), False) || status.mxr
+          val allow_sum     = priv.implementHypervisor.mux(isGuestAccess.mux(vsstatus.sum, status.sum), status.sum)
           val allow_execute = lineAllowExecute && !(lineAllowUser && nominalSupervisor)
           val allow_read    = lineAllowRead || allow_mxr && lineAllowExecute
           val allow_write   = lineAllowWrite
