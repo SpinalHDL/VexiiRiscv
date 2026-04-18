@@ -319,10 +319,10 @@ class MmuPlugin(var spec : MmuSpec,
 
     assert(HART_COUNT.get == 1)
     val isMachine = priv.getPrivilege(0) === PrivilegeMode.M
-    val isSupervisor = priv.getPrivilege(0) === PrivilegeMode.S || priv.getPrivilege(0) === PrivilegeMode.VS
-    val isUser = priv.getPrivilege(0) === PrivilegeMode.U || priv.getPrivilege(0) === PrivilegeMode.VU
     val isGuest = PrivilegeMode.isGuest(priv.getPrivilege(0))
     def mprv = priv.logic.harts(0).m.status.mprv
+    def mpp = priv.logic.harts(0).m.status.mpp
+    val effectiveGuest = isGuest || (mprv && priv.logic.harts(0).m.status.mpv)
 
     val satpValid = satp.mode === spec.satpMode
     val vsatpValid = priv.implementHypervisor.mux(vsatp.mode === spec.satpMode, False)
@@ -330,7 +330,7 @@ class MmuPlugin(var spec : MmuSpec,
     api.fetchTranslationEnable := Mux(isGuest, vsatpValid, satpValid)
     api.fetchTranslationEnable clearWhen(isMachine)
 
-    api.lsuTranslationEnable := Mux(isGuest || (mprv && priv.logic.harts(0).m.status.mpv), vsatpValid, satpValid)
+    api.lsuTranslationEnable := Mux(effectiveGuest, vsatpValid, satpValid)
     when(isMachine) {
       api.lsuTranslationEnable clearWhen (!mprv || priv.logic.harts(0).m.status.mpp === PrivilegeMode.M)
     }
@@ -344,7 +344,7 @@ class MmuPlugin(var spec : MmuSpec,
       val storage = storages.find(_.self == ps.ss).get
       val read = for (sl <- storage.sl) yield new Area {
         val readAddress = readStage(ps.req.PRE_ADDRESS)(sl.lineRange)
-        val forceGuest = ctrlStage(ps.req.FORCE_GUEST) || isGuest || (mprv && priv.logic.harts(0).m.status.mpv)
+        val forceGuest = ctrlStage(ps.req.FORCE_GUEST) || effectiveGuest
         for ((way, wayId) <- sl.ways.zipWithIndex) {
           readStage(sl.keys.ENTRIES)(wayId) := way.readAsync(readAddress)
           hitsStage(sl.keys.HITS_PRE_VALID)(wayId) := hitsStage(sl.keys.ENTRIES)(wayId).hit(hitsStage(ps.req.PRE_ADDRESS))
@@ -357,7 +357,13 @@ class MmuPlugin(var spec : MmuSpec,
       val ctrl = new Area{
         import ctrlStage._
 
-        val isGuestAccess = isGuest || ps.req.FORCE_GUEST
+        val isGuestAccess = effectiveGuest || ps.req.FORCE_GUEST
+        val effectivePrivilege = ps.usage match {
+          case LOAD_STORE => mprv.mux(mpp, priv.getPrivilege(0).asUInt.resize(2))
+          case FETCH => priv.getPrivilege(0).asUInt.resize(2)
+        }
+        val isSupervisor = effectivePrivilege === PrivilegeMode.S
+        val isUser = effectivePrivilege === PrivilegeMode.U
         val nominalSupervisor = priv.implementHypervisor.mux(ps.req.FORCE_GUEST.mux(priv.logic.harts(0).h.status.spvp, isSupervisor), isSupervisor)
         val nominalUser = priv.implementHypervisor.mux(ps.req.FORCE_GUEST.mux(!priv.logic.harts(0).h.status.spvp, isUser), isUser)
         val hits = Cat(storage.sl.map(s => ctrlStage(s.keys.HITS)))
