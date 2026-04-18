@@ -306,7 +306,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
           val xret = new Area {
             val sourcePrivilege = state.arg(2 downto 0).asSInt
             val targetPrivilegeMapping = mutable.LinkedHashMap[Int, SInt](
-              PrivilegeMode.M -> (csr.m.status.mpv ## csr.m.status.mpp).asSInt
+              PrivilegeMode.M -> ((csr.m.status.mpp === PrivilegeMode.M).mux(False, csr.m.status.mpv) ## csr.m.status.mpp).asSInt
             )
 
             if (priv.p.withSupervisor) targetPrivilegeMapping += PrivilegeMode.S ->
