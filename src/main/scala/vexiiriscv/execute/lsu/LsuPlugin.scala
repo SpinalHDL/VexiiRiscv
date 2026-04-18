@@ -13,7 +13,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.decode.{Decode, DecoderService}
 import vexiiriscv.decode.Decode.UOP
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLoadExecute, PmaLogic, PmaPort, PmaStore, PmpService}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import vexiiriscv.riscv._
@@ -641,13 +641,15 @@ class LsuPlugin(var layer : LaneLayer,
     }
 
     val onPma = new elp.Execute(pmaAt){
-      val cached = new PmaPort(Global.PHYSICAL_WIDTH, List(l1.LINE_BYTES), List(PmaLoad, PmaStore))
-      val io = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN / 8)).map(1 << _), List(PmaLoad, PmaStore))
+      val cached = new PmaPort(Global.PHYSICAL_WIDTH, List(l1.LINE_BYTES), List(PmaLoad, PmaStore, PmaLoadExecute))
+      val io = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN / 8)).map(1 << _), List(PmaLoad, PmaStore, PmaLoadExecute))
       cached.cmd.address := stpk.TRANSLATED
       cached.cmd.op(0) := l1.STORE
+      cached.cmd.op(1) := l1.EXECUTE
       io.cmd.address := stpk.TRANSLATED
       io.cmd.size := l1.SIZE.asBits
       io.cmd.op(0) := l1.STORE
+      io.cmd.op(1) := l1.EXECUTE
 
       val CACHED_RSP = insert(cached.rsp)
       val IO_RSP = insert(io.rsp)

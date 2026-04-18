@@ -10,7 +10,7 @@ import spinal.core.fiber.{Handle, Retainer}
 import spinal.core.sim.SimDataPimper
 import vexiiriscv.decode.{Decode, DecoderService}
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLogic, PmaPort, PmaStore, PmpService}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLoadExecute, PmaLogic, PmaPort, PmaStore, PmpService}
 import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.{PrivilegeMode, Rvh}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
@@ -249,10 +249,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     )
 
     val onPma = new elp.Execute(pmaAt) {
-      val port = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN / 8)).map(1 << _), List(PmaLoad, PmaStore))
+      val port = new PmaPort(Global.PHYSICAL_WIDTH, (0 to log2Up(Riscv.LSLEN / 8)).map(1 << _), List(PmaLoad, PmaStore, PmaLoadExecute))
       port.cmd.address := stpk.TRANSLATED
       port.cmd.size := SIZE.asBits
       port.cmd.op(0) := STORE
+      port.cmd.op(1) := EXECUTE
       val RSP = insert(port.rsp)
       MMU_FAILURE := tpk.PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD
     }
