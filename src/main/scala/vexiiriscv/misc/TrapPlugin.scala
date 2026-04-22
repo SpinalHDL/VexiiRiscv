@@ -782,10 +782,9 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             }
           }
 
-          // TODO
-          // only guest-page-fault, write tval, tinst; otherwise, 0
+          val isGuestTarget = PrivilegeMode.isGuest(buffer.trap.targetPrivilege)
           if (priv.p.withHypervisor) TRAP_HTVAL.whenIsActive {
-            crsPorts.write.valid := True
+            crsPorts.write.valid := !isGuestTarget
             val addressMapping = mutable.LinkedHashMap[Int, UInt](
               PrivilegeMode.M -> csr.m.tval2.getAddress(),
               PrivilegeMode.S -> csr.h.tval.getAddress()
@@ -793,7 +792,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
             crsPorts.write.data := buffer.trap.tval2.resized
 
-            when(crsPorts.write.ready) {
+            when(crsPorts.write.ready || isGuestTarget) {
               goto(TRAP_HTINST)
             }
           }
@@ -801,7 +800,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
           if (priv.p.withHypervisor) TRAP_HTINST.whenIsActive {
             val writeUop = buffer.trap.pseudoUop
 
-            crsPorts.write.valid := True
+            crsPorts.write.valid := !isGuestTarget
             val addressMapping = mutable.LinkedHashMap[Int, UInt](
               PrivilegeMode.M -> csr.m.tinst.getAddress(),
               PrivilegeMode.S -> csr.h.tinst.getAddress()
@@ -809,7 +808,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
             crsPorts.write.data := writeUop.resized
 
-            when(crsPorts.write.ready) {
+            when(crsPorts.write.ready || isGuestTarget) {
               goto(TRAP_EPC)
             }
           }
