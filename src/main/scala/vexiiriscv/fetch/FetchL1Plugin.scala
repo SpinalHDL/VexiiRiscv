@@ -602,7 +602,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
           trapPort.exception := False
           trapPort.valid := True
           trapPort.code := TrapReason.SMMU_REFILL
-          trapPort.tval := tpk.TRANSLATED.asBits.resized
         }
 
         when(Fetch.PC_FAULT && !stpk.BYPASS_TRANSLATION) {

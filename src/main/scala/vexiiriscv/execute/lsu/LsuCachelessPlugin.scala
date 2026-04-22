@@ -391,7 +391,6 @@ class LsuCachelessPlugin(var layer : LaneLayer,
           skip := True
           trapPort.exception := False
           trapPort.code := TrapReason.SMMU_REFILL
-          trapPort.tval := tpk.TRANSLATED.asBits.resized
         }
 
         when(stpk.HAZARD) {

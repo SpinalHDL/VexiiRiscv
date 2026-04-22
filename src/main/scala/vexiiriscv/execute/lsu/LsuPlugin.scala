@@ -922,7 +922,6 @@ class LsuPlugin(var layer : LaneLayer,
             lsuTrap := True
             trapPort.exception := False
             trapPort.code := TrapReason.SMMU_REFILL
-            trapPort.tval := tpk.TRANSLATED.asBits.resized
           }
           when(stpk.HAZARD) {
             lsuTrap := True

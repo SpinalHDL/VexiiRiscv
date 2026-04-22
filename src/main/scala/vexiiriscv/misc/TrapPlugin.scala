@@ -457,7 +457,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
             refill.cmd.permission.execute := pending.state.arg(1)
             refill.cmd.storageEnable := True
-            refill.cmd.address := pending.state.tval.asUInt
+            refill.cmd.address := (pending.state.tval2.asUInt << 2).resized
             refill.cmd.storageId := pending.state.arg(3+ats.getStorageIdWidth(), sats.getStorageIdWidth() bits).asUInt
             refill.rsp.ready := False
 

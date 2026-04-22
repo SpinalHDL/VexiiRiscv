@@ -260,7 +260,6 @@ class FetchCachelessPlugin(var wordWidth : Int,
           TRAP := True
           trapPort.exception := False
           trapPort.code := TrapReason.SMMU_REFILL
-          trapPort.tval := tpk.TRANSLATED.asBits.resized
         }
       }
 
