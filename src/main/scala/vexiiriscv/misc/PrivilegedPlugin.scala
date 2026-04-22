@@ -785,8 +785,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           mapSie(CSR.SIE, 9, ie.seie, m.ideleg.se)
           mapVie(CSR.SIE, 9, ieShadow.seie, m.ideleg.se, vie.seie)
           // mapMie(CSR.MIE, CSR.SIE, 5, ie.stie, m.ideleg.st)
-          api.read(ie.stie && m.ideleg.st, CSR.SIE, 9)
-          api.writeWhen(ie.stie, m.ideleg.st, CSR.SIE, 9)
+          api.read(ie.stie && m.ideleg.st, CSR.SIE, 5)
+          api.writeWhen(ie.stie, m.ideleg.st, CSR.SIE, 5)
           mapSie(CSR.SIE, 1, ie.ssie, m.ideleg.ss)
           mapVie(CSR.SIE, 1, ieShadow.ssie, m.ideleg.ss, vie.ssie)
 
@@ -797,8 +797,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
           // ssip
           mapSie(CSR.SIP, 1, ip.ssip, m.ideleg.ss)
-          api.read(vip.ssip && vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 9)
-          api.writeWhen(vip.ssip, vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 9)
+          api.read(vip.ssip && vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 1)
+          api.writeWhen(vip.ssip, vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 1)
           mapVie(CSR.SIP, 1, vip.ssip, m.ideleg.ss, vie.ssie)
         }
 
