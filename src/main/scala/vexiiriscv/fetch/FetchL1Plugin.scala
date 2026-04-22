@@ -460,29 +460,43 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val hits = new pp.Fetch(hitsAt){
       val withDirectHits = !hitsWithTranslationWays || onAddress0.translationPort.wayCount == 0
+
+      val state = new Area {
+        val stage1 = new Area {
+          val enter = tpk.WAYS_OH.orR
+          val translatedTag = OhMux.or(
+            tpk.WAYS_OH,
+            (0 until onAddress0.translationPort.wayCount).map(tpk.WAYS_PHYSICAL(_)(tagRange))
+          )
+          val bypassTag = MIXED_PC_SOLVED >> tagRange.low
+        }
+
+        val stage2 = priv.implementHypervisor generate new Area {
+          val enter = stpk.WAYS_OH.orR
+          val translatedTag = OhMux.or(
+            stpk.WAYS_OH,
+            (0 until onAddress1.translationPort.wayCount).map(stpk.WAYS_PHYSICAL(_)(tagRange))
+          )
+          val firstHit = stage1.enter || tpk.BYPASS_TRANSLATION
+        }
+      }
+
       val w = for((way, wayId) <- ways.zipWithIndex) yield new Area{
         if (withDirectHits) WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === stpk.TRANSLATED(tagRange)
 
         val indirect = if(!withDirectHits) new Area{
+          val tag = WAYS_TAGS(wayId).address
           val stage1 = new Area {
-            val wayTlbHits = (0 until onAddress0.translationPort.wayCount) map {
-              tlbWayId => WAYS_TAGS(wayId).address === tpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && tpk.WAYS_OH(tlbWayId)
-            }
-            val translatedHits = wayTlbHits.orR
-            val bypassHits = WAYS_TAGS(wayId).address === MIXED_PC_SOLVED >> tagRange.low
-            val hit = tpk.BYPASS_TRANSLATION ? bypassHits | translatedHits
+            import state.stage1._
+            val translatedHit = enter && tag === translatedTag
+            val bypassHit = tag === bypassTag
+            val hit = tpk.BYPASS_TRANSLATION ? bypassHit | translatedHit
           }
 
           val stage2 = priv.implementHypervisor generate new Area {
-            val wayTlbHits = (0 until onAddress1.translationPort.wayCount) map {
-              tlbWayId => WAYS_TAGS(wayId).address === stpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && stpk.WAYS_OH(tlbWayId)
-            }
-            val translatedHits = wayTlbHits.orR
-
-            /* A success stage 2 require a valid stage 1 translation */
-            val firstHit = tpk.WAYS_OH.orR || tpk.BYPASS_TRANSLATION
-
-            val hit = stpk.BYPASS_TRANSLATION ? stage1.hit | (translatedHits & firstHit)
+            import state.stage2._
+            val translatedHit = enter && tag === translatedTag
+            val hit = stpk.BYPASS_TRANSLATION ? stage1.hit | (translatedHit && firstHit)
           }
 
           WAYS_HITS(wayId) := priv.implementHypervisor.mux(stage2.hit, stage1.hit) & WAYS_TAGS(wayId).loaded
