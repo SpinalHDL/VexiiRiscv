@@ -422,6 +422,9 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
               val tval2 = priv.p.withHypervisor generate Reg(TVAL)
               val pseudoUop = priv.p.withHypervisor generate Reg(Decode.UOP)
             }
+            val state = new Area {
+              val guestMemoryAccess = priv.p.withHypervisor generate Reg(Bool())
+            }
           }
 
           val resetToRunConditions = ArrayBuffer[Bool](!initHold)
@@ -484,6 +487,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
               if (priv.p.withHypervisor) {
                 buffer.trap.tval2 := 0
                 buffer.trap.pseudoUop := 0
+                buffer.state.guestMemoryAccess := PrivilegeMode.isGuest(csr.privilege) || (csr.m.status.mprv && csr.m.status.mpv)
               }
               goto(COMPUTE)
             }
@@ -560,12 +564,14 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                 }
               }
               if(priv.p.withHypervisor) {
+                buffer.state.guestMemoryAccess.setWhen(writeGVA && pending.state.arg(2))
+
                 val writeTval2 = List(
                   CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT,
                   CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT,
                   CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT
                 ).map(pending.state.code === _).orR
-                when(writeTval2 && pending.state.exception && (pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId)))) {
+                when(writeTval2 && pending.state.exception && (pending.state.arg(2) || buffer.state.guestMemoryAccess)) {
                   buffer.trap.tval2 := pending.state.tval2.resized
                 }
 
@@ -737,6 +743,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
           }
 
           if(sats.mayNeedRedo) SATS_RSP.whenIsActive{
+            buffer.state.guestMemoryAccess.set()
             when(satsPorts.refill.rsp.valid){
               api.harts(hartId).redo := True
               satsPorts.refill.rsp.ready := True
@@ -862,7 +869,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                 csr.m.status.mie := False
                 csr.m.status.mpie := csr.m.status.mie
                 if (priv.p.withUser) csr.m.status.mpp := csr.privilege(1 downto 0).asUInt
-                if (priv.p.withHypervisor) csr.m.status.gva := writeGVA && PrivilegeMode.isGuest(csr.privilege)
+                if (priv.p.withHypervisor) csr.m.status.gva := writeGVA && buffer.state.guestMemoryAccess
                 if (priv.p.withHypervisor) csr.m.status.mpv := PrivilegeMode.isGuest(csr.privilege)
 
                 csr.m.cause.code := buffer.trap.code
@@ -873,7 +880,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                 csr.s.status.spie := csr.s.status.sie
                 if (priv.p.withUser) csr.s.status.spp := csr.privilege(0, 1 bits).asUInt
                 if (priv.p.withHypervisor) csr.h.status.spv := PrivilegeMode.isGuest(csr.privilege)
-                if (priv.p.withHypervisor) csr.h.status.gva := writeGVA && PrivilegeMode.isGuest(csr.privilege)
+                if (priv.p.withHypervisor) csr.h.status.gva := writeGVA && buffer.state.guestMemoryAccess
                 if (priv.p.withHypervisor) when(PrivilegeMode.isGuest(csr.privilege)) {
                   csr.h.status.spvp := csr.privilege(0, 1 bits).asBool
                 }
