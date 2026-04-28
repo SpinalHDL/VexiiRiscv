@@ -7,9 +7,6 @@ import spinal.lib.fsm.StateMachine
 import spinal.lib.fsm.State
 
 class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccessService {
-  override def accessRefillCount: Int = 0
-  override def accessWake: Bits = B(0)
-
   val logic = during setup new Area{
     val access = host[DBusAccessService]
     val ats = host.find[AddressTranslationService](_.isShadowMmu)
@@ -50,9 +47,6 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
       tda.rsp.valid := False
       tda.rsp.error := B(0)
       tda.rsp.data.assignDontCare()
-      tda.rsp.redo.assignDontCare()
-      tda.rsp.waitSlot.assignDontCare()
-      tda.rsp.waitAny.assignDontCare()
     }
 
     val fsm = for (tda <- dbusAccesses) yield new StateMachine {
@@ -107,9 +101,6 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
             trsp.data           := atsPort.rsp.address.asBits.resized
             trsp.error(1)       := atsPort.rsp.pageFault
             trsp.error(0)       := atsPort.rsp.accessFault
-            trsp.redo           := False
-            trsp.waitSlot       := B(0)
-            trsp.waitAny        := False
             goto(IDLE)
           } otherwise {
             address             := atsPort.rsp.address
@@ -139,9 +130,6 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
             trsp.valid        := rsp.valid
             trsp.data         := rsp.data
             trsp.error(0)     := rsp.error
-            trsp.redo         := rsp.redo
-            trsp.waitSlot     := rsp.waitSlot
-            trsp.waitAny      := rsp.waitAny
             goto(IDLE)
           }
         }

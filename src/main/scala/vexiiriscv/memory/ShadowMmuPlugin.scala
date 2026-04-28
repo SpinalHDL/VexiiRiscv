@@ -180,14 +180,6 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       val busy = !isActive(IDLE)
       val virtual = Reg(UInt(MIXED_WIDTH bits))
 
-      val cacheRefill = Reg(Bits(access.accessRefillCount bits)) init(0)
-      val cacheRefillAny = Reg(Bool()) init(False)
-
-      val cacheRefillSet = cacheRefill.getZero
-      val cacheRefillAnySet = False
-      cacheRefill    := (cacheRefill | cacheRefillSet) & ~access.accessWake
-      cacheRefillAny := (cacheRefillAny | cacheRefillAnySet) & !access.accessWake.orR
-
       setEntry(IDLE)
 
       val arbiter = StreamArbiterFactory().roundRobin.transactionLock.buildOn(refillPorts.map(_.cmd))
@@ -253,11 +245,6 @@ class ShadowMmuPlugin(var spec : MmuSpec,
         rsp.ready := False
         val readed = rsp.data.subdivideIn(spec.entryBytes*8 bits).read((address >> log2Up(spec.entryBytes)).resized)
 
-        when(rspUnbuffered.valid && rspUnbuffered.redo) {
-          cacheRefillSet    := rspUnbuffered.waitSlot
-          cacheRefillAnySet := rspUnbuffered.waitAny
-        }
-
         cmd.valid             := False
         cmd.address           := address.resized
         cmd.size              := U(log2Up(spec.entryBytes))
@@ -321,46 +308,39 @@ class ShadowMmuPlugin(var spec : MmuSpec,
                               Mux(permission.execute, !(load.flags.X), False)
 
         CMD(levelId) whenIsActive{
-          when(cacheRefill === 0 && cacheRefillAny === False) {
-            load.cmd.valid := True
-            when(load.cmd.ready) {
-              goto(RSP(levelId))
-            }
+          load.cmd.valid := True
+          when(load.cmd.ready) {
+            goto(RSP(levelId))
           }
         }
 
         RSP(levelId) whenIsActive{
           if(levelId == 0) load.exception setWhen(!load.leaf)
           when(load.rsp.valid){
-            when(load.rsp.redo){
-              load.rsp.ready := True
-              goto(CMD(levelId))
-            } otherwise {
-              levelId match {
-                case 0 => {
+            levelId match {
+              case 0 => {
+                when(!storageEnable || translationFault) {
+                  goto(DONE(levelId))
+                } otherwise {
+                  goto(REFILL(levelId))
+                }
+              }
+              case _ => {
+                when(load.exception) {
+                  goto(DONE(levelId))
+                } elsewhen(load.leaf) {
                   when(!storageEnable || translationFault) {
                     goto(DONE(levelId))
                   } otherwise {
                     goto(REFILL(levelId))
                   }
-                }
-                case _ => {
-                  when(load.exception) {
-                    goto(DONE(levelId))
-                  } elsewhen(load.leaf) {
-                    when(!storageEnable || translationFault) {
-                      goto(DONE(levelId))
-                    } otherwise {
-                      goto(REFILL(levelId))
-                    }
-                  } otherwise {
-                    val targetLevelId = levelId - 1
-                    val targetLevel = spec.levels(targetLevelId)
-                    load.address := load.nextLevelBase
-                    load.address(log2Up(spec.entryBytes), targetLevel.physicalWidth bits) := targetLevel.vpn(virtual)
-                    load.rsp.ready := True
-                    goto(CMD(targetLevelId))
-                  }
+                } otherwise {
+                  val targetLevelId = levelId - 1
+                  val targetLevel = spec.levels(targetLevelId)
+                  load.address := load.nextLevelBase
+                  load.address(log2Up(spec.entryBytes), targetLevel.physicalWidth bits) := targetLevel.vpn(virtual)
+                  load.rsp.ready := True
+                  goto(CMD(targetLevelId))
                 }
               }
             }
