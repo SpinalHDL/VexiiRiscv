@@ -65,6 +65,14 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
       val address = Reg(cloneOf(tcmd.address))
       val size = Reg(cloneOf(tcmd.size))
 
+      val cacheRefill = Reg(Bits(access.accessRefillCount bits)) init(0)
+      val cacheRefillAny = Reg(Bool()) init(False)
+
+      val cacheRefillSet = cacheRefill.getZero
+      val cacheRefillAnySet = False
+      cacheRefill    := (cacheRefill | cacheRefillSet) & ~access.accessWake
+      cacheRefillAny := (cacheRefillAny | cacheRefillAnySet) & !access.accessWake.orR
+
       setEntry(IDLE)
 
       tcmd.ready := False
@@ -111,24 +119,31 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
       }
 
       CMD whenIsActive {
-        cmd.valid     := True
-        cmd.address   := address
-        cmd.size      := size
-        when (cmd.ready) {
-          goto(RSP)
+        when(cacheRefill === 0 && !cacheRefillAny) {
+          cmd.valid     := True
+          cmd.address   := address
+          cmd.size      := size
+          when (cmd.ready) {
+            goto(RSP)
+          }
         }
       }
 
       RSP whenIsActive {
-        trsp.valid        := rsp.valid
-        trsp.data         := rsp.data
-        trsp.error(0)     := rsp.error
-        trsp.redo         := rsp.redo
-        trsp.waitSlot     := rsp.waitSlot
-        trsp.waitAny      := rsp.waitAny
-
         when (rsp.valid) {
-          goto(IDLE)
+          when (rsp.redo) {
+            cacheRefillSet    := rsp.waitSlot
+            cacheRefillAnySet := rsp.waitAny
+            goto(CMD)
+          } otherwise {
+            trsp.valid        := rsp.valid
+            trsp.data         := rsp.data
+            trsp.error(0)     := rsp.error
+            trsp.redo         := rsp.redo
+            trsp.waitSlot     := rsp.waitSlot
+            trsp.waitAny      := rsp.waitAny
+            goto(IDLE)
+          }
         }
       }
     }
