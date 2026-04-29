@@ -167,7 +167,7 @@ class BranchPlugin(val layer : LaneLayer,
 //        val REAL_TARGET = insert(COND.mux[UInt](PC_TRUE, PC_FALSE))
       }
 
-      val expectedMsb = host[AddressTranslationService].getSignExtension(AddressTranslationPortUsage.FETCH, srcp.SRC1.asUInt)
+      val expectedMsb = host.find[AddressTranslationService](!_.isShadowMmu).getSignExtension(AddressTranslationPortUsage.FETCH, srcp.SRC1.asUInt)
       val MSB_FAILED = insert(BRANCH_CTRL === BranchCtrlEnum.JALR && srcp.SRC1.dropLow(MIXED_WIDTH).asBools.map(_ =/= expectedMsb).orR)
     }
 
@@ -245,6 +245,7 @@ class BranchPlugin(val layer : LaneLayer,
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.FETCH_MISSALIGNED
         trapPort.tval := B(PC_TRUE)
+        trapPort.tval2 := 0
         trapPort.arg := 0
         trapPort.laneAge := Execute.LANE_AGE
 

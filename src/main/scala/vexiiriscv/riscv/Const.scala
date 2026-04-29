@@ -8,6 +8,7 @@ import spinal.core._
 import spinal.lib._
 
 object Const {
+  def opRange = 6 downto 0
   def funct7Range = 31 downto 25
   def rdRange = 11 downto 7
   def funct3Range = 14 downto 12
@@ -16,6 +17,35 @@ object Const {
   def rs3Range = 31 downto 27
   def csrRange = 31 downto 20
   def rsRange(id : Int) = List(rs1Range, rs2Range,rs3Range)(id)
+}
+
+object OpCode {
+  def LUI         = 0x37
+  def AUIPC       = 0x17
+  def JAL         = 0x6f
+  def JALR        = 0x67
+  def BRANCH      = 0x63
+  def LOAD        = 0x03
+  def STORE       = 0x23
+  def ARITH_IMM   = 0x13
+  def ARITH       = 0x33
+  def FENCE       = 0x0f
+  def SYSTEM      = 0x73
+
+  def ARITH_IMM_W = 0x1b
+  def ARITH_W     = 0x3b
+
+  def ATOMIC      = 0x2f
+
+  def FP_LOAD     = 0x7
+  def FP_STORE    = 0x27
+
+  def FMADD       = 0x43
+  def FMSUB       = 0x47
+  def FNMSUB      = 0x4b
+  def FNMADD      = 0x4f
+
+  def FP_ARITH    = 0x53
 }
 
 /**
@@ -47,6 +77,7 @@ object PrivilegeMode {
   val VU = -4
 
   val TYPE = HardType(SInt(3 bits))
+  val PRIVILEGE_MASK = 0x3
 
   def isGuest(privilege: SInt): Bool = privilege(2)
 
@@ -61,8 +92,9 @@ object PrivilegeMode {
     mode
   }
 
-  def apply(isGuest: Bool, privilege: UInt): SInt =
-    apply(isGuest, privilege.asBits)
+  def apply(isGuest: Bool, privilege: UInt): SInt = apply(isGuest, privilege.asBits)
+
+  def apply(mode: Int): SInt = spinal.core.S(mode, 3 bit)
 }
 
 object CSR {
@@ -172,6 +204,7 @@ object CSR {
   val SIE         = 0x104
   val STVEC       = 0x105
   val SCOUNTEREN  = 0x106
+  val SENVCFG     = 0x10A
   val SSCRATCH    = 0x140
   val SEPC        = 0x141
   val SCAUSE      = 0x142
@@ -197,11 +230,21 @@ object CSR {
   def HIE         = 0x604 // HRW Hypervisor interrupt-enable register.
   def HCOUNTEREN  = 0x606 // HRW Hypervisor counter enable.
   def HGEIE       = 0x607 // HRW Hypervisor guest external interrupt-enable register.
+  def HVIEN       = 0x608 // Hypervisor virtual interrupt enables.
+  def HVICTL      = 0x609 // Hypervisor virtual interrupt control.
   def HEDELEGH    = 0x612 // HRW Upper 32 bits of hedeleg, RV32 only.
+  def HIDELEGH    = 0x613 // HRW Upper 32 bits of hideleg, RV32 only.
+  def HVIENH      = 0x618 // HRW Upper 32 bits of hvien, RV32 only.
   def HTVAL       = 0x643 // HRW Hypervisor trap value.
   def HIP         = 0x644 // HRW Hypervisor interrupt pending.
   def HVIP        = 0x645 // HRW Hypervisor virtual interrupt pending.
-  def HTINST      = 0x645 // HRW Hypervisor trap instruction (transformed).
+  def HVIPRIO1    = 0x646 // HRW Hypervisor VS-level interrupt priorities.
+  def HVIPRIO2    = 0x647 // HRW Hypervisor VS-level interrupt priorities.
+  def HTINST      = 0x64A // HRW Hypervisor trap instruction (transformed).
+  def HIPH        = 0x654 // HRW Upper 32 bits of hip, RV32 only.
+  def HVIPH       = 0x655 // HRW Upper 32 bits of hvip, RV32 only.
+  def HVIPRIO1H   = 0x656 // HRW Upper 32 bits of hviprio1, RV32 only.
+  def HVIPRIO2H   = 0x657 // HRW Upper 32 bits of hviprio2, RV32 only.
   def HGEIP       = 0xE12 // HRO Hypervisor guest external interrupt pending.
   def HENVCFG     = 0x60A // HRW Hypervisor environment configuration register.
   def HENVCFGH    = 0x61A // HRW Upper 32 bits of henvcfg, RV32 only.
@@ -212,19 +255,21 @@ object CSR {
   val VSSTATUS    = 0x200
   val VSIE        = 0x204
   val VSTVEC      = 0x205
+  val VSIEH       = 0x214
   val VSSCRATCH   = 0x240
   val VSEPC       = 0x241
   val VSCAUSE     = 0x242
   val VSTVAL      = 0x243
   val VSIP        = 0x244
   val VSISELECT   = 0x250
+  val VSIPH       = 0x254
   val VSATP       = 0x280
   val VSIREG      = 0x251
   val VSIREG2     = 0x252
   val VSIREG3     = 0x253
-  val VSIREG4     = 0x254
-  val VSIREG5     = 0x255
-  val VSIREG6     = 0x256
+  val VSIREG4     = 0x255
+  val VSIREG5     = 0x256
+  val VSIREG6     = 0x257
   val VSTIMECMP   = 0x24D
   val VSTIMECMPH  = 0x25D
   val VSTOPEI     = 0x25C

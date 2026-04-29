@@ -26,6 +26,7 @@ case class TrapSpec(bus : Flow[Trap], age : Int, subAge : Int)
 case class Trap(laneAgeWidth : Int, full : Boolean) extends Bundle{
   val exception = Bool()
   val tval = TVAL()
+  val tval2 = TVAL()
   val code = CODE()
   val arg = TRAP_ARG()
   val laneAge = full generate UInt(laneAgeWidth bits)
@@ -93,6 +94,8 @@ object TrapReason{
   val SFENCE_VMA = 6
   val MMU_REFILL = 7
   val WFI = 8
+  val HFENCE_GMA = 9
+  val SMMU_REFILL = 10
 }
 
 /**
@@ -103,6 +106,8 @@ object TrapArg{
   val LOAD = 0
   val STORE = 1
   val FETCH = 2
+  /* Special Value for FETCH refill request from LSU (HLVX instruction) */
+  val FETCH_LSU = 3
 }
 
 /**
@@ -112,7 +117,7 @@ object TrapArg{
  * Also, as VexiiRiscv implements a few large CSR directly into a sharder memory (mepc, mtvec, ...), the TrapPlugin state-machine handles
  * the hardware read/write with those CSR (durring trap, mret, ...).
  */
-class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
+class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlugin with TrapService {
   override def trapHandelingAt: Int = trapAt
 
   def askWake(hartId : Int) = api.harts(hartId).askWake := True
@@ -138,11 +143,12 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
     val lsul1 = host.get[LsuL1Service]
     val pcs = host[PcService]
     val hp = host.get[HistoryPlugin]
-    val ats = host[AddressTranslationService]
+    val ats = host.find[AddressTranslationService](!_.isShadowMmu)
+    val sats = host.find[AddressTranslationService](_.isShadowMmu)
     val withRam = host.get[CsrRamService].nonEmpty
     val crs = withRam generate host[CsrRamService]
     val invalidationLocks = retains(fl1p.map(_.invalidationRetainer).toList ++ lsu.map(_.invalidationRetainer))
-    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock) ++ hp.map(_.elaborationLock))
+    val buildBefore = retains(List(pp.elaborationLock, pcs.elaborationLock, cap.csrLock, ats.portsLock, sats.portsLock) ++ hp.map(_.elaborationLock))
     val ramPortRetainers = withRam generate crs.portLock()
     awaitBuild()
 
@@ -152,7 +158,12 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
     invalidationLocks.release()
 
     val trapArgWidths = ArrayBuffer[Int](3)
-    if(ats.mayNeedRedo) trapArgWidths += 2+ats.getStorageIdWidth()
+    if(ats.mayNeedRedo) trapArgWidths += 3+ats.getStorageIdWidth()
+    /*
+     * A standalone field is required, because there is no guarantee
+     * that ats.storageId == sats.storageId
+     */
+    if(sats.mayNeedRedo) trapArgWidths += 3+ats.getStorageIdWidth()+sats.getStorageIdWidth()
     TRAP_ARG_WIDTH.set(trapArgWidths.max)
 
     trapLock.await()
@@ -174,11 +185,13 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
         write.data.assignDontCare()
       }
 
-      def privilegeMux[T <: Data](privValue: SInt)(machine: => T, supervisor: => T): T = {
-        val ret = CombInit(machine)
-        switch(privValue) {
-          if (priv.p.withSupervisor) is(1) {
-            ret := supervisor
+      def privilegeMux[T <: Data](payloads: mutable.LinkedHashMap[Int, T], privilege: SInt): T = {
+        val ret = CombInit(payloads(PrivilegeMode.M))
+        switch(privilege) {
+          for ((mode, data) <- payloads) {
+            is(mode) {
+              ret := data
+            }
           }
         }
         ret
@@ -199,6 +212,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
         if (priv.p.withUserTrap) {
           privilegs = PrivilegeMode.U :: privilegs
           ??? // privilegeAllowInterrupts += 1 -> ((ustatus.UIE && !setup.supervisorPrivilege))
+        }
+
+        if (priv.p.withHypervisor) {
+          privilegs = PrivilegeMode.VS :: privilegs
+          privilegeAllowInterrupts += PrivilegeMode.VS -> ((csr.vs.status.sie && csr.withGuestPrivilege) || !csr.withVirtualSupervisorPrivilege)
         }
 
         val privilegeTriggers = privilegs.map(p => new Area {
@@ -233,8 +251,9 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val int = B(triggered.id).andMask(triggered.valid).resized
 
           p match {
-            case PrivilegeMode.M => csr.m.topi.interrupt := int
-            case PrivilegeMode.S => csr.s.topi.interrupt := int
+            case PrivilegeMode.M  => csr.m.topi.interrupt := int
+            case PrivilegeMode.S  => csr.s.topi.interrupt := int
+            case PrivilegeMode.VS => csr.vs.topi.interrupt := int
           }
         }}
 
@@ -279,26 +298,41 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val arbiter = new AgedArbiter(requests)
           val state = arbiter.down.toReg
           val pc = Reg(PC)
+          val uop = priv.p.withHypervisor generate Reg(Decode.UOP)
+          val uopIsCompressed = priv.p.withHypervisor generate Reg(Decode.UOP_IS_COMPRESSED)
           val history = hp.nonEmpty generate Reg(Prediction.BRANCH_HISTORY)
           val slices = Reg(UInt(INSTRUCTION_SLICE_COUNT_WIDTH+1 bits))
 
           val xret = new Area {
             val sourcePrivilege = state.arg(2 downto 0).asSInt
-            val targetPrivilege = privilegeMux(sourcePrivilege)(
-              (U"0" ## csr.m.status.mpp).asSInt,
-              (U"00" ## csr.s.status.spp).asSInt
+            val targetPrivilegeMapping = mutable.LinkedHashMap[Int, SInt](
+              PrivilegeMode.M -> ((csr.m.status.mpp === PrivilegeMode.M).mux(False, csr.m.status.mpv) ## csr.m.status.mpp).asSInt
             )
+
+            if (priv.p.withSupervisor) targetPrivilegeMapping += PrivilegeMode.S ->
+              (priv.p.withHypervisor.mux(csr.h.status.spv, U"0") ## U"0" ## csr.s.status.spp).asSInt
+
+            if (priv.p.withHypervisor) targetPrivilegeMapping += PrivilegeMode.VS -> (U"10" ## csr.vs.status.spp).asSInt
+            val targetPrivilege = privilegeMux(targetPrivilegeMapping, sourcePrivilege)
           }
         }
 
         val exception = new Area {
-          /* TODO: replace this "11" with PrivilegeMode value */
-          val exceptionTargetPrivilegeUncapped = S"011"
+          val exceptionTargetPrivilegeUncapped = PrivilegeMode(PrivilegeMode.M)
           val code = CombInit(pending.state.code)
           switch(code) {
             for (s <- csr.spec.exception) {
               is(s.id) {
-                var exceptionPrivilegs = if (priv.p.withSupervisor) List(PrivilegeMode.S, PrivilegeMode.M) else List(PrivilegeMode.M)
+                var exceptionPrivilegs: List[Int] = List(PrivilegeMode.M)
+
+                if (priv.p.withSupervisor) {
+                  exceptionPrivilegs = PrivilegeMode.S :: exceptionPrivilegs
+                }
+
+                if (priv.p.withHypervisor) {
+                  exceptionPrivilegs = PrivilegeMode.VS :: exceptionPrivilegs
+                }
+
                 while (exceptionPrivilegs.length != 1) {
                   val p = exceptionPrivilegs.head
                   if (exceptionPrivilegs.tail.forall(e => s.delegators.exists(_.privilege == e))) {
@@ -313,7 +347,8 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               }
             }
           }
-          val targetPrivilege = csr.privilege.max(exceptionTargetPrivilegeUncapped)
+          // The lowest privilege for a trap is S mode
+          val targetPrivilege = (csr.privilege | S(1)).max(exceptionTargetPrivilegeUncapped)
         }
 
         // Detect when an instruction which did a trap reach the commit point.
@@ -325,6 +360,10 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val reader = lanes.map(_.execute(trapAt).down).reader(oh, true)
           when(valid) {
             pending.pc := reader(_(PC))
+            if(priv.p.withHypervisor) {
+              pending.uop := reader(_(Decode.UOP))
+              pending.uopIsCompressed := reader(_(Decode.UOP_IS_COMPRESSED))
+            }
             if(hp.nonEmpty) pending.history := reader(_(Prediction.BRANCH_HISTORY))
             pending.slices := reader(_(INSTRUCTION_SLICE_COUNT)).resize(INSTRUCTION_SLICE_COUNT_WIDTH+1)+1
           }
@@ -351,9 +390,10 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
         val fsm = new StateMachine {
           val RESET = makeInstantEntry()
           val RUNNING, COMPUTE = new State()
-          val TRAP_EPC, TRAP_TVAL, TRAP_TVEC, TRAP_WAIT, TRAP_APPLY = new State()
+          val TRAP_EPC, TRAP_TVAL, TRAP_HTVAL, TRAP_HTINST, TRAP_TVEC, TRAP_WAIT, TRAP_APPLY = new State()
           val XRET_EPC, XRET_APPLY = new State()
           val ATS_RSP = ats.mayNeedRedo generate new State()
+          val SATS_RSP = sats.mayNeedRedo generate new State()
           val JUMP = new State()
           val LSU_FLUSH = lsu.nonEmpty generate new State()
           val FETCH_FLUSH = fl1p.nonEmpty generate new State()
@@ -379,6 +419,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               val targetPrivilege = interrupt.mux(i.targetPrivilege, exception.targetPrivilege)
               val tval = pending.state.tval.andMask(!interrupt)
               val code = interrupt.mux(i.code, pending.state.code)
+              val tval2 = priv.p.withHypervisor generate Reg(TVAL)
+              val pseudoUop = priv.p.withHypervisor generate Reg(Decode.UOP)
+            }
+            val state = new Area {
+              val guestMemoryAccess = priv.p.withHypervisor generate Reg(Bool())
             }
           }
 
@@ -387,10 +432,16 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           // Interface with the address translation service (MMU)
           val atsPorts = ats.mayNeedRedo generate new Area{
             val refill = ats.newRefillPort()
+            val isGuestRefill = pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId)) || (csr.m.status.mprv && csr.m.status.mpv)
             refill.cmd.valid := False
+            refill.cmd.indirect := isGuestRefill
+            refill.cmd.permission.read := !pending.state.arg(1)
+            refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
+            refill.cmd.permission.execute := pending.state.arg(1)
             refill.cmd.storageEnable := True
             refill.cmd.address := pending.state.tval.asUInt
-            refill.cmd.storageId := pending.state.arg(2, ats.getStorageIdWidth() bits).asUInt
+            refill.cmd.storageId := pending.state.arg(3, ats.getStorageIdWidth() bits).asUInt
+            refill.rsp.ready := False
 
             val invalidate = ats.newInvalidationPort()
             invalidate.cmd.valid := False
@@ -401,6 +452,26 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
             resetToRunConditions += invalidated
           }
 
+          val satsPorts = sats.mayNeedRedo generate new Area{
+            val refill = sats.newRefillPort()
+            refill.cmd.valid := False
+            refill.cmd.indirect := False
+            refill.cmd.permission.read := !pending.state.arg(1)
+            refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
+            refill.cmd.permission.execute := pending.state.arg(1)
+            refill.cmd.storageEnable := True
+            refill.cmd.address := (pending.state.tval2.asUInt << 2).resized
+            refill.cmd.storageId := pending.state.arg(3+ats.getStorageIdWidth(), sats.getStorageIdWidth() bits).asUInt
+            refill.rsp.ready := False
+
+            val invalidate = sats.newInvalidationPort()
+            invalidate.cmd.valid := False
+            invalidate.cmd.hartId := hartId
+
+            val invalidated = RegInit(False) setWhen(invalidate.cmd.fire)
+            invalidate.cmd.valid setWhen(!invalidated)
+            resetToRunConditions += invalidated
+          }
 
           // Used to wait until everybody is ready after reset
           RESET.whenIsActive{
@@ -413,6 +484,11 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           RUNNING.whenIsActive {
             when(trigger.valid) {
               buffer.sampleIt := True
+              if (priv.p.withHypervisor) {
+                buffer.trap.tval2 := 0
+                buffer.trap.pseudoUop := 0
+                buffer.state.guestMemoryAccess := PrivilegeMode.isGuest(csr.privilege) || (csr.m.status.mprv && csr.m.status.mpv)
+              }
               goto(COMPUTE)
             }
             if (priv.p.withDebug) when(!csr.hartRunning && csr.debug.doResume) {
@@ -428,9 +504,26 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
               TrapReason.NEXT,
               TrapReason.FENCE_I,
               TrapReason.SFENCE_VMA,
+              TrapReason.HFENCE_GMA,
               TrapReason.WFI
             ).map(pending.state.code === _).orR
           )
+
+          val writeGVA = List(
+            CSR.MCAUSE_ENUM.BREAKPOINT,
+            CSR.MCAUSE_ENUM.FETCH_MISSALIGNED,
+            CSR.MCAUSE_ENUM.LOAD_MISALIGNED,
+            CSR.MCAUSE_ENUM.STORE_MISALIGNED,
+            CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT,
+            CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT,
+            CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT,
+            CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.STORE_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT,
+            CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT
+          ).map(pending.state.code === _).orR
 
           if (fl1p.nonEmpty) fetchL1Invalidate(hartId).cmd.valid := False
           if (lsu.nonEmpty) lsuL1Invalidate(hartId).cmd.valid := False
@@ -468,6 +561,40 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                   }
                 } otherwise {
                   goto(ENTER_DEBUG_WAIT)
+                }
+              }
+              if(priv.p.withHypervisor) {
+                buffer.state.guestMemoryAccess.setWhen(writeGVA && pending.state.arg(2))
+
+                val writeTval2 = List(
+                  CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT
+                ).map(pending.state.code === _).orR
+                when(writeTval2 && pending.state.exception && (pending.state.arg(2) || buffer.state.guestMemoryAccess)) {
+                  buffer.trap.tval2 := pending.state.tval2.resized
+                }
+
+                val writeHtinst = List(
+                  CSR.MCAUSE_ENUM.LOAD_MISALIGNED,
+                  CSR.MCAUSE_ENUM.STORE_MISALIGNED,
+                  CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT,
+                  CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT,
+                  CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT,
+                  CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.STORE_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT,
+                  CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT
+                ).map(pending.state.code === _).orR
+                if (recordHtinst) when(writeHtinst) {
+                  val transformer = RvhTransformer(
+                    uop = pending.uop,
+                    compressed = pending.uopIsCompressed,
+                    rvfd = RVF || RVD,
+                    rva = RVA,
+                    xlen = XLEN.get,
+                  )
+                  buffer.trap.pseudoUop := transformer.inst
                 }
               }
             } otherwise {
@@ -521,6 +648,22 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                     goto(ATS_RSP)
                   }
                 }
+                is(TrapReason.HFENCE_GMA) {
+                  if(sats.mayNeedRedo) {
+                    satsPorts.invalidate.cmd.valid := True
+                    when(satsPorts.invalidate.cmd.ready) {
+                      goto(JUMP)
+                    }
+                  } else {
+                    goto(JUMP)
+                  }
+                }
+                if(sats.mayNeedRedo) is(TrapReason.SMMU_REFILL) {
+                  satsPorts.refill.cmd.valid := True
+                  when(satsPorts.refill.cmd.ready){
+                    goto(SATS_RSP)
+                  }
+                }
                 if(priv.p.debugTriggers > 0 ) is(TrapReason.DEBUG_TRIGGER) {
                   trapEnterDebug := True
                   goto(TRAP_EPC)
@@ -551,18 +694,73 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
           if(ats.mayNeedRedo) ATS_RSP.whenIsActive{
             when(atsPorts.refill.rsp.valid){
-              api.harts(hartId).redo := True
-              goto(JUMP) //improvment: shave one cycle
-              when(atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
+              when(atsPorts.refill.rsp.guestFault || atsPorts.refill.rsp.pageFault || atsPorts.refill.rsp.accessFault){
+                atsPorts.refill.rsp.ready := True
                 pending.state.exception := True
-                switch(atsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
+                if (priv.p.withHypervisor) when(atsPorts.isGuestRefill) {
+                  buffer.trap.tval2 := atsPorts.refill.rsp.address.dropLow(2).asBits.resized
+                  when (atsPorts.refill.rsp.guestFault) {
+                    buffer.trap.pseudoUop := (XLEN.get == 32).mux(0x00002000, 0x00003000)
+                  }
+                }
+                switch(atsPorts.refill.rsp.guestFault ## atsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
+                  add(TrapArg.FETCH | 8, CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT)
+                  add(TrapArg.LOAD  | 8, CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
+                  add(TrapArg.STORE | 8, CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT)
                   add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
                   add(TrapArg.LOAD  | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
                   add(TrapArg.STORE | 4, CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT)
                   add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT)
                   add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT)
                   add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_PAGE_FAULT)
+                  add(TrapArg.FETCH_LSU, CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT)
+                  add(TrapArg.FETCH_LSU | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
+                  add(TrapArg.FETCH_LSU | 8, CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
+                }
+                goto(TRAP_TVAL)
+              } otherwise {
+                if(sats.mayNeedRedo) {
+                  when (atsPorts.isGuestRefill) {
+                    satsPorts.refill.cmd.address := atsPorts.refill.rsp.address.resized
+                    satsPorts.refill.cmd.valid := True
+                    when(satsPorts.refill.cmd.ready){
+                      atsPorts.refill.rsp.ready := True
+                      goto(SATS_RSP)
+                    }
+                  } otherwise {
+                    api.harts(hartId).redo := True
+                    atsPorts.refill.rsp.ready := True
+                    goto(JUMP)
+                  }
+                } else {
+                  api.harts(hartId).redo := True
+                  atsPorts.refill.rsp.ready := True
+                  goto(JUMP) //improvment: shave one cycle
+                }
+              }
+            }
+          }
+
+          if(sats.mayNeedRedo) SATS_RSP.whenIsActive{
+            buffer.state.guestMemoryAccess.set()
+            when(satsPorts.refill.rsp.valid){
+              api.harts(hartId).redo := True
+              satsPorts.refill.rsp.ready := True
+              goto(JUMP) //improvment: shave one cycle
+              when(satsPorts.refill.rsp.pageFault || satsPorts.refill.rsp.accessFault){
+                pending.state.exception := True
+                buffer.trap.tval2 := satsPorts.refill.rsp.address.dropLow(2).asBits.resized
+                switch(satsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
+                  def add(k : Int, v : Int) = is(k){pending.state.code := v}
+                  add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)
+                  add(TrapArg.LOAD  | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
+                  add(TrapArg.STORE | 4, CSR.MCAUSE_ENUM.STORE_ACCESS_FAULT)
+                  add(TrapArg.FETCH    , CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT)
+                  add(TrapArg.LOAD     , CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
+                  add(TrapArg.STORE    , CSR.MCAUSE_ENUM.STORE_GUEST_PAGE_FAULT)
+                  add(TrapArg.FETCH_LSU | 4, CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT)
+                  add(TrapArg.FETCH_LSU, CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
                 }
                 goto(TRAP_TVAL)
               }
@@ -571,25 +769,65 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
           TRAP_TVAL.whenIsActive {
             crsPorts.write.valid := True
-            crsPorts.write.address := privilegeMux(buffer.trap.targetPrivilege)(
-              csr.m.tval.getAddress(),
-              csr.s.tval.getAddress()
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.tval.getAddress()
             )
+            if (priv.p.withSupervisor) addressMapping += PrivilegeMode.S -> csr.s.tval.getAddress()
+            if (priv.p.withHypervisor) addressMapping += PrivilegeMode.VS -> csr.vs.tval.getAddress()
+            crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
             crsPorts.write.data := Global.expendPc(buffer.trap.tval.asUInt, XLEN).asBits
             when(triggerEbreakReg){
               crsPorts.write.data := Global.expendPc(pending.pc, XLEN).asBits
             }
+
             when(crsPorts.write.ready) {
+              if (priv.p.withHypervisor) {
+                goto(TRAP_HTVAL)
+              } else {
+                goto(TRAP_EPC)
+              }
+            }
+          }
+
+          val isGuestTarget = PrivilegeMode.isGuest(buffer.trap.targetPrivilege)
+          if (priv.p.withHypervisor) TRAP_HTVAL.whenIsActive {
+            crsPorts.write.valid := !isGuestTarget
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.tval2.getAddress(),
+              PrivilegeMode.S -> csr.h.tval.getAddress()
+            )
+            crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
+            crsPorts.write.data := buffer.trap.tval2.resized
+
+            when(crsPorts.write.ready || isGuestTarget) {
+              goto(TRAP_HTINST)
+            }
+          }
+
+          if (priv.p.withHypervisor) TRAP_HTINST.whenIsActive {
+            val writeUop = buffer.trap.pseudoUop
+
+            crsPorts.write.valid := !isGuestTarget
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.tinst.getAddress(),
+              PrivilegeMode.S -> csr.h.tinst.getAddress()
+            )
+            crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
+            crsPorts.write.data := writeUop.resized
+
+            when(crsPorts.write.ready || isGuestTarget) {
               goto(TRAP_EPC)
             }
           }
 
           TRAP_EPC.whenIsActive {
             crsPorts.write.valid := True
-            crsPorts.write.address := privilegeMux(buffer.trap.targetPrivilege)(
-              csr.m.epc.getAddress(),
-              csr.s.epc.getAddress()
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.epc.getAddress()
             )
+            if (priv.p.withSupervisor) addressMapping += PrivilegeMode.S -> csr.s.epc.getAddress()
+            if (priv.p.withHypervisor) addressMapping += PrivilegeMode.VS -> csr.vs.epc.getAddress()
+            crsPorts.write.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
             if (priv.p.withDebug) when(trapEnterDebug) {  crsPorts.write.address := csr.debug.dpc.getAddress() }
             crsPorts.write.data := Global.expendPc(pending.pc, XLEN).asBits
             when(crsPorts.write.ready) {
@@ -603,10 +841,12 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val readed = RegNextWhen(crsPorts.read.data, crsPorts.read.valid && crsPorts.read.ready)
           TRAP_TVEC.whenIsActive {
             crsPorts.read.valid := True
-            crsPorts.read.address := privilegeMux(buffer.trap.targetPrivilege)(
-              csr.m.tvec.getAddress(),
-              csr.s.tvec.getAddress()
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.tvec.getAddress()
             )
+            if (priv.p.withSupervisor) addressMapping += PrivilegeMode.S -> csr.s.tvec.getAddress()
+            if (priv.p.withHypervisor) addressMapping += PrivilegeMode.VS -> csr.vs.tvec.getAddress()
+            crsPorts.read.address := privilegeMux(addressMapping, buffer.trap.targetPrivilege)
             when(crsPorts.read.ready) {
               goto(TRAP_WAIT)
             }
@@ -629,6 +869,8 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                 csr.m.status.mie := False
                 csr.m.status.mpie := csr.m.status.mie
                 if (priv.p.withUser) csr.m.status.mpp := csr.privilege(1 downto 0).asUInt
+                if (priv.p.withHypervisor) csr.m.status.gva := writeGVA && buffer.state.guestMemoryAccess
+                if (priv.p.withHypervisor) csr.m.status.mpv := PrivilegeMode.isGuest(csr.privilege)
 
                 csr.m.cause.code := buffer.trap.code
                 csr.m.cause.interrupt := buffer.trap.interrupt
@@ -637,9 +879,27 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
                 csr.s.status.sie := False
                 csr.s.status.spie := csr.s.status.sie
                 if (priv.p.withUser) csr.s.status.spp := csr.privilege(0, 1 bits).asUInt
+                if (priv.p.withHypervisor) csr.h.status.spv := PrivilegeMode.isGuest(csr.privilege)
+                if (priv.p.withHypervisor) csr.h.status.gva := writeGVA && buffer.state.guestMemoryAccess
+                if (priv.p.withHypervisor) when(PrivilegeMode.isGuest(csr.privilege)) {
+                  csr.h.status.spvp := csr.privilege(0, 1 bits).asBool
+                }
 
                 csr.s.cause.code := buffer.trap.code
                 csr.s.cause.interrupt := buffer.trap.interrupt
+              }
+              priv.p.withHypervisor generate is(PrivilegeMode.VS) {
+                csr.vs.status.sie := False
+                csr.vs.status.spie := csr.vs.status.sie
+                csr.vs.status.spp := csr.privilege(0, 1 bits).asUInt
+
+                csr.vs.cause.code := buffer.trap.code.mux(
+                  B(10) -> B(9),
+                  B(6)  -> B(5),
+                  B(2)  -> B(1),
+                  default -> buffer.trap.code
+                )
+                csr.vs.cause.interrupt := buffer.trap.interrupt
               }
             }
 
@@ -696,10 +956,12 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
           val xretPrivilege = pending.state.arg(2 downto 0).asSInt
           XRET_EPC.whenIsActive{
             crsPorts.read.valid := True
-            crsPorts.read.address := privilegeMux(xretPrivilege)(
-              csr.m.epc.getAddress(),
-              csr.s.epc.getAddress()
+            val addressMapping = mutable.LinkedHashMap[Int, UInt](
+              PrivilegeMode.M -> csr.m.epc.getAddress()
             )
+            if (priv.p.withSupervisor) addressMapping += PrivilegeMode.S -> csr.s.epc.getAddress()
+            if (priv.p.withHypervisor) addressMapping += PrivilegeMode.VS -> csr.vs.epc.getAddress()
+            crsPorts.read.address := privilegeMux(addressMapping, xretPrivilege)
             when(crsPorts.read.ready) {
               goto(XRET_APPLY)
             }
@@ -711,16 +973,23 @@ class TrapPlugin(val trapAt : Int) extends FiberPlugin with TrapService {
 
             csr.privilege := pending.xret.targetPrivilege
             csr.xretAwayFromMachine setWhen (pending.xret.targetPrivilege =/= PrivilegeMode.M)
-            switch(pending.state.arg(2 downto 0)) {
+            switch(pending.state.arg(2 downto 0).asSInt) {
               is(PrivilegeMode.M) {
-                if(priv.p.withUser) csr.m.status.mpp := 0
+                if (priv.p.withUser) csr.m.status.mpp := 0
+                if (priv.p.withHypervisor) csr.m.status.mpv := False
                 csr.m.status.mie := csr.m.status.mpie
                 csr.m.status.mpie := True
               }
               priv.p.withSupervisor generate is(PrivilegeMode.S) {
                 csr.s.status.spp := U"0"
+                if (priv.p.withHypervisor) csr.h.status.spv := False
                 csr.s.status.sie := csr.s.status.spie
                 csr.s.status.spie := True
+              }
+              priv.p.withHypervisor generate is(PrivilegeMode.VS) {
+                csr.vs.status.spp := U"0"
+                csr.vs.status.sie := csr.vs.status.spie
+                csr.vs.status.spie := True
               }
             }
             goto(RUNNING)

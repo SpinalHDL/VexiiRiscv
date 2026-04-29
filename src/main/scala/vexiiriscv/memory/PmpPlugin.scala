@@ -29,7 +29,16 @@ case class PmpPortParameter(var napotMatchAt : Int,
                             var torCmpAt : Int,
                             var torHitsAt : Int,
                             var hitsAt : Int,
-                            var rspAt : Int)
+                            var rspAt : Int) {
+  def offset(v: Int) = PmpPortParameter(
+    napotMatchAt = napotMatchAt  + v,
+    napotHitsAt  = napotHitsAt   + v,
+    torCmpAt     = torCmpAt      + v,
+    torHitsAt    = torHitsAt     + v,
+    hitsAt       = hitsAt        + v,
+    rspAt        = rspAt         + v
+  )
+}
 
 
 case class PmpParam(

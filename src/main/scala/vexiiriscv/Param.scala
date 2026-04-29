@@ -15,7 +15,7 @@ import vexiiriscv.execute.cfu.{CfuBusParameter, CfuPlugin, CfuPluginEncoding}
 import vexiiriscv.execute.fpu.{FpuAddSharedParam, FpuMulParam}
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.{FetchCachelessAxi4Plugin, FetchCachelessPlugin, FetchCachelessWishbonePlugin, FetchL1Axi4Plugin, FetchL1Plugin, FetchL1WishbonePlugin, PrefetcherNextLinePlugin}
-import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter}
+import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter, ShadowMmuPlugin, TranslatedDBusAccessPlugin}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.riscv.{FloatRegFile, IntRegFile}
@@ -25,6 +25,8 @@ import vexiiriscv.test.WhiteboxerPlugin
 import java.security.MessageDigest
 import scala.collection.mutable.{ArrayBuffer, Set}
 import scala.util.Random
+import vexiiriscv.fetch.FetchCachelessTimingParameter
+import vexiiriscv.fetch.FetchL1TimingParameter
 
 
 object FetchBusEnum extends Enumeration {
@@ -180,6 +182,7 @@ class ParamSimple() {
   var mulKeepSrc = false
   var withCfu = false
   var gshareBytes = 4 KiB
+  var recordHtinst = false
   val prefetcherRptParam = new PrefetcherRptParam()
 
   var fetchTsp = MmuStorageParameter(
@@ -271,8 +274,90 @@ class ParamSimple() {
     rspAt = 1
   )
 
+  def fetchCachelessTiming = FetchCachelessTimingParameter(
+    addressAt = 0,
+    pmaAt     = 0,
+    forkAt    = fetchForkAt,
+    joinAt    = fetchForkAt+1 //You can for instance allow the external memory to have more latency by changing this
+  )
+  def fetchCachelessHypervisorTiming = FetchCachelessTimingParameter(
+    addressAt = 0,
+    pmaAt     = 1,
+    forkAt    = fetchForkAt+1,
+    joinAt    = fetchForkAt+2 //You can for instance allow the external memory to have more latency by changing this
+  )
 
-  def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt)
+  def fetchL1Timing = FetchL1TimingParameter(
+    readAt      = 0,
+    hitsAt      = 1,
+    hitAt       = 1,
+    bankMuxesAt = 1,
+    bankMuxAt   = 2,
+    ctrlAt      = 2
+  )
+  def fetchL1HypervisorTiming = FetchL1TimingParameter(
+    readAt      = 0,
+    hitsAt      = 2,
+    hitAt       = 2,
+    bankMuxesAt = 2,
+    bankMuxAt   = 3,
+    ctrlAt      = 3
+  )
+
+  def lsuCachelessTiming = LsuCachelessTimingParameter(
+    addressAt = 0,
+    triggerAt = 0,
+    pmaAt     = lsuPmaAt,
+    forkAt    = lsuForkAt+0,
+    joinAt    = lsuForkAt+1,
+    wbAt      = 2 //TODO
+  )
+  def lsuCachelessHypervisorTiming = LsuCachelessTimingParameter(
+    addressAt = 0,
+    triggerAt = 1,
+    pmaAt     = lsuPmaAt+1,
+    forkAt    = lsuForkAt+1,
+    joinAt    = lsuForkAt+2,
+    wbAt      = 3 //TODO
+  )
+
+  def lsuTiming = LsuTimingParameter(
+    addressAt = 0,
+    pmaAt = 1,
+    triggerAt = 1,
+    ctrlAt = 2,
+    wbAt = 2,
+    addressLength = 1
+  )
+  def lsuHypervisorTiming = LsuTimingParameter(
+    addressAt = 0,
+    pmaAt = 2,
+    triggerAt = 2,
+    ctrlAt = 3,
+    wbAt = 3,
+    addressLength = 2
+  )
+
+  def lsuL1Timing = LsuL1TimingParameter(
+    bankReadAt = 0,
+    wayReadAt = 0,
+    hitsAt = 1,
+    hitAt = 2,
+    bankMuxesAt = 1,
+    bankMuxAt = 2,
+    ctrlAt = 2
+  )
+  def lsuL1HypervisorTiming = LsuL1TimingParameter(
+    bankReadAt = 0,
+    wayReadAt = 0,
+    hitsAt = 2,
+    hitAt = 3,
+    bankMuxesAt = 2,
+    bankMuxAt = 3,
+    ctrlAt = 3
+  )
+
+  def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt) + withRvh.toInt
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
@@ -480,6 +565,7 @@ class ParamSimple() {
   def withRvf = checkISA("f")
   def withRvd = checkISA("f", "d")
   def withRvc = checkISA("c")
+  def withRvh = checkISA("h")
   def withRvcbm = checkISA("zicbom")
   def withRvZknAes = checkISA("zkne") || checkISA("zknd")
   def withRvZba = checkISA("zba")
@@ -490,6 +576,7 @@ class ParamSimple() {
   def withSscofpmf = checkISA("sscofpmf")
   def withSstc = checkISA("sstc")
   def withSxaia = checkISA("smaia") || checkISA("ssaia")
+  def withSscsrind = checkISA("sscsrind")
 
   def withMul = checkISA("m") || checkISA("zmmul")
   def withDiv = checkISA("m")
@@ -497,7 +584,7 @@ class ParamSimple() {
   def withRdTime = checkISA("zicntr")
   def withSupervisor = checkISA("s")
   def withUser = checkISA("u")
-  def withHypervisor = checkISA("h")
+  def withHypervisor = withRvh
   def withIndirectCsr = checkISA("smcsrind") || checkISA("sscsrind")
   def withPerformanceCounters = checkISA("zihpm") || checkISA("zicntr")
   def withPerformanceScountovf = checkISA("sscofpmf")
@@ -539,6 +626,7 @@ class ParamSimple() {
     if (withRva) isa += "a"
     if (withRvf) isa += "f"
     if (withRvd) isa += "d"
+    if (withRvh) isa += "h"
     if (withRvc) isa += "c"
     if (withRvZba) isa += "Zba"
     if (withRvZbb) isa += "Zbb"
@@ -630,6 +718,7 @@ class ParamSimple() {
     opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
     opt[Unit]("with-aligner-buffer").unbounded() action { (v, c) => withAlignerBuffer = true }
     opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
+    opt[Unit]("with-hypervisor") action { (v, c) => addISA("h", "s", "u") }
     opt[Unit]("with-supervisor") action { (v, c) => addISA("s", "u") }
     opt[Unit]("with-user") action { (v, c) => addISA("u") }
     opt[Unit]("without-mmu") action { (v, c) => disableMmu = false }
@@ -713,6 +802,7 @@ class ParamSimple() {
     opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
     opt[Int]("asid-width") action{ (v,c) => asidWidth = v }
     opt[Int]("gshare-bytes") action{ (v,c) => gshareBytes = v }
+    opt[Unit]("record-htinst") action{ (v, c) => recordHtinst = true }
     opt[Unit]("dual-issue") action { (v, c) =>
       decoders = 2
       lanes = 2
@@ -753,15 +843,24 @@ class ParamSimple() {
     if(withMmu && lsuL1Enable) assert(lsuL1Sets <= 64, "MMU require not more than 64 sets in the LSU L1")
     if(withMmu && fetchL1Enable) assert(fetchL1Sets <= 64, "MMU require not more than 64 sets in the FETCH L1")
 
-    val intWritebackAt = 2 //Alias for "trap at" as well
+    val intWritebackAt = 2 + withRvh.toInt //Alias for "trap at" as well
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rve = withRve)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rvh = withRvh, rve = withRve)
+    if (withMmu) plugins += new TranslatedDBusAccessPlugin()
     withMmu match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new vexiiriscv.memory.MmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
         physicalWidth = physicalWidth,
         asidWidth = asidWidth
+      )
+    }
+    (withRvh && withMmu) match {
+      case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth, 1)
+      case true => plugins += new vexiiriscv.memory.ShadowMmuPlugin(
+        spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
+        physicalWidth = physicalWidth,
+        vmidWidth = 0 /* TODO */
       )
     }
 
@@ -808,10 +907,12 @@ class ParamSimple() {
     plugins += new fetch.FetchPipelinePlugin()
     if(!fetchL1Enable) {
       plugins += new fetch.FetchCachelessPlugin(
-        forkAt = fetchForkAt,
-        joinAt = fetchForkAt+1, //You can for instance allow the external memory to have more latency by changing this
+        timingParameter = withRvh match {
+          case true => fetchCachelessHypervisorTiming
+          case false => fetchCachelessTiming
+        },
         wordWidth = fetchMemDataWidth,
-        pmpPortParameter = fetchNoL1PmpParam,
+        pmpPortParameter = fetchNoL1PmpParam.offset(withRvh.toInt),
         translationStorageParameter = fetchTsp,
         translationPortParameter = withMmu match {
           case false => null
@@ -847,7 +948,11 @@ class ParamSimple() {
           case false => null
           case true => fetchTpp
         },
-        pmpPortParameter = fetchL1PmpParam
+        pmpPortParameter = fetchL1PmpParam.offset(withRvh.toInt),
+        timingParameter = withRvh match {
+          case true => fetchL1HypervisorTiming
+          case false => fetchL1Timing
+        }
       )
 
       fetchL1Prefetch match {
@@ -968,12 +1073,11 @@ class ParamSimple() {
         layer     = early0,
         withAmo   = withRva,
         withSpeculativeLoadFlush = true,
-        addressAt = 0,
-        pmaAt     = lsuPmaAt,
-        forkAt    = lsuForkAt+0,
-        joinAt    = lsuForkAt+1,
-        wbAt      = 2, //TODO
-        pmpPortParameter = lsuNoL1PmpParam,
+        timingParameter = withRvh match {
+          case true => lsuCachelessHypervisorTiming
+          case false => lsuCachelessTiming
+        },
+        pmpPortParameter = lsuNoL1PmpParam.offset(withRvh.toInt),
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null
@@ -988,6 +1092,10 @@ class ParamSimple() {
     }
     if(lsuL1Enable){
       plugins += new LsuPlugin(
+        timingParameter = withRvh match {
+          case true => lsuHypervisorTiming
+          case false => lsuTiming
+        },
         layer = early0,
         withRva = withRva,
         storeRs2At = storeRs2Late.mux(2, 0),
@@ -996,7 +1104,7 @@ class ParamSimple() {
         softwarePrefetch = lsuSoftwarePrefetch,
         withCbm = withRvcbm,
         withLlcFlush = withRvcbmLlc,
-        pmpPortParameter = fetchL1PmpParam,
+        pmpPortParameter = lsuL1PmpParam.offset(withRvh.toInt),
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null
@@ -1015,7 +1123,11 @@ class ParamSimple() {
         withCoherency  = lsuL1Coherency,
         withCbm        = withRvcbm && !withRvcbmLlc,
         bootMemClear = bootMemClear,
-        tagsReadAsync  = lsuL1TagsReadAsync
+        tagsReadAsync  = lsuL1TagsReadAsync,
+        timingParameter = withRvh match {
+          case true => lsuL1HypervisorTiming
+          case false => lsuL1Timing
+        }
       )
 
       lsuHardwarePrefetch match {
@@ -1059,9 +1171,9 @@ class ParamSimple() {
     plugins += new CsrRamPlugin()
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters, withScountovf = withSscofpmf)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    if(withIndirectCsr) plugins += new IndirectCsrPlugin(checkISA("sscsrind"))
+    if(withIndirectCsr) plugins += new IndirectCsrPlugin(withSscsrind, privParam.withHypervisor && withSscsrind)
     plugins += new PrivilegedPlugin(privParam, withHartIdInput.mux(null, hartId until hartId+hartCount))
-    plugins += new TrapPlugin(trapAt = intWritebackAt)
+    plugins += new TrapPlugin(trapAt = intWritebackAt, recordHtinst = recordHtinst)
     if(withTesterPlugin) plugins += new TesterPlugin()
     plugins += new EnvPlugin(early0, executeAt = 0)
     if(embeddedJtagTap || embeddedJtagInstruction) plugins += new EmbeddedRiscvJtag(

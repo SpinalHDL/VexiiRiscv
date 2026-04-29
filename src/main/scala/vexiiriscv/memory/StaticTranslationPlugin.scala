@@ -15,7 +15,8 @@ import scala.collection.mutable.ArrayBuffer
  * That way, the plugins like the LSU/Fetch always have a MMU-like interface, which symplify their code.
  */
 
-class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with AddressTranslationService {
+class StaticTranslationPlugin(var physicalWidth: Int, val translationLevel : Int = 0) extends FiberPlugin with AddressTranslationService {
+  override def isShadowMmu : Boolean = translationLevel != 0
   override def mayNeedRedo: Boolean = false
   override def newStorage(pAny: Any, pmuStorageId : Int): Any = { }
   override def getStorageId(s: Any): Int = 0
@@ -45,11 +46,13 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
   override def getSignExtension(kind: AddressTranslationPortUsage, rawAddress: UInt): Bool = False
 
   val logic = during build new Area {
-    PHYSICAL_WIDTH.set(physicalWidth)
-    VIRTUAL_WIDTH.set(physicalWidth)
-    MIXED_WIDTH.set(physicalWidth)
-    PC_WIDTH.set(physicalWidth)
-    TVAL_WIDTH.set(physicalWidth)
+    if (!isShadowMmu) {
+      PHYSICAL_WIDTH.set(physicalWidth)
+      VIRTUAL_WIDTH.set(physicalWidth)
+      MIXED_WIDTH.set(physicalWidth)
+      PC_WIDTH.set(physicalWidth)
+      TVAL_WIDTH.set(physicalWidth)
+    }
 
     portsLock.await()
     assert(refillPorts.isEmpty)
@@ -67,6 +70,7 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
       TRANSLATED := spec.req.PRE_ADDRESS.resized //PC RESIZED
       PAGE_FAULT := False
       ACCESS_FAULT := spec.req.PRE_ADDRESS.drop(physicalWidth) =/= 0
+      ADDRESS_EXTENSION := False
       BYPASS_TRANSLATION := True
     }
   }

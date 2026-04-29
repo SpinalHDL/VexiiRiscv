@@ -142,6 +142,7 @@ class TestOptions {
   val elfs = ArrayBuffer[File]()
   var testName = Option.empty[String]
   var passSymbolName = "pass"
+  var failSymbolName = "fail"
   val fsmTasksGen = mutable.Queue[() => FsmTask]()
   var ibusReadyFactor = 1.01f
   var ibusBaseLatency = 0
@@ -180,6 +181,7 @@ class TestOptions {
     opt[String]("load-elf").unbounded() action { (v, c) => elfs += new File(v) }
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
+    opt[String]("fail-symbol") action { (v, c) => failSymbolName = v }
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
     opt[Double]("ibus-ready-factor").unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor").unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
@@ -303,11 +305,11 @@ class TestOptions {
       })
 
       val withPass = elf.getELFSymbol(passSymbolName) != null
-      val withFail = elf.getELFSymbol("fail") != null
+      val withFail = elf.getELFSymbol(failSymbolName) != null
       if (withPass || withFail) {
         def trunkPc(pc : Long) = (xlen == 32).mux(pc & 0xFFFFFFFFl, pc)
         val passSymbol = if(withPass) trunkPc(elf.getSymbolAddress(passSymbolName)) else -1
-        val failSymbol = if(withFail) trunkPc(elf.getSymbolAddress("fail")) else -1
+        val failSymbol = if(withFail) trunkPc(elf.getSymbolAddress(failSymbolName)) else -1
         probe.commitsCallbacks += { (hartId, pc) =>
           if (pc == passSymbol) delayed(1)(simSuccess())
           if (pc == failSymbol) delayed(1)(simFailure("Software reached the fail symbol :("))

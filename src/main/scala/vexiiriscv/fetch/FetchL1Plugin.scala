@@ -18,7 +18,7 @@ import Fetch._
 import spinal.core.fiber.{Handle, Retainer}
 import spinal.lib.system.tag.PmaRegion
 import vexiiriscv.execute.lsu.LsuCommitProbe
-import vexiiriscv.riscv.CSR
+import vexiiriscv.riscv.{CSR, PrivilegeMode}
 import vexiiriscv.schedule.ReschedulePlugin
 
 import scala.collection.mutable.ArrayBuffer
@@ -34,6 +34,13 @@ trait FetchL1Service{
   def newInvalidationPort() = invalidationPorts.addRet(FetchL1InvalidationBus())
 }
 
+case class FetchL1TimingParameter(var readAt: Int = 0,
+                                  var hitsAt: Int = 1,
+                                  var hitAt: Int = 1,
+                                  var bankMuxesAt: Int = 1,
+                                  var bankMuxAt: Int = 2,
+                                  var ctrlAt: Int = 2)
+
 /**
  * Implement and bind a instruction L1 cache to the CPU
  * The main particularity of this implementation is that the cache is non-blocking and canc onnect to  prefetching plugins
@@ -41,22 +48,18 @@ trait FetchL1Service{
 class FetchL1Plugin(var translationStorageParameter: Any,
                     var translationPortParameter: Any,
                     var pmpPortParameter : Any,
+                    val timingParameter: FetchL1TimingParameter,
                     var memDataWidth : Int,
                     var fetchDataWidth : Int,
                     var setCount: Int,
                     var wayCount: Int,
                     var refillCount: Int = 1,
                     var lineSize: Int = 64,
-                    var readAt: Int = 0,
-                    var hitsAt: Int = 1,
-                    var hitAt: Int = 1,
-                    var bankMuxesAt: Int = 1,
-                    var bankMuxAt: Int = 2,
-                    var ctrlAt: Int = 2,
                     var hitsWithTranslationWays: Boolean = false,
                     var reducedBankWidth: Boolean = false,
                     var tagsReadAsync: Boolean = false,
                     var bootMemClear : Boolean) extends FiberPlugin with FetchL1Service with InitService {
+  import timingParameter._
 
   def getBusParameter() = FetchL1BusParam(
     physicalWidth = PHYSICAL_WIDTH,
@@ -74,12 +77,14 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val pcp = host[PcService]
     val rp = host[ReschedulePlugin]
     val ts = host[TrapService]
-    val ats = host[AddressTranslationService]
+    val ats = host.find[AddressTranslationService](!_.isShadowMmu)
+    val sats = host.find[AddressTranslationService](_.isShadowMmu)
+    val priv = host[PrivilegedPlugin]
     val ps = host[PmpService]
     val pcs = host.get[PerformanceCounterService]
     val prefetcher = host.get[PrefetcherPlugin].map(_.io)
-    val buildBefore = retains(pp.elaborationLock, ats.portsLock, ps.portsLock)
-    val atsStorageLock = retains(ats.storageLock)
+    val buildBefore = retains(pp.elaborationLock, ats.portsLock, sats.portsLock, ps.portsLock)
+    val atsStorageLock = retains(ats.storageLock, sats.storageLock)
     val setupLock = retains(List(ts.trapLock, pcp.elaborationLock, rp.elaborationLock) ++ pcs.map(_.elaborationLock).toList)
     awaitBuild()
 
@@ -91,6 +96,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     ))
 
     val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
+    val shadowTranslationStorage = sats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
     atsStorageLock.release()
 
     val age = pp.getAge(ctrlAt, false)
@@ -334,27 +340,51 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         }
       }
     }
+    val onAddress0 = new pp.Fetch(readAt) {
+      val request = AddressTranslationReq(
+        PRE_ADDRESS    = MIXED_PC_SOLVED,
+        LOAD           = insert(False),
+        STORE          = insert(False),
+        EXECUTE        = insert(True),
+        FORCE_GUEST    = insert(False),
+        FORCE_PHYSICAL = insert(False)
+      )
 
-    val request = AddressTranslationReq(
-      PRE_ADDRESS    = MIXED_PC_SOLVED,
-      LOAD           = pp.fetch(readAt).insert(False),
-      STORE          = pp.fetch(readAt).insert(False),
-      EXECUTE        = pp.fetch(readAt).insert(True),
-      FORCE_PHYSICAL = pp.fetch(readAt).insert(False)
-    )
+      val translationPort = ats.newTranslationPort(
+        nodes = Seq(down, pp.fetch(readAt+1).down),
+        req = request,
+        usage = AddressTranslationPortUsage.FETCH,
+        portSpec = translationPortParameter,
+        storageSpec = translationStorage
+      )
+    }
 
-    val translationPort = ats.newTranslationPort(
-      nodes = Seq(pp.fetch(readAt).down, pp.fetch(readAt+1).down),
-      req = request,
-      usage = AddressTranslationPortUsage.FETCH,
-      portSpec = translationPortParameter,
-      storageSpec = translationStorage
-    )
-    val tpk = translationPort.keys
+    val tpk = onAddress0.translationPort.keys
+
+    val onAddress1 = new pp.Fetch(readAt + 1) {
+      val request = AddressTranslationReq(
+        PRE_ADDRESS    = insert(tpk.TRANSLATED.resize(Global.MIXED_WIDTH)),
+        LOAD           = insert(False),
+        STORE          = insert(False),
+        EXECUTE        = insert(True),
+        FORCE_GUEST    = insert(False),
+        FORCE_PHYSICAL = insert(False)
+      )
+
+      val translationPort = sats.newTranslationPort(
+        nodes = Seq(down, pp.fetch(readAt+2).down),
+        req = request,
+        usage = AddressTranslationPortUsage.FETCH,
+        portSpec = translationPortParameter,
+        storageSpec = shadowTranslationStorage
+      )
+    }
+
+    val stpk = priv.implementHypervisor.mux(onAddress1.translationPort.keys, onAddress0.translationPort.keys)
 
     val pmpPort = ps.createPmpPort(
       nodes = List.tabulate(ctrlAt+1)(pp.fetch(_).down),
-      physicalAddress = tpk.TRANSLATED,
+      physicalAddress = stpk.TRANSLATED,
       forceCheck = _ => False,
       read = _ => False,
       write = _ => False,
@@ -429,14 +459,47 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     }
 
     val hits = new pp.Fetch(hitsAt){
-      val withDirectHits = !hitsWithTranslationWays || translationPort.wayCount == 0
+      val withDirectHits = !hitsWithTranslationWays || onAddress0.translationPort.wayCount == 0
+
+      val state = new Area {
+        val stage1 = new Area {
+          val enter = tpk.WAYS_OH.orR
+          val translatedTag = OhMux.or(
+            tpk.WAYS_OH,
+            (0 until onAddress0.translationPort.wayCount).map(tpk.WAYS_PHYSICAL(_)(tagRange))
+          )
+          val bypassTag = MIXED_PC_SOLVED >> tagRange.low
+        }
+
+        val stage2 = priv.implementHypervisor generate new Area {
+          val enter = stpk.WAYS_OH.orR
+          val translatedTag = OhMux.or(
+            stpk.WAYS_OH,
+            (0 until onAddress1.translationPort.wayCount).map(stpk.WAYS_PHYSICAL(_)(tagRange))
+          )
+          val firstHit = stage1.enter || tpk.BYPASS_TRANSLATION
+        }
+      }
+
       val w = for((way, wayId) <- ways.zipWithIndex) yield new Area{
-        if (withDirectHits) WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === tpk.TRANSLATED(tagRange)
+        if (withDirectHits) WAYS_HITS(wayId) := WAYS_TAGS(wayId).loaded && WAYS_TAGS(wayId).address === stpk.TRANSLATED(tagRange)
+
         val indirect = if(!withDirectHits) new Area{
-          val wayTlbHits = (0 until translationPort.wayCount) map (tlbWayId => WAYS_TAGS(wayId).address === tpk.WAYS_PHYSICAL(tlbWayId)(tagRange) && tpk.WAYS_OH(tlbWayId))
-          val translatedHits = wayTlbHits.orR
-          val bypassHits = WAYS_TAGS(wayId).address === MIXED_PC_SOLVED >> tagRange.low
-          WAYS_HITS(wayId) := (tpk.BYPASS_TRANSLATION ? bypassHits | translatedHits) & WAYS_TAGS(wayId).loaded
+          val tag = WAYS_TAGS(wayId).address
+          val stage1 = new Area {
+            import state.stage1._
+            val translatedHit = enter && tag === translatedTag
+            val bypassHit = tag === bypassTag
+            val hit = tpk.BYPASS_TRANSLATION ? bypassHit | translatedHit
+          }
+
+          val stage2 = priv.implementHypervisor generate new Area {
+            import state.stage2._
+            val translatedHit = enter && tag === translatedTag
+            val hit = stpk.BYPASS_TRANSLATION ? stage1.hit | (translatedHit && firstHit)
+          }
+
+          WAYS_HITS(wayId) := priv.implementHypervisor.mux(stage2.hit, stage1.hit) & WAYS_TAGS(wayId).loaded
         }
       }
     }
@@ -447,7 +510,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val ctrl = new pp.Fetch(ctrlAt){
       val pmaPort = new PmaPort(Global.PHYSICAL_WIDTH, List(lineSize), List(PmaLoad))
-      pmaPort.cmd.address := tpk.TRANSLATED
+      pmaPort.cmd.address := stpk.TRANSLATED
 
       val plruLogic = new Area {
         val core = new Plru(wayCount, false)
@@ -472,6 +535,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
       trapPort.valid := False
       trapPort.tval := Fetch.WORD_PC.asBits
+      trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
@@ -506,7 +570,9 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       }
 
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
-      trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      trapPort.arg(2) := False
+      trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      if (priv.implementHypervisor) trapPort.arg(3 + ats.getStorageIdWidth(), sats.getStorageIdWidth() bits) := sats.getStorageId(shadowTranslationStorage)
       when(tpk.REFILL) {
         allowRefill := False
         trapPort.valid := True
@@ -519,6 +585,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
       }
+
       when(Fetch.PC_FAULT) {
         allowRefill := False
         trapPort.valid := True
@@ -529,9 +596,35 @@ class FetchL1Plugin(var translationStorageParameter: Any,
         }
       }
 
+      if(priv.implementHypervisor) when(!(tpk.PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD)) {
+        when(stpk.PAGE_FAULT) {
+          allowRefill := False
+          trapPort.valid := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT
+        }
+
+        when(stpk.ACCESS_FAULT) {
+          allowRefill := False
+          trapPort.valid := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
+        }
+
+        when(stpk.REFILL) {
+          allowRefill := False
+          trapPort.exception := False
+          trapPort.valid := True
+          trapPort.code := TrapReason.SMMU_REFILL
+        }
+
+        when(Fetch.PC_FAULT && !stpk.BYPASS_TRANSLATION) {
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT
+        }
+      }
 
       refill.start.valid := allowRefill && !trapSent
-      refill.start.address := tpk.TRANSLATED
+      refill.start.address := stpk.TRANSLATED
       refill.start.hartId := HART_ID
       refill.start.isIo := pmaPort.rsp.io
 

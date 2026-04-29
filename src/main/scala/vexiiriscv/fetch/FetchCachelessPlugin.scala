@@ -13,39 +13,46 @@ import spinal.lib.system.tag.{MappedTransfers, PmaRegion}
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, PmaLoad, PmaLogic, PmaPort, PmpService}
-import vexiiriscv.misc.{PerformanceCounterService, TrapArg, TrapReason, TrapService}
-import vexiiriscv.riscv.CSR
+import vexiiriscv.misc.{PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
+import vexiiriscv.riscv.{CSR, PrivilegeMode}
 
 import scala.collection.mutable.ArrayBuffer
+import vexiiriscv.execute.lsu.AguPlugin.GUEST
 
 object FetchCachelessPlugin{
   val ID_WIDTH = blocking[Int]
   val ID = blocking[Int]
 }
 
+case class FetchCachelessTimingParameter(var addressAt: Int = 0,
+                                         var pmaAt: Int = 0,
+                                         var forkAt : Int = 0,
+                                         var joinAt : Int = 1)
+
 /**
  * Implement the instruction fetch bus without L1 cache.
  * The main particularity of this implementation is that it support out of order memory busses
  */
 class FetchCachelessPlugin(var wordWidth : Int,
+                           val timingParameter: FetchCachelessTimingParameter,
                            var translationStorageParameter: Any,
                            var translationPortParameter: Any,
                            var pmpPortParameter : Any,
-                           var addressAt: Int = 0,
-                           var pmaAt: Int = 0,
-                           var forkAt : Int = 0,
-                           var joinAt : Int = 1,
                            var cmdForkPersistence : Boolean = true) extends FiberPlugin{
+  import timingParameter._
+
   val regions = Handle[ArrayBuffer[PmaRegion]]()
 
   val logic = during setup new Area{
     // * Plugins interlocking *
     val pp = host[FetchPipelinePlugin]
     val ps = host[PmpService]
+    val priv = host[PrivilegedPlugin]
     val ts = host[TrapService]
-    val ats = host[AddressTranslationService]
-    val buildBefore = retains(pp.elaborationLock, ats.portsLock, ps.portsLock)
-    val atsStorageLock = retains(ats.storageLock)
+    val ats = host.find[AddressTranslationService]((!_.isShadowMmu))
+    val sats = host.find[AddressTranslationService](_.isShadowMmu)
+    val buildBefore = retains(pp.elaborationLock, ats.portsLock, sats.portsLock, ps.portsLock)
+    val atsStorageLock = retains(ats.storageLock, sats.storageLock)
     val trapLock =  ts.trapLock()
     awaitBuild()
 
@@ -53,6 +60,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
     Fetch.WORD_WIDTH.set(wordWidth)
 
     val translationStorage = ats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
+    val shadowTranslationStorage = sats.newStorage(translationStorageParameter, PerformanceCounterService.ICACHE_TLB_CYCLES)
     atsStorageLock.release()
 
     val trapPort = ts.newTrap(pp.getAge(joinAt), 0)
@@ -90,12 +98,13 @@ class FetchCachelessPlugin(var wordWidth : Int,
       }
     }
 
-    val onAddress = new pp.Fetch(addressAt) {
+    val onAddress0 = new pp.Fetch(addressAt) {
       val request = AddressTranslationReq(
         PRE_ADDRESS    = Fetch.WORD_PC,
         LOAD           = insert(False),
         STORE          = insert(False),
         EXECUTE        = insert(True),
+        FORCE_GUEST    = insert(False),
         FORCE_PHYSICAL = insert(False)
       )
       val translationPort = ats.newTranslationPort(
@@ -106,11 +115,30 @@ class FetchCachelessPlugin(var wordWidth : Int,
         storageSpec = translationStorage
       )
     }
-    val tpk = onAddress.translationPort.keys
+    val tpk = onAddress0.translationPort.keys
+
+    val onAddress1 = new pp.Fetch(addressAt + 1) {
+      val request = AddressTranslationReq(
+        PRE_ADDRESS    = insert(tpk.TRANSLATED.resize(Fetch.WORD_PC.getWidth bits)),
+        LOAD           = insert(False),
+        STORE          = insert(False),
+        EXECUTE        = insert(True),
+        FORCE_GUEST    = insert(False),
+        FORCE_PHYSICAL = insert(False)
+      )
+      val translationPort = sats.newTranslationPort(
+        nodes = Seq(down),
+        req = request,
+        usage = AddressTranslationPortUsage.FETCH,
+        portSpec = translationPortParameter,
+        storageSpec = shadowTranslationStorage
+      )
+    }
+    val stpk = priv.implementHypervisor.mux(onAddress1.translationPort.keys, onAddress0.translationPort.keys)
 
     val pmpPort = ps.createPmpPort(
       nodes = List.tabulate(joinAt+1)(pp.fetch(_).down),
-      physicalAddress = tpk.TRANSLATED,
+      physicalAddress = stpk.TRANSLATED,
       forceCheck = _ => False,
       read = _ => False,
       write = _ => False,
@@ -121,7 +149,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
     val onPma = new pp.Fetch(pmaAt) {
       val port = new PmaPort(Global.PHYSICAL_WIDTH, List(Fetch.WORD_WIDTH / 8), List(PmaLoad))
-      port.cmd.address := tpk.TRANSLATED
+      port.cmd.address := stpk.TRANSLATED
       val RSP = insert(port.rsp)
     }
 
@@ -133,7 +161,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       val translated = cloneOf(bus.cmd)
       translated.arbitrationFrom(halted)
       translated.id := buffer.reserveId
-      translated.address := tpk.TRANSLATED
+      translated.address := stpk.TRANSLATED
       translated.address(Fetch.SLICE_RANGE) := 0
       val persistent = translated.pipelined(s2m = cmdForkPersistence)
       bus.cmd << persistent
@@ -147,7 +175,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       BUFFER_ID := buffer.reserveId
 
       val PMA_FAULT = insert(onPma.RSP.fault)
-      when(tpk.HAZARD || tpk.REFILL || PMA_FAULT) {
+      when(stpk.HAZARD || stpk.REFILL || tpk.HAZARD || tpk.REFILL || PMA_FAULT) {
         halted.valid := False
       }otherwise {
         when(up.isMoving) {
@@ -176,6 +204,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
       TRAP := False
       trapPort.valid := TRAP && !trapSent
       trapPort.tval := Fetch.WORD_PC.asBits
+      trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
@@ -200,7 +229,9 @@ class FetchCachelessPlugin(var wordWidth : Int,
       }
 
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
-      trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      trapPort.arg(2) := False
+      trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      if (priv.implementHypervisor) trapPort.arg(3 + ats.getStorageIdWidth(), sats.getStorageIdWidth() bits) := sats.getStorageId(shadowTranslationStorage)
       when(tpk.REFILL) {
         TRAP := True
         trapPort.exception := False
@@ -210,6 +241,26 @@ class FetchCachelessPlugin(var wordWidth : Int,
         TRAP := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
+      }
+
+      if(priv.implementHypervisor) when(!(tpk.PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD)) {
+        when(stpk.PAGE_FAULT) {
+          TRAP := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_GUEST_PAGE_FAULT
+        }
+
+        when(stpk.ACCESS_FAULT) {
+          TRAP := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
+        }
+
+        when(stpk.REFILL) {
+          TRAP := True
+          trapPort.exception := False
+          trapPort.code := TrapReason.SMMU_REFILL
+        }
       }
 
       TRAP.clearWhen(!isValid || haltIt)

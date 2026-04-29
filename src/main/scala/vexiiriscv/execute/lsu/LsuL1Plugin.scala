@@ -22,7 +22,7 @@ object LsuL1 extends AreaObject {
   // LSU -> L1
   val ABORD, SKIP_WRITE = Payload(Bool()) // Used on ctrl stage to prevent side effect
   val SEL = Payload(Bool()) // Enable the L1
-  val LOAD, STORE, ATOMIC, FLUSH, PREFETCH, CLEAN, INVALID = Payload(Bool()) // Specifies the kind of memory request
+  val LOAD, STORE, EXECUTE, ATOMIC, FLUSH, PREFETCH, CLEAN, INVALID, GUEST = Payload(Bool()) // Specifies the kind of memory request
   val MIXED_ADDRESS = Payload(Global.MIXED_ADDRESS) // Address before the MMU, can only use the 4K page LSB
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
@@ -57,6 +57,13 @@ case class LockPort() extends Bundle with IMasterSlave {
   override def asMaster() = out(this)
 }
 
+case class LsuL1TimingParameter(var bankReadAt: Int = 0,
+                                var wayReadAt: Int = 0,
+                                var hitsAt: Int = 1,
+                                var hitAt: Int = 2,
+                                var bankMuxesAt: Int = 1,
+                                var bankMuxAt: Int = 2,
+                                var ctrlAt: Int = 2)
 
 /*
 This is the L1 cache design of VexiiRiscv which originate in part from NaxRiscv.
@@ -77,6 +84,7 @@ List of hazard to take care of :
   - redo when detected
  */
 class LsuL1Plugin(val lane : ExecuteLaneService,
+                  val timingParameter: LsuL1TimingParameter,
                   var memDataWidth: Int,
                   var cpuDataWidth: Int,
                   var refillCount: Int,
@@ -84,13 +92,6 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var setCount: Int,
                   var wayCount: Int,
                   var lineSize: Int = 64,
-                  var bankReadAt: Int = 0,
-                  var wayReadAt: Int = 0,
-                  var hitsAt: Int = 1,
-                  var hitAt: Int = 2,
-                  var bankMuxesAt: Int = 1,
-                  var bankMuxAt: Int = 2,
-                  var ctrlAt: Int = 2,
                   var coherentReadAt: Int = 0,
                   var coherentHitsAt: Int = 1,
                   var coherentHitAt: Int = 1,
@@ -104,6 +105,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var probeIdWidth: Int = -1,
                   var ackIdWidth: Int = -1,
                   var bootMemClear : Boolean) extends FiberPlugin with InitService with LsuL1Service{
+  import timingParameter._
 
   override def initHold(): Bool = !logic.initializer.done || bootMemClear.mux(logic.initializerMem.busy, False)
 
@@ -850,7 +852,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
         val writeToReadHazard = withBypass.mux(False, WRITE_TO_READ_HAZARDS.orR)
         val bankNotRead = (BANK_BUSY_REMAPPED & WAYS_HITS).orR
-        val loadHazard  = LOAD && !PREFETCH  && (bankNotRead || writeToReadHazard)
+        val loadHazard  = (LOAD || EXECUTE) && !PREFETCH  && (bankNotRead || writeToReadHazard)
         val storeHazard = STORE && !PREFETCH  && !bankWriteReservation.win
         val preventSideEffects = ABORD || lane.isFreezed()
 
@@ -873,7 +875,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         REFILL_HIT := refillHazard
 
         events.map{e =>
-          e.loadAccess := up.isFiring && SEL && LOAD
+          e.loadAccess := up.isFiring && SEL && (LOAD || EXECUTE)
           e.loadMiss   := e.loadAccess && !HAZARD && MISS
         }
 
