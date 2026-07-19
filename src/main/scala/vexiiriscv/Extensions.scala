@@ -96,7 +96,10 @@ object ExtensionList {
     E("zalrsc"),
     E("zba"),
     E("zbb"),
-    E("zbc"),
+    E("zbc").imply("zbkc"),
+    E("zbkb"),
+    E("zbkc"),
+    E("zbkx"),
     E("zbs"),
     E("zca"),
     E("zcf").depend("c", "f"),
@@ -201,6 +204,7 @@ case class ExtensionManager(isa: Set[String] = Set[String]()) extends Dynamic {
     if (check("zca")) add("c")
     if (check("c", "d")) add("zcd")
     if (xlen == 32 && check("c", "f")) add("zcf")
+    if (check("zbkc")) add("zbc")
 
     /* AES always enable both encrypt and decrypt */
     if (check("zknd") || check("zkne")) {

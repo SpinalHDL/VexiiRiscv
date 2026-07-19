@@ -10,39 +10,52 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.riscv._
 import vexiiriscv.riscv.Riscv
+import vexiiriscv.ExtensionManager
 
 import scala.collection.mutable.ArrayBuffer
 
 object ZbPlugin {
   def make(layer: LaneLayer,
-           zba : Boolean,
-           zbb : Boolean,
-           zbc : Boolean,
-           zbs : Boolean,
+           exts: ExtensionManager,
+           xlen: Int,
            executeAt: Int,
            formatAt: Int) = {
     val plugins = ArrayBuffer[FiberPlugin]()
 
-    if(zba) plugins ++= List(
+    if(exts.withZba) plugins ++= List(
       new ZbaPlugin(layer, executeAt, formatAt)
     )
 
-    if(zbb) plugins ++= List(
+    if(exts.withZbb || exts.withZbkb) plugins ++= List(
       new ZbbLogicPlugin(layer, executeAt, formatAt),
+      new ZbbRotatePlugin(layer, executeAt, formatAt),
+      new ZbbByteReversePlugin(layer, formatAt),
+    )
+
+    if(exts.withZbb) plugins ++= List(
       new ZbbCountPlugin(layer, executeAt, formatAt),
       new ZbbMinMaxPlugin(layer, executeAt, formatAt),
-      new ZbbRotatePlugin(layer, executeAt, formatAt),
       new ZbbOrPlugin(layer, executeAt, formatAt),
-      new ZbbByteReversePlugin(layer, formatAt),
       new ZbbExtendPlugin(layer, formatAt)
     )
 
-    if(zbc) plugins ++= List(
+    if(exts.withZbc) plugins ++= List(
       new ZbcPlugin(layer, executeAt, formatAt),
     )
 
-    if(zbs) plugins ++= List(
+    if(exts.withZbs) plugins ++= List(
       new ZbsPlugin(layer, executeAt, executeAt, formatAt)
+    )
+
+    if(exts.withZbkb) plugins ++= List(
+      new ZbkbPackPlugin(layer, executeAt, formatAt),
+      new ZbkbBitReversePlugin(layer, formatAt),
+    )
+
+    if(exts.withZbkb && xlen == 32) plugins += new ZbkbInterleavePlugin(layer, formatAt)
+
+    if(exts.withZbkx) plugins ++= List(
+      new ZbkxPlugin(layer, executeAt, formatAt),
     )
 
     plugins
@@ -407,6 +420,137 @@ class ZbcPlugin(val layer: LaneLayer,
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
       wb.payload := FLIP ? RESULT.reversed | RESULT
+    }
+  }
+}
+
+class ZbkbPackPlugin(val layer: LaneLayer,
+                     val executeAt: Int = 0,
+                     val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
+  val SIZE = Payload(UInt(2 bit))
+
+  val logic = during setup new Logic {
+    awaitBuild()
+    import SrcKeys._
+
+    val wb = newWriteback(ifp, formatAt)
+    add(RvZbx.PACKH).srcs(SRC1.RF, SRC2.RF).decode(SIZE -> U(0, 2 bits))
+    if (Riscv.XLEN.get == 64) {
+      add(RvZbx.PACKW).srcs(SRC1.RF, SRC2.RF).decode(SIZE -> U(1, 2 bits))
+      ifp.signExtend(wb, layer(RvZbx.PACKW), 32)
+    }
+    add(RvZbx.PACK).srcs(SRC1.RF, SRC2.RF).decode(SIZE -> U(log2Up(Riscv.XLEN / 8) - 1, 2 bits))
+    uopRetainer.release()
+
+    val execute = new el.Execute(executeAt) {
+      val src1 = this(srcp.SRC1).asBits
+      val src2 = this(srcp.SRC2).asBits
+
+      val result = B(0, Riscv.XLEN bits)
+      switch(this(SIZE)) {
+        for (i <- 0 until log2Up(Riscv.XLEN / 8)) is(i) {
+          val size = (1 << i) * 8
+          result(size - 1 downto 0) := src1.resized
+          result(2 * size - 1 downto size) := src2.resized
+        }
+      }
+      val RESULT = insert(result)
+    }
+
+    val format = new el.Execute(formatAt) {
+      wb.valid := SEL
+      wb.payload := execute.RESULT
+    }
+  }
+}
+
+class ZbkbInterleavePlugin(val layer: LaneLayer,
+                           val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
+  val logic = during setup new Logic {
+    awaitBuild()
+    import SrcKeys._
+
+    val UNZIP = Payload(Bool())
+
+    val wb = newWriteback(ifp, formatAt)
+    add(RvZbx.ZIP).srcs(SRC1.RF).decode(UNZIP -> False)
+    add(RvZbx.UNZIP).srcs(SRC1.RF).decode(UNZIP -> True)
+    uopRetainer.release()
+
+    val halfXlen = Riscv.XLEN.get / 2
+    val zipArray = (0 until halfXlen).flatMap(i => Seq(i, i + halfXlen))
+    val unzipArray =
+      (0 until halfXlen).map(_ * 2) ++
+      (0 until halfXlen).map(_ * 2 + 1)
+
+    val format = new el.Execute(formatAt) {
+      val rs1 = up(el(IntRegFile, RS1))
+      val zip = Cat(zipArray.map(rs1(_)))
+      val unzip = Cat(unzipArray.map(rs1(_)))
+
+      wb.valid := SEL
+      wb.payload := UNZIP ? unzip | zip
+    }
+  }
+}
+
+class ZbkbBitReversePlugin(val layer: LaneLayer,
+                           val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
+  val logic = during setup new Logic {
+    awaitBuild()
+    import SrcKeys._
+
+    val wb = newWriteback(ifp, formatAt)
+    add(RvZbx.BREV8).srcs(SRC1.RF)
+    uopRetainer.release()
+
+    val format = new el.Execute(formatAt) {
+      wb.valid := SEL
+      wb.payload := Cat(up(el(IntRegFile, RS1)).subdivideIn(8 bit).map(_.reversed))
+    }
+  }
+}
+
+class ZbkxPlugin(val layer: LaneLayer,
+                 val executeAt: Int = 0,
+                 val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
+  val X8 = Payload(Bool())
+
+  val logic = during setup new Logic {
+    awaitBuild()
+    import SrcKeys._
+
+    val wb = newWriteback(ifp, formatAt)
+    add(RvZbx.XPERM4).srcs(SRC1.RF, SRC2.RF).decode(X8 -> False)
+    add(RvZbx.XPERM8).srcs(SRC1.RF, SRC2.RF).decode(X8 -> True)
+    uopRetainer.release()
+
+    val execute = new el.Execute(executeAt) {
+      val rs1 = up(el(IntRegFile, RS1))
+      val rs2 = up(el(IntRegFile, RS2))
+
+      def xperm(size: Int): Bits = {
+        val slices = rs1.subdivideIn(size bits)
+        val indexs = rs2.subdivideIn(size bits)
+
+        val count = Riscv.XLEN.get / size
+        val oobPos = log2Up(count)
+        val oobSize = size - oobPos
+
+        indexs.map{ index =>
+          val selector = (oobSize == 0).mux(False, index(oobPos, oobSize bits).orR)
+          val mux = index(oobPos - 1 downto 0).asUInt
+          slices.read(mux).andMask(!selector)
+        }.asBits
+      }
+
+      val XPERM4 = insert(xperm(4))
+      val XPERM8 = insert(xperm(8))
+    }
+
+    val format = new el.Execute(formatAt) {
+      wb.valid := SEL
+      wb.payload := X8 ? this(execute.XPERM8) | this(execute.XPERM4)
     }
   }
 }
