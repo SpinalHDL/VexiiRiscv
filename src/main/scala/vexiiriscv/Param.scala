@@ -974,6 +974,9 @@ class ParamSimple() {
     plugins += new IntFormatPlugin(lane0)
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
     if(withRvZknAes) plugins += new AesZknPlugin(layer = early0)
+    if (extension.withZknh) plugins ++= ZknhPlugin.make(layer = early0, xlen = xlen)
+    if (extension.withZksh) plugins += new Sm3ZkshPlugin(layer = early0)
+    if (extension.withZksed) plugins += new Sm4ZksedPlugin(layer = early0)
     if(withCfu) plugins += new CfuPlugin(
       layer = early0,
       forkAt = 0,

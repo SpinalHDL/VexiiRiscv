@@ -106,6 +106,9 @@ object ExtensionList {
     E("zcd").depend("c", "d"),
     E("zknd"),
     E("zkne"),
+    E("zknh"),
+    E("zksed"),
+    E("zksh"),
 
     /* Ss* extensions */
     E("ssaia").require("s").depend("smaia", "sscsrind"),
