@@ -562,8 +562,6 @@ class ParamSimple() {
   def removeISA(exts: String*): Unit = extension.remove(exts :_*)
   def checkISA(exts: String*) = extension.check(exts :_*)
 
-  def withRvZknAes = checkISA("zkne") || checkISA("zknd")
-
   def withMmu = extension.withSupervisor && !disableMmu
 
   def fixIsaParams() = {
@@ -973,7 +971,7 @@ class ParamSimple() {
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin(lane0)
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    if(withRvZknAes) plugins += new AesZknPlugin(layer = early0)
+    if(extension.withRvZknAes) plugins ++= AesZknPlugin.make(layer = early0, xlen = xlen)
     if (extension.withZknh) plugins ++= ZknhPlugin.make(layer = early0, xlen = xlen)
     if (extension.withZksh) plugins += new Sm3ZkshPlugin(layer = early0)
     if (extension.withZksed) plugins += new Sm4ZksedPlugin(layer = early0)

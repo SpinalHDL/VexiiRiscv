@@ -167,6 +167,7 @@ case class ExtensionManager(isa: Set[String] = Set[String]()) extends Dynamic {
     case "withPerformanceCounters" => check("zicntr")
     case "withPerformanceScountovf" => check("sscofpmf")
     case "withAtomics" => check("zaamo") || check("zalrsc")
+    case "withRvZkn" | "withRvZknAes" => check("zkne") || check("zknd")
 
     case SingleExtension(ext) => check(ext)
     case MultiExtension(ext) => check(ext.toLowerCase)

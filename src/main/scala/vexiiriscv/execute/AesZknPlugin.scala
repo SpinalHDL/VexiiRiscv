@@ -1,107 +1,49 @@
 package vexiiriscv.execute
 
 import spinal.core._
-import vexiiriscv.decode.Decode
-import vexiiriscv.riscv.{IntRegFile, RS1, RS2, Riscv, Rvi}
+import spinal.lib.misc.plugin.FiberPlugin
+import vexiiriscv.decode.{Decode, DecoderService}
+import vexiiriscv.riscv.{IntRegFile, RS1, RS2, Riscv, Rvk}
 
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * This implement the official RISC-V AES instruction.
  * See https://github.com/SpinalHDL/VexRiscv/blob/dev/src/main/scala/vexriscv/plugin/AesZknPlugin.scala / RISC-V doc
  */
+object AesZknPlugin {
+  def make(layer: LaneLayer,
+           xlen: Int,
+           readAt: Int = 0,
+           writeBackAt: Int = 2) = {
 
-class AesZknPlugin(
-  val layer : LaneLayer,
-  val readAt : Int = 0,
-  val writeBackAt : Int = 2
-) extends ExecutionUnitElementSimple(layer){
+    val plugins = ArrayBuffer[FiberPlugin]()
 
-  val mapping = new {
-    def DECRYPT = 27
-    def MIDDLE_ROUND = 26
-    def BYTE_SEL = 30
-  }
-
-  val logic = during setup new Logic {
-    awaitBuild()
-    assert(Riscv.XLEN.get == 32)
-    import SrcKeys._
-
-    val wb = newWriteback(ifp, writeBackAt)
-
-    val uopSpec = layer(add(Rvi.ZKN_AES).uop)
-    uopSpec.addRsSpec(RS1, readAt)
-    uopSpec.addRsSpec(RS2, readAt)
-
-    uopRetainer.release()
-
-    // Hardware
-    def BANK0 = (TE0, SBOX_INV).zipped.map((te0, inv) => (te0.toLong) | (inv.toLong << 24))
-    def BANK1 =  TD0
-
-    val onRead = new el.Execute(readAt) {
-      val byteSel = Decode.UOP(mapping.BYTE_SEL, 2 bits).asUInt
-      val bankSel = Decode.UOP(mapping.DECRYPT) && Decode.UOP(mapping.MIDDLE_ROUND)
-      val romAddress = U(bankSel ## up(el(IntRegFile, RS2)).subdivideIn(8 bits).read(byteSel))
-    }
-
-    val onData = new el.Execute(readAt + 1){
-      //Decode the rom data
-      val rom = new Area {
-        val storage = Mem(Bits(32 bits), 512) initBigInt((BANK0 ++ BANK1).map(BigInt(_)))
-
-        val data = storage.readSync(onRead.romAddress, isReady)
-        val bytes = data.subdivideIn(8 bits)
-
-        def VecUInt(l: Int*) = Vec(l.map(U(_, 2 bits)))
-        // remap will be used to decode the rom
-        val remap = Vec(
-          VecUInt(2, 0, 0, 1),
-          VecUInt(0, 0, 0, 0),
-          VecUInt(3, 2, 1, 0),
-          VecUInt(3, 3, 3, 3)
+    xlen match {
+      case 32 => {
+        plugins += new Aes32ZknPlugin(
+          layer       = layer,
+          readAt      = readAt,
+          writeBackAt = writeBackAt,
+        )
+      }
+      case 64 => {
+        plugins += new Aes64MainZknPlugin(
+          layer       = layer,
+          readAt      = readAt,
+          writeBackAt = writeBackAt,
         )
 
-        val address = U(Decode.UOP(mapping.DECRYPT) ## !Decode.UOP(mapping.MIDDLE_ROUND))
-        val output = remap(address)
-      }
-
-      val wordDesuffle = new Area{
-        val zero = B"0000"
-        val byteSel = Decode.UOP(mapping.BYTE_SEL, 2 bits).asUInt
-        val output = Vec(Bits(8 bits), 4)
-
-        def remap(l : Int*) = Vec(l.map(rom.output(_)))
-        val sel = byteSel.mux(
-          0 -> remap(3, 2, 1, 0),
-          1 -> remap(0, 3, 2, 1),
-          2 -> remap(1, 0, 3, 2),
-          3 -> remap(2, 1, 0, 3)
+        /* As this is simple, advance the write back stage */
+        plugins += new Aes64Ks2ZknPlugin(
+          layer       = layer,
+          readAt      = readAt,
+          writeBackAt = writeBackAt - 1,
         )
-        when(!Decode.UOP(mapping.MIDDLE_ROUND)){
-          zero := B"1111"
-          zero(byteSel) := False
-        }
-
-        // Finally, mux the rom data
-        for(byteId <- 0 to 3){
-          output(byteId) := rom.bytes(sel(byteId))
-          when(zero(byteId)){
-            output(byteId) := 0
-          }
-        }
       }
-
-      val xored = wordDesuffle.output.asBits ^ up(el(IntRegFile, RS1))
-      val CALC = insert(xored)
     }
 
-    val onWb = new el.Execute(writeBackAt){
-      wb.valid := SEL
-      wb.payload := onData.CALC
-    }
-
-
+    plugins
   }
 
   // Encryption table which solve a single byte sbox + column mix. Used for all rounds
@@ -260,4 +202,460 @@ class AesZknPlugin(
     0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61,
     0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
   )
+
+  // Forward AES S-box, kept explicit to avoid rebuilding it from TE0.
+  def SBOX = List(
+    0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
+    0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
+    0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
+    0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a, 0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75,
+    0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0, 0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84,
+    0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b, 0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf,
+    0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85, 0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8,
+    0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2,
+    0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73,
+    0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb,
+    0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
+    0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08,
+    0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a,
+    0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e,
+    0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
+    0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
+  )
+}
+
+class Aes32ZknPlugin(
+  val layer : LaneLayer,
+  val readAt : Int = 0,
+  val writeBackAt : Int = 2,
+) extends ExecutionUnitElementSimple(layer){
+
+  val mapping = new {
+    def DECRYPT = 27
+    def MIDDLE_ROUND = 26
+    def BYTE_SEL = 30
+  }
+
+  val logic = during setup new Logic {
+    awaitBuild()
+    assert(Riscv.XLEN.get == 32)
+    import SrcKeys._
+
+    val wb = newWriteback(ifp, writeBackAt)
+
+    val uopSpec = layer(add(Rvk.AES32_DE).uop)
+    uopSpec.addRsSpec(RS1, readAt)
+    uopSpec.addRsSpec(RS2, readAt)
+
+    uopRetainer.release()
+
+    // Hardware
+    def BANK0 = (AesZknPlugin.TE0, AesZknPlugin.SBOX_INV).zipped.map((te0, inv) => (te0.toLong) | (inv.toLong << 24))
+    def BANK1 =  AesZknPlugin.TD0
+
+    val onRead = new el.Execute(readAt) {
+      val byteSel = Decode.UOP(mapping.BYTE_SEL, 2 bits).asUInt
+      val bankSel = Decode.UOP(mapping.DECRYPT) && Decode.UOP(mapping.MIDDLE_ROUND)
+      val romAddress = U(bankSel ## up(el(IntRegFile, RS2)).subdivideIn(8 bits).read(byteSel))
+    }
+
+    val onData = new el.Execute(readAt + 1){
+      //Decode the rom data
+      val rom = new Area {
+        val storage = Mem(Bits(32 bits), 512) initBigInt((BANK0 ++ BANK1).map(BigInt(_)))
+
+        val data = storage.readSync(onRead.romAddress, isReady)
+        val bytes = data.subdivideIn(8 bits)
+
+        def VecUInt(l: Int*) = Vec(l.map(U(_, 2 bits)))
+        // remap will be used to decode the rom
+        val remap = Vec(
+          VecUInt(2, 0, 0, 1),
+          VecUInt(0, 0, 0, 0),
+          VecUInt(3, 2, 1, 0),
+          VecUInt(3, 3, 3, 3)
+        )
+
+        val address = U(Decode.UOP(mapping.DECRYPT) ## !Decode.UOP(mapping.MIDDLE_ROUND))
+        val output = remap(address)
+      }
+
+      val wordDesuffle = new Area{
+        val zero = B"0000"
+        val byteSel = Decode.UOP(mapping.BYTE_SEL, 2 bits).asUInt
+        val output = Vec(Bits(8 bits), 4)
+
+        def remap(l : Int*) = Vec(l.map(rom.output(_)))
+        val sel = byteSel.mux(
+          0 -> remap(3, 2, 1, 0),
+          1 -> remap(0, 3, 2, 1),
+          2 -> remap(1, 0, 3, 2),
+          3 -> remap(2, 1, 0, 3)
+        )
+        when(!Decode.UOP(mapping.MIDDLE_ROUND)){
+          zero := B"1111"
+          zero(byteSel) := False
+        }
+
+        // Finally, mux the rom data
+        for(byteId <- 0 to 3){
+          output(byteId) := rom.bytes(sel(byteId))
+          when(zero(byteId)){
+            output(byteId) := 0
+          }
+        }
+      }
+
+      val xored = wordDesuffle.output.asBits ^ up(el(IntRegFile, RS1))
+      val CALC = insert(xored)
+    }
+
+    val onWb = new el.Execute(writeBackAt){
+      wb.valid := SEL
+      wb.payload := onData.CALC
+    }
+  }
+}
+
+class Aes64MainZknPlugin(
+  val layer : LaneLayer,
+  val readAt : Int = 0,
+  val writeBackAt : Int = 2,
+) extends ExecutionUnitElementSimple(layer) {
+  val mapping = new {
+    def DECRYPT = 27
+    def MIDDLE_ROUND = 26
+
+    def RCON = 23 downto 20
+    def CHECK = 25 downto 24
+
+    def CRYPTO = 25
+    def KS = 24
+  }
+
+  def shiftRows(rs1: Vec[Bits], rs2: Vec[Bits]) = {
+    Cat(rs1(3), rs2(6), rs2(1), rs1(4),
+        rs2(7), rs2(2), rs1(5), rs1(0))
+  }
+
+  def invShiftRows(rs1: Vec[Bits], rs2: Vec[Bits]) = {
+    Cat(rs2(3), rs2(6), rs1(1), rs1(4),
+        rs1(7), rs2(2), rs2(5), rs1(0))
+  }
+
+  /*
+   * XOR linear network for mixColumns
+   * Result: 18 shared XORs + 90 output XORs, maximum logical depth 3.
+   */
+  def mixColumns32(value : Bits) = {
+    val x = value.asBools
+    val t0 = x(7) ^ x(15)
+    val t1 = x(23) ^ x(31)
+    val t2 = x(7) ^ x(31)
+    val t3 = x(15) ^ x(23)
+    val t4 = x(0) ^ x(8)
+    val t5 = x(1) ^ x(9)
+    val t6 = x(2) ^ x(10)
+    val t7 = x(3) ^ x(11)
+    val t8 = x(4) ^ x(12)
+    val t9 = x(5) ^ x(13)
+    val t10 = x(6) ^ x(14)
+    val t11 = x(16) ^ x(24)
+    val t12 = x(17) ^ x(25)
+    val t13 = x(18) ^ x(26)
+    val t14 = x(19) ^ x(27)
+    val t15 = x(20) ^ x(28)
+    val t16 = x(21) ^ x(29)
+    val t17 = x(22) ^ x(30)
+    val y0 = t11 ^ (x(8) ^ t0)
+    val y1 = (x(9) ^ t0) ^ (t4 ^ t12)
+    val y2 = t13 ^ (x(10) ^ t5)
+    val y3 = (x(11) ^ t0) ^ (t6 ^ t14)
+    val y4 = (x(12) ^ t0) ^ (t7 ^ t15)
+    val y5 = t16 ^ (x(13) ^ t8)
+    val y6 = t17 ^ (x(14) ^ t9)
+    val y7 = t10 ^ (x(15) ^ t1)
+    val y8 = t11 ^ (x(0) ^ t3)
+    val y9 = (x(16) ^ t3) ^ (t12 ^ (x(1) ^ x(8)))
+    val y10 = (x(2) ^ x(9)) ^ (x(17) ^ t13)
+    val y11 = (x(18) ^ t3) ^ (t14 ^ (x(3) ^ x(10)))
+    val y12 = (x(19) ^ t3) ^ (t15 ^ (x(4) ^ x(11)))
+    val y13 = (x(5) ^ x(12)) ^ (x(20) ^ t16)
+    val y14 = (x(6) ^ x(13)) ^ (x(21) ^ t17)
+    val y15 = (x(7) ^ x(14)) ^ (x(22) ^ t1)
+    val y16 = t4 ^ (x(24) ^ t1)
+    val y17 = (x(25) ^ t1) ^ (t5 ^ t11)
+    val y18 = t12 ^ (x(26) ^ t6)
+    val y19 = (x(27) ^ t1) ^ (t7 ^ t13)
+    val y20 = (x(28) ^ t1) ^ (t8 ^ t14)
+    val y21 = t15 ^ (x(29) ^ t9)
+    val y22 = t16 ^ (x(30) ^ t10)
+    val y23 = t17 ^ (x(31) ^ t0)
+    val y24 = t4 ^ (x(16) ^ t2)
+    val y25 = (x(24) ^ t2) ^ (t5 ^ (x(0) ^ x(17)))
+    val y26 = (x(1) ^ x(18)) ^ (x(25) ^ t6)
+    val y27 = (x(26) ^ t2) ^ (t7 ^ (x(2) ^ x(19)))
+    val y28 = (x(27) ^ t2) ^ (t8 ^ (x(3) ^ x(20)))
+    val y29 = (x(4) ^ x(21)) ^ (x(28) ^ t9)
+    val y30 = (x(5) ^ x(22)) ^ (x(29) ^ t10)
+    val y31 = (x(6) ^ x(23)) ^ (x(30) ^ t0)
+
+    Cat(y31, y30, y29, y28, y27, y26, y25, y24,
+        y23, y22, y21, y20, y19, y18, y17, y16,
+        y15, y14, y13, y12, y11, y10, y9,  y8,
+        y7,  y6,  y5,  y4,  y3,  y2,  y1,  y0)
+  }
+
+  /*
+   * XOR linear network for invMixColumns
+   * Result: 61 shared XORs + 109 output XORs, maximum logical depth 6.
+   */
+  def invMixColumns32(value : Bits) = {
+    val x = value.asBools
+    val t0 = x(5) ^ x(21)
+    val t1 = x(13) ^ x(29)
+    val t2 = x(6) ^ x(22)
+    val t3 = x(14) ^ x(30)
+    val t4 = t0 ^ t1
+    val t5 = x(3) ^ x(15)
+    val t6 = x(7) ^ x(23)
+    val t7 = x(19) ^ x(31)
+    val t8 = x(2) ^ t3
+    val t9 = x(10) ^ t2
+    val t10 = x(0) ^ t4
+    val t11 = x(1) ^ x(17)
+    val t12 = x(4) ^ x(20)
+    val t13 = x(8) ^ x(24)
+    val t14 = x(9) ^ x(25)
+    val t15 = x(11) ^ x(27)
+    val t16 = x(12) ^ x(28)
+    val t17 = x(18) ^ t8
+    val t18 = x(26) ^ t9
+    val t19 = t5 ^ t7
+    val t20 = t6 ^ t15
+    val t21 = x(16) ^ t10
+    val t22 = t4 ^ t11
+    val t23 = x(15) ^ x(31)
+    val t24 = x(7) ^ t14
+    val t25 = x(23) ^ t14
+    val t26 = t2 ^ t13
+    val t27 = t12 ^ t16
+    val t28 = t19 ^ t20
+    val t29 = t17 ^ t18
+    val t30 = x(11) ^ t25
+    val t31 = x(27) ^ t24
+    val t32 = t3 ^ t21
+    val t33 = x(0) ^ x(16)
+    val t34 = x(7) ^ x(15)
+    val t35 = x(8) ^ x(31)
+    val t36 = x(1) ^ t3
+    val t37 = x(26) ^ t5
+    val t38 = t0 ^ t23
+    val t39 = t1 ^ t6
+    val t40 = t2 ^ t16
+    val t41 = t3 ^ t12
+    val t42 = t7 ^ t13
+    val t43 = t11 ^ t15
+    val t44 = t23 ^ t33
+    val t45 = x(6) ^ t27
+    val t46 = x(16) ^ t4
+    val t47 = x(22) ^ t27
+    val t48 = t0 ^ t20
+    val t49 = t1 ^ t19
+    val t50 = x(5) ^ t28
+    val t51 = x(21) ^ t28
+    val t52 = t5 ^ t22
+    val t53 = t6 ^ t17
+    val t54 = t7 ^ t22
+    val t55 = t12 ^ t18
+    val t56 = t16 ^ t17
+    val t57 = t18 ^ t44
+    val t58 = x(4) ^ t29
+    val t59 = x(20) ^ t29
+    val t60 = t21 ^ t37
+    val y0 = (t46 ^ (t34 ^ t26))
+    val y1 = (((x(8) ^ x(15)) ^ t25) ^ ((x(17) ^ t3) ^ t10))
+    val y2 = (((x(9) ^ x(18)) ^ t36) ^ t57)
+    val y3 = (t21 ^ (((x(2) ^ x(23)) ^ t9) ^ (t42 ^ t43)))
+    val y4 = ((x(20) ^ t30) ^ (t52 ^ t56))
+    val y5 = (((x(12) ^ x(21)) ^ t49) ^ t58)
+    val y6 = (((x(13) ^ x(22)) ^ t41) ^ t50)
+    val y7 = (t45 ^ ((x(14) ^ x(23)) ^ t38))
+    val y8 = ((x(24) ^ (x(15) ^ x(23))) ^ t32)
+    val y9 = (t22 ^ ((x(25) ^ t2) ^ (t35 ^ (x(16) ^ x(23)))))
+    val y10 = ((t26 ^ (x(26) ^ (x(9) ^ x(17)))) ^ t53)
+    val y11 = ((t31 ^ (t42 ^ (x(18) ^ (x(3) ^ x(10))))) ^ t32)
+    val y12 = ((x(28) ^ t30) ^ (t54 ^ t55))
+    val y13 = (((x(12) ^ x(29)) ^ t48) ^ t59)
+    val y14 = (((x(13) ^ x(30)) ^ t40) ^ t51)
+    val y15 = (t47 ^ ((x(14) ^ x(31)) ^ t39))
+    val y16 = (t10 ^ ((x(23) ^ x(31)) ^ t26))
+    val y17 = (((x(24) ^ x(31)) ^ t24) ^ (t36 ^ t46))
+    val y18 = (((x(17) ^ x(25)) ^ t8) ^ t57)
+    val y19 = ((t43 ^ ((x(7) ^ x(18)) ^ t26)) ^ t60)
+    val y20 = ((x(4) ^ t31) ^ (t54 ^ t56))
+    val y21 = (((x(5) ^ x(28)) ^ t49) ^ t59)
+    val y22 = (((x(6) ^ x(29)) ^ t41) ^ t51)
+    val y23 = (t47 ^ ((x(7) ^ x(30)) ^ t38))
+    val y24 = ((x(7) ^ t35) ^ t32)
+    val y25 = (t10 ^ ((t2 ^ t11) ^ (t34 ^ (x(9) ^ x(24)))))
+    val y26 = ((t9 ^ (t13 ^ (x(1) ^ x(25)))) ^ t53)
+    val y27 = ((t30 ^ (t8 ^ (x(19) ^ t13))) ^ t60)
+    val y28 = ((x(12) ^ t31) ^ (t52 ^ t55))
+    val y29 = (((x(13) ^ x(28)) ^ t48) ^ t58)
+    val y30 = (((x(14) ^ x(29)) ^ t40) ^ t50)
+    val y31 = (t45 ^ ((x(15) ^ x(30)) ^ t39))
+
+    Cat(y31, y30, y29, y28, y27, y26, y25, y24,
+        y23, y22, y21, y20, y19, y18, y17, y16,
+        y15, y14, y13, y12, y11, y10, y9,  y8,
+        y7,  y6,  y5,  y4,  y3,  y2,  y1,  y0)
+  }
+
+  def mixColumns64(value : Bits) = {
+    val words = value.subdivideIn(32 bits)
+    mixColumns32(words(1)) ## mixColumns32(words(0))
+  }
+
+  def invMixColumns64(value : Bits) = {
+    val words = value.subdivideIn(32 bits)
+    invMixColumns32(words(1)) ## invMixColumns32(words(0))
+  }
+
+  val logic = during setup new Logic {
+    val ds = host[DecoderService]
+    val dsRetainer = retains(ds.elaborationLock)
+
+    awaitBuild()
+    assert(Riscv.XLEN.get == 64)
+    assert(writeBackAt >= readAt + 2)
+    import SrcKeys._
+
+    val wb = newWriteback(ifp, writeBackAt)
+    add(Rvk.AES64_DE).srcs(SRC1.RF, SRC2.RF)
+    add(Rvk.AES64IM).srcs(SRC1.RF)
+    add(Rvk.AES64KS1I).srcs(SRC1.RF)
+    uopRetainer.release()
+
+    ds.addIllegalCheck { ctrl => False
+    }
+    dsRetainer.release()
+
+    val onRead = new el.Execute(readAt) {
+      val rs1 = up(el(IntRegFile, RS1)).asBits
+      val rs2 = up(el(IntRegFile, RS2)).asBits
+
+      val isDec = Bool()
+      val reader = for(id <- 0 until Riscv.XLEN.get / 8) yield new Area {
+        val byte = Bits(8 bits)
+        val enable = SEL && (Decode.UOP(mapping.CRYPTO) || (id < 4).mux(Decode.UOP(mapping.KS), False))
+        val address = (isDec ## byte).asUInt
+      }
+
+      val crypto = new Area {
+        val rs1Bytes = rs1.subdivideIn(8 bits)
+        val rs2Bytes = rs2.subdivideIn(8 bits)
+        val decRow = invShiftRows(rs1Bytes, rs2Bytes)
+        val encRow = shiftRows(rs1Bytes, rs2Bytes)
+
+        isDec := Decode.UOP(mapping.DECRYPT)
+
+        val data = Mux(isDec, decRow, encRow).subdivideIn(8 bits)
+        data.zip(reader).foreach{case (data, read) => read.byte := data}
+      }
+
+      val ks1i = new Area {
+        val SEL = insert(Decode.UOP(mapping.CHECK) === B"01")
+        isDec clearWhen(SEL)
+        val RCON = insert(Decode.UOP(mapping.RCON).asUInt)
+        val rs = rs1.subdivideIn(32 bits)(1)
+        val select = Mux(RCON === U(0xA, 4 bits), rs, rs.rotateRight(8))
+        val value = select.subdivideIn(8 bits)
+        when (SEL) {
+          value.zipWithIndex.foreach{case (data, id) => reader(id).byte := data}
+        }
+      }
+
+      val im = new Area {
+        val SEL = insert(Decode.UOP(mapping.CHECK) === B"00")
+        isDec clearWhen(SEL)
+      }
+    }
+
+    val onData = new el.Execute(readAt + 2) {
+      val romInitData = (AesZknPlugin.SBOX ++ AesZknPlugin.SBOX_INV).map(BigInt(_))
+      val rom = onRead.reader.map(reader => new Area {
+        val storage = Mem(Bits(8 bits), 512) initBigInt(romInitData)
+        val enable = isReady && reader.enable
+        val data = storage.readSync(reader.address, enable)
+      })
+
+      val romData = Cat(rom.map(_.data))
+      val imData = up(el(IntRegFile, RS1)).asBits
+      val data = onRead.im.SEL ? imData | romData
+
+      /* Maybe we can add a new stage for the following? */
+      val forward = mixColumns64(data)
+      val inverse = invMixColumns64(data)
+      val selector = Decode.UOP(mapping.DECRYPT) && Decode.UOP(mapping.CRYPTO) || onRead.im.SEL
+      val mixed = Mux(selector, inverse, forward)
+
+      val crypto = new Area {
+        val result = Decode.UOP(mapping.MIDDLE_ROUND) ? mixed | data
+      }
+
+      val ks1i = new Area {
+        val table = Vec(List(
+          0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
+          0x1b, 0x36, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ).map(v => B(v, 8 bits)))
+
+        val half = data.resize(32 bits) ^ table(onRead.ks1i.RCON).resize(32)
+        val result = half ## half
+      }
+
+      val RESULT = insert(Mux(Decode.UOP(mapping.CRYPTO),
+        crypto.result,
+        Decode.UOP(mapping.KS) ? ks1i.result | mixed
+      ))
+    }
+
+    val onWb = new el.Execute(writeBackAt) {
+      wb.valid := SEL
+      wb.payload := onData.RESULT
+    }
+  }
+}
+
+class Aes64Ks2ZknPlugin(
+  val layer : LaneLayer,
+  val readAt : Int = 0,
+  val writeBackAt : Int = 1,
+) extends ExecutionUnitElementSimple(layer){
+  val logic = during setup new Logic {
+    awaitBuild()
+    assert(Riscv.XLEN.get == 64)
+    import SrcKeys._
+
+    val wb = newWriteback(ifp, writeBackAt)
+    add(Rvk.AES64KS2).srcs(SRC1.RF, SRC2.RF)
+    uopRetainer.release()
+
+    assert(writeBackAt >= readAt)
+
+    val onData = new el.Execute(readAt) {
+      val rs1 = up(el(IntRegFile, RS1)).subdivideIn(32 bits)
+      val rs2 = up(el(IntRegFile, RS2)).subdivideIn(32 bits)
+
+      val low = rs1(1) ^ rs2(0)
+      val high = low ^ rs2(1)
+
+      val RESULT = insert(high ## low)
+    }
+
+    val onWb = new el.Execute(writeBackAt) {
+      wb.valid := SEL
+      wb.payload := onData.RESULT
+    }
+  }
 }
