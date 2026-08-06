@@ -102,7 +102,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
       val bothZero = insert(RS1_FP.isZero && RS2_FP.isZero)
       val expEqual = insert(RS1_FP.exponent === RS2_FP.exponent)
-      val rs1Equal = insert(RS1_FP.sign === RS2_FP.sign && expEqual && RS1_FP.mantissa === RS2_FP.mantissa)
+      val rs1Equal = insert(RS1_FP.sign === RS2_FP.sign && expEqual && RS1_FP.mantissa === RS2_FP.mantissa && RS1_FP.mode === RS2_FP.mode)
       val rs1ExpSmaller = insert(RS1_FP.exponent < RS2_FP.exponent)
       val rs1MantissaSmaller = insert(RS1_FP.mantissa < RS2_FP.mantissa)
 
