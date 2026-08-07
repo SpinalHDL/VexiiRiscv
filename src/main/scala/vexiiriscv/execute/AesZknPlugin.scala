@@ -2,6 +2,7 @@ package vexiiriscv.execute
 
 import spinal.core._
 import spinal.lib.misc.plugin.FiberPlugin
+import spinal.lib.misc.pipeline._
 import vexiiriscv.decode.{Decode, DecoderService}
 import vexiiriscv.riscv.{IntRegFile, RS1, RS2, Riscv, Rvk}
 
@@ -537,7 +538,11 @@ class Aes64MainZknPlugin(
     add(Rvk.AES64KS1I).srcs(SRC1.RF)
     uopRetainer.release()
 
-    ds.addIllegalCheck { ctrl => False
+    val KS1 = Payload(Bool())
+    ds.addMicroOpDecodingDefault(KS1, False)
+    ds.addMicroOpDecoding(Rvk.AES64KS1I, KS1, True)
+    ds.addIllegalCheck { ctrlLane =>
+      ctrlLane(KS1) && ctrlLane(Decode.UOP)(mapping.RCON).asUInt > 10
     }
     dsRetainer.release()
 
