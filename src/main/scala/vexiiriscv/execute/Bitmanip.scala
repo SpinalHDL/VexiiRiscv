@@ -368,7 +368,7 @@ class ZbbExtendPlugin(val layer: LaneLayer,
 
     val format = new el.Execute(formatAt) {
       wb.valid := SEL
-      wb.payload := up(el(IntRegFile, RS1))
+      wb.payload := up(el(IntRegFile, RS1))(15 downto 0).resized
     }
   }
 }
