@@ -38,7 +38,7 @@ object TestBenchServer extends App{
     param.addOptions(this)
   }.parse(args, ()).nonEmpty)
 
-  val compiled = simConfig.compile(VexiiRiscv(TestBench.paramToPlugins(param)))
+  val compiled = simConfig.compile(new TestBenchDut(Seq(TestBench.paramToPlugins(param))))
   val serverSocket = new ServerSocket(8189)
   var i = 0
   println("Waiting for connections")
@@ -50,7 +50,7 @@ object TestBenchServer extends App{
 }
 
 
-class TestBenchServerConnection(incoming: Socket, compiled : SimCompiled[VexiiRiscv]) extends Thread {
+class TestBenchServerConnection(incoming: Socket, compiled : SimCompiled[TestBenchDut]) extends Thread {
   this.start()
   override def run() = {
     try try {

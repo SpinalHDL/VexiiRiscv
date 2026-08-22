@@ -56,10 +56,10 @@ class RegressionSingleConfig(){
 /**
  * Given a compiled SpinalSim VexiiRiscv, generates a bunch of testbenches to ensure the correctness of the CPU.
  */
-class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
+class RegressionSingle(compiled : SimCompiled[TestBenchDut],
                        dutArgs : Seq[String] = Nil,
                        config : RegressionSingleConfig) {
-  val dut = compiled.dut
+  val dut = compiled.dut.cores.head
   val xlen = dut.database(Riscv.XLEN)
   val priv = dut.host.get[PrivilegedPlugin]
   val mmu = dut.host.get[MmuPlugin]
@@ -495,7 +495,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
  */
 object RegressionSingle extends App{
   def test(name : String, plugins : => scala.collection.Seq[Hostable], dutArgs : Seq[String], config : RegressionSingleConfig): Unit = {
-    def gen = VexiiRiscv(plugins).setDefinitionName(s"VexiiRiscv_$name")
+    def gen = new TestBenchDut(Seq(plugins)).setDefinitionName(s"VexiiRiscv_$name")
     if(config.withSim) {
       val simConfig = SpinalSimConfig()
       //    simConfig.withIVerilog

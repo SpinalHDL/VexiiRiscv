@@ -8,7 +8,7 @@ import vexiiriscv.Generate.args
 import vexiiriscv.{Global, ParamSimple, VexiiRiscv}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.riscv.{IntRegFile, RS1, RS2, Riscv}
-import vexiiriscv.tester.TestOptions
+import vexiiriscv.tester.{TestBenchDut, TestOptions}
 
 //This plugin example will add a new instruction named SIMD_ADD which do the following :
 //
@@ -47,7 +47,7 @@ class SimdAddPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(la
 
     //Let's get the hardware interface that we will use to provide the result of our custom instruction
     val wb = newWriteback(ifp, 0)
-    
+
     //Specify that the current plugin will implement the ADD4 instruction
     val add4 = add(SimdAddPlugin.ADD4).spec
 
@@ -121,9 +121,7 @@ object VexiiSimdAddSim extends App{
     val pa = param.pluginsArea()
     pa.plugins += new SimdAddPlugin(pa.early0)
     ParamSimple.setPma(pa.plugins)
-    VexiiRiscv(pa.plugins)
+    new TestBenchDut(Seq(pa.plugins))
   }
   testOpt.test(compiled)
 }
-
-

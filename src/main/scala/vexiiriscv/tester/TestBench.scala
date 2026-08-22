@@ -3,6 +3,7 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.core.fiber.Fiber
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly}
 import spinal.lib.bus.amba4.axi.sim.{Axi4ReadOnlyMonitor, Axi4ReadOnlySlaveAgent, Axi4WriteOnlyMonitor, Axi4WriteOnlySlaveAgent}
 import spinal.lib.{CheckSocketPort, DoCmd}
@@ -32,6 +33,14 @@ import java.nio.ByteBuffer
 import java.util.Scanner
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
+class TestBenchDut(plugins : scala.collection.Seq[scala.collection.Seq[Hostable]]) extends Component {
+  val cores = plugins.map(VexiiRiscv(_))
+
+  val signal = Fiber patch {
+    cores.foreach(_.getAllIo.foreach(_.simPublic()))
+  }
+}
 
 /**
  * This is the main VexiiRiscv testbench, you can invoke it from command line and is based on the TestOptions class
@@ -110,7 +119,7 @@ object TestBench extends App {
 
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
-      simConfig.compile(VexiiRiscv(paramToPlugins(param)))
+      simConfig.compile(new TestBenchDut(Seq(paramToPlugins(param))))
     }
     testOpt.test(compiled)
     Thread.sleep(10)
@@ -194,14 +203,15 @@ class TestOptions {
     opt[String]("spawn-process").unbounded() action { (v, c) => spawnProcess = Some(v) }
   }
 
-  def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
+  def test(compiled : SimCompiled[TestBenchDut]): Unit = {
     dualSim match {
       case true => DualSimTracer.withCb(compiled, window = 200000 * 10, seed=seed)(test)
       case false => compiled.doSimUntilVoid(name = getTestName(), seed=seed) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
 
-  def test(dut : VexiiRiscv, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
+  def test(duts : TestBenchDut, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
+    val dut = duts.cores.head
     val fsmTasks =  mutable.Queue[FsmTask]()
     for(gen <- fsmTasksGen) fsmTasks += gen()
     val cd = dut.clockDomain.withSyncReset()
@@ -838,8 +848,3 @@ class TestOptions {
     }
   }
 }
-
-
-
-
-
