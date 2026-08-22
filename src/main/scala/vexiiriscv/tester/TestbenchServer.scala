@@ -38,7 +38,7 @@ object TestBenchServer extends App{
     param.addOptions(this)
   }.parse(args, ()).nonEmpty)
 
-  val compiled = simConfig.compile(new TestBenchDut(Seq(TestBench.paramToPlugins(param))))
+  val compiled = simConfig.compile(TestBench.makeDut(param, 1))
   val serverSocket = new ServerSocket(8189)
   var i = 0
   println("Waiting for connections")

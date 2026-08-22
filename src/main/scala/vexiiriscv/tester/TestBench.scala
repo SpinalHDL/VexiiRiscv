@@ -8,7 +8,7 @@ import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly}
 import spinal.lib.bus.amba4.axi.sim.{Axi4ReadOnlyMonitor, Axi4ReadOnlySlaveAgent, Axi4WriteOnlyMonitor, Axi4WriteOnlySlaveAgent}
 import spinal.lib.{CheckSocketPort, DoCmd}
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
-import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
+import spinal.lib.bus.tilelink.{Arbiter, M2sTransfers, NodeParameters, S2mAgent, S2mParameters, S2mSupport, S2mTransfers, SizeRange}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
 import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.com.jtag.sim.{JtagRemote, JtagTcp}
@@ -40,6 +40,43 @@ class TestBenchDut(plugins : scala.collection.Seq[scala.collection.Seq[Hostable]
   val signal = Fiber patch {
     cores.foreach(_.getAllIo.foreach(_.simPublic()))
   }
+
+  val lsuL1TlBus = Fiber patch {
+    val buses = cores.flatMap(_.host.get[LsuL1TlPlugin].map(_.bus.get))
+    buses.size match {
+      case 0 => None
+      case 1 => Some(buses.head)
+      case _ =>
+        val ref = buses.head.p
+
+        val m2s = Arbiter.downMastersFrom(buses.map(_.p.node.m))
+        val s2m = m2s.withBCE match {
+          case true => S2mParameters(
+            List(
+              S2mAgent(
+                name = null,
+                sinkId = SizeMapping(0, BigInt(1) << ref.sinkWidth),
+                emits = S2mTransfers(
+                  probe = m2s.emits.acquireB mincover m2s.emits.acquireT
+                ),
+              ),
+            )
+          )
+          case false => S2mParameters.none()
+        }
+
+        val upNodes = buses.map { bus =>
+          val support = S2mSupport(S2mTransfers(probe = bus.p.node.m.emits.acquireB mincover bus.p.node.m.emits.acquireT))
+
+          NodeParameters(bus.p.node.m, Arbiter.upSlaveFrom(s2m, support))
+        }
+        val arbiter = Arbiter(upNodes, NodeParameters(m2s, s2m))
+
+        arbiter.io.ups.zip(buses).foreach { case (up, bus) => up << bus }
+        arbiter.io.down.simPublic()
+        Some(arbiter.io.down)
+    }
+  }
 }
 
 /**
@@ -48,8 +85,8 @@ class TestBenchDut(plugins : scala.collection.Seq[scala.collection.Seq[Hostable]
 object TestBench extends App {
   doIt()
 
-  def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
-    val ret = param.plugins()
+  def paramToPlugins(param : ParamSimple, hartId : Int = 0): ArrayBuffer[Hostable] = {
+    val ret = param.plugins(hartId)
     if(param.lsuL1Bus == LsuL1BusEnum.native) ret.collectFirst{case p : LsuL1Plugin => p}.foreach{ p =>
       p.ackIdWidth = 8
       p.probeIdWidth = log2Up(p.writebackCount)
@@ -97,8 +134,19 @@ object TestBench extends App {
     ret
   }
 
+  def makeDut(param : ParamSimple, cpuCount : Int): TestBenchDut = {
+    require(cpuCount >= 1, "cpuCount must be at least 1")
+    if (cpuCount > 1) {
+      require(param.fetchBus == FetchBusEnum.native, "Only native fetch bus supported multicore TestBench")
+      require(param.lsuBus == LsuBusEnum.native, "Only native LSU bus supported multicore TestBench")
+      if (param.lsuL1Enable) require(param.lsuL1Bus == LsuL1BusEnum.native, "Only native LSU L1 bus supported multicore TestBench")
+    }
+    new TestBenchDut((0 until cpuCount).map(hartId => paramToPlugins(param, hartId * param.hartCount)))
+  }
+
   def doIt(param : ParamSimple = new ParamSimple()) {
     val testOpt = new TestOptions()
+    var cpuCount = 1
 
     val genConfig = SpinalConfig()
     val simConfig = SpinalSimConfig()
@@ -108,10 +156,14 @@ object TestBench extends App {
 
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
       help("help").text("prints this usage text")
+      opt[Int]("cpu-count") action { (v, c) => cpuCount = v }
       simConfig.addOptions(this)
       testOpt.addOptions(this)
       param.addOptions(this)
     }.parse(args, ()).nonEmpty)
+
+    // Fix CPU count
+    if(cpuCount > 1 && param.lsuL1Enable) param.lsuL1Coherency = true
 
     if(simConfig._backend == SpinalSimBackendSel.VERILATOR){
       simConfig.withFstWave
@@ -119,7 +171,7 @@ object TestBench extends App {
 
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
-      simConfig.compile(new TestBenchDut(Seq(paramToPlugins(param))))
+      simConfig.compile(makeDut(param, cpuCount))
     }
     testOpt.test(compiled)
     Thread.sleep(10)
@@ -423,7 +475,7 @@ class TestOptions {
       mapFetchWishbone(p.logic.bus)
     }
 
-    val fetchCachelessNative = dut.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
+    val fetchCachelessNative = duts.cores.flatMap(_.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
@@ -446,9 +498,9 @@ class TestOptions {
 
       cmdReady.setFactor(ibusReadyFactor)
       rspDriver.setFactor(ibusReadyFactor)
-    }
+    })
 
-    val fetchCachedNative = dut.host.get[fetch.FetchL1Plugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
+    val fetchCachedNative = duts.cores.flatMap(_.host.get[fetch.FetchL1Plugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
@@ -485,7 +537,7 @@ class TestOptions {
 
       cmdReady.setFactor(ibusReadyFactor)
       rspDriver.setFactor(ibusReadyFactor)
-    }
+    })
 
 
 
@@ -747,8 +799,8 @@ class TestOptions {
       }
     }
 
-    val lsul1 = dut.host.get[LsuL1TlPlugin] map (p => new Area{
-      val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
+    val lsul1 = duts.lsuL1TlBus.get map (bus => new Area{
+      val ma = new MemoryAgent(bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
         driver.driver.setFactor(dbusReadyFactor)
         val checker = if (monitor.bus.p.withBCE) Checker(monitor)
         override def checkAddress(address: Long) = address >= 0x20000000 || address >= 0x1000 && address < 0x2000
