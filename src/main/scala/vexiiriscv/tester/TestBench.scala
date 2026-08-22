@@ -239,32 +239,57 @@ class TestOptions {
       rvls.spinalSimTime(10000)
     }
 
-    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), "konata.log")))
-    delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registered last
-
     // Collect traces from the CPUs behavior
-    val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
-    if (withRvlsCheck) probe.add(rvls)
-    probe.enabled = withProbe
-    probe.trace = false
+    val probes = duts.cores.zipWithIndex.map { case (dut, hartId) =>
+      val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), s"konata$hartId.log")))
+      delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registered last
+      val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
+      if (withRvlsCheck) probe.add(rvls)
+      probe.enabled = withProbe
+      probe.trace = false
+      val host = dut.host[PrivilegedPlugin]
+      val priv = host.hart(0)
+
+      cd.onSamplings {
+        host.logic.rdtime #= probe.cycle
+      }
+
+      if (host.p.withImsic) {
+        priv.m.imsic.trigger.valid #= false
+        priv.m.imsic.trigger.payload #= 0
+        if (host.p.withSupervisor) {
+          priv.s.imsic.trigger.valid #= false
+          priv.s.imsic.trigger.payload #= 0
+        }
+        if (host.p.withHypervisor && host.p.withGuestImsic) priv.h.imsic.triggers.foreach(trigger => {
+          trigger.valid #= false
+          trigger.payload #= 0
+        })
+      }
+
+      probe
+    }
 
     // Things to enable when we want to collect traces
     val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath(), "tracer.log")))
     onTrace {
       if (traceWave) enableSimWave()
       if (withRvlsCheck && traceSpikeLog) rvls.debug()
-      if (traceKonata) probe.trace = true
+      if (traceKonata) probes.foreach(_.trace = true)
 
       tracerFile.foreach{f =>
         f.spinalSimFlusher(10 * 10000)
         f.spinalSimTime(10000)
-        probe.add(f)
+        probes.foreach(_.add(f))
       }
 
-      val r = probe.backends.reverse
-      probe.backends.clear()
-      probe.backends ++= r
+      probes.foreach { probe =>
+        val r = probe.backends.reverse
+        probe.backends.clear()
+        probe.backends ++= r
+      }
     }
+    val probe = probes.head
 
     val regions = dut.host.services.collectFirst {
       case p: LsuCachelessPlugin => p.regions.get
@@ -305,14 +330,14 @@ class TestOptions {
       if (withRvlsCheck) rvls.loadElf(0, elf.f)
       tracerFile.foreach(_.loadElf(0, elf.f))
 
-      startSymbol.foreach(symbol => fork{
+      startSymbol.foreach(symbol => duts.cores.zip(probes).foreach { case (dut, dutProbe) => fork{
         val pc = elf.getSymbolAddress(symbol) + startSymbolOffset
 
         waitUntil(cd.resetSim.toBoolean == false); sleep(1)
         println(f"set harts pc to 0x$pc%x")
         dut.host[PcService].simSetPc(pc)
-        for(hartId <- probe.hartsIds) probe.backends.foreach(_.setPc(hartId, pc))
-      })
+        for(hartId <- dutProbe.hartsIds) dutProbe.backends.foreach(_.setPc(hartId, pc))
+      }})
 
       val withPass = elf.getELFSymbol(passSymbolName) != null
       val withFail = elf.getELFSymbol(failSymbolName) != null
@@ -332,21 +357,6 @@ class TestOptions {
     val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
       override def getClintTime(): BigInt = probe.cycle
       cmb.mem = mem
-    }
-    cd.onSamplings {
-      host.logic.rdtime #= probe.cycle
-    }
-    if (host.p.withImsic) {
-      priv.m.imsic.trigger.valid #= false
-      priv.m.imsic.trigger.payload #= 0
-      if (host.p.withSupervisor) {
-        priv.s.imsic.trigger.valid #= false
-        priv.s.imsic.trigger.payload #= 0
-      }
-      if (host.p.withHypervisor && host.p.withGuestImsic) priv.h.imsic.triggers.foreach(trigger => {
-        trigger.valid #= false
-        trigger.payload #= 0
-      })
     }
     peripheral.withStdIn = withStdIn
 
@@ -791,42 +801,44 @@ class TestOptions {
       case _ =>
     }
 
-    val cfu = dut.host.get[CfuPlugin] map (p => new Area{
-      val bus = p.logic.bus
-      var maxPending = 3
-      val rspQueue = mutable.Queue[CfuRsp => Unit]()
-      val cmdMonitor = StreamMonitor(bus.cmd, cd){ i =>
-        val result = (i.inputs(0).toLong + i.inputs(1).toLong + i.function_id.toLong) & 0xFFFFFFFFl
-        val id = i.request_id.toInt
-        rspQueue += { o =>
-          o.outputs(0) #= result
-          o.response_id #= id
-          o.status #= 0
-          if(simRandom.nextInt(100) < 10){
-            maxPending = simRandom.nextInt(5)+1
+    val cfu = duts.cores.map { dut =>
+      dut.host.get[CfuPlugin] map (p => new Area{
+        val bus = p.logic.bus
+        var maxPending = 3
+        val rspQueue = mutable.Queue[CfuRsp => Unit]()
+        val cmdMonitor = StreamMonitor(bus.cmd, cd){ i =>
+          val result = (i.inputs(0).toLong + i.inputs(1).toLong + i.function_id.toLong) & 0xFFFFFFFFl
+          val id = i.request_id.toInt
+          rspQueue += { o =>
+            o.outputs(0) #= result
+            o.response_id #= id
+            o.status #= 0
+            if(simRandom.nextInt(100) < 10){
+              maxPending = simRandom.nextInt(5)+1
+            }
           }
         }
-      }
-      val rspDriver = StreamDriver(bus.rsp, cd) { p =>
-        if(rspQueue.isEmpty) false else {
-          rspQueue.dequeue().apply(p)
-          true
+        val rspDriver = StreamDriver(bus.rsp, cd) { p =>
+          if(rspQueue.isEmpty) false else {
+            rspQueue.dequeue().apply(p)
+            true
+          }
         }
-      }
-      var readyOk = true
-      cd.onSamplings{
-        readyOk = simRandom.nextBoolean()
+        var readyOk = true
+        cd.onSamplings{
+          readyOk = simRandom.nextBoolean()
 //        rspDriver.setFactor(1.0f)
-      }
-      var ready = bus.cmd.ready.toBoolean
-      sim.forkSensitive {
-        val readyNew = readyOk && rspQueue.size - bus.rsp.ready.toInt < maxPending
-        if(readyNew != ready) {
-          bus.cmd.ready #= readyNew
-          ready = readyNew
         }
-      }
-    })
+        var ready = bus.cmd.ready.toBoolean
+        sim.forkSensitive {
+          val readyNew = readyOk && rspQueue.size - bus.rsp.ready.toInt < maxPending
+          if(readyNew != ready) {
+            bus.cmd.ready #= readyNew
+            ready = readyNew
+          }
+        }
+      })
+    }
 
     spawnProcess.foreach{ v =>
       delayed(10000){
@@ -844,7 +856,7 @@ class TestOptions {
     }
 
     if(printStats) onSimEnd {
-      println(probe.getStats())
+      probes.foreach(probe => println(probe.getStats()))
     }
   }
 }
