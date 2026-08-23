@@ -467,9 +467,15 @@ class TestOptions {
       probes.foreach(_.commitsCallbacks += callback)
     }
 
-    val host = dut.host[PrivilegedPlugin]
-    val priv = host.hart(0)
-    val peripheral = new PeripheralEmulator(0x10000000, priv.int.m.external, (priv.int.s != null) generate priv.int.s.external, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
+    val privs = duts.cores.map(_.host[PrivilegedPlugin].hart(0))
+    val peripheral = new PeripheralEmulator(
+      0x10000000,
+      mei = privs.map(_.int.m.external),
+      sei = if(privs.head.int.s == null) Seq.empty else privs.map(_.int.s.external),
+      msi = privs.map(_.int.m.software),
+      mti = privs.map(_.int.m.timer),
+      cd = cd
+    ){
       override def getClintTime(): BigInt = probe.cycle
       cmb.mem = mem
     }

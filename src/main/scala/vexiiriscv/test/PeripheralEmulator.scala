@@ -14,7 +14,7 @@ import scala.collection.mutable.ArrayBuffer
  * - RISC-V CLINT
  * - Simulation pass/fail commands
  */
-abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : Bool = null, mti : Bool = null, cd : ClockDomain = null) {
+abstract class PeripheralEmulator(offset : Long, mei : scala.collection.Seq[Bool], sei : scala.collection.Seq[Bool], msi : scala.collection.Seq[Bool] = Seq.empty, mti : scala.collection.Seq[Bool] = Seq.empty, cd : ClockDomain = null) {
   val PUTC = 0
   val PUT_HEX = 0x8
   val CLINT_BASE = 0x10000
@@ -24,6 +24,9 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   val CLINT_CMPH = CLINT_BASE + 0x4000 + 4
   val MACHINE_EXTERNAL_INTERRUPT_CTRL = 0x10
   val SUPERVISOR_EXTERNAL_INTERRUPT_CTRL = 0x18
+  val MACHINE_EXTERNAL_INTERRUPT_CTRL_HARTS = 0x1000
+  val SUPERVISOR_EXTERNAL_INTERRUPT_CTRL_HARTS = 0x2000
+  val EXTERNAL_INTERRUPT_CTRL_HARTS_SIZE = 0x1000
   val GETC = 0x40
   val GETC_EMPTY = 0x44
   val STATS_CAPTURE_ENABLE = 0x50
@@ -35,20 +38,22 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
   val CMB_DATA = 0x108
   val RANDOM = 0xA8
 
-  var cmp = BigInt("FFFFFFFFFFFFFFFF", 16)
+  val cmp = Array.fill(mti.size)(BigInt("FFFFFFFFFFFFFFFF", 16))
   val cmb = new {
     var mem : SparseMemory = null
     var address = 0l
     var data = 0l
   }
 
-  if (mei != null) mei #= false
-  if (sei != null) sei #= false
-  if (msi != null) msi #= false
-  if (mti != null) {
-    mti #= false
+  mei.foreach(_ #= false)
+  sei.foreach(_ #= false)
+  msi.foreach(_ #= false)
+  mti.foreach(_ #= false)
+  if (mti.nonEmpty) {
+    require(cd != null, "A clock domain is required when timer interrupt outputs are provided")
     cd.onSamplings {
-      mti #= cmp <= getClintTime()
+      val time = getClintTime()
+      mti.zip(cmp).foreach { case (interrupt, compare) => interrupt #= compare <= time }
     }
   }
 
@@ -90,16 +95,44 @@ abstract class PeripheralEmulator(offset : Long, mei : Bool, sei : Bool, msi : B
         }
         case PUT_HEX => print(data.reverse.map(v => f"$v%02x").mkString(""))
         case PUT_DEC => print(f"${BigInt(data.map(_.toByte).reverse.toArray)}%d")
-        case MACHINE_EXTERNAL_INTERRUPT_CTRL => mei #= data(0).toBoolean
-        case SUPERVISOR_EXTERNAL_INTERRUPT_CTRL => sei #= data(0).toBoolean
-        case CLINT_BASE => msi #= (data(0).toInt & 1).toBoolean
-        case CLINT_CMP => {
-          data.size match {
-            case 4 => cmp = (cmp & BigInt("FFFFFFFF00000000", 16)) | (raw & BigInt("00000000FFFFFFFF", 16))
-            case 8 => cmp = raw & BigInt("FFFFFFFFFFFFFFFF", 16)
+        case MACHINE_EXTERNAL_INTERRUPT_CTRL => {
+          if (mei.isEmpty) return true
+          mei.head #= raw != 0
+        }
+        case SUPERVISOR_EXTERNAL_INTERRUPT_CTRL => {
+          if (sei.isEmpty) return true
+          sei.head #= raw != 0
+        }
+        case address if address >= MACHINE_EXTERNAL_INTERRUPT_CTRL_HARTS && address < MACHINE_EXTERNAL_INTERRUPT_CTRL_HARTS + EXTERNAL_INTERRUPT_CTRL_HARTS_SIZE => {
+          val offset = address - MACHINE_EXTERNAL_INTERRUPT_CTRL_HARTS
+          val hartId = offset / 4
+          if (hartId >= mei.size) return true
+          mei(hartId) #= raw != 0
+        }
+        case address if address >= SUPERVISOR_EXTERNAL_INTERRUPT_CTRL_HARTS && address < SUPERVISOR_EXTERNAL_INTERRUPT_CTRL_HARTS + EXTERNAL_INTERRUPT_CTRL_HARTS_SIZE => {
+          val offset = address - SUPERVISOR_EXTERNAL_INTERRUPT_CTRL_HARTS
+          val hartId = offset / 4
+          if (hartId >= sei.size) return true
+          sei(hartId) #= raw != 0
+        }
+        case address if address >= CLINT_BASE && address < CLINT_CMP => {
+          val offset = address - CLINT_BASE
+          val hartId = offset / 4
+          if (hartId >= msi.size) return true
+          msi(hartId) #= (data(0).toInt & 1).toBoolean
+        }
+        case address if address >= CLINT_CMP && address < CLINT_TIME => {
+          val offset = address - CLINT_CMP
+          val hartId = offset / 8
+          val wordOffset = offset & 7
+          if (hartId >= cmp.length) return true
+          (data.size, wordOffset) match {
+            case (4, 0) => cmp(hartId) = (cmp(hartId) & BigInt("FFFFFFFF00000000", 16)) | (raw & BigInt("00000000FFFFFFFF", 16))
+            case (4, 4) => cmp(hartId) = (cmp(hartId) & 0xFFFFFFFFl) | ((raw & 0xFFFFFFFFl) << 32)
+            case (8, 0) => cmp(hartId) = raw & BigInt("FFFFFFFFFFFFFFFF", 16)
+            case _ => return true
           }
         }
-        case CLINT_CMPH => cmp = (cmp & 0xFFFFFFFFl) | ((raw & 0xFFFFFFFFl) << 32)
         case IO_FAULT_ADDRESS => {
           return true
         }
