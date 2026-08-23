@@ -27,7 +27,12 @@ class TestArgs{
   def loadElf(value : String) : this.type = {args ++= List("--load-elf", value); this }
   def loadElf(value : File) : this.type = loadElf(value.getAbsolutePath)
   def startSymbol(value : String) : this.type = {args ++= List("--start-symbol", value); this }
+  def hartStartSymbol(value : String) : this.type = {args ++= List("--hart-start-symbol", value); this }
   def passSymbol(value : String) : this.type = {args ++= List("--pass-symbol", value); this }
+  def hartPassSymbol(value : String) : this.type = {args ++= List("--hart-pass-symbol", value); this }
+  def hartFailSymbol(value : String) : this.type = {args ++= List("--hart-fail-symbol", value); this }
+  def passPolicy(value : String) : this.type = {args ++= List("--pass-policy", value); this }
+  def failPolicy(value : String) : this.type = {args ++= List("--fail-policy", value); this }
   def startSymbolOffset(value : Int) : this.type = {args ++= List("--start-symbol-offset", value.toString); this }
   def fsmGetc(value : String) : this.type = {args ++= List("--fsm-getc", value); this }
   def fsmPutc(value : String) : this.type = {args ++= List("--fsm-putc", value); this }

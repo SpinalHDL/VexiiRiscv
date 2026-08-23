@@ -30,7 +30,7 @@ import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 import java.io.{File, IOException, PrintWriter}
 import java.net.{ServerSocket, Socket}
 import java.nio.ByteBuffer
-import java.util.Scanner
+import java.util.{Locale, Scanner}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
@@ -198,12 +198,17 @@ class TestOptions {
   var failAfter, passAfter = Option.empty[Long]
   var startSymbol = Option.empty[String]
   var startSymbolOffset = 0l
+  val hartStartSymbol = mutable.Map[Int, String]()
   val bins = ArrayBuffer[(Long, File)]()
   val u32s = ArrayBuffer[(Long, Int)]()
   val elfs = ArrayBuffer[File]()
   var testName = Option.empty[String]
   var passSymbolName = "pass"
   var failSymbolName = "fail"
+  val hartPassSymbolNames = mutable.Map[Int, String]()
+  val hartFailSymbolNames = mutable.Map[Int, String]()
+  var passPolicy = "all"
+  var failPolicy = "any"
   val fsmTasksGen = mutable.Queue[() => FsmTask]()
   var ibusReadyFactor = 1.01f
   var ibusBaseLatency = 0
@@ -241,8 +246,13 @@ class TestOptions {
     opt[Seq[String]]("load-u32").unbounded() action { (v, c) => u32s += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Integer.parseInt(v(1).replace("0x", ""), 16) }
     opt[String]("load-elf").unbounded() action { (v, c) => elfs += new File(v) }
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
+    opt[Map[Int, String]]("hart-start-symbol").unbounded() action { (v, c) => hartStartSymbol ++= v }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
     opt[String]("fail-symbol") action { (v, c) => failSymbolName = v }
+    opt[Map[Int, String]]("hart-pass-symbol").unbounded() action { (v, c) => hartPassSymbolNames ++= v }
+    opt[Map[Int, String]]("hart-fail-symbol").unbounded() action { (v, c) => hartFailSymbolNames ++= v }
+    opt[String]("pass-policy") action { (v, c) => passPolicy = v }
+    opt[String]("fail-policy") action { (v, c) => failPolicy = v }
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
     opt[Double]("ibus-ready-factor").unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor").unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
@@ -253,6 +263,7 @@ class TestOptions {
     opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
 
     opt[String]("spawn-process").unbounded() action { (v, c) => spawnProcess = Some(v) }
+    checkConfig { _ => if(passPolicy == "all" && failPolicy == "all") failure("--pass-policy and --fail-policy cannot both be all") else success }
   }
 
   def test(compiled : SimCompiled[TestBenchDut]): Unit = {
@@ -379,32 +390,81 @@ class TestOptions {
     }
 
     // load elfs
+    val loadedElfs = ArrayBuffer[Elf]()
     for (file <- elfs) {
       val elf = new Elf(file, xlen)
+      loadedElfs += elf
       elf.load(mem, 0)
       if (withRvlsCheck) rvls.loadElf(0, elf.f)
       tracerFile.foreach(_.loadElf(0, elf.f))
 
-      startSymbol.foreach(symbol => duts.cores.zip(probes).foreach { case (dut, dutProbe) => fork{
-        val pc = elf.getSymbolAddress(symbol) + startSymbolOffset
+      duts.cores.zip(probes).foreach { case (dut, dutProbe) =>
+        val hartId = dutProbe.hartsIds.head
+        hartStartSymbol.get(hartId).orElse(startSymbol).foreach { symbol => fork {
+          val pc = elf.getSymbolAddress(symbol) + startSymbolOffset
 
-        waitUntil(cd.resetSim.toBoolean == false); sleep(1)
-        println(f"set harts pc to 0x$pc%x")
-        dut.host[PcService].simSetPc(pc)
-        for(hartId <- dutProbe.hartsIds) dutProbe.backends.foreach(_.setPc(hartId, pc))
-      }})
+          waitUntil(cd.resetSim.toBoolean == false); sleep(1)
+          println(f"set hart $hartId pc to 0x$pc%x")
+          dut.host[PcService].simSetPc(pc)
+          dutProbe.backends.foreach(_.setPc(hartId, pc))
+        }}
+      }
 
-      val withPass = elf.getELFSymbol(passSymbolName) != null
-      val withFail = elf.getELFSymbol(failSymbolName) != null
-      if (withPass || withFail) {
-        def trunkPc(pc : Long) = (xlen == 32).mux(pc & 0xFFFFFFFFl, pc)
-        val passSymbol = if(withPass) trunkPc(elf.getSymbolAddress(passSymbolName)) else -1
-        val failSymbol = if(withFail) trunkPc(elf.getSymbolAddress(failSymbolName)) else -1
-        probe.commitsCallbacks += { (hartId, pc) =>
-          if (pc == passSymbol) delayed(1)(simSuccess())
-          if (pc == failSymbol) delayed(1)(simFailure("Software reached the fail symbol :("))
+    }
+
+    if(loadedElfs.nonEmpty) {
+      val hartIds = probes.flatMap(_.hartsIds).distinct.sorted
+      def formatSymbol(pattern : String, hartId : Int) = String.format(Locale.ROOT, pattern, Int.box(hartId))
+      def symbolNames(default : String, overrides : collection.Map[Int, String]) =
+        hartIds.map(hartId => hartId -> overrides.getOrElse(hartId, formatSymbol(default, hartId))).toMap
+      def symbolAddresses(names : collection.Map[Int, String]) = hartIds.map { hartId =>
+        val addresses = loadedElfs.flatMap { elf =>
+          Option(elf.getELFSymbol(names(hartId))).map(symbol => (xlen == 32).mux(symbol.st_value & 0xFFFFFFFFl, symbol.st_value))
+        }.toSet
+        hartId -> addresses
+      }.toMap
+
+      val passSymbols = symbolNames(passSymbolName, hartPassSymbolNames)
+      val failSymbols = symbolNames(failSymbolName, hartFailSymbolNames)
+      val passAddresses = symbolAddresses(passSymbols)
+      val failAddresses = symbolAddresses(failSymbols)
+      val states = mutable.Map(hartIds.map(_ -> 0).toList : _*)
+      var terminalScheduled = false
+
+      def passReached = passPolicy match {
+        case "all" => hartIds.forall(states(_) == 1)
+        case "any" => hartIds.exists(states(_) == 1)
+      }
+      def failReached = failPolicy match {
+        case "all" => hartIds.forall(states(_) == -1)
+        case "any" => hartIds.exists(states(_) == -1)
+      }
+      def scheduleTerminal(): Unit = {
+        if(!terminalScheduled && (failReached || passReached)) {
+          terminalScheduled = true
+          delayed(1) {
+            if(failReached) {
+              val failed = hartIds.filter(states(_) == -1).map(hartId => s"$hartId=${failSymbols(hartId)}").mkString(", ")
+              simFailure(s"Software reached the fail symbol on hart(s): $failed")
+            } else if(passReached) {
+              simSuccess()
+            }
+          }
         }
       }
+
+      val callback = { (hartId : Int, pc : Long) =>
+        if(states(hartId) == 0) {
+          if(failAddresses(hartId).contains(pc)) {
+            states(hartId) = -1
+            scheduleTerminal()
+          } else if(passAddresses(hartId).contains(pc)) {
+            states(hartId) = 1
+            scheduleTerminal()
+          }
+        }
+      }
+      probes.foreach(_.commitsCallbacks += callback)
     }
 
     val host = dut.host[PrivilegedPlugin]
