@@ -632,11 +632,15 @@ class TestOptions {
     }
 
 
-    val lsuCachelessNative = dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).foreach { p =>
+    val lrResv = mutable.HashMap[(Int, Int), (Long, Int)]()
+
+    val lsuCachelessNative = duts.cores.zip(probes).zipWithIndex.flatMap {
+      case ((dut, dutProbe), hartId) =>
+        dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).map((_, dutProbe, hartId))
+    }.map { case (p, dutProbe, hartId) =>
       val bus = p.getLsuCachelessBus()
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
-      var reserved = false
 
       case class Access(
        id : Int,
@@ -675,6 +679,7 @@ class TestOptions {
         val doIt = pending.nonEmpty
         if (doIt) {
           val cmd = pending.dequeue()
+          val hart = (hartId, cmd.hartId)
 
           def read(dst : Array[Byte], offset : Int): Boolean = {
             assert(!(cmd.amoEnable && cmd.io), "io amo not supported in testbench yet")
@@ -682,17 +687,29 @@ class TestOptions {
           }
           def write(): Boolean = {
             assert(!(cmd.amoEnable && cmd.io), "io amo not supported in testbench yet")
-            doWrite(cmd.address, cmd.data, cmd.io)
+            val error = doWrite(cmd.address, cmd.data, cmd.io)
+            if (!error) lrResv.keys.filter { hart =>
+              val (reservedAddress, reservedBytes) = lrResv(hart)
+              cmd.address < reservedAddress + reservedBytes && reservedAddress < cmd.address + cmd.bytes
+            }.toList.foreach(hart => lrResv.remove(hart))
+            error
           }
 
           val bytes = new Array[Byte](p.p.dataWidth / 8)
           var error = false
           var scMiss = simRandom.nextBoolean()
           simRandom.nextBytes(bytes)
-          if(!cmd.amoEnable) {
+          if (cmd.address < 0x10000000) {
+            error = true
+            if (cmd.amoEnable) {
+              import vexiiriscv.execute.lsu.LsuCachelessBusAmo._
+              if (cmd.amoOp != LR) lrResv.remove(hart)
+            } else if (cmd.write) {
+              lrResv.remove(hart)
+            }
+          } else if (!cmd.amoEnable) {
             if (cmd.write) {
               error = write()
-              reserved = false
             } else {
               error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
             }
@@ -700,16 +717,16 @@ class TestOptions {
             import vexiiriscv.execute.lsu.LsuCachelessBusAmo._
             cmd.amoOp match {
               case LR => {
+                lrResv.remove(hart)
                 error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
-                reserved = true
+                if(!error) lrResv(hart) = (cmd.address, cmd.bytes)
               }
               case SC => {
-                if(reserved) error = write()
-                scMiss = !reserved
-                reserved = false
+                val hit = lrResv.remove(hart).contains((cmd.address, cmd.bytes))
+                if (hit) error = write()
+                scMiss = !hit
               }
               case amoOp => {
-                reserved = false
                 def bytesToLong(a : Array[Byte]) = a.zipWithIndex.map{case (v, i) => (v.toLong & 0xFFl) << i*8}.reduce(_ | _) << cmd.bytes*8 >> cmd.bytes*8
                 def unsigned(v : Long) = BigInt(v) & ((BigInt(1) << cmd.bytes*8)-1)
                 val memBytes = new Array[Byte](cmd.bytes); error = read(memBytes, 0)
@@ -728,12 +745,12 @@ class TestOptions {
                   case AMOMAXU => (unsigned(rfLong) max unsigned(memLong)).toLong
                 }
 
-                probe.harts(cmd.hartId).microOp(cmd.uopId).storeData = memWrite
+                dutProbe.harts(cmd.hartId).microOp(cmd.uopId).storeData = memWrite
 
                 if(!error){
                   Array.copy(memBytes, 0, bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1), cmd.bytes)
                   for(i <- 0 until cmd.bytes) cmd.data(i) = (memWrite >> i*8).toByte
-                  write()
+                  error = write()
                 }
               }
             }
@@ -742,7 +759,6 @@ class TestOptions {
           p.error #= error
           p.id #= cmd.id
           if(p.scMiss != null) p.scMiss #= scMiss
-          if(cmd.address < 0x10000000) p.error #= true
         }
         doIt
       }
