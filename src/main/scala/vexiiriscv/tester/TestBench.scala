@@ -546,7 +546,10 @@ class TestOptions {
 
     def doRead(address : Long, bytes : Int, dst : Array[Byte], offset : Int, io : Boolean): Boolean = {
       if (io) {
-        peripheral.access(false, address, dst)
+        val data = new Array[Byte](bytes)
+        val error = peripheral.access(false, address, data)
+        Array.copy(data, 0, dst, offset, bytes)
+        error
       } else {
         mem.readBytes(address, bytes, dst, offset)
         false
