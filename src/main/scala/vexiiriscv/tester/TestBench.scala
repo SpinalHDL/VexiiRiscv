@@ -343,18 +343,21 @@ class TestOptions {
     }
     val probe = probes.head
 
-    val regions = dut.host.services.collectFirst {
-      case p: LsuCachelessPlugin => p.regions.get
-      case p: LsuL1Plugin => p.regions.get
-    }.get
+    duts.cores.zip(probes).foreach { case (dut, dutProbe) =>
+      val regions = dut.host.services.collectFirst {
+        case p: LsuCachelessPlugin => p.regions.get
+        case p: LsuL1Plugin => p.regions.get
+      }.get
+      val hartId = dutProbe.hartsIds.head
 
-    for(region <- regions){
-      probe.backends.foreach { b =>
-        val mapping = region.mapping match {
-          case sm : SizeMapping => sm
-        }
-        if(mapping.base != 0x1000) {
-          b.addRegion(0, region.isMain.mux(0, 1), mapping.base.toLong, mapping.size.toLong)
+      for(region <- regions){
+        dutProbe.backends.foreach { b =>
+          val mapping = region.mapping match {
+            case sm : SizeMapping => sm
+          }
+          if(mapping.base != 0x1000) {
+            b.addRegion(hartId, region.isMain.mux(0, 1), mapping.base.toLong, mapping.size.toLong)
+          }
         }
       }
     }
@@ -634,10 +637,9 @@ class TestOptions {
 
     val lrResv = mutable.HashMap[(Int, Int), (Long, Int)]()
 
-    val lsuCachelessNative = duts.cores.zip(probes).zipWithIndex.flatMap {
-      case ((dut, dutProbe), hartId) =>
-        dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).map((_, dutProbe, hartId))
-    }.map { case (p, dutProbe, hartId) =>
+    val lsuCachelessNative = duts.cores.zipWithIndex.flatMap { case (dut, hartId) =>
+      dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).map((_, hartId))
+    }.map { case (p, hartId) =>
       val bus = p.getLsuCachelessBus()
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
@@ -728,26 +730,10 @@ class TestOptions {
               }
               case amoOp => {
                 def bytesToLong(a : Array[Byte]) = a.zipWithIndex.map{case (v, i) => (v.toLong & 0xFFl) << i*8}.reduce(_ | _) << cmd.bytes*8 >> cmd.bytes*8
-                def unsigned(v : Long) = BigInt(v) & ((BigInt(1) << cmd.bytes*8)-1)
                 val memBytes = new Array[Byte](cmd.bytes); error = read(memBytes, 0)
-                val memLong = bytesToLong(memBytes)
-                val rfLong = bytesToLong(cmd.data)
-
-                var memWrite = amoOp match {
-                  case AMOSWAP => rfLong
-                  case AMOADD  => rfLong + memLong
-                  case AMOXOR  => rfLong ^ memLong
-                  case AMOAND  => rfLong & memLong
-                  case AMOOR   => rfLong | memLong
-                  case AMOMIN  => rfLong min memLong
-                  case AMOMAX  => rfLong max memLong
-                  case AMOMINU => (unsigned(rfLong) min unsigned(memLong)).toLong
-                  case AMOMAXU => (unsigned(rfLong) max unsigned(memLong)).toLong
-                }
-
-                dutProbe.harts(cmd.hartId).microOp(cmd.uopId).storeData = memWrite
 
                 if(!error){
+                  val memWrite = VexiiRiscvProbe.amoWriteValue(amoOp, cmd.bytes, bytesToLong(cmd.data), bytesToLong(memBytes))
                   Array.copy(memBytes, 0, bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1), cmd.bytes)
                   for(i <- 0 until cmd.bytes) cmd.data(i) = (memWrite >> i*8).toByte
                   error = write()
