@@ -38,6 +38,13 @@ case class AddressTranslationRefillCmd(storageWidth : Int) extends Bundle{
   val storageId = UInt(storageWidth bits)
   val storageEnable = Bool()
 
+  /*
+   * This is used to track translation requrest from HLV/HSV.
+   * This signal is only valid for first-stage MMU, for second-stage
+   * MMU, it will be always false.
+   */
+  val forceGuest = Bool()
+
   val permission = AddressTranslationRefillCmdPerm()
 }
 

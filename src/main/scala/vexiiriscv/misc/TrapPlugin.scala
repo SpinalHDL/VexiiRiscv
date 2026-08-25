@@ -505,6 +505,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             val isGuestRefill = pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId)) || (csr.m.status.mprv && csr.m.status.mpv)
             refill.cmd.valid := False
             refill.cmd.indirect := isGuestRefill
+            refill.cmd.forceGuest := pending.state.arg(2)
             refill.cmd.permission.read := !pending.state.arg(1)
             refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
             refill.cmd.permission.execute := pending.state.arg(1)
@@ -532,6 +533,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             val refill = sats.newRefillPort()
             refill.cmd.valid := False
             refill.cmd.indirect := False
+            refill.cmd.forceGuest := False
             refill.cmd.permission.read := !pending.state.arg(1)
             refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
             refill.cmd.permission.execute := pending.state.arg(1)
