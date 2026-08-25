@@ -61,6 +61,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
                        config : RegressionSingleConfig) {
   val dut = compiled.dut.cores.head
   val cpuCount = compiled.dut.cores.size
+  val hartIds = compiled.dut.cores.flatMap(_.host[PrivilegedPlugin].hartIds)
   val xlen = dut.database(Riscv.XLEN)
   val priv = dut.host.get[PrivilegedPlugin]
   val mmu = dut.host.get[MmuPlugin]
@@ -132,6 +133,15 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     t.dbusReadyFactor(0.5)
     t
   }
+
+  def setHartSymbol(args: TestArgs, startSymbol: Map[Int, String] = Map[Int, String](), failSymbol: Map[Int, String] = Map[Int, String]()) = {
+    args.startSymbol("pass")
+    startSymbol.foreach{ case (i, s) => args.hartStartSymbol(s"$i=$s") }
+    failSymbol.foreach{ case (i, s) => args.hartFailSymbol(s"$i=$s") }
+    args.passPolicy("all")
+    args.failPolicy("any")
+  }
+  def setSymbolForHart0Only(args: TestArgs) = setHartSymbol(args, Map[Int, String](0 -> "_start"))
 
   val tests = ArrayBuffer[TestOptions]()
   val testArgs = ArrayBuffer[TestArgs]()
@@ -256,9 +266,10 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     args.loadBin(0x90000000l, s"${nsf.getAbsolutePath}/baremetal/fpu_test/vector/f32.bin")
     args.loadElf(s"${nsf.getAbsolutePath}/baremetal/fpu_test3/build/${archLinux}/fpu_test3.elf")
     args.failAfter(500000000)
+    setSymbolForHart0Only(args)
   }
 
-  for(elf <- riscvTestsFrom2) {
+  if(cpuCount == 1) for(elf <- riscvTestsFrom2) {
     val args = newArgs()
     args.loadElf(elf)
     args.failAfter(100000)
@@ -266,14 +277,14 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     args.name("riscv-tests/" + elf.getName)
   }
 
-  for (elf <- riscvTestsFromStart) {
+  if(cpuCount == 1) for (elf <- riscvTestsFromStart) {
     val args = newArgs()
     args.loadElf(elf)
     args.failAfter(1000000)
     args.name("riscv-tests/" + elf.getName)
   }
 
-  if(config.riscvTest) {
+  if(config.riscvTest && cpuCount == 1) {
     if (rvzalrsc) {
       val args = newArgs()
       args.loadElf(new File(nsf, s"riscv-tests/rv${xlen}ua-p-lrsc"))
@@ -295,6 +306,11 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     for (elf <- elfs) {
       val args = newArgs()
       args.loadElf(elf)
+      // ACT is single-hart test, so only load hart 0 with test payload
+      args.startSymbol("pass")
+      args.hartStartSymbol("0=_start")
+      args.passPolicy("all")
+      args.failPolicy("any")
       args.failAfter(10000000)
       args.name(folder + "/" + elf.getName.replace(".elf", ""))
     }
@@ -345,7 +361,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
   if(mmu.nonEmpty) regulars ++= List(s"mmu_sv${if(xlen == 32) 32 else 39}")
   if(pmp.get.p.pmpSize > 4 && priv.get.p.withSupervisor) regulars ++= List(s"pmp")
 
-  if(config.regular) for(name <- regulars){
+  if(config.regular && cpuCount == 1) for(name <- regulars){
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/$name/build/$arch/$name.elf"))
     args.failAfter(600000000)
@@ -358,6 +374,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     args.failAfter(600000000)
     args.name(s"regular/cbm")
     args.noRvlsCheck()
+    setSymbolForHart0Only(args)
   }
 
   val benchmarks = ArrayBuffer("dhrystone_vexii", "coremark_vexii")
@@ -368,6 +385,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     args.ibusReadyFactor(2.0)
     args.dbusReadyFactor(2.0)
     args.name(s"benchmark/$name")
+    setSymbolForHart0Only(args)
   }
 
 
@@ -384,9 +402,10 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${freertosArch + (freertosArch.endsWith("im").mux("a",""))}/freertosDemo.elf"))
     args.failAfter(300000000)
     args.name(s"freertos/$name")
+    setSymbolForHart0Only(args)
   }
 
-  if(config.buildroot && rvm && rva && mmu.nonEmpty) priv.filter(_.p.withSupervisor).foreach{ _ =>
+  if(config.buildroot && cpuCount == 1 && rvm && rva && mmu.nonEmpty) priv.filter(_.p.withSupervisor).foreach{ _ =>
     var arch = s"rv${xlen}ima"
     xlen match{
       case 32 => if(rvc) arch += "c"
@@ -403,6 +422,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     args.loadBin(0x80F80000l, s"$path/linux.dtb")
     args.loadBin(0x80400000l, s"$path/Image")
     args.loadBin(0x81000000l, s"$path/rootfs.cpio")
+    hartIds.foreach { hartId => args.hartRegister(s"$hartId=x10=$hartId,x11=0x80F80000") }
 
     args.fsmGetc("buildroot login:")
     args.fsmSleep(100000*10)
@@ -427,7 +447,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     args.fsmSuccess()
   }
 
-  if(config.jtag){
+  if(config.jtag && cpuCount == 1){
     dut.host.get[EmbeddedRiscvJtag].foreach { p =>
       val args = newArgs()
       args.loadElf(new File(nsf, s"baremetal/debugger/build/$arch/debugger.elf"))
