@@ -28,6 +28,7 @@ class TestArgs{
   def loadElf(value : File) : this.type = loadElf(value.getAbsolutePath)
   def startSymbol(value : String) : this.type = {args ++= List("--start-symbol", value); this }
   def hartStartSymbol(value : String) : this.type = {args ++= List("--hart-start-symbol", value); this }
+  def hartRegister(value : String) : this.type = {args ++= List("--hart-register", value); this }
   def passSymbol(value : String) : this.type = {args ++= List("--pass-symbol", value); this }
   def hartPassSymbol(value : String) : this.type = {args ++= List("--hart-pass-symbol", value); this }
   def hartFailSymbol(value : String) : this.type = {args ++= List("--hart-fail-symbol", value); this }

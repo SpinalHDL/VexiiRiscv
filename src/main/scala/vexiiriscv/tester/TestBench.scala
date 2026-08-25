@@ -23,7 +23,8 @@ import vexiiriscv.execute.cfu.{CfuPlugin, CfuRsp}
 import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuCachelessWishbonePlugin, LsuL1, LsuL1Axi4Plugin, LsuL1Plugin, LsuL1TlPlugin, LsuL1WishbonePlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
 import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
-import vexiiriscv.riscv.Riscv
+import vexiiriscv.regfile.RegFilePlugin
+import vexiiriscv.riscv.{IntRegFile, Riscv}
 import vexiiriscv.test.konata.Backend
 import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
 
@@ -203,6 +204,7 @@ class TestOptions {
   val u32s = ArrayBuffer[(Long, Int)]()
   val elfs = ArrayBuffer[File]()
   var testName = Option.empty[String]
+  val hartRegisterValues = mutable.LinkedHashMap[(Int, Int), BigInt]()
   var passSymbolName = "pass"
   var failSymbolName = "fail"
   val hartPassSymbolNames = mutable.Map[Int, String]()
@@ -225,6 +227,12 @@ class TestOptions {
   def addElf(f : File) : this.type = { elfs += f; this }
   def setFailAfter(time : Long) : this.type = { failAfter = Some(time); this }
 
+  def addRegisterValueMapping(hartId: Int, values : Map[String, BigInt]) = {
+    values.foreach { case(name, value) =>
+      assert(name.startsWith("x") && name.length > 1)
+      hartRegisterValues((hartId, name.drop(1).toInt)) = value
+    }
+  }
 
   def addOptions(parser : scopt.OptionParser[Unit]): Unit = {
     import parser._
@@ -247,6 +255,7 @@ class TestOptions {
     opt[String]("load-elf").unbounded() action { (v, c) => elfs += new File(v) }
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
     opt[Map[Int, String]]("hart-start-symbol").unbounded() action { (v, c) => hartStartSymbol ++= v }
+    opt[(Int, Map[String, BigInt])]("hart-register").unbounded() action { case ((h, v), c) => addRegisterValueMapping(h, v) }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
     opt[String]("fail-symbol") action { (v, c) => failSymbolName = v }
     opt[Map[Int, String]]("hart-pass-symbol").unbounded() action { (v, c) => hartPassSymbolNames ++= v }
@@ -303,13 +312,14 @@ class TestOptions {
     }
 
     // Collect traces from the CPUs behavior
-    val probes = duts.cores.zipWithIndex.map { case (dut, hartId) =>
-      val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), s"konata$hartId.log")))
+    val probes = duts.cores.zipWithIndex.map { case (dut, i) =>
+      val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), s"konata$i.log")))
       delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registered last
       val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
       if (withRvlsCheck) probe.add(rvls)
       probe.enabled = withProbe
       probe.trace = false
+      val hartId = probe.hartsIds.head
       val host = dut.host[PrivilegedPlugin]
       val priv = host.hart(0)
 
@@ -337,6 +347,21 @@ class TestOptions {
         StreamReadyRandomizer(bus.cmd, cd)
         StreamMonitor(bus.cmd, cd) { _ =>
           rspQueue._2.enqueue { _ => }
+        }
+      }
+
+      val rfInit = hartRegisterValues.collect { case ((`hartId`, id), value) => id -> value }.toSeq
+      if(rfInit.nonEmpty) {
+        val rf = dut.host.find[RegFilePlugin](_.rfSpec == IntRegFile)
+        fork {
+          // TrapPlugin keeps this hart in RESET until the register-file initializer is done.
+          cd.waitSampling()
+          waitUntil(cd.resetSim.toBoolean == false)
+          waitUntil(rf.logic.initalizer.done.toBoolean)
+          rfInit.foreach { case (id, value) =>
+            rf.simSetRegister(id, value)
+            probe.backends.foreach(_.setRegister(hartId, id, value.toLong))
+          }
         }
       }
 
