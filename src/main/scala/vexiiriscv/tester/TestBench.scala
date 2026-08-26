@@ -4,6 +4,7 @@ import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
 import spinal.core.fiber.Fiber
+import spinal.lib.Stream
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly}
 import spinal.lib.bus.amba4.axi.sim.{Axi4ReadOnlyMonitor, Axi4ReadOnlySlaveAgent, Axi4WriteOnlyMonitor, Axi4WriteOnlySlaveAgent}
 import spinal.lib.{CheckSocketPort, DoCmd}
@@ -13,6 +14,7 @@ import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
 import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.com.jtag.sim.{JtagRemote, JtagTcp}
 import spinal.lib.misc.Elf
+import spinal.lib.misc.aia.ImsicFileInfo
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
@@ -22,11 +24,11 @@ import vexiiriscv._
 import vexiiriscv.execute.cfu.{CfuPlugin, CfuRsp}
 import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuCachelessWishbonePlugin, LsuL1, LsuL1Axi4Plugin, LsuL1Plugin, LsuL1TlPlugin, LsuL1WishbonePlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
-import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
+import vexiiriscv.misc.{EmbeddedRiscvJtag, ImsicPlugin, PrivilegedPlugin}
 import vexiiriscv.regfile.RegFilePlugin
 import vexiiriscv.riscv.{IntRegFile, Riscv}
 import vexiiriscv.test.konata.Backend
-import vexiiriscv.test.{PeripheralEmulator, VexiiRiscvProbe}
+import vexiiriscv.test.{ImsicPeripheralEmulator, IoDeviceManager, PeripheralEmulator, VexiiRiscvProbe}
 
 import java.io.{File, IOException, PrintWriter}
 import java.net.{ServerSocket, Socket}
@@ -86,7 +88,7 @@ class TestBenchDut(plugins : scala.collection.Seq[scala.collection.Seq[Hostable]
 object TestBench extends App {
   doIt()
 
-  def paramToPlugins(param : ParamSimple, hartId : Int = 0): ArrayBuffer[Hostable] = {
+  def paramToPlugins(param : ParamSimple, hartId : Int = 0, systemHartCount : Int = 0): ArrayBuffer[Hostable] = {
     val ret = param.plugins(hartId)
     if(param.lsuL1Bus == LsuL1BusEnum.native) ret.collectFirst{case p : LsuL1Plugin => p}.foreach{ p =>
       p.ackIdWidth = 8
@@ -122,6 +124,20 @@ object TestBench extends App {
         override def isExecutable: Boolean = true
       }
     )
+    def imsicRegion(addressMapping: SizeMapping) = new PmaRegion {
+      override def mapping: AddressMapping = addressMapping
+      override def transfers: MemoryTransfers = M2sTransfers(
+        get = SizeRange(4),
+        putFull = SizeRange(4)
+      )
+      override def isMain: Boolean = false
+      override def isExecutable: Boolean = false
+    }
+    if (param.privParam.withImsic) {
+      val hartCount = systemHartCount max param.hartCount
+      regions += imsicRegion(SizeMapping(0x24000000L, hartCount * 0x1000L))
+      if (param.privParam.withSupervisor) regions += imsicRegion(SizeMapping(0x28000000L, hartCount * 0x40000L))
+    }
     ret.foreach{
       case p: FetchCachelessPlugin => p.regions.load(regions)
       case p: LsuCachelessPlugin => p.regions.load(regions)
@@ -142,7 +158,7 @@ object TestBench extends App {
       require(param.lsuBus == LsuBusEnum.native, "Only native LSU bus supported multicore TestBench")
       if (param.lsuL1Enable) require(param.lsuL1Bus == LsuL1BusEnum.native, "Only native LSU L1 bus supported multicore TestBench")
     }
-    new TestBenchDut((0 until cpuCount).map(hartId => paramToPlugins(param, hartId * param.hartCount)))
+    new TestBenchDut((0 until cpuCount).map(hartId => paramToPlugins(param, hartId * param.hartCount, cpuCount * param.hartCount)))
   }
 
   def doIt(param : ParamSimple = new ParamSimple()) {
@@ -321,24 +337,11 @@ class TestOptions {
       probe.trace = false
       val hartId = probe.hartsIds.head
       val host = dut.host[PrivilegedPlugin]
-      val priv = host.hart(0)
 
       cd.onSamplings {
         host.logic.rdtime #= probe.cycle
       }
 
-      if (host.p.withImsic) {
-        priv.m.imsic.trigger.valid #= false
-        priv.m.imsic.trigger.payload #= 0
-        if (host.p.withSupervisor) {
-          priv.s.imsic.trigger.valid #= false
-          priv.s.imsic.trigger.payload #= 0
-        }
-        if (host.p.withHypervisor && host.p.withGuestImsic) priv.h.imsic.triggers.foreach(trigger => {
-          trigger.valid #= false
-          trigger.payload #= 0
-        })
-      }
 
       dut.host.get[LsuPlugin].filter(_.withLlcFlush).foreach { p =>
         val bus = p.logic.llcBus
@@ -502,11 +505,11 @@ class TestOptions {
       probes.foreach(_.commitsCallbacks += callback)
     }
 
-    val privs = duts.cores.map(_.host[PrivilegedPlugin].hart(0))
+    val hosts = duts.cores.map(_.host[PrivilegedPlugin])
+    val privs = hosts.map(_.hart(0))
     val peripheral = new PeripheralEmulator(
-      0x10000000,
-      mei = privs.map(_.int.m.external),
-      sei = if(privs.head.int.s == null) Seq.empty else privs.map(_.int.s.external),
+      mei = if(hosts.head.p.withExternalInterrupt) privs.map(_.int.m.external) else Seq.empty,
+      sei = if(hosts.head.p.withSupervisor && hosts.head.p.withExternalInterrupt) privs.map(_.int.s.external) else Seq.empty,
       msi = privs.map(_.int.m.software),
       mti = privs.map(_.int.m.timer),
       cd = cd
@@ -515,6 +518,54 @@ class TestOptions {
       cmb.mem = mem
     }
     peripheral.withStdIn = withStdIn
+
+    val manager = IoDeviceManager()
+
+    manager.registerDevice(SizeMapping(0x10000000L, 0x10000000L), peripheral)
+
+    val imsics = duts.cores.map{ v =>
+      val priv = v.host[PrivilegedPlugin]
+      val imsic = v.host.get[ImsicPlugin]
+      (priv, imsic)
+    }.filter{ case (priv, imsic) => priv.p.withImsic && imsic.nonEmpty }.map { case (priv, imsic) => (imsic.get.logic.harts.head, priv.hartIds.head)}
+
+    if (imsics.nonEmpty) {
+      val mLayout = ImsicPeripheralEmulator.machineLayout
+      val mInfo = imsics.map{ case (imsic, hartId) =>
+        val file = imsic.m
+        file.file.asImsicFileInfo().copy(hartId = hartId, groupHartId = hartId) -> file.trigger
+      }
+      val mImsic = ImsicPeripheralEmulator.build(
+        base      = mLayout.base,
+        mapping   = mLayout.mapping,
+        bindings  = mInfo.toSeq,
+        cd        = cd
+      )
+      mImsic.foreach(device => manager.registerDevice(device.addressMapping, device))
+
+      val sLayout = ImsicPeripheralEmulator.supervisorLayout
+      val sInfo = imsics.flatMap { case (imsic, hartId) =>
+        val infos = mutable.ArrayBuffer[(ImsicFileInfo, Stream[UInt])]()
+
+        val sFile = imsic.s
+        if (sFile != null) infos += sFile.file.asImsicFileInfo().copy(hartId = hartId, groupHartId = hartId) -> sFile.trigger
+
+        val vsFiles = imsic.vs
+        if (vsFiles != null) infos ++= vsFiles.files.zip(vsFiles.triggers).map { case (file, trigger) => file.asImsicFileInfo().copy(hartId = hartId, groupHartId = hartId) -> trigger }
+
+        infos
+      }
+
+      if (sInfo.nonEmpty) {
+        val sImsic = ImsicPeripheralEmulator.build(
+          base      = sLayout.base,
+          mapping   = sLayout.mapping,
+          bindings  = sInfo.toSeq,
+          cd        = cd
+        )
+        sImsic.foreach(device => manager.registerDevice(device.addressMapping, device))
+      }
+    }
 
     var forceProbe = Option.empty[Long => Unit]
 
@@ -635,7 +686,7 @@ class TestOptions {
     def doRead(address : Long, bytes : Int, dst : Array[Byte], offset : Int, io : Boolean): Boolean = {
       if (io) {
         val data = new Array[Byte](bytes)
-        val error = peripheral.access(false, address, data)
+        val error = manager.access(false, address, data)
         Array.copy(data, 0, dst, offset, bytes)
         error
       } else {
@@ -646,7 +697,7 @@ class TestOptions {
 
     def doWrite(address : Long, src : Array[Byte], io : Boolean): Boolean = {
       if (io) {
-        peripheral.access(true, address, src)
+        manager.access(true, address, src)
       } else {
         mem.write(address, src)
         false
@@ -705,17 +756,18 @@ class TestOptions {
             val byteOffset = Integer.numberOfTrailingZeros(mask)
             val size = Integer.numberOfTrailingZeros((~mask) >> byteOffset)
             val addr = (bus.ADR.toLong << addressShift) + byteOffset
-            val io = addr >= 0x10000000 && addr < 0x20000000
-            if(bus.WE.toBoolean){
+            val io = manager.hit(addr)
+            val error = if(bus.WE.toBoolean) {
               val bytes = bus.DAT_MOSI.toBytes.drop(byteOffset).take(size)
               doWrite(addr, bytes, io)
             } else {
               val bytes = new Array[Byte](bus.config.dataWidth/8)
-              doRead(addr, size, bytes, byteOffset, io)
+              val error = doRead(addr, size, bytes, byteOffset, io)
               val data = BigInt(1, bytes.reverse)
               bus.DAT_MISO #= data
+              error
             }
-            bus.ERR #= addr < 0x10000000
+            bus.ERR #= error || addr < 0x10000000
             bus.ACK #= true
           } else {
             bus.ACK #= false

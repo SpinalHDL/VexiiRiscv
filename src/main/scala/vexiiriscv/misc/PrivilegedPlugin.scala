@@ -42,7 +42,8 @@ object PrivilegedParam{
     injectedInterruptWidth = 6,
     debugTriggers  = 0,
     debugTriggersLsu = false,
-    withHartIdInputDefaulted = false
+    withHartIdInputDefaulted = false,
+    withExternalInterrupt = true,
   )
 }
 
@@ -76,7 +77,8 @@ case class PrivilegedParam(var withSupervisor : Boolean,
                            var imsicInterrupts: Int,
                            var injectedInterruptWidth: Int,
                            var guestExternalInterruptFiles: Int,
-                           var withHartIdInputDefaulted : Boolean){
+                           var withHartIdInputDefaulted : Boolean,
+                           var withExternalInterrupt: Boolean){
   def withImsic = imsicInterrupts > 0
   def withGuestImsic = withImsic && guestExternalInterruptFiles > 0
   def externalInterruptPriorityWidth = log2Up(imsicInterrupts)
@@ -94,6 +96,7 @@ case class PrivilegedParam(var withSupervisor : Boolean,
 
     /* IMSIC check */
     assert((imsicInterrupts == 0) || (isPow2(imsicInterrupts) && imsicInterrupts >= 64 && imsicInterrupts <= 2048))
+    assert(withExternalInterrupt || withImsic)
     assert(guestExternalInterruptFiles < 64)
     if (withHypervisor && withSsaia) {
       assert(injectedInterruptWidth >= 6 && injectedInterruptWidth <= 12)
@@ -207,10 +210,10 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val m = new Area {
           val timer = Verilator.public(in Bool())
           val software = Verilator.public(in Bool())
-          val external = Verilator.public(in Bool())
+          val external = p.withExternalInterrupt generate Verilator.public(in Bool())
         }
         val s = p.withSupervisor generate new Area {
-          val external = Verilator.public(in Bool())
+          val external = p.withExternalInterrupt generate Verilator.public(in Bool())
         }
         val u = p.withUserTrap generate new Area {
           val external = Verilator.public(in Bool())
@@ -657,7 +660,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val imsic = p.withImsic generate imsicPlugin.logic.harts(hartId).m
 
         val ip = new api.Csr(CSR.MIP) {
-          val mext = if (p.withImsic) imsic.deliveryArbiter(int.m.external) else int.m.external
+          val fromExternalCtrl = p.withExternalInterrupt.option(int.m.external)
+          val mext = if (p.withImsic) imsic.deliveryArbiter(fromExternalCtrl) else fromExternalCtrl.get
 
           val meip = RegNext(mext) init (False)
           val mtip = RegNext(int.m.timer) init (False)
@@ -955,7 +959,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val imsic = p.withImsic generate imsicPlugin.logic.harts(hartId).s
 
         val ip = new Area {
-          val sext = if (p.withImsic) imsic.deliveryArbiter(int.s.external) else int.s.external
+          val fromExternalCtrl = p.withExternalInterrupt.option(int.s.external)
+          val sext = if (p.withImsic) imsic.deliveryArbiter(fromExternalCtrl) else fromExternalCtrl.get
 
           val seipSoft = RegInit(False)
           val seipInput = RegNext(sext)

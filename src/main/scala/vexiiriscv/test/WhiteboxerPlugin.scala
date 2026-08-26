@@ -338,9 +338,11 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
         for ((hart, hartId) <- priv.logic.harts.zipWithIndex) {
           checkers += new InterruptChecker(hartId, hart.int.m.timer,  7)
           checkers += new InterruptChecker(hartId, hart.int.m.software,  3)
-          checkers += new InterruptChecker(hartId, hart.int.m.external, 11)
-          if (priv.p.withSupervisor) {
-            checkers += new InterruptChecker(hartId, hart.int.s.external, 9)
+          if (priv.p.withExternalInterrupt) {
+            checkers += new InterruptChecker(hartId, hart.int.m.external, 11)
+            if (priv.p.withSupervisor) {
+              checkers += new InterruptChecker(hartId, hart.int.s.external, 9)
+            }
           }
         }
         def check(): Unit = {

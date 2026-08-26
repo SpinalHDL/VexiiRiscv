@@ -253,7 +253,7 @@ object SocSim extends App{
 
     val onPbusSim = simPeripheral generate new Area {
       val axi = dut.system.patcher.pBus
-      val emu = new PeripheralEmulator(0x10000000, Seq.empty, Seq.empty) {
+      val emu = new PeripheralEmulator(Seq.empty, Seq.empty) {
         override def getClintTime() = simTime()/10000
       }
       new AxiLite4ReadOnlySlaveAgent(axi.ar, axi.r, dut.litexCd){
@@ -261,7 +261,7 @@ object SocSim extends App{
           super.doRead(addr)
           axi.r.payload.data.randomize()
           val data = Array.fill[Byte](axi.config.bytePerWord)(0)
-          emu.access(false, addr.toLong, data)
+          emu.access(false, addr.toLong - 0x10000000, data)
           axi.r.payload.data #= data
         }
       }
@@ -271,7 +271,7 @@ object SocSim extends App{
           axi.r.payload.data.randomize()
           val buffer = Array.fill[Byte](axi.config.bytePerWord)(0)
           buffer(0) = data.toByte
-          emu.access(true, addr.toLong, buffer)
+          emu.access(true, addr.toLong - 0x10000000, buffer)
         }
       }
     }

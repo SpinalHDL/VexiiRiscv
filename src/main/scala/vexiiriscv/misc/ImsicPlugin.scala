@@ -9,6 +9,8 @@ import vexiiriscv.execute.CsrAccessPlugin
 import vexiiriscv.riscv.{CSR, IndirectCSR}
 import vexiiriscv.riscv.Riscv._
 
+import scala.collection.mutable
+
 class ImsicPlugin(val p: PrivilegedParam) extends FiberPlugin {
   val logic = during setup new Area {
     val cap = host[CsrAccessPlugin]
@@ -118,23 +120,31 @@ class ImsicPlugin(val p: PrivilegedParam) extends FiberPlugin {
 
         api.readWrite(file.threshold, indirectApi.csrFilter(IndirectCSR.eithreshold, ireg))
 
-        val eidelivery = RegInit(U(0x40000000, XLEN bits))
-        val eideliveryFilter = indirectApi.csrFilter(IndirectCSR.eidelivery, ireg)
-        api.read(eidelivery, eideliveryFilter)
-        api.onWrite(eideliveryFilter, true) {
-          eidelivery := cap.bus.write.bits.mux(
-            0x40000000 -> U(0x40000000, XLEN bits),
+        def deliveryArbiter(external: Option[Bool]): Bool = {
+          val deliveryCode = mutable.ArrayBuffer(
             0x1 -> U(1, XLEN bits),
             default -> U(0, XLEN bits)
           )
-        }
-
-        def deliveryArbiter(aplicTarget: Bool): Bool = {
-          eidelivery.mux(
+          val deliveryInterrupt = mutable.ArrayBuffer(
             1 -> file.interrupt,
-            0x40000000 -> aplicTarget,
             default -> False
           )
+          var defaultValue = 0
+          external match {
+            case Some(ext) => {
+              defaultValue = 0x40000000
+              deliveryCode += 0x40000000 -> U(0x40000000, XLEN bits)
+              deliveryInterrupt += 0x40000000 -> ext
+            }
+            case _ =>
+          }
+          val eidelivery = RegInit(U(defaultValue, XLEN bits))
+          val eideliveryFilter = indirectApi.csrFilter(IndirectCSR.eidelivery, ireg)
+          api.read(eidelivery, eideliveryFilter)
+          api.onWrite(eideliveryFilter, true) {
+            eidelivery := cap.bus.write.bits.muxList(deliveryCode)
+          }
+          eidelivery.muxList(deliveryInterrupt)
         }
       }
 

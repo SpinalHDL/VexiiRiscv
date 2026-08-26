@@ -262,7 +262,7 @@ object TlTbSim extends App{
       tracerFile.foreach(_.loadBin(offset, file))
     }
 
-    val peripheral = new PeripheralEmulator(0, Seq.empty, Seq.empty, cd = dut.mainResetCtrl.cd) {
+    val peripheral = new PeripheralEmulator(Seq.empty, Seq.empty, cd = dut.mainResetCtrl.cd) {
       override def getClintTime(): BigInt = 0
       val onBus = bind(dut.main.peripheral.eBus.node.bus, dut.main.peripheral.eBus.node.clockDomain)
     }
