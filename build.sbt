@@ -1,7 +1,10 @@
-val spinalVersion = "dev"
-val spinalHdlFromSource = sys.env.getOrElse("SPINALHDL_FROM_SOURCE", "1") == "1"
-val spinalHdlPathEnabled = sys.env.contains("SPINALHDL_PATH")
-val spinalHdlPath = sys.env.getOrElse("SPINALHDL_PATH", "./ext/SpinalHDL")
+def spinalHdlOption(prop: String, env: String, default: String) =
+  sys.props.getOrElse(prop, sys.env.getOrElse(env, default))
+
+val spinalVersion = spinalHdlOption("spinalhdl.version", "SPINALHDL_VERSION", "dev")
+val spinalHdlFromSource = spinalHdlOption("spinalhdl.fromSource", "SPINALHDL_FROM_SOURCE", "1") == "1"
+val spinalHdlPathEnabled = sys.props.contains("spinalhdl.path") || sys.env.contains("SPINALHDL_PATH")
+val spinalHdlPath = spinalHdlOption("spinalhdl.path", "SPINALHDL_PATH", "./ext/SpinalHDL")
 
 def rootGen() = {
   var ret = (project in file(".")).settings(
@@ -13,7 +16,7 @@ def rootGen() = {
       crossScalaVersions := SpinalVersion.compilers,
       version := "2.0.0"
     )),
-    scalacOptions += s"-Xplugin:${new File((if(spinalHdlPathEnabled) spinalHdlPath else baseDirectory.value.getAbsolutePath + s"/ext/SpinalHDL") + s"/idslplugin/target/scala-${scalaVersion.value.split("\\.").dropRight(1).mkString(".")}/spinalhdl-idsl-plugin_${scalaVersion.value.split("\\.").dropRight(1).mkString(".")}-$spinalVersion.jar")}",
+    scalacOptions ++= (if (spinalHdlFromSource) Seq(s"-Xplugin:${new File((if(spinalHdlPathEnabled) spinalHdlPath else baseDirectory.value.getAbsolutePath + s"/ext/SpinalHDL") + s"/idslplugin/target/scala-${scalaVersion.value.split("\\.").dropRight(1).mkString(".")}/spinalhdl-idsl-plugin_${scalaVersion.value.split("\\.").dropRight(1).mkString(".")}-$spinalVersion.jar")}") else Nil),
     scalacOptions += s"-Xplugin-require:idsl-plugin",
     scalacOptions += "-language:reflectiveCalls",
     javaOptions += "-Xss16M",
