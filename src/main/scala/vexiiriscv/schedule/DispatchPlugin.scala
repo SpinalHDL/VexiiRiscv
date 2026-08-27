@@ -175,7 +175,7 @@ class DispatchPlugin(var dispatchAt : Int,
       // Identify which RS are used by the pipeline
       val resources = ll.uops.keySet.flatMap(_.resources).distinctLinked
       val readAccess = rfaReads.filter(e => resources.exists {
-        case RfResource(_, e) => true
+        case RfResource(_, `e`._1) => true
         case _ => false
       }).values
 
