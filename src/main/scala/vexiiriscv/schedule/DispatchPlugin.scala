@@ -265,7 +265,7 @@ class DispatchPlugin(var dispatchAt : Int,
           val hazards = ArrayBuffer[Bool]()
           val onChunk = for(((cFrom, cTo), enable) <- rs.chunks.zip(rs.ENABLES)){
             for (writeEu <- eus if writeEu.getUopLayerSpec().flatMap(_.rd).map(_.rf).distinctLinked.intersect(rs.regFiles).nonEmpty) {
-              val hazardRange = cFrom to (writeEu.getRdBroadcastedFromMax(rs.regFilesList) - 1 min cTo)
+              val hazardRange = cFrom until writeEu.getRdBroadcastedFromMax(rs.regFilesList)
               val offset = cFrom - 1
               assert(hc.ll.lane.rfReadAt == 0, "else need less bypass at the end")
 //              println(s"${hc.ll.name} ${rs.self.getName()} ${writeEu.laneName} $hazardRange offset=$offset")
