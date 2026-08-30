@@ -237,9 +237,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       val api = cap.hart(hartId)
       val withFs = RVF || p.withSupervisor
       val privilege = Reg(PrivilegeMode.TYPE()) init(PrivilegeMode.M)
+      val privilegeMode = PrivilegeMode.mode(privilege)
       val withMachinePrivilege = privilege >= PrivilegeMode.M
       val withHostSupervisorPrivilege = privilege >= PrivilegeMode.S
       val withVirtualSupervisorPrivilege = privilege >= PrivilegeMode.VS
+      val withSupervisorPrivilege = privilegeMode >= PrivilegeMode.S
       val isGuestMode = PrivilegeMode.isGuest(privilege)
       val isHostMode = !isGuestMode
 
@@ -1242,42 +1244,27 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       }
 
       val time = p.withRdTime generate new Area {
-        val host = new Area {
-          val allowSupervisor = withMachinePrivilege || m.counteren.tm
-          val allowUser = p.withSupervisor.mux(withHostSupervisorPrivilege || s.counteren.tm, True)
-          val accessable = allowSupervisor && allowUser
+        val time = p.withHypervisor.mux(
+          isGuestMode.mux(h.timedelta.calibrated, rdtime),
+          rdtime
+        )
 
-          XLEN.get match {
-            case 32 => {
-              api.read(rdtime(31 downto 0), HostCsrFilter(CSR.UTIME))
-              api.read(rdtime(63 downto 32), HostCsrFilter(CSR.UTIMEH))
-              api.allowCsr(HostCsrFilter(CSR.UTIME), accessable)
-              api.allowCsr(HostCsrFilter(CSR.UTIMEH), accessable)
-            }
-            case 64 => {
-              api.read(rdtime, HostCsrFilter(CSR.UTIME))
-              api.allowCsr(HostCsrFilter(CSR.UTIME), accessable)
-            }
-          }
+        def check(timeCsr: Int) = {
+          api.allowHostCsr(timeCsr, withMachinePrivilege || m.counteren.tm)
+          if (p.withHypervisor) api.allowCsr(timeCsr, isHostMode || h.counteren.tm)
+          if (p.withSupervisor) api.allowCsr(timeCsr, withSupervisorPrivilege || s.counteren.tm)
         }
 
-        val guest = p.withHypervisor generate new Area {
-          val allowVirtualSupervisor = m.counteren.tm && h.counteren.tm
-          val allowVirtualUser = privilege === PrivilegeMode.VS || s.counteren.tm
-          val accessable = allowVirtualSupervisor && allowVirtualUser
-          val rdtime = h.timedelta.calibrated
-
-          XLEN.get match {
-            case 32 => {
-              api.read(rdtime(31 downto 0), GuestCsrFilter(CSR.UTIME))
-              api.read(rdtime(63 downto 32), GuestCsrFilter(CSR.UTIMEH))
-              api.allowCsr(GuestCsrFilter(CSR.UTIME), accessable)
-              api.allowCsr(GuestCsrFilter(CSR.UTIMEH), accessable)
-            }
-            case 64 => {
-              api.read(rdtime, GuestCsrFilter(CSR.UTIME))
-              api.allowCsr(GuestCsrFilter(CSR.UTIME), accessable)
-            }
+        XLEN.get match {
+          case 32 => {
+            api.read(time(31 downto 0), CSR.UTIME)
+            api.read(time(63 downto 32), CSR.UTIMEH)
+            check(CSR.UTIME)
+            check(CSR.UTIMEH)
+          }
+          case 64 => {
+            api.read(time, CSR.UTIME)
+            check(CSR.UTIME)
           }
         }
       }
