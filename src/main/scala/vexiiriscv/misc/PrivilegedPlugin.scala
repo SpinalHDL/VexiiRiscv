@@ -1312,11 +1312,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       val csrPrivilege = cap.bus.decode.address(8, 2 bits)
       val hartPrivilege = harts.reader(cap.bus.decode.hartId)(_.privilege)
 
-      when(PrivilegeMode.isGuest(hartPrivilege) && csrPrivilege === U"10") {
-        cap.bus.decode.doVirtual()
-      }
-
-      when(hartPrivilege === PrivilegeMode.VU && csrPrivilege === PrivilegeMode.S) {
+      when(PrivilegeMode.isGuest(hartPrivilege) && csrPrivilege =/= PrivilegeMode.M) {
         cap.bus.decode.doVirtual()
       }
     }
