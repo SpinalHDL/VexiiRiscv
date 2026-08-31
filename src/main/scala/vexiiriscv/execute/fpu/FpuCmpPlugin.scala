@@ -142,10 +142,17 @@ class FpuCmpPlugin(val layer : LaneLayer,
       val doNan = RS1_FP.isNan && RS2_FP.isNan && FLOAT_OP === FpuCmpFloatOp.MIN_MAX
       val wb = fwb.payload
       when(doNan) {
-        p.whenDouble(FORMAT)(wb(52, 11 bits).setAll())(wb(23, 8 bits).setAll())
-        p.whenDouble(FORMAT)(wb(0, 52 bits).clearAll())(wb(0, 23 bits).clearAll())
-        p.whenDouble(FORMAT)(wb(51) := True)(wb(22) := True)
-        p.whenDouble(FORMAT)(wb(63) := False)(wb(31) := False)
+        p.whenDouble(FORMAT) {
+          wb(52, 11 bits).setAll()
+          wb(0, 52 bits).clearAll()
+          wb(51) := True
+          wb(63) := False
+        } {
+          wb(23, 8 bits).setAll()
+          wb(0, 23 bits).clearAll()
+          wb(22) := True
+          wb(31) := False
+        }
         if (p.rvd) when(FORMAT === FpuFormat.FLOAT) {
           wb(63 downto 32).setAll()
         }
