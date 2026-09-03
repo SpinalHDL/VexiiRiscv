@@ -662,7 +662,7 @@ class MmuPlugin(var spec : MmuSpec,
             o.ae_final  := accessFault && load.leaf //Note so sure
             o.level := spec.levels.size - 1 - levelId
             o.address := Mux(translationFault || permissionFault,
-              Mux(shadowReadError, load.readed.asUInt, U(0)),
+              Mux(shadowReadError, load.readed.asUInt, load.address),
               translatedAddress
             ).resized
           }
