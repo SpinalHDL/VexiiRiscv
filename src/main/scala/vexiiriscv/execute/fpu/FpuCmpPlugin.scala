@@ -6,7 +6,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
-import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, muxDouble}
+import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv._
 
 
@@ -142,23 +142,29 @@ class FpuCmpPlugin(val layer : LaneLayer,
       val doNan = RS1_FP.isNan && RS2_FP.isNan && FLOAT_OP === FpuCmpFloatOp.MIN_MAX
       val wb = fwb.payload
       when(doNan) {
-        p.whenDouble(FORMAT) {
-          wb(52, 11 bits).setAll()
-          wb(0, 52 bits).clearAll()
-          wb(51) := True
-          wb(63) := False
-        } {
-          wb(23, 8 bits).setAll()
-          wb(0, 23 bits).clearAll()
-          wb(22) := True
-          wb(31) := False
+        p.whenFormat(FORMAT) {
+          case FpuFormat.FLOAT => {
+            wb(23, 8 bits).setAll()
+            wb(0, 23 bits).clearAll()
+            wb(22) := True
+            wb(31) := False
+          }
+          case FpuFormat.DOUBLE => {
+            wb(52, 11 bits).setAll()
+            wb(0, 52 bits).clearAll()
+            wb(51) := True
+            wb(63) := False
+          }
         }
         if (p.rvd) when(FORMAT === FpuFormat.FLOAT) {
           wb(63 downto 32).setAll()
         }
       }
       when(FLOAT_OP === FpuCmpFloatOp.SGNJ){
-        p.whenDouble(FORMAT)(wb(63) := onCmp.SGNJ_RESULT)(wb(31) := onCmp.SGNJ_RESULT)
+        p.whenFormat(FORMAT) {
+          case FpuFormat.DOUBLE => wb(63) := onCmp.SGNJ_RESULT
+          case FpuFormat.FLOAT  => wb(31) := onCmp.SGNJ_RESULT
+        }
         if(Riscv.RVD) when(fup.getBadBoxing(RS1)){
           doNan := True
         }
