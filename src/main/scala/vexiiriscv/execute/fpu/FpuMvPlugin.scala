@@ -6,7 +6,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
-import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, muxDouble}
+import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv._
 
 
@@ -72,13 +72,22 @@ class FpuMvPlugin(val layer : LaneLayer,
 
     val onFloatWb = new layer.Execute(floatWbAt) {
       fwb.valid := SEL_FLOAT
-      fwb.payload(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
-      if(Riscv.RVD.get) {
-        fwb.payload(63 downto 32) := (Riscv.XLEN.get == 32).mux(
-          B"xFFFFFFFF",
-          muxDouble(FORMAT)(up(layer.lane(IntRegFile, RS1))(63 downto 32))(B"xFFFFFFFF")
-        )
+      val value = fwb.payload.getAllTrue
+      // For simplicity, let allow override this when XLEN = FLEN
+      value.allowOverride()
+
+      Riscv.XLEN.get match {
+        case 32 => {
+          value(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
+        }
+        case 64 => {
+          value(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
+          if (Riscv.RVD) when (FORMAT === FpuFormat.DOUBLE) {
+            value(63 downto 32) := up(layer.lane(IntRegFile, RS1))(63 downto 32)
+          }
+        }
       }
+      fwb.payload := value
     }
 
     buildBefore.release()

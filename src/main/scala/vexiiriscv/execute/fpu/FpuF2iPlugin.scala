@@ -7,7 +7,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
-import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, ROUNDING, muxDouble, muxRv64}
+import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, ROUNDING, muxRv64}
 import vexiiriscv.riscv._
 
 

@@ -12,25 +12,38 @@ object FpuUtils extends AreaObject {
   def mantissaWidth = if(Riscv.RVD) 52 else 23
   def rvd = Riscv.RVD.get
   def rvf = Riscv.RVF.get
+  def rvq = Riscv.RVQ.get
+  def rvzfh = Riscv.RVZfh.get
   def rv64 = XLEN.get == 64
   val exponentF32One = 127
   val exponentF64One = 1023
   val FORMAT = Payload(FpuFormat())
   val ROUNDING = Payload(FpuRoundMode())
 
-  def whenDouble(format : FpuFormat.C)(yes : => Unit)(no : => Unit): Unit ={
-    if(rvd) when(format === FpuFormat.DOUBLE) { yes } otherwise{ no }
-    if(!rvd) no
+  lazy val supported = Seq[FpuFormat.E]() ++
+    (if (rvd) Seq(FpuFormat.DOUBLE) else Seq.empty) ++
+    (if (rvf) Seq(FpuFormat.FLOAT) else Seq.empty)
+
+  def whenFormat(format: FpuFormat.C)(cases: PartialFunction[FpuFormat.E, Unit]): Unit = {
+    switch(format) {
+      for (f <- supported) {
+        if (cases.isDefinedAt(f)) is(f) {
+          cases(f)
+        }
+      }
+
+      default { }
+    }
   }
 
-  def muxDouble[T <: Data](format : FpuFormat.C)(yes : => T)(no : => T): T ={
-    if(rvd) ((format === FpuFormat.DOUBLE) ? { yes } | { no })
-    else no
+  def muxFormat[T <: Data](format : FpuFormat.C)(cases: PartialFunction[FpuFormat.E, T]): T = format.muxListDc(supported.filter(cases.isDefinedAt(_)).map(f => f -> cases(f)))
+
+  def muxFormat[T <: Data](format : Bits)(cases: PartialFunction[FpuFormat.E, T]): T ={
+    val tmp = FpuFormat()
+    tmp.assignFromBits(format)
+    muxFormat(tmp)(cases)
   }
-  def muxDouble[T <: Data](format : Bool)(yes : => T)(no : => T): T ={
-    if(rvd) ((format) ? { yes } | { no })
-    else no
-  }
+
   def muxRv64[T <: Data](format : Bool)(yes : => T)(no : => T): T ={
     if(rv64) ((format) ? { yes } | { no })
     else no

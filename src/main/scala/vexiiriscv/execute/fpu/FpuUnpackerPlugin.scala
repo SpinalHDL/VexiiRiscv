@@ -197,30 +197,28 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
           val sign = input(63)
         }
 
-        val manZero = Bool()
-        val expZero = Bool()
-        val expOne = Bool()
-        val IS_SUBNORMAL = insert(expZero && !manZero)
-        val recodedExpSub = SInt(p.exponentWidth + 1 bits)
+        RS_PRE_NORM.sign := f32.sign
+        RS_PRE_NORM.quiet := f32.mantissa.msb
+        RS_PRE_NORM.mantissa.raw := B(f32.mantissa << (if (p.rvd) 29 else 0))
+        RS_PRE_NORM.exponent := f32.exponent.resize(p.exponentWidth) - p.exponentF32One
 
-        p.whenDouble(p.FORMAT) {
-          RS_PRE_NORM.sign := f64.sign
-          RS_PRE_NORM.mantissa.raw := B(f64.mantissa)
-          RS_PRE_NORM.quiet := f64.mantissa.msb
-          RS_PRE_NORM.exponent := f64.exponent.resize(p.exponentWidth) - p.exponentF64One
-          manZero := f64.mantissa === 0
-          expZero := f64.exponent === 0
-          expOne := f64.exponent.andR
-          recodedExpSub := -p.exponentF64One + 1
-        } {
-          RS_PRE_NORM.sign := f32.sign
-          RS_PRE_NORM.quiet := f32.mantissa.msb
-          RS_PRE_NORM.mantissa.raw := B(f32.mantissa << (if (p.rvd) 29 else 0))
-          RS_PRE_NORM.exponent := f32.exponent.resize(p.exponentWidth) - p.exponentF32One
-          manZero := f32.mantissa === 0
-          expZero := f32.exponent === 0
-          expOne := f32.exponent.andR
-          recodedExpSub := -p.exponentF32One + 1
+        val manZero = f32.mantissa === 0
+        val expZero = f32.exponent === 0
+        val expOne = f32.exponent.andR
+        val IS_SUBNORMAL = insert(expZero && !manZero)
+        val recodedExpSub = S(-p.exponentF32One + 1, p.exponentWidth + 1 bits)
+
+        p.whenFormat(FORMAT) {
+          case FpuFormat.DOUBLE => {
+            RS_PRE_NORM.sign := f64.sign
+            RS_PRE_NORM.mantissa.raw := B(f64.mantissa)
+            RS_PRE_NORM.quiet := f64.mantissa.msb
+            RS_PRE_NORM.exponent := f64.exponent.resize(p.exponentWidth) - p.exponentF64One
+            manZero := f64.mantissa === 0
+            expZero := f64.exponent === 0
+            expOne := f64.exponent.andR
+            recodedExpSub := -p.exponentF64One + 1
+          }
         }
         RS_PRE_NORM.mode := (expOne ## expZero).mux(
           default -> FloatMode.NORMAL(),
