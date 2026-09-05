@@ -74,6 +74,7 @@ object ExtensionList {
     E("a").version(2, 1).depend("zaamo", "zalrsc").withDependCheck,
     E("f").version(2, 2).depend("zicsr"),
     E("d").version(2, 2).depend("f"),
+    E("q").version(2, 2).depend("d"),
     E("c").version(2, 0).depend("zca"),
     E("b").depend("zba", "zbb", "zbc", "zbs").withDependCheck,
     E("h").depend("s"),
@@ -104,6 +105,8 @@ object ExtensionList {
     E("zca"),
     E("zcf").depend("c", "f"),
     E("zcd").depend("c", "d"),
+    E("zfhmin").depend("f"),
+    E("zfh").depend("zfhmin"),
     E("zknd"),
     E("zkne"),
     E("zknh"),
@@ -213,6 +216,11 @@ case class ExtensionManager(isa: Set[String] = Set[String]()) extends Dynamic {
     /* AES always enable both encrypt and decrypt */
     if (check("zknd") || check("zkne")) {
       add("zknd", "zkne")
+    }
+
+    /* Current implementation can not handle zfhmin separately */
+    if (check("zfhmin")) {
+      add("zfh")
     }
 
     addDependCheckHints()

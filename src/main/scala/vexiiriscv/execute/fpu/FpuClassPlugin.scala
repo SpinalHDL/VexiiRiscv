@@ -42,6 +42,12 @@ class FpuClassPlugin(val layer : LaneLayer,
     if(Riscv.RVD.get) {
       add(Rvfd.FCLASS_D, FORMAT -> FpuFormat.DOUBLE)
     }
+    if(Riscv.RVQ.get) {
+      add(Rvfd.FCLASS_Q, FORMAT -> FpuFormat.QUAD)
+    }
+    if(Riscv.RVZfh.get) {
+      add(Rvfd.FCLASS_H, FORMAT -> FpuFormat.HALF)
+    }
 
     uopLock.release()
 

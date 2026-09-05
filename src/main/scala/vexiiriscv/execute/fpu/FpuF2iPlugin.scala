@@ -49,8 +49,10 @@ class FpuF2iPlugin(val layer : LaneLayer,
       }
     }
 
+    val f128 = FORMAT -> FpuFormat.QUAD
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     f2i(Rvfd.FCVT_WU_S, 32, f32)
     f2i(Rvfd.FCVT_W_S , 32, f32)
@@ -64,6 +66,22 @@ class FpuF2iPlugin(val layer : LaneLayer,
       if (Riscv.XLEN.get == 64) {
         f2i(Rvfd.FCVT_LU_D,64 , f64)
         f2i(Rvfd.FCVT_L_D ,64 , f64)
+      }
+    }
+    if (Riscv.RVQ) {
+      f2i(Rvfd.FCVT_WU_Q, 32, f128)
+      f2i(Rvfd.FCVT_W_Q , 32, f128)
+      if (Riscv.XLEN.get == 64) {
+        f2i(Rvfd.FCVT_LU_Q,64 , f128)
+        f2i(Rvfd.FCVT_L_Q ,64 , f128)
+      }
+    }
+    if (Riscv.RVZfh) {
+      f2i(Rvfd.FCVT_WU_H, 32, f16)
+      f2i(Rvfd.FCVT_W_H , 32, f16)
+      if (Riscv.XLEN.get == 64) {
+        f2i(Rvfd.FCVT_LU_H,64 , f16)
+        f2i(Rvfd.FCVT_L_H ,64 , f16)
       }
     }
 
