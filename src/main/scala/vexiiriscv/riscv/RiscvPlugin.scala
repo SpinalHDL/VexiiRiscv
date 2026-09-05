@@ -5,6 +5,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.Fetch
+import vexiiriscv.execute.fpu.FpuUtils
 
 /**
  * The aim of this plugin is mostly to serve as a RISC-V CPU parameter trampoline to globally shared constants
@@ -21,6 +22,7 @@ class RiscvPlugin(var xlen : Int,
     if(Riscv.RVF.isEmpty) Riscv.RVF.set(has("f"))
     if(Riscv.RVD.isEmpty) Riscv.RVD.set(has("d"))
     if(Riscv.RVE.isEmpty) Riscv.RVE.set(has("e"))
+    if(Riscv.RVQ.isEmpty) Riscv.RVQ.set(has("q"))
     if(Riscv.RVH.isEmpty) Riscv.RVH.set(has("h"))
     if(Riscv.RVZaamo.isEmpty) Riscv.RVZaamo.set(has("zaamo"))
     if(Riscv.RVZalrsc.isEmpty) Riscv.RVZalrsc.set(has("zalrsc"))
@@ -30,8 +32,9 @@ class RiscvPlugin(var xlen : Int,
     if(Riscv.RVZbb.isEmpty) Riscv.RVZbb.set(has("zbb"))
     if(Riscv.RVZbc.isEmpty) Riscv.RVZbc.set(has("zbc"))
     if(Riscv.RVZbs.isEmpty) Riscv.RVZbs.set(has("zbs"))
+    if(Riscv.RVZfh.isEmpty) Riscv.RVZfh.set(has("zfh"))
     Riscv.XLEN.set(xlen)
-    Riscv.FLEN.set(List(Riscv.RVF.get.toInt*32, Riscv.RVD.get.toInt*64).max)
+    Riscv.FLEN.set(FpuUtils.rsFloatWidth)
     Riscv.LSLEN.set(List(Riscv.XLEN.get, Riscv.FLEN.get).max)
     Global.HART_COUNT.set(hartCount)
     Fetch.SLICE_WIDTH.set(if(Riscv.RVC) 16 else 32)

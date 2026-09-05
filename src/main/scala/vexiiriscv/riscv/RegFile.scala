@@ -96,7 +96,7 @@ object IntRegFile extends RegfileSpec with AreaObject {
 
 object FloatRegFile extends RegfileSpec with AreaObject {
   override def sizeArch = 32
-  override def width = if(Riscv.RVD) 64 else 32
+  override def width = Riscv.FLEN
   override def x0AlwaysZero = false
   override def getName() = "float"
   override def initialValue: BigInt = 0 //Was if(Riscv.RVD) 0x7FF8000000000000l else 0x7fc00000l, but that is a paine in the ass to sync with spike

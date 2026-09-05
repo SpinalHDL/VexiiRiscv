@@ -154,7 +154,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val fire = Bool()
       val hartId = Global.HART_ID()
       val uopId = Decode.UOP_ID()
-      val size = UInt(2 bits)
+      val size = UInt(Riscv.LSU_SIZE_WIDTH bits)
       val address = Global.PHYSICAL_ADDRESS()
       val data = Bits(Riscv.LSLEN bits)
 
@@ -193,7 +193,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val hartId = Global.HART_ID()
       val uopId = Decode.UOP_ID()
       val storeId = Decode.STORE_ID()
-      val size = UInt(2 bits)
+      val size = UInt(Riscv.LSU_SIZE_WIDTH bits)
       val address = Global.PHYSICAL_ADDRESS()
       val data = Bits(Riscv.LSLEN bits)
       val amo = Bool()

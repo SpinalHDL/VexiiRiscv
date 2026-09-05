@@ -51,7 +51,7 @@ class LsuTriggerBus(triggers : Int) extends Bundle {
   val hartId = Global.HART_ID()
   val load, store = Bool()
   val virtual = Global.MIXED_ADDRESS()
-  val size = UInt(2 bits)
+  val size = UInt(Riscv.LSU_SIZE_WIDTH bits)
   val hits = Bits(triggers bits)
 }
 
@@ -181,6 +181,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     if (RVC) addMisa('C')
     if (RVF) addMisa('F')
     if (RVD) addMisa('D')
+    if (RVQ) addMisa('Q')
     if (RVA) addMisa('A')
     if (RVM) addMisa('M')
     if (RVB) addMisa('B')
@@ -513,10 +514,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
                 0 -> True,
                 1 -> (lsuTrigger.size === 0),
                 2 -> (lsuTrigger.size === 1),
-                3 -> (lsuTrigger.size === 2)
+                3 -> (lsuTrigger.size === 2),
               )
               if(XLEN.get >= 64) {
                 sizeSpec += 5 -> (lsuTrigger.size === 3)
+                if (Riscv.LSU_SIZE_WIDTH > 2) sizeSpec += 9 -> (lsuTrigger.size === 4)
                 sizeSpec += (default -> False)
               }
 

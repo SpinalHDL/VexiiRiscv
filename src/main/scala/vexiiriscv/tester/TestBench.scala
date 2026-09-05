@@ -710,7 +710,7 @@ class TestOptions {
         arDriver.setFactor(dbusReadyFactor)
         rDriver.setFactor(dbusReadyFactor)
         val addresses = Array.fill(64)(0l)
-        var bytes = Array.fill(64)(Array.fill(8)(0.toByte))
+        var bytes = Array.fill(64)(Array.fill(axi.config.dataWidth / 8)(0.toByte))
         override def readByte(address: BigInt, id : Int) : Byte = {
           val offset = (address-addresses(id)).toInt
           if(offset < 0) return simRandom.nextInt().toByte
