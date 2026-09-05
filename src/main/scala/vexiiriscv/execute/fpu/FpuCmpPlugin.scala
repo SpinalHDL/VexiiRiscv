@@ -66,8 +66,10 @@ class FpuCmpPlugin(val layer : LaneLayer,
       }
     }
 
+    val f128 = FORMAT -> FpuFormat.QUAD
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     add(Rvfd.FSGNJ_S , f32, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> False)
     add(Rvfd.FSGNJN_S, f32, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> True , SGNJ_RS1 -> False)
@@ -87,6 +89,28 @@ class FpuCmpPlugin(val layer : LaneLayer,
       add(Rvfd.FLE_D   , f64, EQUAL -> True , LESS -> True )
       add(Rvfd.FEQ_D   , f64, EQUAL -> True , LESS -> False)
       add(Rvfd.FLT_D   , f64, EQUAL -> False, LESS -> True )
+    }
+
+    if (Riscv.RVQ) {
+      add(Rvfd.FSGNJ_Q , f128, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> False)
+      add(Rvfd.FSGNJN_Q, f128, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> True , SGNJ_RS1 -> False)
+      add(Rvfd.FSGNJX_Q, f128, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> True)
+      add(Rvfd.FMIN_Q  , f128, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> True)
+      add(Rvfd.FMAX_Q  , f128, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> False)
+      add(Rvfd.FLE_Q   , f128, EQUAL -> True , LESS -> True )
+      add(Rvfd.FEQ_Q   , f128, EQUAL -> True , LESS -> False)
+      add(Rvfd.FLT_Q   , f128, EQUAL -> False, LESS -> True )
+    }
+
+    if (Riscv.RVZfh) {
+      add(Rvfd.FSGNJ_H , f16, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> False)
+      add(Rvfd.FSGNJN_H, f16, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> True , SGNJ_RS1 -> False)
+      add(Rvfd.FSGNJX_H, f16, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> True)
+      add(Rvfd.FMIN_H  , f16, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> True)
+      add(Rvfd.FMAX_H  , f16, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> False)
+      add(Rvfd.FLE_H   , f16, EQUAL -> True , LESS -> True )
+      add(Rvfd.FEQ_H   , f16, EQUAL -> True , LESS -> False)
+      add(Rvfd.FLT_H   , f16, EQUAL -> False, LESS -> True )
     }
 
     uopLock.release()
@@ -148,24 +172,39 @@ class FpuCmpPlugin(val layer : LaneLayer,
             wb(0, 23 bits).clearAll()
             wb(22) := True
             wb(31) := False
+            if (Riscv.FLEN.get > 32) wb((Riscv.FLEN.get - 1) downto 32).setAll()
           }
           case FpuFormat.DOUBLE => {
             wb(52, 11 bits).setAll()
             wb(0, 52 bits).clearAll()
             wb(51) := True
             wb(63) := False
+            if (Riscv.FLEN.get > 64) wb((Riscv.FLEN.get - 1) downto 64).setAll()
           }
-        }
-        if (p.rvd) when(FORMAT === FpuFormat.FLOAT) {
-          wb(63 downto 32).setAll()
+          case FpuFormat.QUAD => {
+            wb(112, 15 bits).setAll()
+            wb(0, 112 bits).clearAll()
+            wb(111) := True
+            wb(127) := False
+            if (Riscv.FLEN.get > 128) wb((Riscv.FLEN.get - 1) downto 128).setAll()
+          }
+          case FpuFormat.HALF => {
+            wb(10, 5 bits).setAll()
+            wb(0, 10 bits).clearAll()
+            wb(9) := True
+            wb(15) := False
+            if (Riscv.FLEN.get > 16) wb((Riscv.FLEN.get - 1) downto 16).setAll()
+          }
         }
       }
       when(FLOAT_OP === FpuCmpFloatOp.SGNJ){
         p.whenFormat(FORMAT) {
           case FpuFormat.DOUBLE => wb(63) := onCmp.SGNJ_RESULT
           case FpuFormat.FLOAT  => wb(31) := onCmp.SGNJ_RESULT
+          case FpuFormat.QUAD   => wb(127) := onCmp.SGNJ_RESULT
+          case FpuFormat.HALF   => wb(15) := onCmp.SGNJ_RESULT
         }
-        if(Riscv.RVD) when(fup.getBadBoxing(RS1)){
+        when(fup.getBadBoxing(RS1)) {
           doNan := True
         }
       }

@@ -48,16 +48,40 @@ class FpuXxPlugin(val layer : LaneLayer,
       packPort.uopsAt += spec -> packAt
     }
 
-    assert(Riscv.RVD.get)
-    add(Rvfd.FCVT_D_S, FORMAT -> FpuFormat.FLOAT)
-    add(Rvfd.FCVT_S_D, FORMAT -> FpuFormat.DOUBLE)
+    if (p.rvd) {
+      add(Rvfd.FCVT_D_S, FORMAT -> FpuFormat.FLOAT)
+      add(Rvfd.FCVT_S_D, FORMAT -> FpuFormat.DOUBLE)
+    }
+    if (p.rvzfh) {
+      add(Rvfd.FCVT_H_S, FORMAT -> FpuFormat.FLOAT)
+      add(Rvfd.FCVT_S_H, FORMAT -> FpuFormat.HALF)
+    }
+    if (p.rvq) {
+      add(Rvfd.FCVT_Q_S, FORMAT -> FpuFormat.FLOAT)
+      add(Rvfd.FCVT_S_Q, FORMAT -> FpuFormat.QUAD)
+    }
+    if (p.rvd && p.rvzfh) {
+      add(Rvfd.FCVT_H_D, FORMAT -> FpuFormat.DOUBLE)
+      add(Rvfd.FCVT_D_H, FORMAT -> FpuFormat.HALF)
+    }
+    if (p.rvd && p.rvq) {
+      add(Rvfd.FCVT_Q_D, FORMAT -> FpuFormat.DOUBLE)
+      add(Rvfd.FCVT_D_Q, FORMAT -> FpuFormat.QUAD)
+    }
+    if (p.rvzfh && p.rvq) {
+      add(Rvfd.FCVT_Q_H, FORMAT -> FpuFormat.HALF)
+      add(Rvfd.FCVT_H_Q, FORMAT -> FpuFormat.QUAD)
+    }
     uopLock.release()
 
     val RS1_FP = fup(RS1)
 
     val onPack = new layer.Execute(packAt) {
+      val packFormat = FpuFormat()
+      packFormat.assignFromBits(Decode.UOP(25, 2 bits))
+
       packPort.cmd.at(0) := isValid && SEL
-      packPort.cmd.format :=  (FORMAT === FpuFormat.FLOAT).mux(FpuFormat.DOUBLE, FpuFormat.FLOAT)
+      packPort.cmd.format := packFormat
       packPort.cmd.roundMode := FpuUtils.ROUNDING
       packPort.cmd.hartId := Global.HART_ID
       packPort.cmd.uopId := Decode.UOP_ID

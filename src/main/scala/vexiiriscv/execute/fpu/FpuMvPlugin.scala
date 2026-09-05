@@ -52,6 +52,7 @@ class FpuMvPlugin(val layer : LaneLayer,
 
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     add(Rvfd.FMV_W_X, f32, SEL_FLOAT -> True)
     add(Rvfd.FMV_X_W, f32, SEL_INT   -> True)
@@ -61,6 +62,11 @@ class FpuMvPlugin(val layer : LaneLayer,
         add(Rvfd.FMV_D_X, f64, SEL_FLOAT -> True)
         add(Rvfd.FMV_X_D, f64, SEL_INT -> True)
       }
+    }
+    if (Riscv.RVZfh) {
+      add(Rvfd.FMV_H_X, f16, SEL_FLOAT -> True)
+      add(Rvfd.FMV_X_H, f16, SEL_INT -> True)
+      iwbp.signExtend(iwb, layer(Rvfd.FMV_X_H), 16)
     }
 
     uopLock.release()
@@ -76,17 +82,14 @@ class FpuMvPlugin(val layer : LaneLayer,
       // For simplicity, let allow override this when XLEN = FLEN
       value.allowOverride()
 
-      Riscv.XLEN.get match {
-        case 32 => {
-          value(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
-        }
-        case 64 => {
-          value(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
-          if (Riscv.RVD) when (FORMAT === FpuFormat.DOUBLE) {
-            value(63 downto 32) := up(layer.lane(IntRegFile, RS1))(63 downto 32)
-          }
-        }
+      val rs1 = up(layer.lane(IntRegFile, RS1))
+
+      p.whenFormat(FORMAT) {
+        case FpuFormat.FLOAT => value(31 downto 0) := rs1(31 downto 0)
+        case FpuFormat.DOUBLE if Riscv.XLEN.get == 64 => value(63 downto 0) := rs1(63 downto 0)
+        case FpuFormat.HALF => value(15 downto 0) := rs1(15 downto 0)
       }
+
       fwb.payload := value
     }
 

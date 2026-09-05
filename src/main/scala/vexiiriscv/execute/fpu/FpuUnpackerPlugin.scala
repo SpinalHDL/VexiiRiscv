@@ -82,8 +82,10 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
       rsUnsignedPlugin.addUop(spec, signed)
     }
 
+    val f128 = FORMAT -> FpuFormat.QUAD
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     i2f(Rvfd.FCVT_S_WU, 32, false, f32)
     i2f(Rvfd.FCVT_S_W , 32, true , f32)
@@ -97,6 +99,22 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
       if (Riscv.XLEN.get == 64) {
         i2f(Rvfd.FCVT_D_LU, 64, false, f64)
         i2f(Rvfd.FCVT_D_L , 64, true , f64)
+      }
+    }
+    if (Riscv.RVQ) {
+      i2f(Rvfd.FCVT_Q_WU, 32, false, f128)
+      i2f(Rvfd.FCVT_Q_W , 32, true , f128)
+      if (Riscv.XLEN.get == 64) {
+        i2f(Rvfd.FCVT_Q_LU, 64, false, f128)
+        i2f(Rvfd.FCVT_Q_L , 64, true , f128)
+      }
+    }
+    if (Riscv.RVZfh) {
+      i2f(Rvfd.FCVT_H_WU, 32, false, f16)
+      i2f(Rvfd.FCVT_H_W , 32, true , f16)
+      if (Riscv.XLEN.get == 64) {
+        i2f(Rvfd.FCVT_H_LU, 64, false, f16)
+        i2f(Rvfd.FCVT_H_L , 64, true , f16)
       }
     }
 
@@ -196,28 +214,58 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
           val exponent = input(52, 11 bits).asUInt
           val sign = input(63)
         }
+        val f128 = p.rvq generate new Area {
+          val mantissa = input(0, 112 bits).asUInt
+          val exponent = input(112, 15 bits).asUInt
+          val sign = input(127)
+        }
+        val f16 = p.rvzfh generate new Area {
+          val mantissa = input(0, 10 bits).asUInt
+          val exponent = input(10, 5 bits).asUInt
+          val sign = input(15)
+        }
 
         RS_PRE_NORM.sign := f32.sign
         RS_PRE_NORM.quiet := f32.mantissa.msb
-        RS_PRE_NORM.mantissa.raw := B(f32.mantissa << (if (p.rvd) 29 else 0))
-        RS_PRE_NORM.exponent := f32.exponent.resize(p.exponentWidth) - p.exponentF32One
+        RS_PRE_NORM.mantissa.raw := f32.mantissa.asBits << (p.mantissaWidth - FpuConst.f32.manWidth)
+        RS_PRE_NORM.exponent := f32.exponent.resize(p.exponentWidth) - FpuConst.f32.expOne
 
         val manZero = f32.mantissa === 0
         val expZero = f32.exponent === 0
         val expOne = f32.exponent.andR
         val IS_SUBNORMAL = insert(expZero && !manZero)
-        val recodedExpSub = S(-p.exponentF32One + 1, p.exponentWidth + 1 bits)
+        val recodedExpSub = S(-FpuConst.f32.expOne + 1, p.exponentWidth + 1 bits)
 
         p.whenFormat(FORMAT) {
           case FpuFormat.DOUBLE => {
             RS_PRE_NORM.sign := f64.sign
-            RS_PRE_NORM.mantissa.raw := B(f64.mantissa)
+            RS_PRE_NORM.mantissa.raw := f64.mantissa.asBits << (p.mantissaWidth - FpuConst.f64.manWidth)
             RS_PRE_NORM.quiet := f64.mantissa.msb
-            RS_PRE_NORM.exponent := f64.exponent.resize(p.exponentWidth) - p.exponentF64One
+            RS_PRE_NORM.exponent := f64.exponent.resize(p.exponentWidth) - FpuConst.f64.expOne
             manZero := f64.mantissa === 0
             expZero := f64.exponent === 0
             expOne := f64.exponent.andR
-            recodedExpSub := -p.exponentF64One + 1
+            recodedExpSub := -FpuConst.f64.expOne + 1
+          }
+          case FpuFormat.QUAD => {
+            RS_PRE_NORM.sign := f128.sign
+            RS_PRE_NORM.mantissa.raw := f128.mantissa.asBits << (p.mantissaWidth - FpuConst.f128.manWidth)
+            RS_PRE_NORM.quiet := f128.mantissa.msb
+            RS_PRE_NORM.exponent := f128.exponent.resize(p.exponentWidth) - FpuConst.f128.expOne
+            manZero := f128.mantissa === 0
+            expZero := f128.exponent === 0
+            expOne := f128.exponent.andR
+            recodedExpSub := -FpuConst.f128.expOne + 1
+          }
+          case FpuFormat.HALF => {
+            RS_PRE_NORM.sign := f16.sign
+            RS_PRE_NORM.mantissa.raw := f16.mantissa.asBits << (p.mantissaWidth - FpuConst.f16.manWidth)
+            RS_PRE_NORM.quiet := f16.mantissa.msb
+            RS_PRE_NORM.exponent := f16.exponent.resize(p.exponentWidth) - FpuConst.f16.expOne
+            manZero := f16.mantissa === 0
+            expZero := f16.exponent === 0
+            expOne := f16.exponent.andR
+            recodedExpSub := -FpuConst.f16.expOne + 1
           }
         }
         RS_PRE_NORM.mode := (expOne ## expZero).mux(
@@ -254,8 +302,21 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
           layer.lane.freezeWhen(freezeIt)
         }
 
-        val badBoxing = p.rvd generate new Area {
-          val HIT = insert(p.FORMAT === FpuFormat.FLOAT && !input(63 downto 32).andR)
+        val badBoxing = new Area {
+          val hit = False
+          if (Riscv.FLEN.get > 32) when (p.FORMAT === FpuFormat.FLOAT) {
+            hit := !input((Riscv.FLEN - 1) downto 32).andR
+          }
+          if (Riscv.FLEN.get > 64) when (p.FORMAT === FpuFormat.DOUBLE) {
+            hit := !input((Riscv.FLEN - 1) downto 64).andR
+          }
+          if (Riscv.FLEN.get > 128) when (p.FORMAT === FpuFormat.QUAD) {
+            hit := !input((Riscv.FLEN - 1) downto 128).andR
+          }
+          if (Riscv.FLEN.get > 16) when (p.FORMAT === FpuFormat.HALF) {
+            hit := !input((Riscv.FLEN - 1) downto 16).andR
+          }
+          val HIT = insert(hit)
           when(HIT) { // This kinda create a long combinatorial path
             RS.setNanQuiet
             RS.sign := False
@@ -297,7 +358,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
 
       packPort.cmd.value.quiet := False
       packPort.cmd.value.sign := RsUnsignedPlugin.RS1_REVERT
-      packPort.cmd.value.exponent := unpacker.ohInputWidth - fsmResult.shift
+      packPort.cmd.value.exponent := (unpacker.ohInputWidth - fsmResult.shift).resize(widthOf(packPort.cmd.value.exponent.raw))
       if (widthOf(fsmResult.data) > widthOf(packPort.cmd.value.mantissa.raw)) {
         packPort.cmd.value.mantissa.raw := fsmResult.data.takeHigh(p.mantissaWidth + 1) ## fsmResult.data.dropHigh(p.mantissaWidth + 1).orR
       } else {
