@@ -359,7 +359,7 @@ class ParamSimple() {
 
   def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt) + extension.withRvh.toInt
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
-  def lsuMemDataWidth = xlen max lsuMemDataWidthMin max extension.withRvd.mux(64, 0)
+  def lsuMemDataWidth = xlen max lsuMemDataWidthMin max extension.withRvd.mux(64, 0) max extension.withRvq.mux(128, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
 
   //  Debug modifiers
@@ -1077,7 +1077,7 @@ class ParamSimple() {
       plugins += new LsuL1Plugin(
         lane           = lane0,
         memDataWidth   = lsuMemDataWidth,
-        cpuDataWidth   = xlen max extension.withRvd.mux(64, 0),
+        cpuDataWidth   = xlen max extension.withRvd.mux(64, 0) max extension.withRvq.mux(128, 0),
         refillCount    = lsuL1RefillCount,
         writebackCount = lsuL1WritebackCount,
         setCount       = lsuL1Sets,
@@ -1245,7 +1245,7 @@ class ParamSimple() {
       plugins += new execute.fpu.FpuCmpPlugin(early0)
       plugins += new execute.fpu.FpuF2iPlugin(early0)
       plugins += new execute.fpu.FpuMvPlugin(early0, floatWbAt = 2)
-      if(extension.withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
+      if(extension.withRvd || extension.withRvq || extension.withZfh) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0, ignoreSubnormal = fpuIgnoreSubnormal, wbAt = fpuWbAt)
     }

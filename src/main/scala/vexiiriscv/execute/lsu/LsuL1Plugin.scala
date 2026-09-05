@@ -27,7 +27,7 @@ object LsuL1 extends AreaObject {
   val PHYSICAL_ADDRESS = Payload(Global.PHYSICAL_ADDRESS)
   val WRITE_DATA = Payload(Bits(Riscv.LSLEN bits))
   val MASK = Payload(Bits(Riscv.LSLEN / 8 bits)) // Also needed for loads
-  val SIZE = Payload(UInt(log2Up(log2Up(Riscv.LSLEN / 8+1)) bits)) // Also needed for loads
+  val SIZE = Payload(UInt(Riscv.LSU_SIZE_WIDTH bits)) // Also needed for loads
 
   // L1 -> LSU
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
@@ -1063,7 +1063,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
 
     // Implements the pipeline which handle memory probe request coming from the SoC (L2)
     val c = withCoherency generate new Area{
-      // freezeTimeout is there to ensure that we keep the memory coherency alive, 
+      // freezeTimeout is there to ensure that we keep the memory coherency alive,
       // even if the execute pipeline is frozen for extended time. This can avoid dead locks
       val freezeTimeout = Timeout(80)
       freezeTimeout.clearWhen(!lane.isFreezed)

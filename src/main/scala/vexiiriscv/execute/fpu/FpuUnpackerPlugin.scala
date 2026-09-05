@@ -108,7 +108,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
     val withRsUnpack = !ignoreSubnormal
 
     val unpacker = new StagePipeline { //TODO this kinda bloated now that all unpack are unified
-      val ohInputWidth = p.rsIntWidth max Riscv.fpuMantissaWidth
+      val ohInputWidth = p.rsIntWidth max p.mantissaWidth
 
       case class Request() extends Bundle {
         val data = Bits(ohInputWidth bits)
@@ -177,12 +177,12 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
         val RS_PRE_NORM = Payload(FloatUnpacked(
           exponentMax = (1 << p.exponentWidth - 1) - 1,
           exponentMin = -(1 << p.exponentWidth - 1) + 1,
-          mantissaWidth = Riscv.fpuMantissaWidth
+          mantissaWidth = p.mantissaWidth
         ))
         val RS = Payload(FloatUnpacked(
           exponentMax = (1 << p.exponentWidth - 1) - 1,
-          exponentMin = -(1 << p.exponentWidth - 1) + 1 - Riscv.fpuMantissaWidth,
-          mantissaWidth = Riscv.fpuMantissaWidth
+          exponentMin = -(1 << p.exponentWidth - 1) + 1 - p.mantissaWidth,
+          mantissaWidth = p.mantissaWidth
         ))
 
 
