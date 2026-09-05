@@ -6,6 +6,7 @@
 *.log
 *.bak
 .*.swp
+*.zip
 
 # sbt specific
 .cache/
