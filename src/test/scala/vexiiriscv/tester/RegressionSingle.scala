@@ -8,7 +8,7 @@ import spinal.lib.misc.test.{AsyncJob, MultithreadedFunSuite}
 import vexiiriscv.execute.lsu.LsuL1Plugin
 import vexiiriscv.memory.{MmuPlugin, PmpPlugin}
 import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
-import vexiiriscv.riscv.Riscv
+import vexiiriscv.riscv.{Riscv, RiscvPlugin}
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 
 import java.io.{BufferedWriter, File, FileWriter}
@@ -62,6 +62,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val dut = compiled.dut
   val xlen = dut.database(Riscv.XLEN)
   val priv = dut.host.get[PrivilegedPlugin]
+  val riscv = dut.host.get[RiscvPlugin]
   val mmu = dut.host.get[MmuPlugin]
   val pmp = dut.host.get[PmpPlugin]
 
@@ -78,6 +79,14 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   val rvzbc = dut.database(Riscv.RVZbc)
   val rvzbs = dut.database(Riscv.RVZbs)
   val rvzcbm = dut.database(Riscv.RVZcbm)
+  val rvzbkb = riscv.get.has("zbkb")
+  val rvzbkc = riscv.get.has("zbkc")
+  val rvzbkx = riscv.get.has("zbkx")
+  val rvzkne = riscv.get.has("zkne")
+  val rvzknd = riscv.get.has("zknd")
+  val rvzknh = riscv.get.has("zknh")
+  val rvzksed = riscv.get.has("zksed")
+  val rvzksh = riscv.get.has("zksh")
 
   var arch = ""
   var archLinux = ""
@@ -309,6 +318,14 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
     if (rvzbb) doArchTest("B", Seq("and", "clz", "cpop", "ctz", "max", "min", "or", "rev", "rol", "ror", "sext", "xnor", "zext"))
     if (rvzbc) doArchTest("B", Seq("mul"))
     if (rvzbs) doArchTest("B", Seq("bclr", "bext", "binv", "bset"))
+    if (rvzbkb) doArchTest("Zbkb")
+    if (rvzbkc) doArchTest("Zbkc")
+    if (rvzbkx) doArchTest("Zbkx")
+    if (rvzkne) doArchTest("Zkne")
+    if (rvzknd) doArchTest("Zknd")
+    if (rvzknh) doArchTest("Zknh")
+    if (rvzksed) doArchTest("Zksed")
+    if (rvzksh) doArchTest("Zksh")
   }
 
   val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")

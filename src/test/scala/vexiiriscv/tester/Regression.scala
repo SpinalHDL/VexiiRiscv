@@ -65,6 +65,7 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("rva", List("", "--with-isa m,a"))
   addDim("rvc", List("", "--with-isa m,c"))
   addDim("rvzb", List("", "--with-isa b"))
+  addDim("rvzk", List("", "--with-isa zbkb,zbkx,zknd,zkne,zknh,zksed,zksh"))
   addDim("late-alu", List("", "--with-late-alu"))
   addDims("fetch")(
     Dim("", List("--fetch-fork-at 0", "--fetch-fork-at 1")),
