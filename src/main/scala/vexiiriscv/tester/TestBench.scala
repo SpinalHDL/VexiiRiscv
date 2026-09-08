@@ -3,15 +3,18 @@ package vexiiriscv.tester
 import rvls.spinal.{FileBackend, RvlsBackend}
 import spinal.core._
 import spinal.core.sim._
+import spinal.core.fiber.Fiber
+import spinal.lib.Stream
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly}
 import spinal.lib.bus.amba4.axi.sim.{Axi4ReadOnlyMonitor, Axi4ReadOnlySlaveAgent, Axi4WriteOnlyMonitor, Axi4WriteOnlySlaveAgent}
 import spinal.lib.{CheckSocketPort, DoCmd}
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
-import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
+import spinal.lib.bus.tilelink.{Arbiter, M2sTransfers, NodeParameters, S2mAgent, S2mParameters, S2mSupport, S2mTransfers, SizeRange}
 import spinal.lib.bus.tilelink.sim.{Checker, MemoryAgent, TransactionA}
 import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.com.jtag.sim.{JtagRemote, JtagTcp}
 import spinal.lib.misc.Elf
+import spinal.lib.misc.aia.ImsicFileInfo
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.test.DualSimTracer
 import spinal.lib.sim.{FlowDriver, SparseMemory, StreamDriver, StreamMonitor, StreamReadyRandomizer}
@@ -21,18 +24,63 @@ import vexiiriscv._
 import vexiiriscv.execute.cfu.{CfuPlugin, CfuRsp}
 import vexiiriscv.execute.lsu.{LsuCachelessAxi4Plugin, LsuCachelessPlugin, LsuCachelessWishbonePlugin, LsuL1, LsuL1Axi4Plugin, LsuL1Plugin, LsuL1TlPlugin, LsuL1WishbonePlugin, LsuPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchL1Plugin, PcService}
-import vexiiriscv.misc.{EmbeddedRiscvJtag, PrivilegedPlugin}
-import vexiiriscv.riscv.Riscv
+import vexiiriscv.misc.{EmbeddedRiscvJtag, ImsicPlugin, PrivilegedPlugin}
+import vexiiriscv.regfile.RegFilePlugin
+import vexiiriscv.riscv.{IntRegFile, Riscv}
 import vexiiriscv.test.konata.Backend
 import vexiiriscv.test.{ImsicPeripheralEmulator, IoDeviceManager, PeripheralEmulator, VexiiRiscvProbe}
 
 import java.io.{File, IOException, PrintWriter}
 import java.net.{ServerSocket, Socket}
 import java.nio.ByteBuffer
-import java.util.Scanner
+import java.util.{Locale, Scanner}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-import vexiiriscv.misc.PrivilegedParam.base
+
+class TestBenchDut(plugins : scala.collection.Seq[scala.collection.Seq[Hostable]]) extends Component {
+  val cores = plugins.map(VexiiRiscv(_))
+
+  val signal = Fiber patch {
+    cores.foreach(_.getAllIo.foreach(_.simPublic()))
+  }
+
+  val lsuL1TlBus = Fiber patch {
+    val buses = cores.flatMap(_.host.get[LsuL1TlPlugin].map(_.bus.get))
+    buses.size match {
+      case 0 => None
+      case 1 => Some(buses.head)
+      case _ =>
+        val ref = buses.head.p
+
+        val m2s = Arbiter.downMastersFrom(buses.map(_.p.node.m))
+        val s2m = m2s.withBCE match {
+          case true => S2mParameters(
+            List(
+              S2mAgent(
+                name = null,
+                sinkId = SizeMapping(0, BigInt(1) << ref.sinkWidth),
+                emits = S2mTransfers(
+                  probe = m2s.emits.acquireB mincover m2s.emits.acquireT
+                ),
+              ),
+            )
+          )
+          case false => S2mParameters.none()
+        }
+
+        val upNodes = buses.map { bus =>
+          val support = S2mSupport(S2mTransfers(probe = bus.p.node.m.emits.acquireB mincover bus.p.node.m.emits.acquireT))
+
+          NodeParameters(bus.p.node.m, Arbiter.upSlaveFrom(s2m, support))
+        }
+        val arbiter = Arbiter(upNodes, NodeParameters(m2s, s2m))
+
+        arbiter.io.ups.zip(buses).foreach { case (up, bus) => up << bus }
+        arbiter.io.down.simPublic()
+        Some(arbiter.io.down)
+    }
+  }
+}
 
 /**
  * This is the main VexiiRiscv testbench, you can invoke it from command line and is based on the TestOptions class
@@ -40,8 +88,8 @@ import vexiiriscv.misc.PrivilegedParam.base
 object TestBench extends App {
   doIt()
 
-  def paramToPlugins(param : ParamSimple): ArrayBuffer[Hostable] = {
-    val ret = param.plugins()
+  def paramToPlugins(param : ParamSimple, hartId : Int = 0, systemHartCount : Int = 0): ArrayBuffer[Hostable] = {
+    val ret = param.plugins(hartId)
     if(param.lsuL1Bus == LsuL1BusEnum.native) ret.collectFirst{case p : LsuL1Plugin => p}.foreach{ p =>
       p.ackIdWidth = 8
       p.probeIdWidth = log2Up(p.writebackCount)
@@ -86,8 +134,9 @@ object TestBench extends App {
       override def isExecutable: Boolean = false
     }
     if (param.privParam.withImsic) {
-      regions += imsicRegion(SizeMapping(0x24000000L, param.hartCount * 0x1000L))
-      if (param.privParam.withSupervisor) regions += imsicRegion(SizeMapping(0x28000000L, param.hartCount * 0x40000L))
+      val hartCount = systemHartCount max param.hartCount
+      regions += imsicRegion(SizeMapping(0x24000000L, hartCount * 0x1000L))
+      if (param.privParam.withSupervisor) regions += imsicRegion(SizeMapping(0x28000000L, hartCount * 0x40000L))
     }
     ret.foreach{
       case p: FetchCachelessPlugin => p.regions.load(regions)
@@ -102,8 +151,19 @@ object TestBench extends App {
     ret
   }
 
+  def makeDut(param : ParamSimple, cpuCount : Int): TestBenchDut = {
+    require(cpuCount >= 1, "cpuCount must be at least 1")
+    if (cpuCount > 1) {
+      require(param.fetchBus == FetchBusEnum.native, "Only native fetch bus supported multicore TestBench")
+      require(param.lsuBus == LsuBusEnum.native, "Only native LSU bus supported multicore TestBench")
+      if (param.lsuL1Enable) require(param.lsuL1Bus == LsuL1BusEnum.native, "Only native LSU L1 bus supported multicore TestBench")
+    }
+    new TestBenchDut((0 until cpuCount).map(hartId => paramToPlugins(param, hartId * param.hartCount, cpuCount * param.hartCount)))
+  }
+
   def doIt(param : ParamSimple = new ParamSimple()) {
     val testOpt = new TestOptions()
+    var cpuCount = 1
 
     val genConfig = SpinalConfig()
     val simConfig = SpinalSimConfig()
@@ -113,10 +173,14 @@ object TestBench extends App {
 
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
       help("help").text("prints this usage text")
+      opt[Int]("cpu-count") action { (v, c) => cpuCount = v }
       simConfig.addOptions(this)
       testOpt.addOptions(this)
       param.addOptions(this)
     }.parse(args, ()).nonEmpty)
+
+    // Fix CPU count
+    if(cpuCount > 1 && param.lsuL1Enable) param.lsuL1Coherency = true
 
     if(simConfig._backend == SpinalSimBackendSel.VERILATOR){
       simConfig.withFstWave
@@ -124,7 +188,7 @@ object TestBench extends App {
 
     println(s"With Vexiiriscv parm :\n - ${param.getName()}")
     val compiled = TestBench.synchronized { // To avoid to many calls at the same time
-      simConfig.compile(VexiiRiscv(paramToPlugins(param)))
+      simConfig.compile(makeDut(param, cpuCount))
     }
     testOpt.test(compiled)
     Thread.sleep(10)
@@ -151,12 +215,18 @@ class TestOptions {
   var failAfter, passAfter = Option.empty[Long]
   var startSymbol = Option.empty[String]
   var startSymbolOffset = 0l
+  val hartStartSymbol = mutable.Map[Int, String]()
   val bins = ArrayBuffer[(Long, File)]()
   val u32s = ArrayBuffer[(Long, Int)]()
   val elfs = ArrayBuffer[File]()
   var testName = Option.empty[String]
+  val hartRegisterValues = mutable.LinkedHashMap[(Int, Int), BigInt]()
   var passSymbolName = "pass"
   var failSymbolName = "fail"
+  val hartPassSymbolNames = mutable.Map[Int, String]()
+  val hartFailSymbolNames = mutable.Map[Int, String]()
+  var passPolicy = "all"
+  var failPolicy = "any"
   val fsmTasksGen = mutable.Queue[() => FsmTask]()
   var ibusReadyFactor = 1.01f
   var ibusBaseLatency = 0
@@ -173,6 +243,12 @@ class TestOptions {
   def addElf(f : File) : this.type = { elfs += f; this }
   def setFailAfter(time : Long) : this.type = { failAfter = Some(time); this }
 
+  def addRegisterValueMapping(hartId: Int, values : Map[String, BigInt]) = {
+    values.foreach { case(name, value) =>
+      assert(name.startsWith("x") && name.length > 1)
+      hartRegisterValues((hartId, name.drop(1).toInt)) = value
+    }
+  }
 
   def addOptions(parser : scopt.OptionParser[Unit]): Unit = {
     import parser._
@@ -194,8 +270,14 @@ class TestOptions {
     opt[Seq[String]]("load-u32").unbounded() action { (v, c) => u32s += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Integer.parseInt(v(1).replace("0x", ""), 16) }
     opt[String]("load-elf").unbounded() action { (v, c) => elfs += new File(v) }
     opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
+    opt[Map[Int, String]]("hart-start-symbol").unbounded() action { (v, c) => hartStartSymbol ++= v }
+    opt[(Int, Map[String, BigInt])]("hart-register").unbounded() action { case ((h, v), c) => addRegisterValueMapping(h, v) }
     opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
     opt[String]("fail-symbol") action { (v, c) => failSymbolName = v }
+    opt[Map[Int, String]]("hart-pass-symbol").unbounded() action { (v, c) => hartPassSymbolNames ++= v }
+    opt[Map[Int, String]]("hart-fail-symbol").unbounded() action { (v, c) => hartFailSymbolNames ++= v }
+    opt[String]("pass-policy") action { (v, c) => passPolicy = v }
+    opt[String]("fail-policy") action { (v, c) => failPolicy = v }
     opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
     opt[Double]("ibus-ready-factor").unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
     opt[Double]("dbus-ready-factor").unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
@@ -206,16 +288,18 @@ class TestOptions {
     opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
 
     opt[String]("spawn-process").unbounded() action { (v, c) => spawnProcess = Some(v) }
+    checkConfig { _ => if(passPolicy == "all" && failPolicy == "all") failure("--pass-policy and --fail-policy cannot both be all") else success }
   }
 
-  def test(compiled : SimCompiled[VexiiRiscv]): Unit = {
+  def test(compiled : SimCompiled[TestBenchDut]): Unit = {
     dualSim match {
       case true => DualSimTracer.withCb(compiled, window = 200000 * 10, seed=seed)(test)
       case false => compiled.doSimUntilVoid(name = getTestName(), seed=seed) { dut => disableSimWave(); test(dut, f => f) }
     }
   }
 
-  def test(dut : VexiiRiscv, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
+  def test(duts : TestBenchDut, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
+    val dut = duts.cores.head
     val fsmTasks =  mutable.Queue[FsmTask]()
     for(gen <- fsmTasksGen) fsmTasks += gen()
     val cd = dut.clockDomain.withSyncReset()
@@ -243,45 +327,86 @@ class TestOptions {
       rvls.spinalSimTime(10000)
     }
 
-    val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), "konata.log")))
-    delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registered last
-
     // Collect traces from the CPUs behavior
-    val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
-    if (withRvlsCheck) probe.add(rvls)
-    probe.enabled = withProbe
-    probe.trace = false
+    val probes = duts.cores.zipWithIndex.map { case (dut, i) =>
+      val konataBackend = traceKonata.option(new Backend(new File(currentTestPath(), s"konata$i.log")))
+      delayed(1)(konataBackend.foreach(_.spinalSimFlusher(10 * 10000))) // Delayed to ensure this is registered last
+      val probe = new VexiiRiscvProbe(dut, konataBackend, withRvls)
+      if (withRvlsCheck) probe.add(rvls)
+      probe.enabled = withProbe
+      probe.trace = false
+      val hartId = probe.hartsIds.head
+      val host = dut.host[PrivilegedPlugin]
+
+      cd.onSamplings {
+        host.logic.rdtime #= probe.cycle
+      }
+
+
+      dut.host.get[LsuPlugin].filter(_.withLlcFlush).foreach { p =>
+        val bus = p.logic.llcBus
+        val rspQueue = StreamDriver.queue(bus.rsp, cd)
+
+        StreamReadyRandomizer(bus.cmd, cd)
+        StreamMonitor(bus.cmd, cd) { _ =>
+          rspQueue._2.enqueue { _ => }
+        }
+      }
+
+      val rfInit = hartRegisterValues.collect { case ((`hartId`, id), value) => id -> value }.toSeq
+      if(rfInit.nonEmpty) {
+        val rf = dut.host.find[RegFilePlugin](_.rfSpec == IntRegFile)
+        fork {
+          // TrapPlugin keeps this hart in RESET until the register-file initializer is done.
+          cd.waitSampling()
+          waitUntil(cd.resetSim.toBoolean == false)
+          waitUntil(rf.logic.initalizer.done.toBoolean)
+          rfInit.foreach { case (id, value) =>
+            rf.simSetRegister(id, value)
+            probe.backends.foreach(_.setRegister(hartId, id, value.toLong))
+          }
+        }
+      }
+
+      probe
+    }
 
     // Things to enable when we want to collect traces
     val tracerFile = traceRvlsLog.option(new FileBackend(new File(currentTestPath(), "tracer.log")))
     onTrace {
       if (traceWave) enableSimWave()
       if (withRvlsCheck && traceSpikeLog) rvls.debug()
-      if (traceKonata) probe.trace = true
+      if (traceKonata) probes.foreach(_.trace = true)
 
       tracerFile.foreach{f =>
         f.spinalSimFlusher(10 * 10000)
         f.spinalSimTime(10000)
-        probe.add(f)
+        probes.foreach(_.add(f))
       }
 
-      val r = probe.backends.reverse
-      probe.backends.clear()
-      probe.backends ++= r
+      probes.foreach { probe =>
+        val r = probe.backends.reverse
+        probe.backends.clear()
+        probe.backends ++= r
+      }
     }
+    val probe = probes.head
 
-    val regions = dut.host.services.collectFirst {
-      case p: LsuCachelessPlugin => p.regions.get
-      case p: LsuL1Plugin => p.regions.get
-    }.get
+    duts.cores.zip(probes).foreach { case (dut, dutProbe) =>
+      val regions = dut.host.services.collectFirst {
+        case p: LsuCachelessPlugin => p.regions.get
+        case p: LsuL1Plugin => p.regions.get
+      }.get
+      val hartId = dutProbe.hartsIds.head
 
-    for(region <- regions){
-      probe.backends.foreach { b =>
-        val mapping = region.mapping match {
-          case sm : SizeMapping => sm
-        }
-        if(mapping.base != 0x1000) {
-          b.addRegion(0, region.isMain.mux(0, 1), mapping.base.toLong, mapping.size.toLong)
+      for(region <- regions){
+        dutProbe.backends.foreach { b =>
+          val mapping = region.mapping match {
+            case sm : SizeMapping => sm
+          }
+          if(mapping.base != 0x1000) {
+            b.addRegion(hartId, region.isMain.mux(0, 1), mapping.base.toLong, mapping.size.toLong)
+          }
         }
       }
     }
@@ -303,44 +428,94 @@ class TestOptions {
     }
 
     // load elfs
+    val loadedElfs = ArrayBuffer[Elf]()
     for (file <- elfs) {
       val elf = new Elf(file, xlen)
+      loadedElfs += elf
       elf.load(mem, 0)
       if (withRvlsCheck) rvls.loadElf(0, elf.f)
       tracerFile.foreach(_.loadElf(0, elf.f))
 
-      startSymbol.foreach(symbol => fork{
-        val pc = elf.getSymbolAddress(symbol) + startSymbolOffset
+      duts.cores.zip(probes).foreach { case (dut, dutProbe) =>
+        val hartId = dutProbe.hartsIds.head
+        hartStartSymbol.get(hartId).orElse(startSymbol).foreach { symbol => fork {
+          val pc = elf.getSymbolAddress(symbol) + startSymbolOffset
 
-        waitUntil(cd.resetSim.toBoolean == false); sleep(1)
-        println(f"set harts pc to 0x$pc%x")
-        dut.host[PcService].simSetPc(pc)
-        for(hartId <- probe.hartsIds) probe.backends.foreach(_.setPc(hartId, pc))
-      })
+          waitUntil(cd.resetSim.toBoolean == false); sleep(1)
+          println(f"set hart $hartId pc to 0x$pc%x")
+          dut.host[PcService].simSetPc(pc)
+          dutProbe.backends.foreach(_.setPc(hartId, pc))
+        }}
+      }
 
-      val withPass = elf.getELFSymbol(passSymbolName) != null
-      val withFail = elf.getELFSymbol(failSymbolName) != null
-      if (withPass || withFail) {
-        def trunkPc(pc : Long) = (xlen == 32).mux(pc & 0xFFFFFFFFl, pc)
-        val passSymbol = if(withPass) trunkPc(elf.getSymbolAddress(passSymbolName)) else -1
-        val failSymbol = if(withFail) trunkPc(elf.getSymbolAddress(failSymbolName)) else -1
-        probe.commitsCallbacks += { (hartId, pc) =>
-          if (pc == passSymbol) delayed(1)(simSuccess())
-          if (pc == failSymbol) delayed(1)(simFailure("Software reached the fail symbol :("))
+    }
+
+    if(loadedElfs.nonEmpty) {
+      val hartIds = probes.flatMap(_.hartsIds).distinct.sorted
+      def formatSymbol(pattern : String, hartId : Int) = String.format(Locale.ROOT, pattern, Int.box(hartId))
+      def symbolNames(default : String, overrides : collection.Map[Int, String]) =
+        hartIds.map(hartId => hartId -> overrides.getOrElse(hartId, formatSymbol(default, hartId))).toMap
+      def symbolAddresses(names : collection.Map[Int, String]) = hartIds.map { hartId =>
+        val addresses = loadedElfs.flatMap { elf =>
+          Option(elf.getELFSymbol(names(hartId))).map(symbol => (xlen == 32).mux(symbol.st_value & 0xFFFFFFFFl, symbol.st_value))
+        }.toSet
+        hartId -> addresses
+      }.toMap
+
+      val passSymbols = symbolNames(passSymbolName, hartPassSymbolNames)
+      val failSymbols = symbolNames(failSymbolName, hartFailSymbolNames)
+      val passAddresses = symbolAddresses(passSymbols)
+      val failAddresses = symbolAddresses(failSymbols)
+      val states = mutable.Map(hartIds.map(_ -> 0).toList : _*)
+      var terminalScheduled = false
+
+      def passReached = passPolicy match {
+        case "all" => hartIds.forall(states(_) == 1)
+        case "any" => hartIds.exists(states(_) == 1)
+      }
+      def failReached = failPolicy match {
+        case "all" => hartIds.forall(states(_) == -1)
+        case "any" => hartIds.exists(states(_) == -1)
+      }
+      def scheduleTerminal(): Unit = {
+        if(!terminalScheduled && (failReached || passReached)) {
+          terminalScheduled = true
+          delayed(1) {
+            if(failReached) {
+              val failed = hartIds.filter(states(_) == -1).map(hartId => s"$hartId=${failSymbols(hartId)}").mkString(", ")
+              simFailure(s"Software reached the fail symbol on hart(s): $failed")
+            } else if(passReached) {
+              simSuccess()
+            }
+          }
         }
       }
+
+      val callback = { (hartId : Int, pc : Long) =>
+        if(states(hartId) == 0) {
+          if(failAddresses(hartId).contains(pc)) {
+            states(hartId) = -1
+            scheduleTerminal()
+          } else if(passAddresses(hartId).contains(pc)) {
+            states(hartId) = 1
+            scheduleTerminal()
+          }
+        }
+      }
+      probes.foreach(_.commitsCallbacks += callback)
     }
 
-    val host = dut.host[PrivilegedPlugin]
-    val priv = host.hart(0)
-    val mei = host.p.withExternalInterrupt generate priv.int.m.external
-    val sei = (host.p.withSupervisor && host.p.withExternalInterrupt) generate priv.int.s.external
-    val peripheral = new PeripheralEmulator(mei, sei, msi = priv.int.m.software, mti = priv.int.m.timer, cd = cd){
+    val hosts = duts.cores.map(_.host[PrivilegedPlugin])
+    val privs = hosts.map(_.hart(0))
+    val peripheral = new PeripheralEmulator(
+      mei = if(hosts.head.p.withExternalInterrupt) privs.map(_.int.m.external) else Seq.empty,
+      sei = if(hosts.head.p.withSupervisor && hosts.head.p.withExternalInterrupt) privs.map(_.int.s.external) else Seq.empty,
+      msi = privs.map(_.int.m.software),
+      mti = privs.map(_.int.m.timer),
+      cd = cd
+    ){
       override def getClintTime(): BigInt = probe.cycle
       cmb.mem = mem
-    }
-    cd.onSamplings {
-      host.logic.rdtime #= probe.cycle
     }
     peripheral.withStdIn = withStdIn
 
@@ -348,40 +523,47 @@ class TestOptions {
 
     manager.registerDevice(SizeMapping(0x10000000L, 0x10000000L), peripheral)
 
-    if (host.p.withImsic) {
-      val layout = ImsicPeripheralEmulator.machineLayout
+    val imsics = duts.cores.map{ v =>
+      val priv = v.host[PrivilegedPlugin]
+      val imsic = v.host.get[ImsicPlugin]
+      (priv, imsic)
+    }.filter{ case (priv, imsic) => priv.p.withImsic && imsic.nonEmpty }.map { case (priv, imsic) => (imsic.get.logic.harts.head, priv.hartIds.head)}
+
+    if (imsics.nonEmpty) {
+      val mLayout = ImsicPeripheralEmulator.machineLayout
+      val mInfo = imsics.map{ case (imsic, hartId) =>
+        val file = imsic.m
+        file.file.asImsicFileInfo().copy(hartId = hartId, groupHartId = hartId) -> file.trigger
+      }
       val mImsic = ImsicPeripheralEmulator.build(
-        base      = layout.base,
-        mapping   = layout.mapping,
-        bindings  = Seq(priv.m.imsic.file.asImsicFileInfo() -> priv.m.imsic.trigger),
+        base      = mLayout.base,
+        mapping   = mLayout.mapping,
+        bindings  = mInfo.toSeq,
         cd        = cd
       )
       mImsic.foreach(device => manager.registerDevice(device.addressMapping, device))
 
-      if (host.p.withSupervisor) {
-        val guests = (host.p.withHypervisor && host.p.withGuestImsic).mux(
-          priv.h.imsic.files.zip(priv.h.imsic.triggers).map { case (file, trigger) => file.asImsicFileInfo() -> trigger },
-          Seq.empty
-        )
-        val bindings = Seq(priv.s.imsic.file.asImsicFileInfo() -> priv.s.imsic.trigger) ++ guests
-        val layout = ImsicPeripheralEmulator.supervisorLayout
+      val sLayout = ImsicPeripheralEmulator.supervisorLayout
+      val sInfo = imsics.flatMap { case (imsic, hartId) =>
+        val infos = mutable.ArrayBuffer[(ImsicFileInfo, Stream[UInt])]()
+
+        val sFile = imsic.s
+        if (sFile != null) infos += sFile.file.asImsicFileInfo().copy(hartId = hartId, groupHartId = hartId) -> sFile.trigger
+
+        val vsFiles = imsic.vs
+        if (vsFiles != null) infos ++= vsFiles.files.zip(vsFiles.triggers).map { case (file, trigger) => file.asImsicFileInfo().copy(hartId = hartId, groupHartId = hartId) -> trigger }
+
+        infos
+      }
+
+      if (sInfo.nonEmpty) {
         val sImsic = ImsicPeripheralEmulator.build(
-          base      = layout.base,
-          mapping   = layout.mapping,
-          bindings  = bindings,
+          base      = sLayout.base,
+          mapping   = sLayout.mapping,
+          bindings  = sInfo.toSeq,
           cd        = cd
         )
         sImsic.foreach(device => manager.registerDevice(device.addressMapping, device))
-      }
-    }
-
-    dut.host.get[LsuPlugin].filter(_.withLlcFlush).map{p =>
-      val bus = p.logic.llcBus
-      val rspQueue = StreamDriver.queue(bus.rsp, cd)
-
-      StreamReadyRandomizer(bus.cmd, cd)
-      StreamMonitor(bus.cmd, cd){p =>
-        rspQueue._2.enqueue {p => }
       }
     }
 
@@ -435,7 +617,7 @@ class TestOptions {
       mapFetchWishbone(p.logic.bus)
     }
 
-    val fetchCachelessNative = dut.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
+    val fetchCachelessNative = duts.cores.flatMap(_.host.get[fetch.FetchCachelessPlugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
@@ -458,9 +640,9 @@ class TestOptions {
 
       cmdReady.setFactor(ibusReadyFactor)
       rspDriver.setFactor(ibusReadyFactor)
-    }
+    })
 
-    val fetchCachedNative = dut.host.get[fetch.FetchL1Plugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
+    val fetchCachedNative = duts.cores.flatMap(_.host.get[fetch.FetchL1Plugin].filter(!_.logic.bus.cmd.valid.isDirectionLess).map { p =>
       val bus = p.logic.bus
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
 
@@ -497,13 +679,16 @@ class TestOptions {
 
       cmdReady.setFactor(ibusReadyFactor)
       rspDriver.setFactor(ibusReadyFactor)
-    }
+    })
 
 
 
     def doRead(address : Long, bytes : Int, dst : Array[Byte], offset : Int, io : Boolean): Boolean = {
       if (io) {
-        manager.access(false, address, dst)
+        val data = new Array[Byte](bytes)
+        val error = manager.access(false, address, data)
+        Array.copy(data, 0, dst, offset, bytes)
+        error
       } else {
         mem.readBytes(address, bytes, dst, offset)
         false
@@ -593,11 +778,14 @@ class TestOptions {
     }
 
 
-    val lsuCachelessNative = dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).foreach { p =>
+    val lrResv = mutable.HashMap[(Int, Int), (Long, Int)]()
+
+    val lsuCachelessNative = duts.cores.zipWithIndex.flatMap { case (dut, hartId) =>
+      dut.host.get[execute.lsu.LsuCachelessBusProvider].filter(!_.getLsuCachelessBus().cmd.valid.isDirectionLess).map((_, hartId))
+    }.map { case (p, hartId) =>
       val bus = p.getLsuCachelessBus()
       val cmdReady = StreamReadyRandomizer(bus.cmd, cd)
       bus.cmd.ready #= true
-      var reserved = false
 
       case class Access(
        id : Int,
@@ -636,6 +824,7 @@ class TestOptions {
         val doIt = pending.nonEmpty
         if (doIt) {
           val cmd = pending.dequeue()
+          val hart = (hartId, cmd.hartId)
 
           def read(dst : Array[Byte], offset : Int): Boolean = {
             assert(!(cmd.amoEnable && cmd.io), "io amo not supported in testbench yet")
@@ -643,17 +832,29 @@ class TestOptions {
           }
           def write(): Boolean = {
             assert(!(cmd.amoEnable && cmd.io), "io amo not supported in testbench yet")
-            doWrite(cmd.address, cmd.data, cmd.io)
+            val error = doWrite(cmd.address, cmd.data, cmd.io)
+            if (!error) lrResv.keys.filter { hart =>
+              val (reservedAddress, reservedBytes) = lrResv(hart)
+              cmd.address < reservedAddress + reservedBytes && reservedAddress < cmd.address + cmd.bytes
+            }.toList.foreach(hart => lrResv.remove(hart))
+            error
           }
 
           val bytes = new Array[Byte](p.p.dataWidth / 8)
           var error = false
           var scMiss = simRandom.nextBoolean()
           simRandom.nextBytes(bytes)
-          if(!cmd.amoEnable) {
+          if (cmd.address < 0x10000000) {
+            error = true
+            if (cmd.amoEnable) {
+              import vexiiriscv.execute.lsu.LsuCachelessBusAmo._
+              if (cmd.amoOp != LR) lrResv.remove(hart)
+            } else if (cmd.write) {
+              lrResv.remove(hart)
+            }
+          } else if (!cmd.amoEnable) {
             if (cmd.write) {
               error = write()
-              reserved = false
             } else {
               error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
             }
@@ -661,40 +862,24 @@ class TestOptions {
             import vexiiriscv.execute.lsu.LsuCachelessBusAmo._
             cmd.amoOp match {
               case LR => {
+                lrResv.remove(hart)
                 error = read(bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1))
-                reserved = true
+                if(!error) lrResv(hart) = (cmd.address, cmd.bytes)
               }
               case SC => {
-                if(reserved) error = write()
-                scMiss = !reserved
-                reserved = false
+                val hit = lrResv.remove(hart).contains((cmd.address, cmd.bytes))
+                if (hit) error = write()
+                scMiss = !hit
               }
               case amoOp => {
-                reserved = false
                 def bytesToLong(a : Array[Byte]) = a.zipWithIndex.map{case (v, i) => (v.toLong & 0xFFl) << i*8}.reduce(_ | _) << cmd.bytes*8 >> cmd.bytes*8
-                def unsigned(v : Long) = BigInt(v) & ((BigInt(1) << cmd.bytes*8)-1)
                 val memBytes = new Array[Byte](cmd.bytes); error = read(memBytes, 0)
-                val memLong = bytesToLong(memBytes)
-                val rfLong = bytesToLong(cmd.data)
-
-                var memWrite = amoOp match {
-                  case AMOSWAP => rfLong
-                  case AMOADD  => rfLong + memLong
-                  case AMOXOR  => rfLong ^ memLong
-                  case AMOAND  => rfLong & memLong
-                  case AMOOR   => rfLong | memLong
-                  case AMOMIN  => rfLong min memLong
-                  case AMOMAX  => rfLong max memLong
-                  case AMOMINU => (unsigned(rfLong) min unsigned(memLong)).toLong
-                  case AMOMAXU => (unsigned(rfLong) max unsigned(memLong)).toLong
-                }
-
-                probe.harts(cmd.hartId).microOp(cmd.uopId).storeData = memWrite
 
                 if(!error){
+                  val memWrite = VexiiRiscvProbe.amoWriteValue(amoOp, cmd.bytes, bytesToLong(cmd.data), bytesToLong(memBytes))
                   Array.copy(memBytes, 0, bytes, cmd.address.toInt & (p.p.dataWidth / 8 - 1), cmd.bytes)
                   for(i <- 0 until cmd.bytes) cmd.data(i) = (memWrite >> i*8).toByte
-                  write()
+                  error = write()
                 }
               }
             }
@@ -703,7 +888,6 @@ class TestOptions {
           p.error #= error
           p.id #= cmd.id
           if(p.scMiss != null) p.scMiss #= scMiss
-          if(cmd.address < 0x10000000) p.error #= true
         }
         doIt
       }
@@ -760,8 +944,8 @@ class TestOptions {
       }
     }
 
-    val lsul1 = dut.host.get[LsuL1TlPlugin] map (p => new Area{
-      val ma = new MemoryAgent(p.bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
+    val lsul1 = duts.lsuL1TlBus.get map (bus => new Area{
+      val ma = new MemoryAgent(bus, cd, seed = 0, randomProberFactor = if(dbusReadyFactor < 1.0) 0.2f else 0.0f, memArg = Some(mem))(null) {
         driver.driver.setFactor(dbusReadyFactor)
         val checker = if (monitor.bus.p.withBCE) Checker(monitor)
         override def checkAddress(address: Long) = address >= 0x20000000 || address >= 0x1000 && address < 0x2000
@@ -814,42 +998,44 @@ class TestOptions {
       case _ =>
     }
 
-    val cfu = dut.host.get[CfuPlugin] map (p => new Area{
-      val bus = p.logic.bus
-      var maxPending = 3
-      val rspQueue = mutable.Queue[CfuRsp => Unit]()
-      val cmdMonitor = StreamMonitor(bus.cmd, cd){ i =>
-        val result = (i.inputs(0).toLong + i.inputs(1).toLong + i.function_id.toLong) & 0xFFFFFFFFl
-        val id = i.request_id.toInt
-        rspQueue += { o =>
-          o.outputs(0) #= result
-          o.response_id #= id
-          o.status #= 0
-          if(simRandom.nextInt(100) < 10){
-            maxPending = simRandom.nextInt(5)+1
+    val cfu = duts.cores.map { dut =>
+      dut.host.get[CfuPlugin] map (p => new Area{
+        val bus = p.logic.bus
+        var maxPending = 3
+        val rspQueue = mutable.Queue[CfuRsp => Unit]()
+        val cmdMonitor = StreamMonitor(bus.cmd, cd){ i =>
+          val result = (i.inputs(0).toLong + i.inputs(1).toLong + i.function_id.toLong) & 0xFFFFFFFFl
+          val id = i.request_id.toInt
+          rspQueue += { o =>
+            o.outputs(0) #= result
+            o.response_id #= id
+            o.status #= 0
+            if(simRandom.nextInt(100) < 10){
+              maxPending = simRandom.nextInt(5)+1
+            }
           }
         }
-      }
-      val rspDriver = StreamDriver(bus.rsp, cd) { p =>
-        if(rspQueue.isEmpty) false else {
-          rspQueue.dequeue().apply(p)
-          true
+        val rspDriver = StreamDriver(bus.rsp, cd) { p =>
+          if(rspQueue.isEmpty) false else {
+            rspQueue.dequeue().apply(p)
+            true
+          }
         }
-      }
-      var readyOk = true
-      cd.onSamplings{
-        readyOk = simRandom.nextBoolean()
+        var readyOk = true
+        cd.onSamplings{
+          readyOk = simRandom.nextBoolean()
 //        rspDriver.setFactor(1.0f)
-      }
-      var ready = bus.cmd.ready.toBoolean
-      sim.forkSensitive {
-        val readyNew = readyOk && rspQueue.size - bus.rsp.ready.toInt < maxPending
-        if(readyNew != ready) {
-          bus.cmd.ready #= readyNew
-          ready = readyNew
         }
-      }
-    })
+        var ready = bus.cmd.ready.toBoolean
+        sim.forkSensitive {
+          val readyNew = readyOk && rspQueue.size - bus.rsp.ready.toInt < maxPending
+          if(readyNew != ready) {
+            bus.cmd.ready #= readyNew
+            ready = readyNew
+          }
+        }
+      })
+    }
 
     spawnProcess.foreach{ v =>
       delayed(10000){
@@ -867,7 +1053,7 @@ class TestOptions {
     }
 
     if(printStats) onSimEnd {
-      println(probe.getStats())
+      probes.foreach(probe => println(probe.getStats()))
     }
   }
 }
