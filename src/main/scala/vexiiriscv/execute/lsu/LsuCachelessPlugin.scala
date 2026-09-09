@@ -224,7 +224,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val onAddress1 = new addressCtrl1.Area {
       val request = AddressTranslationReq(
         /* TODO: this should be a real physical with */
-        PRE_ADDRESS    = insert(tpk.TRANSLATED.resize(Global.MIXED_WIDTH)),
+        PRE_ADDRESS    = insert(tpk.TRANSLATED),
         LOAD           = LOAD,
         STORE          = STORE,
         EXECUTE        = EXECUTE,

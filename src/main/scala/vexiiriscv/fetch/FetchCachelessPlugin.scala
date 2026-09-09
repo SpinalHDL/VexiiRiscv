@@ -119,7 +119,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
     val onAddress1 = new pp.Fetch(addressAt + 1) {
       val request = AddressTranslationReq(
-        PRE_ADDRESS    = insert(tpk.TRANSLATED.resize(Fetch.WORD_PC.getWidth bits)),
+        PRE_ADDRESS    = insert(tpk.TRANSLATED),
         LOAD           = insert(False),
         STORE          = insert(False),
         EXECUTE        = insert(True),

@@ -608,7 +608,7 @@ class LsuPlugin(var layer : LaneLayer,
       val LOAD_MMU = insert(LOAD || CLEAN || INVALIDATE)
       val request = AddressTranslationReq(
         /* TODO: this should be a real physical with */
-        PRE_ADDRESS    = insert(tpk.TRANSLATED.resize(Global.MIXED_WIDTH)),
+        PRE_ADDRESS    = insert(tpk.TRANSLATED),
         LOAD           = LOAD_MMU,
         STORE          = STORE,
         EXECUTE        = EXECUTE,

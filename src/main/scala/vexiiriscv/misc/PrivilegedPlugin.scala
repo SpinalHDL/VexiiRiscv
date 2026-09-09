@@ -1265,18 +1265,25 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val allowVirtualSupervisor = m.counteren.tm && h.counteren.tm
           val allowVirtualUser = privilege === PrivilegeMode.VS || s.counteren.tm
           val accessable = allowVirtualSupervisor && allowVirtualUser
+          val virtual = m.counteren.tm && !h.counteren.tm
           val rdtime = h.timedelta.calibrated
 
           XLEN.get match {
             case 32 => {
-              api.read(rdtime(31 downto 0), GuestCsrFilter(CSR.UTIME))
-              api.read(rdtime(63 downto 32), GuestCsrFilter(CSR.UTIMEH))
-              api.allowCsr(GuestCsrFilter(CSR.UTIME), accessable)
-              api.allowCsr(GuestCsrFilter(CSR.UTIMEH), accessable)
+              val timeFilter = GuestCsrFilter(CSR.UTIME)
+              val timehFilter = GuestCsrFilter(CSR.UTIMEH)
+              api.read(rdtime(31 downto 0), timeFilter)
+              api.read(rdtime(63 downto 32), timehFilter)
+              api.allowCsr(timeFilter, accessable)
+              api.allowCsr(timehFilter, accessable)
+              api.isVirtualAccess(timeFilter, virtual)
+              api.isVirtualAccess(timehFilter, virtual)
             }
             case 64 => {
-              api.read(rdtime, GuestCsrFilter(CSR.UTIME))
-              api.allowCsr(GuestCsrFilter(CSR.UTIME), accessable)
+              val timeFilter = GuestCsrFilter(CSR.UTIME)
+              api.read(rdtime, timeFilter)
+              api.allowCsr(timeFilter, accessable)
+              api.isVirtualAccess(timeFilter, virtual)
             }
           }
         }

@@ -774,8 +774,8 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                 atsPorts.refill.rsp.ready := True
                 pending.state.exception := True
                 if (priv.p.withHypervisor) when(atsPorts.isGuestRefill) {
-                  buffer.trap.tval2 := atsPorts.refill.rsp.address.dropLow(2).asBits.resized
                   when (atsPorts.refill.rsp.guestFault) {
+                    buffer.trap.tval2 := atsPorts.refill.rsp.address.dropLow(2).asBits.resized
                     buffer.trap.pseudoUop := (XLEN.get == 32).mux(0x00002000, 0x00003000)
                   }
                 }
@@ -826,7 +826,9 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
               goto(JUMP) // improvement: shave one cycle
               when(satsPorts.refill.rsp.pageFault || satsPorts.refill.rsp.accessFault) {
                 pending.state.exception := True
-                buffer.trap.tval2 := satsPorts.refill.rsp.address.dropLow(2).asBits.resized
+                when(satsPorts.refill.rsp.pageFault) {
+                  buffer.trap.tval2 := satsPorts.refill.rsp.address.dropLow(2).asBits.resized
+                }
                 switch(satsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
                   add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)

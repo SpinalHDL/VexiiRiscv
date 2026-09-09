@@ -21,6 +21,8 @@ class ShadowMmuPlugin(var spec : MmuSpec,
                       var physicalWidth : Int,
                       var vmidWidth : Int) extends FiberPlugin with GenericMmuPlugin{
   override def isShadowMmu : Boolean = true
+  override def requestWidth = spec.virtualWidth
+  override def translatedWidth = physicalWidth
 
   /* Second stage is always zero-extended */
   def getSignExtension(kind: AddressTranslationPortUsage, rawAddress: UInt) = False
@@ -68,7 +70,15 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       val ppn =  Reg(UInt(ppnWidth bits))  init(0)
     }
 
-    csr.readWrite(CSR.HGATP, hgatp.vmidOffset -> hgatp.vmid, 0 -> hgatp.ppn)
+    val rootAlignment = spec.levels.last.virtualWidth - spec.levels.head.virtualWidth
+    if (rootAlignment == 0) {
+      csr.readWrite(CSR.HGATP, hgatp.vmidOffset -> hgatp.vmid, 0 -> hgatp.ppn)
+    } else {
+      csr.readWrite(CSR.HGATP,
+        hgatp.vmidOffset -> hgatp.vmid,
+        rootAlignment -> hgatp.ppn(hgatp.ppnWidth-1 downto rootAlignment)
+      )
+    }
     csr.read(CSR.HGATP, hgatp.modeOffset -> hgatp.mode)
     csr.allowHostCsr(CSR.HGATP, !priv.logic.harts(0).m.status.tvm || priv.isMachine(0))
 
@@ -198,7 +208,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       val CMD, RSP, REFILL, DONE = List.fill(spec.levels.size)(new State)
 
       val busy = !isActive(IDLE)
-      val virtual = Reg(UInt(MIXED_WIDTH bits))
+      val virtual = Reg(UInt(requestWidth bits))
 
       setEntry(IDLE)
 
@@ -217,7 +227,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
           storageEnable := arbiter.io.output.storageEnable
           virtual := arbiter.io.output.address
           permission := arbiter.io.output.permission
-          load.address := (hgatp.ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
+          load.address := (hgatp.ppn.dropLow(rootAlignment).asUInt @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
           isImplicitAccess := arbiter.io.output.indirect
           arbiter.io.output.ready := True
 

@@ -808,7 +808,9 @@ class ParamSimple() {
     withMmu match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new vexiiriscv.memory.MmuPlugin(
-        spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
+        spec = if (xlen == 32) {
+          if (extension.withHypervisor) MmuSpec.sv32Physical34 else MmuSpec.sv32
+        } else MmuSpec.sv39,
         physicalWidth = physicalWidth,
         asidWidth = asidWidth,
         withGuestSfenceCheck = extension.withHypervisor
@@ -817,7 +819,7 @@ class ParamSimple() {
     (extension.withRvh && withMmu) match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth, 1)
       case true => plugins += new vexiiriscv.memory.ShadowMmuPlugin(
-        spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
+        spec = if (xlen == 32) MmuSpec.sv32x4 else MmuSpec.sv39x4,
         physicalWidth = physicalWidth,
         vmidWidth = 0 /* TODO */
       )

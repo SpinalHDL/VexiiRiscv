@@ -235,6 +235,14 @@ class CsrHartApi(csrService: CsrService, hartId : Int){
     }
   }
 
+  def isVirtualAccess(csrFilter : Any, cond: Bool) = csrService.onDecode(csrFilter) {
+    when(csrService.accessHartId(hartId)) {
+      when (cond) {
+        csrService.bus.decode.doVirtual()
+      }
+    }
+  }
+
   def onRead(csrFilter : Any, onlyOnFire : Boolean)(body : => Unit) = csrService.onRead(csrFilter, onlyOnFire){
     when(csrService.writingHartId(hartId)){ body }
   }

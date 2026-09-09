@@ -104,7 +104,7 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
               trsp.error(0)       := atsPort.rsp.accessFault
               goto(IDLE)
             } otherwise {
-              address             := atsPort.rsp.address
+              address             := atsPort.rsp.address.resized
               goto(CMD)
             }
           }
@@ -113,7 +113,7 @@ class TranslatedDBusAccessPlugin() extends FiberPlugin with TranslatedDBusAccess
         CMD whenIsActive {
           when(cacheRefill === 0 && !cacheRefillAny) {
             cmd.valid     := True
-            cmd.address   := address
+            cmd.address   := address.resized
             cmd.size      := size
             when (cmd.ready) {
               goto(RSP)

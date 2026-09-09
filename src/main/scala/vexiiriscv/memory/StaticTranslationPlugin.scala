@@ -18,6 +18,8 @@ import scala.collection.mutable.ArrayBuffer
 class StaticTranslationPlugin(var physicalWidth: Int, val translationLevel : Int = 0) extends FiberPlugin with AddressTranslationService {
   override def isShadowMmu : Boolean = translationLevel != 0
   override def mayNeedRedo: Boolean = false
+  override def requestWidth = physicalWidth
+  override def translatedWidth = physicalWidth
   override def newStorage(pAny: Any, pmuStorageId : Int): Any = { }
   override def getStorageId(s: Any): Int = 0
   override def getStorageIdWidth(): Int = 0

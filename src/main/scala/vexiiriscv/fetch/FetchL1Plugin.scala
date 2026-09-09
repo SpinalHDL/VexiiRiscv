@@ -364,7 +364,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val onAddress1 = new pp.Fetch(readAt + 1) {
       val request = AddressTranslationReq(
-        PRE_ADDRESS    = insert(tpk.TRANSLATED.resize(Global.MIXED_WIDTH)),
+        PRE_ADDRESS    = insert(tpk.TRANSLATED),
         LOAD           = insert(False),
         STORE          = insert(False),
         EXECUTE        = insert(True),
@@ -681,4 +681,3 @@ class FetchL1Plugin(var translationStorageParameter: Any,
   val regions = Handle[ArrayBuffer[PmaRegion]]()
   val pmaBuilder = during build new PmaLogic(logic.ctrl.pmaPort, regions.filter(_.isExecutable))
 }
-
