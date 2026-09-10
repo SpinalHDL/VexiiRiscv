@@ -505,6 +505,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             val isGuestRefill = pending.state.arg(2) || PrivilegeMode.isGuest(priv.getPrivilege(hartId)) || (csr.m.status.mprv && csr.m.status.mpv)
             refill.cmd.valid := False
             refill.cmd.indirect := isGuestRefill
+            refill.cmd.forceGuest := pending.state.arg(2)
             refill.cmd.permission.read := !pending.state.arg(1)
             refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
             refill.cmd.permission.execute := pending.state.arg(1)
@@ -532,6 +533,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             val refill = sats.newRefillPort()
             refill.cmd.valid := False
             refill.cmd.indirect := False
+            refill.cmd.forceGuest := False
             refill.cmd.permission.read := !pending.state.arg(1)
             refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
             refill.cmd.permission.execute := pending.state.arg(1)
@@ -774,8 +776,8 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                 atsPorts.refill.rsp.ready := True
                 pending.state.exception := True
                 if (priv.p.withHypervisor) when(atsPorts.isGuestRefill) {
-                  buffer.trap.tval2 := atsPorts.refill.rsp.address.dropLow(2).asBits.resized
                   when (atsPorts.refill.rsp.guestFault) {
+                    buffer.trap.tval2 := atsPorts.refill.rsp.address.dropLow(2).asBits.resized
                     buffer.trap.pseudoUop := (XLEN.get == 32).mux(0x00002000, 0x00003000)
                   }
                 }
@@ -826,7 +828,9 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
               goto(JUMP) // improvement: shave one cycle
               when(satsPorts.refill.rsp.pageFault || satsPorts.refill.rsp.accessFault) {
                 pending.state.exception := True
-                buffer.trap.tval2 := satsPorts.refill.rsp.address.dropLow(2).asBits.resized
+                when (satsPorts.refill.rsp.pageFault) {
+                  buffer.trap.tval2 := satsPorts.refill.rsp.address.dropLow(2).asBits.resized
+                }
                 switch(satsPorts.refill.rsp.accessFault ## pending.state.arg(1 downto 0)){
                   def add(k : Int, v : Int) = is(k){pending.state.code := v}
                   add(TrapArg.FETCH | 4, CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT)

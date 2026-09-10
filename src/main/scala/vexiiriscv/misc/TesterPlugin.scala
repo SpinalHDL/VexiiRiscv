@@ -53,6 +53,10 @@ class TesterPlugin extends FiberPlugin{
     ptw.cmd.address := address.value.asSInt.resize(widthOf(ptw.cmd.address)).asUInt
     ptw.cmd.storageId := 0
     ptw.cmd.storageEnable := False
+    ptw.cmd.forceGuest := False
+    ptw.cmd.permission.read := True
+    ptw.cmd.permission.write := False
+    ptw.cmd.permission.execute := False
     if (priv.implementHypervisor) ptw.cmd.indirect := False
     ptw.rsp.ready := True
 
