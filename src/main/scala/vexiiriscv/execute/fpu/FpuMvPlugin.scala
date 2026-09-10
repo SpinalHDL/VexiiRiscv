@@ -20,6 +20,7 @@ class FpuMvPlugin(val layer : LaneLayer,
 
   val SEL_FLOAT = Payload(Bool())
   val SEL_INT = Payload(Bool())
+  val SEL_HIGH = Payload(Bool())
 
   val logic = during setup new Area{
     val fwbp = host.find[WriteBackPlugin](p => p.lane == layer.lane && p.rf == FloatRegFile)
@@ -33,6 +34,7 @@ class FpuMvPlugin(val layer : LaneLayer,
 
     layer.lane.setDecodingDefault(SEL_FLOAT, False)
     layer.lane.setDecodingDefault(SEL_INT, False)
+    layer.lane.setDecodingDefault(SEL_HIGH, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)
@@ -53,12 +55,17 @@ class FpuMvPlugin(val layer : LaneLayer,
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
     val f16 = FORMAT -> FpuFormat.HALF
+    val f128 = FORMAT -> FpuFormat.QUAD
 
     add(Rvfd.FMV_W_X, f32, SEL_FLOAT -> True)
     add(Rvfd.FMV_X_W, f32, SEL_INT   -> True)
-    if (Riscv.XLEN.get == 64) {
-      iwbp.signExtend(iwb, layer(Rvfd.FMV_X_W), 32)
-      if (Riscv.RVD) {
+    if (Riscv.XLEN.get == 64) iwbp.signExtend(iwb, layer(Rvfd.FMV_X_W), 32)
+    if (Riscv.RVD) Riscv.XLEN.get match {
+      case 32 => if (Riscv.RVZfa.get) {
+        add(Rvfd.FMVP_D_X, f64, SEL_FLOAT -> True)
+        add(Rvfd.FMVH_X_D, f64, SEL_INT -> True, SEL_HIGH -> True)
+      }
+      case 64 => {
         add(Rvfd.FMV_D_X, f64, SEL_FLOAT -> True)
         add(Rvfd.FMV_X_D, f64, SEL_INT -> True)
       }
@@ -68,12 +75,20 @@ class FpuMvPlugin(val layer : LaneLayer,
       add(Rvfd.FMV_X_H, f16, SEL_INT -> True)
       iwbp.signExtend(iwb, layer(Rvfd.FMV_X_H), 16)
     }
+    if (Riscv.RVQ && Riscv.RVZfa && Riscv.XLEN.get == 64) {
+      add(Rvfd.FMVP_Q_X, f128, SEL_FLOAT -> True)
+      add(Rvfd.FMVH_X_Q, f128, SEL_INT -> True, SEL_HIGH -> True)
+    }
 
     uopLock.release()
 
     val onIntWb = new layer.Execute(intWbAt) {
+      val rs1 = up(layer.lane(FloatRegFile, RS1))
       iwb.valid   := SEL_INT
-      iwb.payload := up(layer.lane(FloatRegFile, RS1)).resized
+      iwb.payload := (Riscv.RVZfa.get && Riscv.FLEN.get > Riscv.XLEN.get).mux(
+        Mux(SEL_HIGH, rs1.subdivideIn(Riscv.XLEN.get bits)(1), rs1.resized),
+        rs1.resized
+      )
     }
 
     val onFloatWb = new layer.Execute(floatWbAt) {
@@ -87,7 +102,9 @@ class FpuMvPlugin(val layer : LaneLayer,
       p.whenFormat(FORMAT) {
         case FpuFormat.FLOAT => value(31 downto 0) := rs1(31 downto 0)
         case FpuFormat.DOUBLE if Riscv.XLEN.get == 64 => value(63 downto 0) := rs1(63 downto 0)
+        case FpuFormat.DOUBLE if Riscv.XLEN.get == 32 && Riscv.RVZfa.get => value(63 downto 0) := up(layer.lane(IntRegFile, RS2)) ## rs1
         case FpuFormat.HALF => value(15 downto 0) := rs1(15 downto 0)
+        case FpuFormat.QUAD if Riscv.XLEN.get == 64 && Riscv.RVZfa.get => value(127 downto 0) := up(layer.lane(IntRegFile, RS2)) ## rs1
       }
 
       fwb.payload := value

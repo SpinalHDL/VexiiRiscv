@@ -9,6 +9,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
 import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, ROUNDING, muxRv64}
 import vexiiriscv.riscv._
+import scala.collection.mutable
 
 
 /**
@@ -21,9 +22,10 @@ class FpuF2iPlugin(val layer : LaneLayer,
                    var resultAt : Int = 2,
                    var intWbAt: Int = 2) extends FiberPlugin{
   val p = FpuUtils
+  def withModConvert = Riscv.RVD.get && Riscv.RVZfa.get
 
   val SEL = Payload(Bool())
-
+  val MODULO = Payload(Bool())
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
@@ -37,6 +39,7 @@ class FpuF2iPlugin(val layer : LaneLayer,
     val iwb = iwbp.access(intWbAt)
 
     layer.lane.setDecodingDefault(SEL, False)
+    layer.lane.setDecodingDefault(MODULO, False)
     def f2i(uop: MicroOp, size : Int, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)
@@ -63,6 +66,7 @@ class FpuF2iPlugin(val layer : LaneLayer,
     if (Riscv.RVD) {
       f2i(Rvfd.FCVT_WU_D, 32, f64)
       f2i(Rvfd.FCVT_W_D , 32, f64)
+      if (Riscv.RVZfa) f2i(Rvfd.FCVTMOD_W_D, 32, f64, MODULO -> True)
       if (Riscv.XLEN.get == 64) {
         f2i(Rvfd.FCVT_LU_D,64 , f64)
         f2i(Rvfd.FCVT_L_D ,64 , f64)
@@ -90,19 +94,31 @@ class FpuF2iPlugin(val layer : LaneLayer,
     val RS1_FP = fup(RS1)
 
     val shifterWidth = (p.rsIntWidth + 2) max (p.mantissaWidth + 2)
+    var shiftFullCandidate = mutable.ArrayBuffer[Int](p.rsIntWidth)
+    if (withModConvert) shiftFullCandidate += FpuConst.f64.manWidth
+    val shiftFullWidth = shiftFullCandidate.max
 
     val onSetup = new layer.Execute(setupAt) {
-      val f2iShiftFull = insert(AFix(p.rsIntWidth - 1) - RS1_FP.exponent)
+      val f2iShiftFull = insert(AFix(shiftFullWidth - 1) - RS1_FP.exponent)
       val f2iShift = insert(U(f2iShiftFull.raw).sat(widthOf(f2iShiftFull.raw) - log2Up(p.rsIntWidth) - 1))
       val SHIFTED_PARTIAL = insert(Shift.rightWithScrap(True ## RS1_FP.mantissa.raw ## B(0, shifterWidth - 1 - p.mantissaWidth bits), f2iShift(0, 4 bits)))
+
+      val mod = withModConvert generate new Area {
+        val mantissa = RS1_FP.mantissa.raw.takeHigh(FpuConst.f64.manWidth)
+
+        val shiftFull = U((RS1_FP.exponent - AFix(FpuConst.f64.manWidth)).raw)
+        val SHIFT_SIZE = insert(shiftFull.resize(log2Up(32)))
+        val SHIFT_VALID = insert(RS1_FP.isNormal && !shiftFull.dropLow(log2Up(32)).orR)
+        val SHIFT_PARTIAL = insert(U(mantissa.takeLow(32)) |<< SHIFT_SIZE(0, 4 bits))
+      }
     }
 
 
     val onShift = new layer.Execute(shiftAt) {
       val signed = !Decode.UOP(20)
       val SHIFTED = insert(Shift.rightWithScrap(onSetup.SHIFTED_PARTIAL, (onSetup.f2iShift >> 4) << 4))
-      val (high, low) = SHIFTED.splitAt(shifterWidth - p.rsIntWidth)
-      val unsigned = U(high)
+      val (high, low) = SHIFTED.splitAt(shifterWidth - shiftFullWidth)
+      val unsigned = U(high.takeLow(p.rsIntWidth))
       val round = low.msb ## low.dropHigh(1).orR
       val resign = insert(signed && RS1_FP.sign)
       val increment = insert(ROUNDING.mux(
@@ -113,14 +129,20 @@ class FpuF2iPlugin(val layer : LaneLayer,
         FpuRoundMode.RMM -> (round(1))
       ))
       val incrementPatched = insert((resign ^ increment).asUInt)
+
+      val mod = withModConvert generate new Area {
+        val shiftHigh = onSetup.mod.SHIFT_SIZE.dropLow(4).asUInt @@ U(0, 4 bits)
+        val shift = onSetup.mod.SHIFT_PARTIAL |<< shiftHigh
+        val UNSIGNED = insert(shift.andMask(onSetup.mod.SHIFT_VALID).resize(32))
+      }
     }
 
     val onResult = new layer.Execute(resultAt){
       val signed = !Decode.UOP(20)
       val i64 = Decode.UOP(21)
 
-      val (high, low) = onShift.SHIFTED.splitAt(shifterWidth - p.rsIntWidth)
-      val unsigned = U(high)
+      val (high, low) = onShift.SHIFTED.splitAt(shifterWidth - shiftFullWidth)
+      val unsigned = U(high.takeLow(p.rsIntWidth))
       val round = low.msb ## low.dropHigh(1).orR
 
       val halfRater = halfRate generate new Area {
@@ -129,7 +151,11 @@ class FpuF2iPlugin(val layer : LaneLayer,
         layer.lane.freezeWhen(freezeIt)
       }
 
-      val inverter = Delay(Mux(onShift.resign, ~unsigned, unsigned) + onShift.incrementPatched, halfRate.toInt)
+      val resultUnsigned = CombInit(unsigned)
+      if (withModConvert) when(MODULO && (!RS1_FP.isNormal || RS1_FP.exponent >= AFix(shiftFullWidth))) {
+        resultUnsigned := onShift.mod.UNSIGNED.resized
+      }
+      val inverter = Delay(Mux(onShift.resign, ~resultUnsigned, resultUnsigned) + onShift.incrementPatched, halfRate.toInt)
       val resultRaw = CombInit(inverter)
       val expMax = (i64 ? AFix(62) | AFix(30)) + AFix(!signed)
       val expMin = (i64 ? AFix(63) | AFix(31))
@@ -145,11 +171,13 @@ class FpuF2iPlugin(val layer : LaneLayer,
       when(isZero) {
         resultRaw := 0
       } elsewhen (underflow || overflow) {
-        val low = overflow
-        val high = signed ^ overflow
-        resultRaw := (31 -> high, default -> low)
-        if (p.rsIntWidth == 64) when(i64) {
-          resultRaw := (63 -> high, default -> low)
+        when(!MODULO) {
+          val low = overflow
+          val high = signed ^ overflow
+          resultRaw := (31 -> high, default -> low)
+          if (p.rsIntWidth == 64) when(i64) {
+            resultRaw := (63 -> high, default -> low)
+          }
         }
         NV setWhen !isZero
       } otherwise {

@@ -33,6 +33,8 @@ class FpuCmpPlugin(val layer : LaneLayer,
   val FLOAT_OP = Payload(FpuCmpFloatOp())
   val INVERT = Payload(Bool())
   val SGNJ_RS1 = Payload(Bool())
+  val MASK_QNAN = Payload(Bool())
+  val ANY_NAN = Payload(Bool())
 
 
   val logic = during setup new Area{
@@ -50,6 +52,8 @@ class FpuCmpPlugin(val layer : LaneLayer,
 
     layer.lane.setDecodingDefault(SEL_FLOAT, False)
     layer.lane.setDecodingDefault(SEL_CMP, False)
+    layer.lane.setDecodingDefault(MASK_QNAN, False)
+    layer.lane.setDecodingDefault(ANY_NAN, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)
@@ -79,6 +83,12 @@ class FpuCmpPlugin(val layer : LaneLayer,
     add(Rvfd.FLE_S   , f32, EQUAL -> True , LESS -> True)
     add(Rvfd.FEQ_S   , f32, EQUAL -> True , LESS -> False)
     add(Rvfd.FLT_S   , f32, EQUAL -> False, LESS -> True)
+    if (Riscv.RVZfa) {
+      add(Rvfd.FLEQ_S   , f32, EQUAL -> True , LESS -> True, MASK_QNAN -> True)
+      add(Rvfd.FLTQ_S   , f32, EQUAL -> False, LESS -> True, MASK_QNAN -> True)
+      add(Rvfd.FMINM_S  , f32, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> True, ANY_NAN -> True)
+      add(Rvfd.FMAXM_S  , f32, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> False, ANY_NAN -> True)
+    }
 
     if(Riscv.RVD) {
       add(Rvfd.FSGNJ_D , f64, FLOAT_OP -> FpuCmpFloatOp.SGNJ, INVERT -> False, SGNJ_RS1 -> False)
@@ -89,6 +99,12 @@ class FpuCmpPlugin(val layer : LaneLayer,
       add(Rvfd.FLE_D   , f64, EQUAL -> True , LESS -> True )
       add(Rvfd.FEQ_D   , f64, EQUAL -> True , LESS -> False)
       add(Rvfd.FLT_D   , f64, EQUAL -> False, LESS -> True )
+      if (Riscv.RVZfa) {
+        add(Rvfd.FLEQ_D   , f64, EQUAL -> True , LESS -> True, MASK_QNAN -> True)
+        add(Rvfd.FLTQ_D   , f64, EQUAL -> False, LESS -> True, MASK_QNAN -> True)
+        add(Rvfd.FMINM_D  , f64, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> True, ANY_NAN -> True)
+        add(Rvfd.FMAXM_D  , f64, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> False, ANY_NAN -> True)
+      }
     }
 
     if (Riscv.RVQ) {
@@ -100,6 +116,12 @@ class FpuCmpPlugin(val layer : LaneLayer,
       add(Rvfd.FLE_Q   , f128, EQUAL -> True , LESS -> True )
       add(Rvfd.FEQ_Q   , f128, EQUAL -> True , LESS -> False)
       add(Rvfd.FLT_Q   , f128, EQUAL -> False, LESS -> True )
+      if (Riscv.RVZfa) {
+        add(Rvfd.FLEQ_Q   , f128, EQUAL -> True , LESS -> True, MASK_QNAN -> True)
+        add(Rvfd.FLTQ_Q   , f128, EQUAL -> False, LESS -> True, MASK_QNAN -> True)
+        add(Rvfd.FMINM_Q  , f128, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> True, ANY_NAN -> True)
+        add(Rvfd.FMAXM_Q  , f128, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> False, ANY_NAN -> True)
+      }
     }
 
     if (Riscv.RVZfh) {
@@ -111,6 +133,12 @@ class FpuCmpPlugin(val layer : LaneLayer,
       add(Rvfd.FLE_H   , f16, EQUAL -> True , LESS -> True )
       add(Rvfd.FEQ_H   , f16, EQUAL -> True , LESS -> False)
       add(Rvfd.FLT_H   , f16, EQUAL -> False, LESS -> True )
+      if (Riscv.RVZfa) {
+        add(Rvfd.FLEQ_H   , f16, EQUAL -> True , LESS -> True, MASK_QNAN -> True)
+        add(Rvfd.FLTQ_H   , f16, EQUAL -> False, LESS -> True, MASK_QNAN -> True)
+        add(Rvfd.FMINM_H  , f16, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> True, ANY_NAN -> True)
+        add(Rvfd.FMAXM_H  , f16, FLOAT_OP -> FpuCmpFloatOp.MIN_MAX, LESS -> False, ANY_NAN -> True)
+      }
     }
 
     uopLock.release()
@@ -119,7 +147,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
     val RS2_FP = fup(RS2)
 
     val onCmp = new layer.Execute(cmpAt) {
-      val signalQuiet = SEL_CMP && LESS
+      val signalQuiet = (SEL_CMP && LESS) && !MASK_QNAN
       val rs1NanNv = RS1_FP.isNan && (!RS1_FP.quiet || signalQuiet)
       val rs2NanNv = RS2_FP.isNan && (!RS2_FP.quiet || signalQuiet)
       val NV = insert(rs1NanNv || rs2NanNv)
@@ -163,7 +191,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
     val onFloatWb = new layer.Execute(floatWbAt) {
       fwb.valid := SEL_FLOAT
       fwb.payload := (FLOAT_OP === FpuCmpFloatOp.MIN_MAX && onCmp.MIN_MAX_RS2).mux(up(layer.lane(FloatRegFile, RS2)), up(layer.lane(FloatRegFile, RS1)))
-      val doNan = RS1_FP.isNan && RS2_FP.isNan && FLOAT_OP === FpuCmpFloatOp.MIN_MAX
+      val doNan = ((RS1_FP.isNan && RS2_FP.isNan) || (ANY_NAN && (RS1_FP.isNan || RS2_FP.isNan))) && FLOAT_OP === FpuCmpFloatOp.MIN_MAX
       val wb = fwb.payload
       when(doNan) {
         p.whenFormat(FORMAT) {

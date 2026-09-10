@@ -105,6 +105,7 @@ object ExtensionList {
     E("zca"),
     E("zcf").depend("c", "f"),
     E("zcd").depend("c", "d"),
+    E("zfa").depend("f"),
     E("zfhmin").depend("f"),
     E("zfh").depend("zfhmin"),
     E("zknd"),

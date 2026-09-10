@@ -1248,6 +1248,8 @@ class ParamSimple() {
       if(extension.withRvd || extension.withRvq || extension.withZfh) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0, ignoreSubnormal = fpuIgnoreSubnormal, wbAt = fpuWbAt)
+      if (extension.withZfa) plugins += new execute.fpu.FpuFliPlugin(early0)
+      if (extension.withZfa) plugins += new execute.fpu.FpuRoundPlugin(early0)
     }
 
     plugins += new WhiteboxerPlugin(
