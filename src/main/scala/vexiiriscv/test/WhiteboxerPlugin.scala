@@ -70,17 +70,21 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val microOp = wrap(c(Decode.UOP))
     }
 
-    val dispatches = for (eu <- host.list[ExecuteLaneService]) yield new Area {
+    val dispatches = for ((eu, euid) <- host.list[ExecuteLaneService].zipWithIndex) yield new Area {
       val c = eu.ctrl(0)
       val fire = wrap(c.down.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
+      val laneId = euid
       val microOpId = wrap(c(Decode.UOP_ID))
     }
 
-
-    val executes = for (eu <- host.list[ExecuteLaneService]) yield new Area {
-      val c = eu.ctrl(eu.executeAt)
-      val fire = wrap(c.down.transactionSpawn && c.down(Global.COMMIT))
+    val eupp = host[ExecutePipelinePlugin]
+    eupp.logic.await()
+    val executes = for ((eu, euid) <- host.list[ExecuteLaneService].zipWithIndex; stage <- eupp.ids if stage >= eu.executeAt) yield new Area {
+      val c = eu.ctrl(stage)
+      val stageId = stage
+      val laneId = euid
+      val fire = wrap(c.down.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
       val microOpId = wrap(c(Decode.UOP_ID))
     }
@@ -362,7 +366,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val id = fetch.fetchId.simProxy()
     }
 
-    class DecodeProxy(laneId: Int) {
+    class DecodeProxy(val laneId: Int) {
       val self = decodes(laneId)
       val spawn = self.spawn.simProxy()
       val fire = self.fire.simProxy()
@@ -381,15 +385,18 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val microOp = self.microOp.simProxy()
     }
 
-    class DispatchProxy(laneId: Int) {
-      val self = dispatches(laneId)
+    class DispatchProxy(id: Int) {
+      val self = dispatches(id)
       val fire = self.fire.simProxy()
       val hartId = self.hartId.simProxy()
+      val laneId = self.laneId
       val microOpId = self.microOpId.simProxy()
     }
 
-    class ExecuteProxy(laneId: Int) {
-      val self = executes(laneId)
+    class ExecuteProxy(stage: Int) {
+      val self = executes(stage)
+      val stageId = self.stageId
+      val laneId = self.laneId
       val fire = self.fire.simProxy()
       val hartId = self.hartId.simProxy()
       val microOpId = self.microOpId.simProxy()

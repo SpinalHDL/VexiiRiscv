@@ -269,6 +269,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   }
 
   class DecodeCtx() {
+    var laneId = 0
     var fetchId = -1
     var spawnAt = 0l
     var fireAt = 0l
@@ -281,7 +282,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     var decodeId = -1
     var spawnAt = -1l
     var issueAt = -1l
-    var executeAt = -1l
+    val executeAts = mutable.LinkedHashMap[Int, Long]()
+    var executeLaneId = -1
     var completionAt = -1l
     var flushAt = -1l
     var retireAt = -1l
@@ -333,16 +335,19 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       val i = new konata.Instruction()
       if (fetch.spawnAt != -1) {
         i += new Spawn(fetch.spawnAt, hart.hartId)
-        i += new Stage(fetch.spawnAt, "A")
-        if(withFetch) i += new Stage(fetch.spawnAt+1, "F")
+        i += new Stage(fetch.spawnAt, 0, "A")
+        if(withFetch) i += new Stage(fetch.spawnAt+1, 0, "F")
       }
       if (decode.spawnAt != -1) {
         i += new Comment(decode.spawnAt, f"${decode.pc}%X : $instruction")
       }
       if(decode.fireAt != -1){
-        i += new Stage(decode.fireAt+1, "D")
+        i += new Stage(decode.fireAt+1, decode.laneId, "D")
       }
-      if (executeAt != -1) i += new Stage(executeAt, "E")
+      val endAt = if (didCommit) retireAt else flushAt max retireAt
+      executeAts.toSeq.filter(_._2 <= endAt).sortBy { case (stageId, at) => (at, stageId) }.foreach { case (stageId, at) =>
+        i += new Stage(at, executeLaneId, s"E$stageId")
+      }
       if (didCommit) {
         i += new Retire(retireAt)
       } else {
@@ -356,7 +361,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       decodeId = -1
       spawnAt = -1l
       issueAt = -1l
-      executeAt = -1l
+      executeAts.clear()
+      executeLaneId = -1
       completionAt = -1l
       flushAt = -1l
       retireAt = -1l
@@ -419,6 +425,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
           ctx.fetchId = fetchId
           ctx.spawnAt = cycle
           ctx.fireAt = -1
+          ctx.laneId = decode.laneId
         }
         if(fire){
           ctx.fireAt = cycle
@@ -443,13 +450,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     for (dispatch <- dispatches) if (dispatch.fire.toBoolean) {
       val hart = harts(dispatch.hartId.toInt)
       val ctx = hart.microOp(dispatch.microOpId.toInt)
+      assert(ctx.executeLaneId == -1 || ctx.executeLaneId == dispatch.laneId)
+      ctx.executeLaneId = dispatch.laneId
       ctx.issueAt = cycle
     }
 
     for (execute <- executes) if (execute.fire.toBoolean) {
       val hart = harts(execute.hartId.toInt)
       val ctx = hart.microOp(execute.microOpId.toInt)
-      ctx.executeAt = cycle
+      ctx.executeAts(execute.stageId) = cycle
+      if (ctx.spawned) assert(ctx.executeLaneId == execute.laneId)
     }
 
     if (loadExecute.fire.toBoolean) {

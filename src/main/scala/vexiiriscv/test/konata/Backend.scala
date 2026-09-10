@@ -21,8 +21,8 @@ class Comment(at : Long, text : String) extends Command(at){
   override def toString(id: Long): String = s"L\t$id\t0\t$text\n"
 }
 
-class Stage(at : Long, name : String) extends Command(at){
-  override def toString(id : Long): String = s"S\t$id\t0\t$name\n"
+class Stage(at : Long, lane: Int, name : String) extends Command(at){
+  override def toString(id : Long): String = s"S\t$id\t$lane\t$name\n"
 }
 
 class Retire(at : Long) extends Command(at){
