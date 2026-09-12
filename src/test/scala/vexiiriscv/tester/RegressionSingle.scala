@@ -306,7 +306,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
 
 
 
-  def doArchTest(from: String, inName: Seq[String] = Seq()) = {
+  def doArchTest(from: String, inName: Seq[String] = Seq(), startSymbol: String = "_start") = {
     val folder = s"riscv-arch-test/rv${xlen}i_m/$from"
     val elfs = new File(nsf, folder)
       .listFiles()
@@ -317,7 +317,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
       args.loadElf(elf)
       // ACT is single-hart test, so only load hart 0 with test payload
       args.startSymbol("pass")
-      args.hartStartSymbol("0=_start")
+      args.hartStartSymbol(s"0=$startSymbol")
       args.passPolicy("all")
       args.failPolicy("any")
       args.failAfter(10000000)
@@ -335,14 +335,14 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     if (rvzbb) doArchTest("B", Seq("and", "clz", "cpop", "ctz", "max", "min", "or", "rev", "rol", "ror", "sext", "xnor", "zext"))
     if (rvzbc) doArchTest("B", Seq("mul"))
     if (rvzbs) doArchTest("B", Seq("bclr", "bext", "binv", "bset"))
-    if (rvzbkb) doArchTest("Zbkb")
-    if (rvzbkc) doArchTest("Zbkc")
-    if (rvzbkx) doArchTest("Zbkx")
-    if (rvzkne) doArchTest("Zkne")
-    if (rvzknd) doArchTest("Zknd")
-    if (rvzknh) doArchTest("Zknh")
-    if (rvzksed) doArchTest("Zksed")
-    if (rvzksh) doArchTest("Zksh")
+    if (rvzbkb) doArchTest("Zbkb", startSymbol = "rvtest_entry_point")
+    if (rvzbkc) doArchTest("Zbkc", startSymbol = "rvtest_entry_point")
+    if (rvzbkx) doArchTest("Zbkx", startSymbol = "rvtest_entry_point")
+    if (rvzkne) doArchTest("Zkne", startSymbol = "rvtest_entry_point")
+    if (rvzknd) doArchTest("Zknd", startSymbol = "rvtest_entry_point")
+    if (rvzknh) doArchTest("Zknh", startSymbol = "rvtest_entry_point")
+    if (rvzksed) doArchTest("Zksed", startSymbol = "rvtest_entry_point")
+    if (rvzksh) doArchTest("Zksh", startSymbol = "rvtest_entry_point")
   }
 
   val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")
