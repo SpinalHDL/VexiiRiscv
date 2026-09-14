@@ -96,13 +96,19 @@ object ExtensionList {
     E("zalrsc"),
     E("zba"),
     E("zbb"),
-    E("zbc"),
+    E("zbc").imply("zbkc"),
+    E("zbkb"),
+    E("zbkc"),
+    E("zbkx"),
     E("zbs"),
     E("zca"),
     E("zcf").depend("c", "f"),
     E("zcd").depend("c", "d"),
     E("zknd"),
     E("zkne"),
+    E("zknh"),
+    E("zksed"),
+    E("zksh"),
 
     /* Ss* extensions */
     E("ssaia").require("s").depend("smaia", "sscsrind"),
@@ -161,6 +167,7 @@ case class ExtensionManager(isa: Set[String] = Set[String]()) extends Dynamic {
     case "withPerformanceCounters" => check("zicntr")
     case "withPerformanceScountovf" => check("sscofpmf")
     case "withAtomics" => check("zaamo") || check("zalrsc")
+    case "withRvZkn" | "withRvZknAes" => check("zkne") || check("zknd")
 
     case SingleExtension(ext) => check(ext)
     case MultiExtension(ext) => check(ext.toLowerCase)
@@ -201,6 +208,7 @@ case class ExtensionManager(isa: Set[String] = Set[String]()) extends Dynamic {
     if (check("zca")) add("c")
     if (check("c", "d")) add("zcd")
     if (xlen == 32 && check("c", "f")) add("zcf")
+    if (check("zbkc")) add("zbc")
 
     /* AES always enable both encrypt and decrypt */
     if (check("zknd") || check("zkne")) {

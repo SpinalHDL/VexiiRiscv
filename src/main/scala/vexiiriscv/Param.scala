@@ -562,8 +562,6 @@ class ParamSimple() {
   def removeISA(exts: String*): Unit = extension.remove(exts :_*)
   def checkISA(exts: String*) = extension.check(exts :_*)
 
-  def withRvZknAes = checkISA("zkne") || checkISA("zknd")
-
   def withMmu = extension.withSupervisor && !disableMmu
 
   def fixIsaParams() = {
@@ -976,7 +974,10 @@ class ParamSimple() {
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin(lane0)
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    if(withRvZknAes) plugins += new AesZknPlugin(layer = early0)
+    if(extension.withRvZknAes) plugins ++= AesZknPlugin.make(layer = early0, xlen = xlen)
+    if (extension.withZknh) plugins ++= ZknhPlugin.make(layer = early0, xlen = xlen)
+    if (extension.withZksh) plugins += new Sm3ZkshPlugin(layer = early0)
+    if (extension.withZksed) plugins += new Sm4ZksedPlugin(layer = early0)
     if(withCfu) plugins += new CfuPlugin(
       layer = early0,
       forkAt = 0,
@@ -1015,10 +1016,8 @@ class ParamSimple() {
 
     plugins ++= ZbPlugin.make(
       early0,
-      zba = extension.withZba,
-      zbb = extension.withZbb,
-      zbc = extension.withZbc,
-      zbs = extension.withZbs,
+      exts = extension,
+      xlen = xlen,
       executeAt=0,
       formatAt=0
     )
@@ -1169,10 +1168,8 @@ class ParamSimple() {
       plugins += new BranchPlugin(late0, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
       plugins ++= ZbPlugin.make(
         late0,
-        zba = extension.withZba,
-        zbb = extension.withZbb,
-        zbc = extension.withZbc,
-        zbs = extension.withZbs,
+        exts = extension,
+        xlen = xlen,
         executeAt=lateAluAt,
         formatAt=lateAluAt
       )
@@ -1193,10 +1190,8 @@ class ParamSimple() {
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
       plugins ++= ZbPlugin.make(
         early1,
-        zba = extension.withZba,
-        zbb = extension.withZbb,
-        zbc = extension.withZbc,
-        zbs = extension.withZbs,
+        exts = extension,
+        xlen = xlen,
         executeAt=0,
         formatAt=0
       )
@@ -1210,10 +1205,8 @@ class ParamSimple() {
         plugins += new BranchPlugin(late1, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
         plugins ++= ZbPlugin.make(
           late1,
-          zba = extension.withZba,
-          zbb = extension.withZbb,
-          zbc = extension.withZbc,
-          zbs = extension.withZbs,
+          exts = extension,
+          xlen = xlen,
           executeAt=lateAluAt,
           formatAt=lateAluAt
         )

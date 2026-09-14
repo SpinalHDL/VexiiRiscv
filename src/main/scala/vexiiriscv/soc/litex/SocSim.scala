@@ -253,7 +253,7 @@ object SocSim extends App{
 
     val onPbusSim = simPeripheral generate new Area {
       val axi = dut.system.patcher.pBus
-      val emu = new PeripheralEmulator(null, null) {
+      val emu = new PeripheralEmulator(Seq.empty, Seq.empty) {
         override def getClintTime() = simTime()/10000
       }
       new AxiLite4ReadOnlySlaveAgent(axi.ar, axi.r, dut.litexCd){

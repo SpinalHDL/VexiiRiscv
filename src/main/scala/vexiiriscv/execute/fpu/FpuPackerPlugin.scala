@@ -282,29 +282,24 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       }
 
       val wb = fwb.value
-      when(expZero) {
-        p.whenDouble(FORMAT)(wb(52, 11 bits).clearAll())(wb(23, 8 bits).clearAll())
-      }
-      when(expSet) {
-        p.whenDouble(FORMAT)(wb(52, 11 bits).setAll())(wb(23, 8 bits).setAll())
-      }
-      when(expMax) {
-        p.whenDouble(FORMAT)(wb(52, 11 bits) := 0x7FE)(wb(23, 8 bits) := 0xFE)
-      }
-      when(manZero) {
-        p.whenDouble(FORMAT)(wb(0, 52 bits).clearAll())(wb(0, 23 bits).clearAll())
-      }
-      when(manOne) {
-        p.whenDouble(FORMAT)(wb(0, 52 bits) := 1)(wb(0, 23 bits) := 1)
-      }
-      when(manSet) {
-        p.whenDouble(FORMAT)(wb(0, 52 bits).setAll())(wb(0, 23 bits).setAll())
-      }
-      when(manQuiet) {
-        p.whenDouble(FORMAT)(wb(51) := True)(wb(22) := True)
-      }
-      when(positive) {
-        p.whenDouble(FORMAT)(wb(63) := False)(wb(31) := False)
+      p.whenDouble(FORMAT) {
+        when(expZero)  { wb(52, 11 bits).clearAll() }
+        when(expSet)   { wb(52, 11 bits).setAll() }
+        when(expMax)   { wb(52, 11 bits) := 0x7FE }
+        when(manZero)  { wb(0, 52 bits).clearAll() }
+        when(manOne)   { wb(0, 52 bits) := 1 }
+        when(manSet)   { wb(0, 52 bits).setAll() }
+        when(manQuiet) { wb(51) := True }
+        when(positive) { wb(63) := False }
+      } {
+        when(expZero)  { wb(23, 8 bits).clearAll() }
+        when(expSet)   { wb(23, 8 bits).setAll() }
+        when(expMax)   { wb(23, 8 bits) := 0xFE }
+        when(manZero)  { wb(0, 23 bits).clearAll() }
+        when(manOne)   { wb(0, 23 bits) := 1 }
+        when(manSet)   { wb(0, 23 bits).setAll() }
+        when(manQuiet) { wb(22) := True }
+        when(positive) { wb(31) := False }
       }
       if (p.rvd) when(FORMAT === FpuFormat.FLOAT) {
         wb(63 downto 32).setAll()
