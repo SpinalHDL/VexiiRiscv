@@ -23,6 +23,7 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   override def getLinks(): Seq[Link] = logic.connectors
   val idToFetch = mutable.LinkedHashMap[Int, pipeline.CtrlLink]()
   def fetch(id : Int) = idToFetch.getOrElseUpdate(id, pipeline.CtrlLink())
+  def ids: Seq[Int] = idToFetch.keys.toSeq.sorted
 
   val persistenceSpec = mutable.LinkedHashSet[Int]()
   def setPersistence(id : Int) = persistenceSpec += id
