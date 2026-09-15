@@ -221,7 +221,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
 
         if (priv.p.withSupervisor) {
           privilegs = PrivilegeMode.S :: privilegs
-          privilegeAllowInterrupts += PrivilegeMode.S -> ((csr.s.status.sie && !csr.withMachinePrivilege) || !csr.withSupervisorPrivilege)
+          privilegeAllowInterrupts += PrivilegeMode.S -> ((csr.s.status.sie && !csr.withMachinePrivilege) || !csr.withHostSupervisorPrivilege)
         }
 
         if (priv.p.withUserTrap) {
@@ -231,7 +231,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
 
         if (priv.p.withHypervisor) {
           privilegs = PrivilegeMode.VS :: privilegs
-          privilegeAllowInterrupts += PrivilegeMode.VS -> ((csr.vs.status.sie && csr.withGuestPrivilege) || !csr.withVirtualSupervisorPrivilege)
+          privilegeAllowInterrupts += PrivilegeMode.VS -> ((csr.vs.status.sie && csr.isGuestMode) || !csr.withVirtualSupervisorPrivilege)
         }
 
         val privilegeTriggers = privilegs.map(p => new Area {
