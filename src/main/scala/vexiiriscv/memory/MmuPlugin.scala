@@ -168,7 +168,7 @@ class MmuTlbStorage(
   }
 }
 
-trait GenericMmuPlugin extends AddressTranslationService {
+abstract class GenericMmuPlugin extends FiberPlugin with AddressTranslationService {
   override def mayNeedRedo: Boolean = true
 
   case class PortSpec(stages: Seq[NodeBaseApi],
@@ -185,6 +185,8 @@ trait GenericMmuPlugin extends AddressTranslationService {
   val portSpecs = ArrayBuffer[PortSpec]()
 
   val storageSpecs = ArrayBuffer[MmuStorageSpec]()
+
+  val accessPipes = ArrayBuffer[StagePipeline]()
 
   override def newStorage(pAny: Any, pmuEventId : Int) : Any = {
     val p = pAny.asInstanceOf[MmuStorageParameter]
@@ -215,6 +217,58 @@ trait GenericMmuPlugin extends AddressTranslationService {
       )
     ).rsp
   }
+
+  override def newTranslationAccess(usage: AddressTranslationPortUsage,
+                                    portSpec: Any,
+                                    storageSpec: Any): AddressTranslationAccess = {
+    val pp = portSpec.asInstanceOf[MmuPortParameter]
+
+    val access = AddressTranslationAccess()
+    val pipe = accessPipes.addRet(new StagePipeline())
+    val stages = (0 to pp.ctrlAt).map(pipe.node)
+
+    val addressNode = stages(pp.readAt)
+    addressNode.arbitrateFrom(access.cmd)
+    val onAddress = new addressNode.Area {
+      val req = AddressTranslationReq(
+        PRE_ADDRESS     = insert(access.cmd.address),
+        LOAD            = insert(access.cmd.load),
+        STORE           = insert(access.cmd.store),
+        EXECUTE         = insert(access.cmd.execute),
+        FORCE_GUEST     = insert(access.cmd.forceGuest),
+        FORCE_PHYSICAL  = insert(access.cmd.forcePhysical)
+      )
+
+      val translationPort = newTranslationPort(
+        stages      = stages,
+        req         = req,
+        usage       = usage,
+        portSpec    = portSpec,
+        storageSpec = storageSpec
+      )
+    }
+
+    val checkNode = stages(pp.ctrlAt)
+    val onCheck = new checkNode.Area {
+      arbitrateTo(access.rsp)
+
+      val keys = onAddress.translationPort.keys
+      access.rsp.translated         := keys.TRANSLATED
+      access.rsp.hazard             := keys.HAZARD
+      access.rsp.refill             := keys.REFILL
+      access.rsp.pageFault          := keys.PAGE_FAULT
+      access.rsp.accessFault        := keys.ACCESS_FAULT
+      access.rsp.bypassTranslation  := keys.BYPASS_TRANSLATION
+      access.rsp.addressExtension   := keys.ADDRESS_EXTENSION
+    }
+
+    access
+  }
+
+  during patch {
+    portsLock.await()
+    accessPipes.map(_.build())
+  }
 }
 
 /**
@@ -229,7 +283,7 @@ trait GenericMmuPlugin extends AddressTranslationService {
 class MmuPlugin(var spec : MmuSpec,
                 var physicalWidth : Int,
                 var asidWidth : Int,
-                var withGuestSfenceCheck : Boolean) extends FiberPlugin with GenericMmuPlugin{
+                var withGuestSfenceCheck : Boolean) extends GenericMmuPlugin{
   def withGlobalCheck = asidWidth > 0
 
   override def isShadowMmu : Boolean = false

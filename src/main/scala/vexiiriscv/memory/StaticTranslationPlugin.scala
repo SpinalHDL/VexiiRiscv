@@ -48,6 +48,22 @@ class StaticTranslationPlugin(var physicalWidth: Int, val translationLevel : Int
     ).rsp
   }
 
+  override def newTranslationAccess(usage: AddressTranslationPortUsage,
+                                    portSpec: Any,
+                                    storageSpec: Any): AddressTranslationAccess = {
+    val access = AddressTranslationAccess()
+    access.cmd.ready := access.rsp.ready
+    access.rsp.valid := access.cmd.valid
+    access.rsp.translated := access.cmd.address.resized
+    access.rsp.hazard := False
+    access.rsp.refill := False
+    access.rsp.pageFault := False
+    access.rsp.accessFault := access.cmd.address.drop(physicalWidth) =/= 0
+    access.rsp.bypassTranslation := True
+    access.rsp.addressExtension := False
+    access
+  }
+
   override def getSignExtension(kind: AddressTranslationPortUsage, rawAddress: UInt): Bool = False
 
   val logic = during build new Area {
