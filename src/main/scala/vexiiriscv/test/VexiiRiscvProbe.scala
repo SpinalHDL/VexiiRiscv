@@ -271,8 +271,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   class DecodeCtx() {
     var laneId = 0
     var fetchId = -1
-    var spawnAt = 0l
-    var fireAt = 0l
+    val spawnAts = mutable.LinkedHashMap[Int, Long]()
     var pc = 0l
   }
 
@@ -334,16 +333,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
       val i = new konata.Instruction()
       assert(fetch.spawnAts.contains(0))
+      assert(decode.spawnAts.contains(0))
       val fetchSpawnAt = fetch.spawnAts(0)
       i += new Spawn(fetchSpawnAt, hart.hartId)
-      fetch.spawnAts.toSeq.filter(_._2 <= decode.spawnAt).sortBy { case (stageId, at) => (at, stageId) }.foreach { case (stageId, at) =>
+      fetch.spawnAts.toSeq.filter(_._2 <= decode.spawnAts(0)).sortBy { case (stageId, at) => (at, stageId) }.foreach { case (stageId, at) =>
         i += new Stage(at, 0, s"F$stageId")
       }
-      if (decode.spawnAt != -1) {
-        i += new Comment(decode.spawnAt, f"${decode.pc}%X : $instruction")
-      }
-      if(decode.fireAt != -1){
-        i += new Stage(decode.fireAt+1, decode.laneId, "D")
+
+      i += new Comment(decode.spawnAts(0), f"${decode.pc}%X : $instruction")
+      decode.spawnAts.toSeq.sortBy { case (stageId, at) => (at, stageId) }.foreach { case (stageId, at) =>
+        i += new Stage(at, decode.laneId, s"D${stageId}")
       }
       val endAt = if (didCommit) retireAt else flushAt max retireAt
       executeAts.toSeq.filter(_._2 <= endAt).sortBy { case (stageId, at) => (at, stageId) }.foreach { case (stageId, at) =>
@@ -414,26 +413,18 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       ctx.spawnAts(fetch.stageId) = cycle
     }
 
-    for(decode <-decodes) {
-      val spawn = decode.spawn.toBoolean
-      val fire = decode.fire.toBoolean
+    for (decode <- decodes) if (decode.spawn.toBoolean) {
+      val hart = harts(decode.hartId.toInt)
+      val decodeId = decode.decodeId.toInt
+      val ctx = hart.decode(decodeId)
 
-      if (spawn || fire) {
-        val hart = harts(decode.hartId.toInt)
-        val decodeId = decode.decodeId.toInt
-        val ctx = hart.decode(decodeId)
-        if(spawn){
-          val fetchId = decode.fetchId.toInt
-          ctx.pc = decode.pc.toLong
-          ctx.fetchId = fetchId
-          ctx.spawnAt = cycle
-          ctx.fireAt = -1
-          ctx.laneId = decode.laneId
-        }
-        if(fire){
-          ctx.fireAt = cycle
-        }
-      }
+      if (decode.stageId == 0) ctx.spawnAts.clear()
+
+      val fetchId = decode.fetchId.toInt
+      ctx.pc = decode.pc.toLong
+      ctx.fetchId = fetchId
+      ctx.laneId = decode.laneId
+      ctx.spawnAts(decode.stageId) = cycle
     }
 
     for(serialized <- wbp.serializeds) if (serialized.fire.toBoolean) {
