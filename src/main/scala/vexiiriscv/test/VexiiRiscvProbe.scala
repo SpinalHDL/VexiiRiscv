@@ -265,7 +265,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   }
 
   class FetchCtx() {
-    var spawnAt = 1l
+    val spawnAts = mutable.LinkedHashMap[Int, Long]()
   }
 
   class DecodeCtx() {
@@ -333,10 +333,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       val instruction = if(withRvls) rvls.jni.Frontend.disassemble(disass, this.instruction) else "? rvls disabled ?"
 
       val i = new konata.Instruction()
-      if (fetch.spawnAt != -1) {
-        i += new Spawn(fetch.spawnAt, hart.hartId)
-        i += new Stage(fetch.spawnAt, 0, "A")
-        if(withFetch) i += new Stage(fetch.spawnAt+1, 0, "F")
+      assert(fetch.spawnAts.contains(0))
+      val fetchSpawnAt = fetch.spawnAts(0)
+      i += new Spawn(fetchSpawnAt, hart.hartId)
+      fetch.spawnAts.toSeq.filter(_._2 <= decode.spawnAt).sortBy { case (stageId, at) => (at, stageId) }.foreach { case (stageId, at) =>
+        i += new Stage(at, 0, s"F$stageId")
       }
       if (decode.spawnAt != -1) {
         i += new Comment(decode.spawnAt, f"${decode.pc}%X : $instruction")
@@ -405,10 +406,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   def checkPipelines(): Unit = {
     import proxies._
 
-    if (proxies.fetch.fire.toBoolean) {
+    for (fetch <- proxies.fetchs) if (fetch.fire.toBoolean) {
       val hart = harts(fetch.hartd.toInt)
       val fetchId = fetch.id.toInt
-      hart.fetch(fetchId).spawnAt = cycle
+      val ctx = hart.fetch(fetchId)
+      if (fetch.stageId == 0) ctx.spawnAts.clear()
+      ctx.spawnAts(fetch.stageId) = cycle
     }
 
     for(decode <-decodes) {
@@ -674,7 +677,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
           val decode = hart.decode(uop.decodeId)
 
           hart.lastUopId = uopId
-          hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
+          hart.konataThread.foreach(_.cycleLock = fetch.spawnAts(0))
 
           uop.toKonata(hart)
           if (uop.didCommit) {

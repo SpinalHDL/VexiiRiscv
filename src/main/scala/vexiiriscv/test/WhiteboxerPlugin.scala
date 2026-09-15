@@ -39,15 +39,16 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
     }
 
     val fpp = host[FetchPipelinePlugin]
-    val dpp = host[DecodePipelinePlugin]
-    val fetch = new Area {
-      val c = fpp.fetch(0)
-      val fire = wrap(c.down.isFiring)
+    fpp.logic.await()
+    val fetchs = for (stage <- fpp.ids) yield new Area {
+      val c = fpp.fetch(stage)
+      val stageId = stage
+      val fire = wrap(c.down.isValid && !RegNext(c.down.isValid, False).clearWhen(c.down.isReady || c.down.isCancel))
       val hartId = wrap(c(Global.HART_ID))
       val fetchId = wrap(c(Fetch.ID))
     }
 
-
+    val dpp = host[DecodePipelinePlugin]
     val decodes = for (laneId <- 0 until Decode.LANES) yield new Area {
       val c = dpp.ctrl(0).lane(laneId)
       val fire = wrap(c.up.isFiring)
@@ -298,7 +299,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
 
     def self = this
     abstract class Proxies {
-      val fetch = new FetchProxy()
+      val fetchs = self.fetchs.indices.map(new FetchProxy(_))
       val decodes = self.decodes.indices.map(new DecodeProxy(_)).toArray
       val serializeds = self.serializeds.indices.map(new SerializedProxy(_)).toArray
       val dispatches = self.dispatches.indices.map(new DispatchProxy(_)).toArray
@@ -360,10 +361,12 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
     }
 
 
-    class FetchProxy {
-      val fire = fetch.fire.simProxy()
-      val hartd = fetch.hartId.simProxy()
-      val id = fetch.fetchId.simProxy()
+    class FetchProxy(stage: Int) {
+      val self = fetchs(stage)
+      val stageId = self.stageId
+      val fire = self.fire.simProxy()
+      val hartd = self.hartId.simProxy()
+      val id = self.fetchId.simProxy()
     }
 
     class DecodeProxy(val laneId: Int) {
