@@ -153,10 +153,8 @@ class ZbbLogicPlugin(val layer: LaneLayer,
 
 object ZbbCountPlugin extends AreaObject {
   val FLIP = Payload(Bool())
-  val INVERT = Payload(Bool())
   val MASK = Payload(Bool())
   val WORD = Payload(Bool())
-  val OR = Payload(Bool())
 }
 
 class ZbbCountPlugin(val layer: LaneLayer,
@@ -164,55 +162,51 @@ class ZbbCountPlugin(val layer: LaneLayer,
                      val formatAt: Int = 0) extends ExecutionUnitElementSimple(layer) {
 
   import ZbbCountPlugin._
-  val MASKED = Payload(Bits(Riscv.XLEN bits))
+  val COUNT = Payload(UInt(log2Up(Riscv.XLEN.get + 1) bits))
 
   val logic = during setup new Logic {
     awaitBuild()
     import SrcKeys._
 
-    // TODO use ifp for getting word instead of mask
     val wb = newWriteback(ifp, formatAt)
-    add(RvZbx.CLZ).srcs(SRC1.RF).decode(MASK -> True, INVERT -> True, FLIP -> False, WORD -> False, OR -> False)
-    add(RvZbx.CTZ).srcs(SRC1.RF).decode(MASK -> True, INVERT -> True, FLIP -> True, WORD -> False, OR -> False)
-    add(RvZbx.CPOP).srcs(SRC1.RF).decode(MASK -> False, INVERT -> False, WORD -> False, OR -> False)
+    add(RvZbx.CLZ).srcs(SRC1.RF).decode(MASK -> True, FLIP -> False, WORD -> False)
+    add(RvZbx.CTZ).srcs(SRC1.RF).decode(MASK -> True, FLIP -> True, WORD -> False)
+    add(RvZbx.CPOP).srcs(SRC1.RF).decode(MASK -> False, FLIP -> False, WORD -> False)
     if(Riscv.XLEN.get == 64) {
-      add(RvZbx.CLZW).srcs(SRC1.RF).decode(MASK -> True, INVERT -> True, FLIP -> False, WORD -> True, OR -> True)
-      add(RvZbx.CTZW).srcs(SRC1.RF).decode(MASK -> True, INVERT -> True, FLIP -> True, WORD -> True, OR -> False)
-      add(RvZbx.CPOPW).srcs(SRC1.RF).decode(MASK -> False, INVERT -> False, WORD -> True, OR -> False)
+      add(RvZbx.CLZW).srcs(SRC1.RF).decode(MASK -> True, FLIP -> False, WORD -> True)
+      add(RvZbx.CTZW).srcs(SRC1.RF).decode(MASK -> True, FLIP -> True, WORD -> True)
+      add(RvZbx.CPOPW).srcs(SRC1.RF).decode(MASK -> False, FLIP -> False, WORD -> True)
     }
 
     uopRetainer.release()
 
     val count = new el.Execute(executeAt) {
-      // TODO explicitly build tree instead of the long combinatorial path...
-      val rs1 = CombInit(up(el(IntRegFile, RS1)))
+      val rs1 = up(el(IntRegFile, RS1)).asBits
+      val countWidth = log2Up(Riscv.XLEN.get + 1)
+      
+      val clzFull = CountLeadingZeroes(rs1)
+      val ctzFull = CountTrailingZeroes(rs1)
+      val popFull = CountOne(rs1)
+      val zeroFull = FLIP.mux(ctzFull, clzFull)
+      val resultFull = MASK.mux(zeroFull, popFull)
+
       if (Riscv.XLEN.get == 64) {
-        when(WORD) {
-          rs1(63 downto 32) := 0
-        }
+        val word = rs1(31 downto 0)
+        val clzWord = CountLeadingZeroes(word)
+        val ctzWord = CountTrailingZeroes(word)
+        val popWord = CountOne(word)
+        val zeroWord = FLIP.mux(ctzWord, clzWord)
+        val resultWord = MASK.mux(zeroWord, popWord).resize(countWidth)
+
+        COUNT := WORD.mux(resultWord, resultFull)
+      } else {
+        COUNT := resultFull
       }
-      val invertMask = B(Riscv.XLEN.get bit, (31 downto 0) -> this(INVERT), default -> (this(INVERT) & !this(WORD)))
-      val orMask = B(Riscv.XLEN.get bit, (31 downto 0) -> False, default -> this(OR))
-      val inverted = (rs1 ^ invertMask) | orMask
-      val flipped = FLIP ? inverted.reversed | inverted
-      val masked = Vec(Bool(), Riscv.XLEN.get)
-      masked(masked.size - 1) := flipped.msb
-      for(i <- 0 until Riscv.XLEN.get - 1) {
-        masked(i) := flipped(i) & (masked(i+1))
-      }
-      MASKED := MASK.mux(Cat(masked), flipped)
     }
 
     val format = new el.Execute(formatAt) {
-      val ones = CountOne(MASKED).asBits.resized
       wb.valid := SEL
-      wb.payload := ones
-      when(OR) {
-        if(Riscv.XLEN.get == 64) {
-          wb.payload(5) := ones(6)
-          wb.payload(6) := False
-        }
-      }
+      wb.payload := COUNT.asBits.resized
     }
   }
 }
