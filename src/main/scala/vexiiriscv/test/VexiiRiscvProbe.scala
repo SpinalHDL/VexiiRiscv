@@ -16,7 +16,7 @@ import vexiiriscv.riscv.FloatRegFile
 //import vexiiriscv.execute.LsuCachelessPlugin
 import vexiiriscv.fetch.Fetch
 import vexiiriscv.riscv.{IntRegFile, Riscv, RiscvPlugin}
-import vexiiriscv.test.konata.{Comment, Flush, Retire, Spawn, Stage}
+import vexiiriscv.test.konata.{Comment, End, Flush, Retire, Spawn, Stage}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -336,17 +336,33 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       assert(decode.spawnAts.contains(0))
       val fetchSpawnAt = fetch.spawnAts(0)
       i += new Spawn(fetchSpawnAt, hart.hartId)
-      fetch.spawnAts.toSeq.filter(_._2 <= decode.spawnAts(0)).sortBy { case (stageId, at) => (at, stageId) }.foreach { case (stageId, at) =>
+
+      val fetchs = fetch.spawnAts.toSeq.filter(_._2 <= decode.spawnAts(0)).sortBy { case (stageId, at) => (at, stageId) }
+      assert(fetchs.nonEmpty)
+      fetchs.foreach { case (stageId, at) =>
         i += new Stage(at, 0, s"F$stageId")
+      }
+      fetchs.lastOption.foreach { case (stageId, at) =>
+        i += new End(decode.spawnAts(0), 0, s"F$stageId")
       }
 
       i += new Comment(decode.spawnAts(0), f"${decode.pc}%X : $instruction")
-      decode.spawnAts.toSeq.sortBy { case (stageId, at) => (at, stageId) }.foreach { case (stageId, at) =>
+      val decodes = decode.spawnAts.toSeq.sortBy { case (stageId, at) => (at, stageId) }
+      assert(decodes.nonEmpty)
+      decodes.foreach { case (stageId, at) =>
         i += new Stage(at, decode.laneId, s"D${stageId}")
       }
       val endAt = if (didCommit) retireAt else flushAt max retireAt
-      executeAts.toSeq.filter(_._2 <= endAt).sortBy { case (stageId, at) => (at, stageId) }.foreach { case (stageId, at) =>
+      val executes = executeAts.toSeq.filter(_._2 <= endAt).sortBy { case (stageId, at) => (at, stageId) }
+      decodes.lastOption.foreach { case (stageId, at) =>
+        val stopAt = executes.headOption.map(_._2).getOrElse(endAt)
+        i += new End(stopAt, decode.laneId, s"D${stageId}")
+      }
+      executes.foreach { case (stageId, at) =>
         i += new Stage(at, executeLaneId, s"E$stageId")
+      }
+      executes.lastOption.foreach { case (stageId, at) =>
+        i += new End(endAt, executeLaneId, s"E$stageId")
       }
       if (didCommit) {
         i += new Retire(retireAt)

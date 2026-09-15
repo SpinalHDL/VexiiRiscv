@@ -33,6 +33,10 @@ class Flush(at : Long) extends Command(at){
   override def toString(id : Long): String = s"R\t$id\t$id\t1\n"
 }
 
+class End(at : Long, lane: Int, name : String) extends Command(at){
+  override def toString(id : Long): String = s"E\t$id\t$lane\t$name\n"
+}
+
 class Instruction(){
   var id = -1l
   var ptr = 0
