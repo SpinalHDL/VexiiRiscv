@@ -117,6 +117,18 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       return List("", "--with-isa f", "--with-isa f,d").randomPick(random)
     }
   }
+  dimensions += new Dimensions[ParamSimple]("zfh") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(!state.extension.withRvf) return ""
+      return List("", "--with-isa zfh").randomPick(random)
+    }
+  }
+  dimensions += new Dimensions[ParamSimple]("zfa") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(!state.extension.withRvf) return ""
+      return List("", "--with-isa zfa").randomPick(random)
+    }
+  }
   addDim("fpuStressed", List("", "--stressed-fpu"))
   addDim("pmp", List("", "--pmp-size=8"))
   dimensions += new Dimensions[ParamSimple]("btbRelaxed") {
