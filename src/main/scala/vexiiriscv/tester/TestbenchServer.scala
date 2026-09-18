@@ -5,8 +5,64 @@ import spinal.core.sim.{SimCompiled, SpinalSimConfig}
 import vexiiriscv.{ParamSimple, VexiiRiscv}
 
 import java.io.{IOException, PrintWriter}
-import java.net.{ServerSocket, Socket}
+import java.net.{InetSocketAddress, SocketAddress, StandardProtocolFamily, UnixDomainSocketAddress}
+import java.nio.channels.{Channels, ServerSocketChannel, SocketChannel}
+import java.nio.file.{Files, Paths}
 import java.util.Scanner
+import java.util.concurrent.atomic.AtomicBoolean
+
+
+class TestBenchServerOptions {
+  var address: SocketAddress = new InetSocketAddress("127.0.0.1", 8189)
+  def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
+    import parser._
+    opt[String]("host") action { (value, _) =>
+      val parts = value.split(":", 2)
+      address = new InetSocketAddress(parts(0), if (parts.length == 2) parts(1).toInt else 8189)
+    }
+    opt[String]("socket") action { (value, _) => address = UnixDomainSocketAddress.of(Paths.get(value).toAbsolutePath.normalize()) }
+  }
+}
+
+class TestBenchServerSocket(val channel: ServerSocketChannel, val address: SocketAddress) extends AutoCloseable {
+  val closed = new AtomicBoolean(false)
+  def accept(): SocketChannel = channel.accept()
+  def description: String = channel.getLocalAddress match {
+    case socket: UnixDomainSocketAddress => s"unix:${socket.getPath}"
+    case address => address.toString.stripPrefix("/")
+  }
+  override def close(): Unit = if (closed.compareAndSet(false, true)) {
+    try {
+      channel.close()
+    } finally {
+      TestBenchServerSocket.cleanup(address)
+    }
+  }
+}
+
+object TestBenchServerSocket {
+  def open(address: SocketAddress): TestBenchServerSocket = {
+    cleanup(address)
+    val family = address match {
+      case _: InetSocketAddress => StandardProtocolFamily.INET
+      case _: UnixDomainSocketAddress => StandardProtocolFamily.UNIX
+      case _ => ???
+    }
+    val channel = ServerSocketChannel.open(family)
+    try {
+      channel.bind(address)
+      new TestBenchServerSocket(channel, address)
+    } catch {
+      case exception: Exception =>
+        try channel.close() finally cleanup(address)
+        throw exception
+    }
+  }
+  def cleanup(address: SocketAddress): Unit = address match {
+    case socket: UnixDomainSocketAddress => Files.deleteIfExists(socket.getPath)
+    case _ =>
+  }
+}
 
 /**
  * So, this is a quite special scala App.
@@ -33,29 +89,35 @@ object TestBenchServer extends App{
   simConfig.withConfig(SpinalConfig(dontCareGenAsZero = true)) //TODO dontCareGenAsZero = true required as verilator isn't deterministic on that :())
 
   val param = new ParamSimple()
+  val serverOptions = new TestBenchServerOptions()
   assert(new scopt.OptionParser[Unit]("TestBenchServer") {
     help("help").text("prints this usage text")
+    serverOptions.addOptions(this)
     param.addOptions(this)
   }.parse(args, ()).nonEmpty)
 
   val compiled = simConfig.compile(TestBench.makeDut(param, 1))
-  val serverSocket = new ServerSocket(8189)
+  val serverSocket = TestBenchServerSocket.open(serverOptions.address)
+  Runtime.getRuntime.addShutdownHook(new Thread("testbench-server-cleanup") {
+    override def run() = serverSocket.close()
+  })
   var i = 0
-  println("Waiting for connections")
-  while (true) {
-    val incoming = serverSocket.accept
+  println(s"Waiting for connections on ${serverSocket.description}")
+  try while (true) {
+    val incoming = serverSocket.accept()
     new TestBenchServerConnection(incoming, compiled)
     i += 1
+  } finally {
+    serverSocket.close()
   }
 }
 
-
-class TestBenchServerConnection(incoming: Socket, compiled : SimCompiled[TestBenchDut]) extends Thread {
+class TestBenchServerConnection(incoming: SocketChannel, compiled : SimCompiled[TestBenchDut]) extends Thread {
   this.start()
   override def run() = {
     try try {
-      val inputStream = incoming.getInputStream
-      val outputStream = incoming.getOutputStream
+      val inputStream = Channels.newInputStream(incoming)
+      val outputStream = Channels.newOutputStream(incoming)
       val in = new Scanner(inputStream)
       val out = new PrintWriter(outputStream, true) /* autoFlush */
       var command = ""
