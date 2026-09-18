@@ -15,6 +15,7 @@ trait AddressTranslationPortUsage
 object AddressTranslationPortUsage{
   object FETCH extends AddressTranslationPortUsage
   object LOAD_STORE extends AddressTranslationPortUsage
+  object IMPLICIT_LOAD extends AddressTranslationPortUsage
 }
 
 case class AddressTranslationRefillCmdPerm() extends Bundle{
@@ -133,6 +134,10 @@ trait AddressTranslationService extends Area {
                          portSpec: Any,
                          storageSpec: Any): AddressTranslationRsp
 
+  def newTranslationAccess(usage: AddressTranslationPortUsage,
+                           portSpec: Any,
+                           storageSpec: Any): AddressTranslationAccess
+
   val refillPorts = ArrayBuffer[AddressTranslationRefill]()
   def newRefillPort() = refillPorts.addRet(AddressTranslationRefill(getStorageIdWidth()))
 
@@ -162,6 +167,30 @@ class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) e
     val BYPASS_TRANSLATION = Payload(Bool())
     val ADDRESS_EXTENSION = Payload(Bool())
   }
+}
+
+case class AddressTranslationAccessCmd() extends Bundle {
+  val address = MIXED_ADDRESS()
+  val load = Bool()
+  val store = Bool()
+  val execute = Bool()
+  val forceGuest = Bool()
+  val forcePhysical = Bool()
+}
+
+case class AddressTranslationAccessRsp() extends Bundle {
+  val translated = PHYSICAL_ADDRESS()
+  val hazard = Bool()
+  val refill = Bool()
+  val pageFault = Bool()
+  val accessFault = Bool()
+  val bypassTranslation = Bool()
+  val addressExtension = Bool()
+}
+
+case class AddressTranslationAccess() extends Bundle {
+  val cmd = Stream(AddressTranslationAccessCmd())
+  val rsp = Stream(AddressTranslationAccessRsp())
 }
 
 trait PmpService extends Area {
