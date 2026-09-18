@@ -13,6 +13,7 @@ import vexiiriscv.riscv._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import vexiiriscv.execute.fpu.FpuUtils.supported
 
 
 case class FpuPackerCmd(p : FloatUnpackedParam,
@@ -106,7 +107,12 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
         sel := (for(port <- ports; (portAt, i) <- port.cmd.ats.zipWithIndex; if portAt == at) yield port.cmd.at(i)).orR
       }
 
-      val EXP_SUBNORMAL = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023)(-127)))
+      val EXP_SUBNORMAL = insert(AFix(p.muxFormat[SInt](FORMAT){
+        case FpuFormat.FLOAT  => FpuConst.f32.expSubnormal
+        case FpuFormat.DOUBLE => FpuConst.f64.expSubnormal
+        case FpuFormat.QUAD   => FpuConst.f128.expSubnormal
+        case FpuFormat.HALF   => FpuConst.f16.expSubnormal
+      }))
       val subnormal = !ignoreSubnormal generate new Area{
         val ENABLE = insert(ignoreSubnormal.mux(False, VALUE.exponent <= EXP_SUBNORMAL && VALUE.isNormal))
       }
@@ -135,9 +141,28 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       }
 
 
-      val f32ManPos = p.mantissaWidth + 2 - 23
-      val roundAdjusted = insert(p.muxDouble(FORMAT)(MAN_SHIFTED(0, 2 bits))(MAN_SHIFTED(f32ManPos - 2, 2 bits) | U(MAN_SHIFTED(f32ManPos - 2 - 1 downto 0).orR, 2 bits)))
-      val manLsb = insert(p.muxDouble(FORMAT)(MAN_SHIFTED(2))(MAN_SHIFTED(f32ManPos)))
+      val f16ManPos = p.mantissaWidth + 2 - FpuConst.f16.manWidth
+      val f32ManPos = p.mantissaWidth + 2 - FpuConst.f32.manWidth
+      val f64ManPos = p.mantissaWidth + 2 - FpuConst.f64.manWidth
+      val f128ManPos = p.mantissaWidth + 2 - FpuConst.f128.manWidth
+
+      def round(pos: Int) = (pos > 2).mux(
+        MAN_SHIFTED(pos - 2, 2 bits) | U(MAN_SHIFTED(pos - 2 - 1 downto 0).orR, 2 bits),
+        MAN_SHIFTED(pos - 2, 2 bits)
+      )
+
+      val roundAdjusted = insert(p.muxFormat(FORMAT){
+        case FpuFormat.FLOAT  => round(f32ManPos)
+        case FpuFormat.DOUBLE => round(f64ManPos)
+        case FpuFormat.QUAD   => round(f128ManPos)
+        case FpuFormat.HALF   => round(f16ManPos)
+      })
+      val manLsb = insert(p.muxFormat(FORMAT){
+        case FpuFormat.FLOAT  => MAN_SHIFTED(f32ManPos)
+        case FpuFormat.DOUBLE => MAN_SHIFTED(f64ManPos)
+        case FpuFormat.QUAD   => MAN_SHIFTED(f128ManPos)
+        case FpuFormat.HALF   => MAN_SHIFTED(f16ManPos)
+      })
 
       // Then we apply the rounding necessary
       val ROUNDING_INCR = insert(VALUE.isNormal && ROUNDMODE.mux(
@@ -147,7 +172,13 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
         FpuRoundMode.RUP -> (roundAdjusted =/= 0 && !VALUE.sign),
         FpuRoundMode.RMM -> (roundAdjusted(1))
       ))
-      val incrBy = p.muxDouble(FORMAT)(U(1))(U(1) << p.mantissaWidth - 23)
+      val incrByWidth = p.mantissaWidth - FpuConst.supported.filter { case (format, _) => supported.contains(format) }.map(_._2.manWidth).min + 1
+      val incrBy = p.muxFormat(FORMAT) {
+        case FpuFormat.FLOAT  => U(BigInt(1) << (p.mantissaWidth - 23), incrByWidth bits)
+        case FpuFormat.DOUBLE => U(BigInt(1) << (p.mantissaWidth - 52), incrByWidth bits)
+        case FpuFormat.QUAD   => U(BigInt(1) << (p.mantissaWidth - 112), incrByWidth bits)
+        case FpuFormat.HALF   => U(BigInt(1) << (p.mantissaWidth - 10), incrByWidth bits)
+      }
       val manIncrWithCarry = (MAN_SHIFTED >> 2) +^ incrBy
       val MAN_CARRY = manIncrWithCarry.msb
       val MAN_INCR = (manIncrWithCarry.dropHigh(1))
@@ -162,16 +193,24 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       val SUBNORMAL_FINAL = insert(ignoreSubnormal.mux(False, (EXP_SUBNORMAL - EXP_RESULT).isPositive()))
       val EXP = insert(!SUBNORMAL_FINAL ? (EXP_RESULT - EXP_SUBNORMAL) | AFix(0))
 
-      val EXP_MAX = insert(AFix(p.muxDouble[SInt](FORMAT)(1023)(127)))
-      val EXP_MIN = insert(AFix(p.muxDouble[SInt](FORMAT)(-1023 - ignoreSubnormal.mux(0, 52 + 1))(-127 - ignoreSubnormal.mux(0, 23 + 1))))
+      val EXP_MAX = insert(AFix(p.muxFormat[SInt](FORMAT) {
+        case FpuFormat.FLOAT  => FpuConst.f32.expMax
+        case FpuFormat.DOUBLE => FpuConst.f64.expMax
+        case FpuFormat.QUAD   => FpuConst.f128.expMax
+        case FpuFormat.HALF   => FpuConst.f16.expMax
+      }))
+      val EXP_MIN = insert(AFix(p.muxFormat[SInt](FORMAT) {
+        FpuConst.supported.map { case (e, c) => e -> S(c.expSubnormal - ignoreSubnormal.mux(0, c.manWidth + 1)) }
+      }))
       val EXP_OVERFLOW = insert(EXP_RESULT > EXP_MAX)
       val EXP_UNDERFLOW = insert(EXP_RESULT < EXP_MIN)
 
       val mr = VALUE.mantissa.raw
-      val tinyRound = p.muxDouble(FORMAT) {
-        mr.dropHigh(52).msb ## mr.dropHigh(53).orR
-      } {
-        mr.dropHigh(23).msb ## mr.dropHigh(24).orR
+      val tinyRound = p.muxFormat(FORMAT) {
+        case FpuFormat.FLOAT  => mr.dropHigh(23).msb ## mr.dropHigh(24).orR
+        case FpuFormat.DOUBLE => mr.dropHigh(52).msb ## mr.dropHigh(53).orR
+        case FpuFormat.QUAD   => mr.dropHigh(112).msb ## mr.dropHigh(113).orR
+        case FpuFormat.HALF   => mr.dropHigh(10).msb ## mr.dropHigh(11).orR
       }
 
       val tinyRoundingIncr = VALUE.isNormal && ROUNDMODE.mux(
@@ -181,10 +220,11 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
         FpuRoundMode.RUP -> (tinyRound =/= 0 && !VALUE.sign),
         FpuRoundMode.RMM -> (tinyRound(1))
       )
-      val tinyOverflow = p.muxDouble(FORMAT) {
-        VALUE.mantissa.raw.takeHigh(52).andR
-      } {
-        VALUE.mantissa.raw.takeHigh(23).andR
+      val tinyOverflow = p.muxFormat(FORMAT) {
+        case FpuFormat.FLOAT  => VALUE.mantissa.raw.takeHigh(23).andR
+        case FpuFormat.DOUBLE => VALUE.mantissa.raw.takeHigh(52).andR
+        case FpuFormat.QUAD   => VALUE.mantissa.raw.takeHigh(112).andR
+        case FpuFormat.HALF   => VALUE.mantissa.raw.takeHigh(10).andR
       } && tinyRoundingIncr
 
       val expSet, expZero, expMax, manZero, manSet, manOne, manQuiet, positive = False
@@ -273,36 +313,66 @@ class FpuPackerPlugin(val lane: ExecuteLanePlugin,
       flagsWb.flags.DZ := FLAGS.DZ
       flagsWb.flags.NV := FLAGS.NV
 
-
-      p.whenDouble(FORMAT) {
-        fwb.value := VALUE.sign ## EXP.raw.resize(11 bits) ## MAN_RESULT
-      } {
-        fwb.value(31 downto 0) := VALUE.sign ## EXP.raw.takeLow(8) ## MAN_RESULT.takeHigh(23)
-        if (p.rvd) fwb.value(63 downto 32).setAll()
+      val value = fwb.value.getAllTrue
+      value.allowOverride()
+      p.whenFormat(FORMAT) {
+        case FpuFormat.FLOAT  => {
+          value(31 downto 0) := VALUE.sign ## EXP.raw.takeLow(8) ## MAN_RESULT.takeHigh(23)
+        }
+        case FpuFormat.DOUBLE => {
+          value(63 downto 0) := VALUE.sign ## EXP.raw.takeLow(11) ## MAN_RESULT.takeHigh(52)
+        }
+        case FpuFormat.QUAD   => {
+          value(127 downto 0) := VALUE.sign ## EXP.raw.takeLow(15) ## MAN_RESULT.takeHigh(112)
+        }
+        case FpuFormat.HALF   => {
+          value(15 downto 0) := VALUE.sign ## EXP.raw.takeLow(5) ## MAN_RESULT.takeHigh(10)
+        }
       }
+      fwb.value := value
 
       val wb = fwb.value
-      p.whenDouble(FORMAT) {
-        when(expZero)  { wb(52, 11 bits).clearAll() }
-        when(expSet)   { wb(52, 11 bits).setAll() }
-        when(expMax)   { wb(52, 11 bits) := 0x7FE }
-        when(manZero)  { wb(0, 52 bits).clearAll() }
-        when(manOne)   { wb(0, 52 bits) := 1 }
-        when(manSet)   { wb(0, 52 bits).setAll() }
-        when(manQuiet) { wb(51) := True }
-        when(positive) { wb(63) := False }
-      } {
-        when(expZero)  { wb(23, 8 bits).clearAll() }
-        when(expSet)   { wb(23, 8 bits).setAll() }
-        when(expMax)   { wb(23, 8 bits) := 0xFE }
-        when(manZero)  { wb(0, 23 bits).clearAll() }
-        when(manOne)   { wb(0, 23 bits) := 1 }
-        when(manSet)   { wb(0, 23 bits).setAll() }
-        when(manQuiet) { wb(22) := True }
-        when(positive) { wb(31) := False }
-      }
-      if (p.rvd) when(FORMAT === FpuFormat.FLOAT) {
-        wb(63 downto 32).setAll()
+      p.whenFormat(FORMAT) {
+        case FpuFormat.FLOAT  => {
+          when(expZero)  { wb(23, 8 bits).clearAll() }
+          when(expSet)   { wb(23, 8 bits).setAll() }
+          when(expMax)   { wb(23, 8 bits) := 0xFE }
+          when(manZero)  { wb(0, 23 bits).clearAll() }
+          when(manOne)   { wb(0, 23 bits) := 1 }
+          when(manSet)   { wb(0, 23 bits).setAll() }
+          when(manQuiet) { wb(22) := True }
+          when(positive) { wb(31) := False }
+        }
+        case FpuFormat.DOUBLE => {
+          when(expZero)  { wb(52, 11 bits).clearAll() }
+          when(expSet)   { wb(52, 11 bits).setAll() }
+          when(expMax)   { wb(52, 11 bits) := 0x7FE }
+          when(manZero)  { wb(0, 52 bits).clearAll() }
+          when(manOne)   { wb(0, 52 bits) := 1 }
+          when(manSet)   { wb(0, 52 bits).setAll() }
+          when(manQuiet) { wb(51) := True }
+          when(positive) { wb(63) := False }
+        }
+        case FpuFormat.QUAD => {
+          when(expZero)  { wb(112, 15 bits).clearAll() }
+          when(expSet)   { wb(112, 15 bits).setAll() }
+          when(expMax)   { wb(112, 15 bits) := 0x7FFE }
+          when(manZero)  { wb(0, 112 bits).clearAll() }
+          when(manOne)   { wb(0, 112 bits) := 1 }
+          when(manSet)   { wb(0, 112 bits).setAll() }
+          when(manQuiet) { wb(111) := True }
+          when(positive) { wb(127) := False }
+        }
+        case FpuFormat.HALF => {
+          when(expZero)  { wb(10, 5 bits).clearAll() }
+          when(expSet)   { wb(10, 5 bits).setAll() }
+          when(expMax)   { wb(10, 5 bits) := 0x1E }
+          when(manZero)  { wb(0, 10 bits).clearAll() }
+          when(manOne)   { wb(0, 10 bits) := 1 }
+          when(manSet)   { wb(0, 10 bits).setAll() }
+          when(manQuiet) { wb(9) := True }
+          when(positive) { wb(15) := False }
+        }
       }
 
       ready := !lane.isFreezed()

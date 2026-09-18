@@ -171,7 +171,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     val injectCtrl = elp.ctrl(0)
     val inject = new injectCtrl.Area {
-      SIZE := Decode.UOP(13 downto 12).asUInt
+      SIZE := Decode.UOP(Const.funct3Range).asUInt.resized
+      if(Riscv.LSU_SIZE_WIDTH > 2) SIZE.msb clearWhen(!Decode.UOP(2))
     }
 
     // Hardware elaboration
@@ -215,7 +216,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => SIZE === i && RAW_ADDRESS(i - 1 downto 0) =/= 0).orR) //TODO remove from speculLoad and handle it with trap
 
       when(GUEST) {
-        bypass(SIZE) := Decode.UOP(27 downto 26).asUInt
+        bypass(SIZE) := Decode.UOP(27 downto 26).asUInt.resized
       }
     }
 
@@ -438,7 +439,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
           bus.cmd.valid := cmd.valid
           bus.cmd.write := False
           bus.cmd.address := cmd.address
-          bus.cmd.size := cmd.size
+          bus.cmd.size := cmd.size.resized
           bus.cmd.fromHart := False
           bus.cmd.io := False
           if(withAtomics) bus.cmd.amoEnable := False
@@ -538,7 +539,13 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         p.valid := SEL && FLOAT
         p.payload := rspShifted.resized
         if(Riscv.RVD) when(SIZE === 2) {
-          p.payload(63 downto 32).setAll()
+          p.payload(Riscv.FLEN - 1 downto 32).setAll()
+        }
+        if(Riscv.RVZfh) when (SIZE === 1) {
+          p.payload(Riscv.FLEN - 1 downto 16).setAll()
+        }
+        if(Riscv.RVQ) when (SIZE === 3) {
+          p.payload(Riscv.FLEN - 1 downto 64).setAll()
         }
       }
     }

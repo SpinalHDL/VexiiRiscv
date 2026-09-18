@@ -41,14 +41,24 @@ class FpuAddPlugin(val layer : LaneLayer,
       addPort.uopsAt += (spec -> addAt)
     }
 
+    val f128 = FORMAT -> FpuFormat.QUAD
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     add(Rvfd.FADD_S, f32, SUB -> False)
     add(Rvfd.FSUB_S, f32, SUB -> True )
     if(Riscv.RVD) {
       add(Rvfd.FADD_D, f64, SUB -> False)
       add(Rvfd.FSUB_D, f64, SUB -> True )
+    }
+    if(Riscv.RVQ) {
+      add(Rvfd.FADD_Q, f128, SUB -> False)
+      add(Rvfd.FSUB_Q, f128, SUB -> True )
+    }
+    if(Riscv.RVZfh) {
+      add(Rvfd.FADD_H, f16, SUB -> False)
+      add(Rvfd.FSUB_H, f16, SUB -> True )
     }
 
     uopLock.release()

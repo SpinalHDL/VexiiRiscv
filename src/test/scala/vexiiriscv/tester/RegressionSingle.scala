@@ -89,6 +89,8 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
   val rvzknh = riscv.get.has("zknh")
   val rvzksed = riscv.get.has("zksed")
   val rvzksh = riscv.get.has("zksh")
+  val rvzfh = riscv.get.has("zfh")
+  val rvzfa = riscv.get.has("zfa")
 
   var arch = ""
   var archLinux = ""
@@ -343,6 +345,16 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     if (rvzknh) doArchTest("Zknh", startSymbol = "rvtest_entry_point")
     if (rvzksed) doArchTest("Zksed", startSymbol = "rvtest_entry_point")
     if (rvzksh) doArchTest("Zksh", startSymbol = "rvtest_entry_point")
+    if (rvzfh) {
+      doArchTest("Zfh", startSymbol = "rvtest_entry_point")
+      if (rvd) doArchTest("ZfhD", startSymbol = "rvtest_entry_point")
+    }
+    if (rvzfa) {
+      if (rvf) doArchTest("ZfaF", startSymbol = "rvtest_entry_point")
+      if (rvd) doArchTest("ZfaD", startSymbol = "rvtest_entry_point")
+      if (rvzfh) doArchTest("ZfaZfh", startSymbol = "rvtest_entry_point")
+      if (rvd && rvzfh) doArchTest("ZfaZfhD", startSymbol = "rvtest_entry_point")
+    }
   }
 
   val regulars = ArrayBuffer("dhrystone_vexii", "coremark_vexii", "machine_vexii")
