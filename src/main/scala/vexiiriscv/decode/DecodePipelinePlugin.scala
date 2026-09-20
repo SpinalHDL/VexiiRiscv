@@ -24,7 +24,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
 
   override def getLinks(): Seq[Link] = logic.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, Ctrl]()
-
+  def ids: Seq[Int] = idToCtrl.keys.toSeq.sorted
 
   class Ctrl() extends Area{
     val idToLane = mutable.LinkedHashMap[Int, LaneImpl]()
