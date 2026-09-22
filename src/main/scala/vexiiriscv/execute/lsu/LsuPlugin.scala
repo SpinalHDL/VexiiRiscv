@@ -65,8 +65,9 @@ case class LsuTimingParameter(var addressAt : Int = 0,
  * - Implement the prefetching request
  * - Implement RISC-V debug triggers related to memory load/store
  *
- * So, it has a lot of different functionalities which sometimes are tightly coupled together in order to reduce area and increase FMax
- * which can make it challenging to read.
+ * So, it has a lot of different functionalities which sometimes are tightly
+ * coupled together in order to reduce area and increase FMax, which can make 
+ * it challenging to read.
  */
 class LsuPlugin(var layer : LaneLayer,
                 var withZaamo : Boolean,
@@ -75,7 +76,7 @@ class LsuPlugin(var layer : LaneLayer,
                 var translationPortParameter: Any,
                 var pmpPortParameter : Any,
                 var softwarePrefetch: Boolean,
-                var withCbm: Boolean,
+                var withZicbom: Boolean,
                 val timingParameter: LsuTimingParameter,
                 var withLlcFlush : Boolean = false,
                 var storeRs2At : Int = 0, //Note that currently, it only apply for integer store (not float store)
@@ -83,8 +84,8 @@ class LsuPlugin(var layer : LaneLayer,
                 var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuService with CmoService{
   import timingParameter._
 
-  if(withLlcFlush) assert(withCbm)
-  def withL1Cmb = withCbm && !withLlcFlush
+  if(withLlcFlush) assert(withZicbom)
+  def withL1Zicbom = withZicbom && !withLlcFlush
   def withAtomics = withZaamo || withZalrsc
 
   override def accessRefillCount: Int = 0
@@ -156,7 +157,7 @@ class LsuPlugin(var layer : LaneLayer,
 
     val trapPort = ts.newTrap(layer.lane.getExecuteAge(ctrlAt), Execute.LANE_AGE_WIDTH)
     val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(ctrlAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
-    val frontend = new AguFrontend(layer, host, withRvcbm = withCbm)
+    val frontend = new AguFrontend(layer, host, withRvZicbom = withZicbom)
     val commitProbe = Flow(LsuCommitProbe()) // Used by the hardware prefetching plugin to learn about the software behavior
 
     // Extends the instruction specifications done by the AGU with sign extensions and flush behavior
@@ -178,8 +179,8 @@ class LsuPlugin(var layer : LaneLayer,
       }
     }
 
-    for(cbm <- frontend.cbms){
-      val op = layer(cbm)
+    for(zicbom <- frontend.zicboms) {
+      val op = layer(zicbom)
       op.mayFlushUpTo(ctrlAt)
       op.dontFlushFrom(ctrlAt+1)
       op.setCompletion(wbAt)
@@ -223,7 +224,7 @@ class LsuPlugin(var layer : LaneLayer,
 
     retainer.release()
 
-    val cbmCsr = withCbm generate new Area{
+    val cboCsr = withZicbom generate new Area {
       val privilege = pp.getPrivilege(0)
       val isGuest = PrivilegeMode.isGuest(privilege)
       val rawPrivilege = PrivilegeMode.mode(privilege)
@@ -240,9 +241,9 @@ class LsuPlugin(var layer : LaneLayer,
 
       ds.addMicroOpDecodingDefault(CLEAN, False)
       ds.addMicroOpDecodingDefault(INVALIDATE, False)
-      ds.addMicroOpDecoding(Rvi.CBM_CLEAN, CLEAN, True)
-      ds.addMicroOpDecoding(Rvi.CBM_FLUSH, CLEAN, True)
-      ds.addMicroOpDecoding(Rvi.CBM_INVALIDATE, INVALIDATE, True)
+      ds.addMicroOpDecoding(Rvi.CBO_CLEAN, CLEAN, True)
+      ds.addMicroOpDecoding(Rvi.CBO_FLUSH, CLEAN, True)
+      ds.addMicroOpDecoding(Rvi.CBO_INVAL, INVALIDATE, True)
 
       val menvcfg = xenvcfg(CSR.MENVCFG)
       val senvcfg = pp.implementSupervisor generate xenvcfg(CSR.SENVCFG)
@@ -479,8 +480,8 @@ class LsuPlugin(var layer : LaneLayer,
         port.store := STORE
         port.execute := EXECUTE
         port.atomic := ATOMIC
-        port.clean := withCbm.mux(CLEAN || INVALIDATE && cbmCsr.invalIntoClean, False)
-        port.invalidate := withCbm.mux(INVALIDATE, False)
+        port.clean := withZicbom.mux(CLEAN || INVALIDATE && cboCsr.invalIntoClean, False)
+        port.invalidate := withZicbom.mux(INVALIDATE, False)
         port.guest := GUEST
         port.op := LsuL1CmdOpcode.LSU
         if(softwarePrefetch) when(LSU_PREFETCH) { port.op := LsuL1CmdOpcode.PREFETCH }
@@ -652,7 +653,7 @@ class LsuPlugin(var layer : LaneLayer,
     // Pre compute a few things to reduce the combinatorial path pressure on the ctrl stage.
     val preCtrl = new elp.Execute(ctrlAt-1){
       val MISS_ALIGNED = insert((1 to log2Up(LSLEN / 8)).map(i => l1.SIZE === i && l1.MIXED_ADDRESS(i - 1 downto 0) =/= 0).orR)
-      if(withCbm) MISS_ALIGNED clearWhen(l1.CLEAN || l1.INVALID)
+      if(withZicbom) MISS_ALIGNED clearWhen(l1.CLEAN || l1.INVALID)
       val IS_AMO = insert(SEL && l1.ATOMIC && l1.STORE && l1.LOAD)
     }
 
@@ -869,7 +870,7 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code := TrapReason.REDO
         }
 
-        if(withL1Cmb) when(l1.CBM_REDO) {
+        if(withL1Zicbom) when(l1.ZICBOM_REDO) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
@@ -1022,7 +1023,7 @@ class LsuPlugin(var layer : LaneLayer,
         }
       }
 
-      val cmbTrap = withL1Cmb generate new Area{
+      val cmbTrap = withL1Zicbom generate new Area{
         val cmbTrigger = RegNextWhen(isValid && SEL && (l1.CLEAN || l1.INVALID), !elp.isFreezed()) init(False)
         val pendingWritebacks = Reg(LsuL1.WRITEBACK_BUSY.get) init(0)
         pendingWritebacks := (pendingWritebacks & LsuL1.WRITEBACK_BUSY.orMask(elp.isFreezed())) | LsuL1.WRITEBACK_BUSY.andMask(cmbTrigger)
@@ -1061,7 +1062,7 @@ class LsuPlugin(var layer : LaneLayer,
       abords += FROM_LSU && (!isValid || isCancel || FENCE)
       abords += mmuNeeded && (MMU_FAILURE || GUEST_MMU_FAILURE)
       abords += FROM_LSU && (fenceTrap.doIt || fenceTrap.doItReg)
-      if(withStoreBuffer && withL1Cmb) abords += (l1.CLEAN || l1.INVALID) && wb.hit
+      if(withStoreBuffer && withL1Zicbom) abords += (l1.CLEAN || l1.INVALID) && wb.hit
       if(withStoreBuffer) abords += wb.loadHazard || wb.selfHazard
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE

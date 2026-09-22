@@ -80,7 +80,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
   val rvzbb = dut.database(Riscv.RVZbb)
   val rvzbc = dut.database(Riscv.RVZbc)
   val rvzbs = dut.database(Riscv.RVZbs)
-  val rvzcbm = dut.database(Riscv.RVZcbm)
+  val rvzicbom = dut.database(Riscv.RVZicbom)
   val rvzbkb = riscv.get.has("zbkb")
   val rvzbkc = riscv.get.has("zbkc")
   val rvzbkx = riscv.get.has("zbkx")
@@ -397,7 +397,7 @@ class RegressionSingle(compiled : SimCompiled[TestBenchDut],
     args.name(s"regular/$name")
   }
 
-  if(rvzcbm && dut.host.get[LsuL1Plugin].map(p => !p.withCoherency).getOrElse(true)) {
+  if(rvzicbom && dut.host.get[LsuL1Plugin].map(p => !p.withCoherency).getOrElse(true)) {
     val args = newArgs()
     args.loadElf(new File(nsf, s"baremetal/cbm/build/$arch/cbm.elf"))
     args.failAfter(600000000)

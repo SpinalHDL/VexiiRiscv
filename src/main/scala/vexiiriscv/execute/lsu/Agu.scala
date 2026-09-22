@@ -31,7 +31,7 @@ object AguPlugin extends AreaObject {
 class AguFrontend(
     layer: LaneLayer,
     host: PluginHost,
-    withRvcbm : Boolean = false
+    withRvZicbom : Boolean = false
   ) extends ExecuteUnitElementSimple.Api(
     layer,
     host.find[SrcPlugin](_.layer == layer),
@@ -110,11 +110,11 @@ class AguFrontend(
     }
   }
 
-  val cbms = ArrayBuffer[MicroOp]()
-  Riscv.RVZcbm.set(withRvcbm)
-  val cbm = withRvcbm generate new Area{
-    cbms += add(Rvi.CBM_CLEAN).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(CLEAN -> True)).uop
-    cbms += add(Rvi.CBM_FLUSH).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(CLEAN -> True, INVALIDATE -> True)).uop
-    cbms += add(Rvi.CBM_INVALIDATE).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(INVALIDATE -> True)).uop
+  val zicboms = ArrayBuffer[MicroOp]()
+  Riscv.RVZicbom.set(withRvZicbom)
+  val zicbom = withRvZicbom generate new Area {
+    zicboms += add(Rvi.CBO_CLEAN).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(CLEAN -> True)).uop
+    zicboms += add(Rvi.CBO_FLUSH).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(CLEAN -> True, INVALIDATE -> True)).uop
+    zicboms += add(Rvi.CBO_INVAL).srcs(sk.Op.SRC1, sk.SRC1.RF).decode(dec(INVALIDATE -> True)).uop
   }
 }

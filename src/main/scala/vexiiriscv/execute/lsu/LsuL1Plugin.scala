@@ -31,7 +31,7 @@ object LsuL1 extends AreaObject {
 
   // L1 -> LSU
   val READ_DATA = Payload(Bits(Riscv.LSLEN bits))
-  val HAZARD, MISS, MISS_UNIQUE, FAULT, FLUSH_HAZARD, CBM_REDO = Payload(Bool()) // From the ctrl stage, provide the status of the request to the LSU
+  val HAZARD, MISS, MISS_UNIQUE, FAULT, FLUSH_HAZARD, ZICBOM_REDO = Payload(Bool()) // From the ctrl stage, provide the status of the request to the LSU
   val FLUSH_HIT = Payload(Bool()) //you also need to redo the flush until no hit anymore
   val REFILL_HIT = Payload(Bool()) // A ongoing refill is on the same cache set (this is just an optional detail, HAZARD is already set)
   val WAIT_REFILL = Payload(cloneOf(REFILL_BUSY.get)) // Specifies which refill should be waited on before retrying the failed access (optional)
@@ -96,7 +96,7 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
                   var coherentHitsAt: Int = 1,
                   var coherentHitAt: Int = 1,
                   var coherentCtrlAt: Int = 2,
-                  var withCbm : Boolean = false,
+                  var withZicbom : Boolean = false,
                   var hitsWithTranslationWays: Boolean = false,
                   var reducedBankWidth: Boolean = false,
                   var tagsReadAsync: Boolean = false,
@@ -885,17 +885,17 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         val needFlushOh = OHMasking.firstV2(needFlushs)
         val needFlushSel = OHToUInt(needFlushOh)
 
-        val isAccess = !FLUSH && withCbm.mux(!CLEAN && !INVALID, True)
+        val isAccess = !FLUSH && withZicbom.mux(!CLEAN && !INVALID, True)
         val askRefill = isAccess && MISS && canRefill
         val askUpgrade = isAccess && MISS_UNIQUE && canRefill
         val askFlush = FLUSH && canFlush && needFlushs.orR
-        val askCbm =  withCbm.mux(WAYS_HIT && (INVALID || CLEAN && wasDirty), False)
+        val askZicbom =  withZicbom.mux(WAYS_HIT && (INVALID || CLEAN && wasDirty), False)
 
         val doRefill = SEL && askRefill
         val doUpgrade = SEL && askUpgrade
         val doFlush = SEL && askFlush
         val doWrite = SEL && STORE && WAYS_HIT && this(WAYS_TAGS).reader(WAYS_HITS)(w => withCoherency.mux(w.unique, True) && !w.fault) && !SKIP_WRITE
-        val doCbm = withCbm.mux(SEL && askCbm && wayWriteReservation.win && !writeback.full && !refillHazard && !writebackHazard, False)
+        val doZicbom = withZicbom.mux(SEL && askZicbom && wayWriteReservation.win && !writeback.full && !refillHazard && !writebackHazard, False)
 
         val wayId = OHToUInt(WAYS_HITS)
         val bankHitId = if(!reducedBankWidth) wayId else (wayId >> log2Up(bankCount/memToBankRatio)) @@ ((wayId + (PHYSICAL_ADDRESS(log2Up(bankWidth/8), log2Up(bankCount) bits))).resize(log2Up(bankCount/memToBankRatio)))
@@ -949,9 +949,9 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
           }
         }
 
-        val cbm = withCbm generate new Area{
-          CBM_REDO := askCbm
-          when(doCbm){
+        val zicbom = withZicbom generate new Area {
+          ZICBOM_REDO := askZicbom
+          when(doZicbom){
             wayWriteReservation.takeIt()
 
             val reader = this (WAYS_TAGS).reader(WAYS_HITS)
