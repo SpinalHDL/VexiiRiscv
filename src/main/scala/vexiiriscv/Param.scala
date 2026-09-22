@@ -121,7 +121,7 @@ class ParamSimple() {
   var withRas = false
   var withLateAlu = false
   var storeRs2Late = false
-  var withRvcbmLlc = false
+  var withRvZicbomLlc = false
   var withTesterPlugin = false
   var gshareBanks = 1
   var btbDualPortRam = true
@@ -663,8 +663,15 @@ class ParamSimple() {
     opt[Unit]("with-rvZbb") action { (v, c) => addISA("zbb") }
     opt[Unit]("with-rvZbc") action { (v, c) => addISA("zbc") }
     opt[Unit]("with-rvZbs") action { (v, c) => addISA("zbs") }
-    opt[Unit]("with-rvZcbm") action { (v, c) => addISA("zicbom"); }
-    opt[Unit]("with-rvZcbm-llc") action { (v, c) => addISA("zicbom"); withRvcbmLlc = true }
+    opt[Unit]("with-rvZcbm") action { (v, c) => {
+      println("--with-rvZcbm is deprecated, use --with-rvZicbom")
+      addISA("zicbom") } }
+    opt[Unit]("with-rvZicbom") action { (v, c) => addISA("zicbom") }
+    opt[Unit]("with-rvZcbm-llc") action { (v, c) => {
+      println("--with-rvZcbm-llc is deprecated, use --with-rvZicbom-llc")
+      addISA("zicbom")
+      withRvZicbomLlc = true } }
+    opt[Unit]("with-rvZicbom-llc") action { (v, c) => addISA("zicbom"); withRvZicbomLlc = true }
     opt[Unit]("with-rvZknAes") action { (v, c) => addISA("zkne", "zknd") }
     opt[Unit]("with-sxaia") action { (v, c) => addISA("smaia", "ssaia") }
     opt[Int]("imsic-interrupt-number") action { (v, c) => privParam.imsicInterrupts = v }
@@ -1055,7 +1062,7 @@ class ParamSimple() {
       )
     }
     if(lsuL1Enable){
-      val needLlc = extension.withZicbom && (withRvcbmLlc || lsuL1Coherency)
+      val needLlc = extension.withZicbom && (withRvZicbomLlc || lsuL1Coherency)
       plugins += new LsuPlugin(
         timingParameter = extension.withRvh match {
           case true => lsuHypervisorTiming
@@ -1068,7 +1075,7 @@ class ParamSimple() {
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
         softwarePrefetch = lsuSoftwarePrefetch,
-        withCbm = extension.withZicbom,
+        withZicbom = extension.withZicbom,
         withLlcFlush = needLlc,
         pmpPortParameter = lsuL1PmpParam.offset(extension.withRvh.toInt),
         translationStorageParameter = lsuTsp,
@@ -1087,7 +1094,7 @@ class ParamSimple() {
         wayCount       = lsuL1Ways,
         withBypass     = withLsuBypass,
         withCoherency  = lsuL1Coherency,
-        withCbm        = extension.withZicbom && !needLlc,
+        withZicbom        = extension.withZicbom && !needLlc,
         bootMemClear = bootMemClear,
         tagsReadAsync  = lsuL1TagsReadAsync,
         timingParameter = extension.withRvh match {
