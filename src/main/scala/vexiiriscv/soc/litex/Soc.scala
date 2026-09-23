@@ -73,8 +73,9 @@ class SocConfig(){
   val regions = ArrayBuffer[LitexMemoryRegion]()
   var withJtagTap = false
   var withJtagInstruction = false
+  var withSwd = false
   var withDebugProbePc0 = false
-  def withDebug = withJtagInstruction || withJtagTap || withDebugProbePc0
+  def withDebug = withJtagInstruction || withJtagTap || withSwd || withDebugProbePc0
   var withDma = false
   var mBusWidth = 64
   var l2Bytes = 0
@@ -122,6 +123,7 @@ class SocConfig(){
     opt[Unit]("with-axi3") action { (v, c) => withAxi3 = true }
     opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
     opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
+    opt[Unit]("with-swd") text("Add a SWD debug transport (custom DTM, SWCLK/SWDIO). Not to be combined with the JTAG ones.") action { (v, c) => withSwd = true; vexiiParam.privParam.withDebug = true }
     opt[Unit]("with-debug-probe-pc0") text("Allows to profile the CPU via JTAG. See ElfMapper.") action { (v, c) => withDebugProbePc0 = true }
     opt[Unit]("with-aplic") action { (v, c) => withAPlic = true }
     opt[Unit]("with-axilite-xlen") action { (v, c) => axiLiteForce32 = false }
@@ -178,7 +180,12 @@ class Soc(c : SocConfig) extends Component {
   val cpuCd = cpuResetCtrl.cd
 
   val debugReset = c.withDebug generate in.Bool()
+  // RISC-V debug spec Ch. 6 : using several DTM at once isn't supported, SWD replaces the JTAG ones.
+  assert(!(withSwd && (withJtagTap || withJtagInstruction)), "--with-swd can't be combined with --with-jtag-tap / --with-jtag-instruction")
+  assert(!(withDebugProbePc0 && !withJtagTap), "--with-debug-probe-pc0 needs --with-jtag-tap")
   val debug = c.withDebug generate ClockDomain(cpuCd.clock, debugReset)(new DebugModuleSocFiber(withJtagTap, withJtagInstruction) {
+    // SWCLK is a pin of the transport itself, so unlike the JTAG instruction port no clock domain is needed.
+    val swd = withSwd generate dm.withSwdTransport()
     out(dm.ndmreset)
     dm.dmp.withSysBus = c.debugSysBus
   })
