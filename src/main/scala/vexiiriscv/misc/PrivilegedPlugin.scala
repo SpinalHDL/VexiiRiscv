@@ -19,7 +19,6 @@ import vexiiriscv.schedule.{Ages, ScheduleService}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-import vexiiriscv.riscv.CSR.{UTIME => hostCheck}
 
 
 object PrivilegedParam{
