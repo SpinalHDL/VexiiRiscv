@@ -283,7 +283,8 @@ class LsuPlugin(var layer : LaneLayer,
 
     val injectCtrl = elp.ctrl(0)
     val inject = new injectCtrl.Area {
-      SIZE := Decode.UOP(13 downto 12).asUInt
+      SIZE := Decode.UOP(Const.funct3Range).asUInt.resized
+      if(Riscv.LSU_SIZE_WIDTH > 2) SIZE.msb clearWhen(!Decode.UOP(2))
     }
 
     val bus = master(LsuCachelessBus(busParam)).simPublic()
@@ -462,7 +463,7 @@ class LsuPlugin(var layer : LaneLayer,
       )
 
       when(GUEST) {
-        bypass(SIZE) := Decode.UOP(27 downto 26).asUInt
+        bypass(SIZE) := Decode.UOP(27 downto 26).asUInt.resized
       }
 
       val ports = ArrayBuffer[Stream[LsuL1Cmd]]()
@@ -498,7 +499,7 @@ class LsuPlugin(var layer : LaneLayer,
         val port = ports.addRet(Stream(LsuL1Cmd()))
         port.arbitrationFrom(cmd.haltWhen(waiter.valid || sbWaiter))
         port.address := cmd.address.resized
-        port.size := cmd.size
+        port.size := cmd.size.resized
         port.load := True
         port.store := False
         port.execute := False
@@ -1152,7 +1153,13 @@ class LsuPlugin(var layer : LaneLayer,
         p.valid := SEL && FLOAT
         p.payload := onCtrl.loadData.RESULT.resized
         if(Riscv.RVD) when(SIZE === 2) {
-          p.payload(63 downto 32).setAll()
+          p.payload(Riscv.FLEN - 1 downto 32).setAll()
+        }
+        if(Riscv.RVZfh) when (SIZE === 1) {
+          p.payload(Riscv.FLEN - 1 downto 16).setAll()
+        }
+        if(Riscv.RVQ) when (SIZE === 3) {
+          p.payload(Riscv.FLEN - 1 downto 64).setAll()
         }
       }
 

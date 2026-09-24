@@ -6,7 +6,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
-import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, muxDouble}
+import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv.Riscv.RVC
 import vexiiriscv.riscv._
 
@@ -42,6 +42,12 @@ class FpuClassPlugin(val layer : LaneLayer,
     if(Riscv.RVD.get) {
       add(Rvfd.FCLASS_D, FORMAT -> FpuFormat.DOUBLE)
     }
+    if(Riscv.RVQ.get) {
+      add(Rvfd.FCLASS_Q, FORMAT -> FpuFormat.QUAD)
+    }
+    if(Riscv.RVZfh.get) {
+      add(Rvfd.FCLASS_H, FORMAT -> FpuFormat.HALF)
+    }
 
     uopLock.release()
 
@@ -49,7 +55,6 @@ class FpuClassPlugin(val layer : LaneLayer,
 
     val onWb = new layer.Execute(wbAt) {
       val fclassResult = B(0, 10 bits)
-      val expSubnormal = muxDouble[SInt](FORMAT)(-1023)(-127)
       val RS1_FP_SUBNORMAL = fup.getSubnormal(RS1)
       fclassResult(0) := RS1_FP.sign && RS1_FP.isInfinity
       fclassResult(1) := RS1_FP.sign && RS1_FP.isNormal && !RS1_FP_SUBNORMAL

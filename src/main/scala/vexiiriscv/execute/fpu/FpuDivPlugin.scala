@@ -57,6 +57,12 @@ class FpuDivPlugin(val layer : LaneLayer,
     if(Riscv.RVD) {
       add(Rvfd.FDIV_D, FORMAT -> FpuFormat.DOUBLE)
     }
+    if(Riscv.RVQ) {
+      add(Rvfd.FDIV_Q, FORMAT -> FpuFormat.QUAD)
+    }
+    if(Riscv.RVZfh) {
+      add(Rvfd.FDIV_H, FORMAT -> FpuFormat.HALF)
+    }
 
     uopLock.release()
 

@@ -70,7 +70,13 @@ case class FloatUnpacked(p : FloatUnpackedParam) extends Bundle{
 }
 
 object FpuFormat extends SpinalEnum{
-  val FLOAT, DOUBLE = newElement()
+  val FLOAT, DOUBLE, HALF, QUAD = newElement()
+  defaultEncoding = SpinalEnumEncoding("opt")(
+    FLOAT  -> 0,
+    DOUBLE -> 1,
+    HALF   -> 2,
+    QUAD   -> 3,
+  )
 }
 
 object FpuRoundMode extends SpinalEnum(){

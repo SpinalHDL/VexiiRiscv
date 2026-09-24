@@ -79,12 +79,20 @@ class FpuMulPlugin(val layer : LaneLayer, p : FpuMulParam) extends FiberPlugin{
       addPort.uopsAt += (spec -> packAt)
     }
 
+    val f128 = FORMAT -> FpuFormat.QUAD
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     mul(Rvfd.FMUL_S, f32)
     if(Riscv.RVD) {
       mul(Rvfd.FMUL_D, f64)
+    }
+    if (Riscv.RVQ) {
+      mul(Rvfd.FMUL_Q, f128)
+    }
+    if (Riscv.RVZfh) {
+      mul(Rvfd.FMUL_H, f16)
     }
 
     if(withFma){
@@ -97,6 +105,18 @@ class FpuMulPlugin(val layer : LaneLayer, p : FpuMulParam) extends FiberPlugin{
         fma(Rvfd.FMSUB_D , f64, SUB1 -> False, SUB2 -> True)
         fma(Rvfd.FNMSUB_D, f64, SUB1 -> True , SUB2 -> False)
         fma(Rvfd.FNMADD_D, f64, SUB1 -> True , SUB2 -> True)
+      }
+      if (Riscv.RVQ) {
+        fma(Rvfd.FMADD_Q , f128, SUB1 -> False, SUB2 -> False)
+        fma(Rvfd.FMSUB_Q , f128, SUB1 -> False, SUB2 -> True)
+        fma(Rvfd.FNMSUB_Q, f128, SUB1 -> True , SUB2 -> False)
+        fma(Rvfd.FNMADD_Q, f128, SUB1 -> True , SUB2 -> True)
+      }
+      if (Riscv.RVZfh) {
+        fma(Rvfd.FMADD_H , f16, SUB1 -> False, SUB2 -> False)
+        fma(Rvfd.FMSUB_H , f16, SUB1 -> False, SUB2 -> True)
+        fma(Rvfd.FNMSUB_H, f16, SUB1 -> True , SUB2 -> False)
+        fma(Rvfd.FNMADD_H, f16, SUB1 -> True , SUB2 -> True)
       }
     }
 
