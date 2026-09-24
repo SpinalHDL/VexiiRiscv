@@ -183,6 +183,7 @@ class ParamSimple() {
   var withCfu = false
   var gshareBytes = 4 KiB
   var recordHtinst = false
+  var withImplicitPtwTlb = false
   val prefetcherRptParam = new PrefetcherRptParam()
 
   var fetchTsp = MmuStorageParameter(
@@ -200,6 +201,7 @@ class ParamSimple() {
     ),
     priority = 0
   )
+
 
   var pmpParam = new PmpParam(
     pmpSize = 0,
@@ -678,6 +680,7 @@ class ParamSimple() {
     opt[Unit]("with-hypervisor") action { (v, c) => addISA("h", "s", "u") }
     opt[Unit]("with-supervisor") action { (v, c) => addISA("s", "u") }
     opt[Unit]("with-user") action { (v, c) => addISA("u") }
+    opt[Unit]("with-implicit-ptw-tlb") action { (v, c) => withImplicitPtwTlb = true }
     opt[Unit]("without-mmu") action { (v, c) => disableMmu = true }
     opt[Unit]("without-mul") action { (v, c) => removeISA("m", "zmmul") }
     opt[Unit]("without-div") action { (v, c) => if(checkISA("m")) {removeISA("m"); addISA("zmmul")} }
@@ -804,7 +807,7 @@ class ParamSimple() {
     val intWritebackAt = 2 + extension.withRvh.toInt //Alias for "trap at" as well
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, isa = extension.getIsaNameArray(includeIgnored = true).toSet)
-    if (withMmu) plugins += new TranslatedDBusAccessPlugin()
+    if (withMmu) plugins += new TranslatedDBusAccessPlugin(withPtwTlb = withImplicitPtwTlb)
     withMmu match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new vexiiriscv.memory.MmuPlugin(
