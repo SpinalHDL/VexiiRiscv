@@ -96,8 +96,11 @@ object ParamSimple{
  * - you create an instance of ParamSimple
  * - you configure it
  * - you ask it to provide the list of VexiiRiscv plugins
- * - you instanciate VexiiRiscv with that list of plugin
- * - Thenthen you should get a functional VexiiRiscv.
+ * - you instantiate VexiiRiscv with that list of plugin
+ * - then you should get a functional VexiiRiscv.
+ * 
+ * Note that zicsr and zifencei are always present, they are unconditionally
+ * implemented in CsrAccessPlugin and EnvPlugin.
  */
 class ParamSimple() {
   var xlen = 32
