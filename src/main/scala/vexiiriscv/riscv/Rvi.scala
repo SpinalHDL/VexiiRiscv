@@ -49,9 +49,6 @@ object Rvi extends AreaObject {
     ))
   }
 
-  val PREFETCH_R = TypeCmoPrefetch(M"-------00001-----110000000010011")
-  val PREFETCH_W = TypeCmoPrefetch(M"-------00011-----110000000010011")
-
   val ANDI               = TypeI(M"-----------------111-----0010011")
 
 
@@ -100,9 +97,13 @@ object Rvi extends AreaObject {
   val LRD                = TypeILQ(M"00010--00000-----011-----0101111")
   val SCD                = TypeASQ(M"00011------------011-----0101111")
 
-  val CBM_CLEAN          = TypeCmb(M"000000000001_-----_010_00000_0001111")
-  val CBM_FLUSH          = TypeCmb(M"000000000010_-----_010_00000_0001111")
-  val CBM_INVALIDATE     = TypeCmb(M"000000000000_-----_010_00000_0001111")
+  val CBO_CLEAN          = TypeCbo(M"000000000001_-----_010_00000_0001111")
+  val CBO_FLUSH          = TypeCbo(M"000000000010_-----_010_00000_0001111")
+  val CBO_INVAL          = TypeCbo(M"000000000000_-----_010_00000_0001111")
+
+  val PREFETCH_R = TypeCmoPrefetch(M"-------00001-----110000000010011")
+  val PREFETCH_W = TypeCmoPrefetch(M"-------00011-----110000000010011")
+  // PREFETCH_I currently not implemented
 
   val AMOSWAPW           = TypeASQ(M"00001------------010-----0101111")
   val AMOADDW            = TypeASQ(M"00000------------010-----0101111")
