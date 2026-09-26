@@ -10,11 +10,11 @@ import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.riscv.{IntRegFile, RS1, RS2, Riscv}
 import vexiiriscv.tester.{TestBenchDut, TestOptions}
 
-//This plugin example will add a new instruction named SIMD_ADD which do the following :
+//This plugin example will add a new instruction named SIMD_ADD which does the following:
 //
 //RD : Regfile Destination, RS : Regfile Source
 //RD( 7 downto  0) = RS1( 7 downto  0) + RS2( 7 downto  0)
-//RD(16 downto  8) = RS1(16 downto  8) + RS2(16 downto  8)
+//RD(15 downto  8) = RS1(15 downto  8) + RS2(15 downto  8)
 //RD(23 downto 16) = RS1(23 downto 16) + RS2(23 downto 16)
 //RD(31 downto 24) = RS1(31 downto 24) + RS2(31 downto 24)
 //
@@ -26,19 +26,19 @@ import vexiiriscv.tester.{TestBenchDut, TestOptions}
 
 
 object SimdAddPlugin {
-  //Define the instruction type and encoding that we wll use
+  //Define the instruction type and encoding that we will use
   val ADD4 = IntRegFile.TypeR(M"0000000----------000-----0001011")
 }
 
-//ExecutionUnitElementSimple is a plugin base class which will integrate itself in a execute lane layer
-//It provide quite a few utilities to ease the implementation of custom instruction.
-//Here we will implement a plugin which provide SIMD add on the register file.
+//ExecutionUnitElementSimple is a plugin base class which will integrate itself in an execute lane layer
+//It provides quite a few utilities to ease the implementation of custom instructions.
+//Here we will implement a plugin which provides SIMD add functionality on the register file.
 class SimdAddPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(layer)  {
 
   //Here we create an elaboration thread. The Logic class is provided by ExecutionUnitElementSimple to provide functionalities
   val logic = during setup new Logic {
-    //Here we could have lock the elaboration of some other plugins (ex CSR), but here we don't need any of that
-    //as all is already sorted out in the Logic base class.
+    //Here we could have locked the elaboration of some other plugins (e.g. CSR), but we don't need any of that in this example
+    //as everything is already sorted out in the Logic base class.
     //So we just wait for the build phase
     awaitBuild()
 
@@ -56,7 +56,7 @@ class SimdAddPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(la
     add4.addRsSpec(RS2, executeAt = 0)
 
     //Now that we are done specifying everything about the instructions, we can release the Logic.uopRetainer
-    //This will allow a few other plugins to continue their elaboration (ex : decoder, dispatcher, ...)
+    //This will allow a few other plugins to continue their elaboration (e.g.: decoder, dispatcher, ...)
     uopRetainer.release()
 
     //Let's define some logic in the execute lane [0]
@@ -68,7 +68,7 @@ class SimdAddPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(la
       //Do some computation
       val rd = UInt(32 bits)
       rd( 7 downto  0) := rs1( 7 downto  0) + rs2( 7 downto  0)
-      rd(16 downto  8) := rs1(16 downto  8) + rs2(16 downto  8)
+      rd(15 downto  8) := rs1(15 downto  8) + rs2(15 downto  8)
       rd(23 downto 16) := rs1(23 downto 16) + rs2(23 downto 16)
       rd(31 downto 24) := rs1(31 downto 24) + rs2(31 downto 24)
 
