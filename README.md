@@ -15,6 +15,11 @@ VexiiRiscv (Vex2Risc5) is the successor of VexRiscv. Work in progress, here are 
 - Pipeline visualisation in simulation via Konata
 - Lock step simulation via RVLS and Spike
 - AXI4, Wishbone, Tilelink memory busses (RVA is not available in some configs, see the RTD doc SoC main page)
+- [Bit-manipulation extensions](https://docs.riscv.org/reference/isa/extensions/bitmanip/_attachments/bitmanip.pdf) [Zba][Zbb][Zbc][Zbs]
+- [Cryptography scalar & entropy source instructions](https://docs.riscv.org/reference/isa/extensions/crypto-scalar/_attachments/riscv-crypto-spec-scalar.pdf)
+  [Zbkb][Zbkc][Zbkx][Zbs][Zknd][Zkne][Zknh][Zksed][Zksh]
+- [Hypervisor extension](https://docs.riscv.org/reference/isa/v20260120/priv/hypervisor.html) [H]
+- [Advanced Interrupt Architecture specification](https://docs.riscv.org/reference/aia/_attachments/riscv-interrupts.pdf) (AIA with APLIC and IMSIC controllers)
 - ... and many other things
 
 Here is a demonstration of a quad core VexiiRiscv running debian on FPGA : https://youtu.be/dR_jqS13D2c?t=112
@@ -34,9 +39,17 @@ A roadmap is available here :
 
 - https://github.com/SpinalHDL/VexiiRiscv/issues/1
 
-# TL;DR Getting started
+## Various features status
 
-The quickest way for getting started is to pull the Docker image with all the dependencies installed
+- Bit manipulation extensions and cryptography scalar & entropy source instructions
+passed the [RISC-V Architectural Certification Tests](https://github.com/riscv/riscv-arch-test), but may need further improvement
+- The H extension is experimental, and was tested by running linux on the core,
+  executing QEMU with the [KVM-unit-tests](https://www.linux-kvm.org/page/KVM-unit-tests)
+- The AIA is experimental
+
+## TL;DR Getting started
+
+The quickest way for getting started is to pull the Docker image with all the dependencies installed.
 
 Please refer to the self contained tutorial for a comprehensive step by step instruction manual with
 screenshots: https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/Tutorial/index.html
@@ -45,12 +58,12 @@ After running the generation you'll find a file named "VexiiRiscv.v" in the root
 of the repository folder, which you can drag into your Quartus or whatever.
 
 We decided to not start covering FPGA boards because there's just too many, so it's up to you
-to define your pin configuration for your specific FPGA board
+to define your pin configuration for your specific FPGA board.
 
 If you want to know what else you can do with sbt, please refer to the complete documentation.
 
-# Rebuild the Docker container
+## Rebuild the Docker container
 
-In case you wanna rebuild leviathan's Docker container you can run
+In case you wanna rebuild leviathan's Docker container you can run:
 
     docker build . -f docker/Dockerfile -t vexiiriscv --progress=plain
