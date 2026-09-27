@@ -986,6 +986,7 @@ class TestOptions {
         p.debugCd.resetSim #= true
         delayed(20) (p.debugCd.resetSim #= false)
         if (jtagRemote) {
+          assert(p.logic.jtag != null, "--jtag-remote needs the embedded JTAG TAP (--debug-jtag-tap)")
           CheckSocketPort.reserve(JtagRemote.defaultPort)
           onSimEnd(CheckSocketPort.release(JtagRemote.defaultPort))
           while (!CheckSocketPort(JtagRemote.defaultPort)) {

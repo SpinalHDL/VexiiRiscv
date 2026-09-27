@@ -176,6 +176,7 @@ class ParamSimple() {
   var btbHashWidth = 16
   var embeddedJtagTap = false
   var embeddedJtagInstruction = false
+  var embeddedSwd = false
   var embeddedJtagCd: ClockDomain = null
   var embeddedJtagNoTapCd: ClockDomain = null
   var bootMemClear = false
@@ -613,6 +614,7 @@ class ParamSimple() {
     if (privParam.withExternalInterrupt) r += "nei"
     if (embeddedJtagTap) r += s"jtagt"
     if (embeddedJtagInstruction) r += s"jtagi"
+    if (embeddedSwd) r += s"swd"
     r.mkString("_")
   }
 
@@ -747,6 +749,7 @@ class ParamSimple() {
     opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
     opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true; privParam.withDebug = true }
     opt[Unit]("debug-jtag-instruction") action { (v, c) => embeddedJtagInstruction = true; privParam.withDebug = true }
+    opt[Unit]("debug-swd") text("Embedded SWD debug transport (custom DTM, SWCLK/SWDIO). Not to be combined with the JTAG ones.") action { (v, c) => embeddedSwd = true; privParam.withDebug = true }
     opt[Unit]("with-boot-mem-init") action { (v, c) => bootMemClear = true }
     opt[Int]("physical-width") action { (v, c) => physicalWidth = v }
     opt[Unit]("mul-keep-src") action { (v, c) => mulKeepSrc = true }
@@ -1145,7 +1148,9 @@ class ParamSimple() {
     plugins += new TrapPlugin(trapAt = intWritebackAt, recordHtinst = recordHtinst)
     if(withTesterPlugin) plugins += new TesterPlugin()
     plugins += new EnvPlugin(early0, executeAt = 0)
-    if(embeddedJtagTap || embeddedJtagInstruction) plugins += new EmbeddedRiscvJtag(
+    // RISC-V debug spec Ch. 6 : using several DTM at once isn't supported, SWD replaces the JTAG ones.
+    assert(!(embeddedSwd && (embeddedJtagTap || embeddedJtagInstruction)), "--debug-swd can't be combined with --debug-jtag-tap / --debug-jtag-instruction")
+    if(embeddedJtagTap || embeddedJtagInstruction || embeddedSwd) plugins += new EmbeddedRiscvJtag(
       p = DebugTransportModuleParameter(
         addressWidth = 7,
         version = 1,
@@ -1153,6 +1158,7 @@ class ParamSimple() {
       ),
       withTunneling = false,
       withTap = embeddedJtagTap,
+      withSwd = embeddedSwd,
       debugCd = embeddedJtagCd,
       noTapCd = embeddedJtagNoTapCd
     )
