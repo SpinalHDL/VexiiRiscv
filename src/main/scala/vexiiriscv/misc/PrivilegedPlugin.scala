@@ -418,7 +418,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val index = Reg(UInt(log2Up(p.debugTriggers) bits)) init(0)
           api.readWrite(index, CSR.TSELECT)
 
-          val outOfRange = if (isPow2(p.debugTriggers)) False else index < p.debugTriggers
+          val outOfRange = if (isPow2(p.debugTriggers)) False else index > (p.debugTriggers - 1)
         }
 
         //TODO may remove tinfo, as it is optional
