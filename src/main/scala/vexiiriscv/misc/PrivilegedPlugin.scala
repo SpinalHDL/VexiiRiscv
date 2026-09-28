@@ -326,6 +326,10 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         }
 
         val dpc = crs.readWriteRam(CSR.DPC)
+        cap.onWrite(CSR.DPC, false) {
+          cap.bus.write.bits(0, log2Up(Fetch.SLICE_BYTES) bits) := 0
+        }
+
         val dcsr = new Area {
           val prv       = Reg(PrivilegeMode.TYPE()) init(PrivilegeMode.M)
           val step      = RegInit(False) //TODO
