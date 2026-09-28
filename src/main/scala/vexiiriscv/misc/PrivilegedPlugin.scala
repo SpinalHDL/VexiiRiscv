@@ -409,11 +409,6 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val stoptime = out(RegNext(debugMode && dcsr.stoptime) init(False))
       }
 
-      val noTrigger = (p.debugTriggers == 0) generate new Area {
-        cap.allowCsr(CSR.TSELECT)
-        cap.allowCsr(CSR.TDATA1)
-        cap.allowCsr(CSR.TDATA2)
-      }
       val trigger = (p.debugTriggers > 0) generate new Area {
         val tselect = new Area {
           val index = Reg(UInt(log2Up(p.debugTriggers) bits)) init(0)
