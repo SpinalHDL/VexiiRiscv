@@ -1028,6 +1028,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
               pcPort.valid := True
               pcPort.pc := U(readed).resized //PC RESIZED
               csr.privilege := csr.debug.dcsr.prv
+              csr.xretAwayFromMachine setWhen (csr.debug.dcsr.prv =/= PrivilegeMode.M)
               csr.hartRunning := True
               csr.debug.bus.resume.rsp.valid := True
               goto(RUNNING)
