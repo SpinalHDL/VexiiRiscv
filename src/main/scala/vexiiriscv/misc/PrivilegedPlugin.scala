@@ -410,7 +410,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             }
           }
         }
-        val stoptime = out(RegNext(debugMode && dcsr.stoptime) init(False))
+        val needDebugTime = debugMode && dcsr.stoptime
+        val stoptime = out(RegNext(needDebugTime) init(False))
       }
 
       val trigger = (p.debugTriggers > 0) generate new Area {
@@ -581,6 +582,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         api.read(CSR.TDATA1, 0 -> slots.map(_.tdata1.read).read(tselect.index))
         api.read(CSR.TDATA2, 0 -> S(slots.map(_.tdata2.value).read(tselect.index)).resize(XLEN))
+      }
+
+      /* For debug mode, use cached time source when stoptime is set */
+      val rdtimeInternal = if(p.withDebug && p.withRdTime) {
+        val debugRdtime = RegNextWhen(rdtime, !debugMode, init = U(0, 64 bits))
+        debug.needDebugTime.mux(debugRdtime, rdtime)
+      } else {
+        rdtime
       }
 
       val m = new Area {
@@ -794,7 +803,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         val timedelta = p.withRdTime generate new Area {
           val delta = RegInit(U(0, 64 bits))
-          val calibrated = rdtime + delta
+          val calibrated = rdtimeInternal + delta
 
           XLEN.get match {
             case 32 => {
@@ -954,7 +963,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val sstc = new Area {
           val logic = p.withSSTC generate new Area {
             val cmp = RegInit(U(64 bits, default -> true))
-            val ip = RegNext(rdtime >= cmp)
+            val ip = RegNext(rdtimeInternal >= cmp)
 
             val accessable =  withMachinePrivilege || (m.counteren.tm && m.envcfg.stce)
 
@@ -1259,8 +1268,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
       val time = p.withRdTime generate new Area {
         val time = p.withHypervisor.mux(
-          isGuestMode.mux(h.timedelta.calibrated, rdtime),
-          rdtime
+          isGuestMode.mux(h.timedelta.calibrated, rdtimeInternal),
+          rdtimeInternal
         )
 
         def check(timeCsr: Int) = {
