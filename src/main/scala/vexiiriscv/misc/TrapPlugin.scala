@@ -631,6 +631,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                     doIt setWhen(csr.privilege === PrivilegeMode.M && csr.debug.dcsr.ebreakm)
                     if (priv.p.withUser) doIt setWhen (csr.privilege === PrivilegeMode.U && csr.debug.dcsr.ebreaku)
                     if (priv.p.withSupervisor) doIt setWhen (csr.privilege === PrivilegeMode.S && csr.debug.dcsr.ebreaks)
+                    if (priv.p.withHypervisor) doIt setWhen ((csr.privilege === PrivilegeMode.VS && csr.debug.dcsr.ebreakvs) || (csr.privilege === PrivilegeMode.VU && csr.debug.dcsr.ebreakvu))
                   }
                   doIt setWhen(buffer.trap.interrupt && csr.debug.doHalt)
                   when(doIt){
