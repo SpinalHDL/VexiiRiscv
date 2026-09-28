@@ -338,6 +338,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val ebreaku   = p.withUser generate RegInit(False)
           val ebreaks   = p.withSupervisor generate RegInit(False)
           val ebreakm   = RegInit(False)
+          val ebreakvu  = p.withHypervisor generate RegInit(False)
+          val ebreakvs  = p.withHypervisor generate RegInit(False)
           val xdebugver = U(4, 4 bits)
 
           val stepLogic = new StateMachine {
@@ -384,12 +386,24 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
 
           api.read(CSR.DCSR, 3 -> nmip, 6 -> cause, 28 -> xdebugver, 4 -> mprven)
-          api.readWrite(CSR.DCSR, 0 -> prv, 2 -> step, 9 -> stoptime, 10 -> stopcount, 11 -> stepie, 15 -> ebreakm)
+          api.readWrite(CSR.DCSR, 2 -> step, 9 -> stoptime, 10 -> stopcount, 11 -> stepie, 15 -> ebreakm)
+          api.read(CSR.DCSR, 0 -> prv(1 downto 0))
           if (p.withSupervisor) api.readWrite(CSR.DCSR, 13 -> ebreaks)
           if (p.withUser) api.readWrite(CSR.DCSR, 12 -> ebreaku)
+          if (p.withHypervisor) api.readWrite(CSR.DCSR, 5 -> prv(2), 16 -> ebreakvu, 17 -> ebreakvs)
 
           when(debugMode || step || bus.haltReq) {
             tp.askWake(hartId)
+          }
+
+          api.onWrite(CSR.DCSR, false) {
+            val targetVirtual = cap.bus.write.bits(5)
+            val targetPrivilege = cap.bus.write.bits(1 downto 0)
+            when ((targetVirtual && targetPrivilege.andR) || targetPrivilege === B"10") {
+              prv := PrivilegeMode.M
+            } otherwise {
+              prv := (targetVirtual ## targetPrivilege).asSInt
+            }
           }
         }
         val stoptime = out(RegNext(debugMode && dcsr.stoptime) init(False))
