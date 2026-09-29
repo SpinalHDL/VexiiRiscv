@@ -954,12 +954,11 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code := l1.STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(preCtrl.MISS_ALIGNED).resized
         }
 
-        val triggerId = B(OHToUInt(onTrigger.HITS))
         when(onTrigger.HIT) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.DEBUG_TRIGGER
-          trapPort.tval(triggerId.bitsRange) := B(OHToUInt(onTrigger.HITS))
+          trapPort.tval := onTrigger.HITS.resized
         }
       }
 
