@@ -798,6 +798,12 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                   add(TrapArg.FETCH_LSU | 8, CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
                 }
                 goto(TRAP_TVAL)
+
+                if (priv.p.withDebug) {
+                  when (csr.debugMode) {
+                    goto(ENTER_DEBUG_WAIT)
+                  }
+                }
               } otherwise {
                 if(sats.mayNeedRedo) {
                   when (atsPorts.isGuestRefill) {
@@ -844,6 +850,13 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                   add(TrapArg.FETCH_LSU, CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT)
                 }
                 goto(TRAP_TVAL)
+
+                if (priv.p.withDebug) {
+                  when (csr.debugMode) {
+                    api.harts(hartId).redo := False
+                    goto(ENTER_DEBUG_WAIT)
+                  }
+                }
               }
             }
           }
