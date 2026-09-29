@@ -415,6 +415,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       }
 
       val trigger = (p.debugTriggers > 0) generate new Area {
+        require(p.debugTriggers <= TVAL_WIDTH.get, "debugTriggers exceeds the DEBUG_TRIGGER tval bitmap width")
         val tselect = new Area {
           val index = Reg(UInt(log2Up(p.debugTriggers) bits)) init(0)
           api.readWrite(index, CSR.TSELECT)
@@ -439,7 +440,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val trapPort = tp.newTrap(dpp.getAge(pcBreakTrapAt), Decode.LANES, subAge = 1)
           trapPort.valid     := doIt
           trapPort.exception := False
-          trapPort.tval      := B(OHToUInt(PC_TRIGGER_HITS)).resized
+          trapPort.tval      := PC_TRIGGER_HITS.resized
           trapPort.tval2     := 0
           trapPort.code      := TrapReason.DEBUG_TRIGGER
           trapPort.arg       := 0
@@ -506,8 +507,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             val chain = RegInit(False).allowUnsetRegToAvoidLatch
             val select = False
             val matcher = Reg(Bits(4 bits)) init (0)
+            if (slotId < p.debugTriggers - 1) csrrw(CSR.TDATA1, read, 11 -> chain)
             if (p.debugTriggersLsu) {
-              csrrw(CSR.TDATA1, read, 11 -> chain, 0 -> load, 1 -> store, 7 -> matcher)
+              csrrw(CSR.TDATA1, read, 0 -> load, 1 -> store, 7 -> matcher)
               csrr(CSR.TDATA1, read, 18 -> (load && select))
             }
           }
@@ -520,7 +522,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
 
             val execute = for (laneId <- 0 until Decode.LANES) yield new dpp.LaneArea(pcBreakMatchAt, laneId) {
-              PC_TRIGGER_HITS(slotId) := enabled && tdata1.execute && U(value) === Global.PC
+              val chainBroken = Bool()
+              val hitNoChain = enabled && tdata1.execute && U(value) === Global.PC && !chainBroken
+              PC_TRIGGER_HITS(slotId) := hitNoChain && !tdata1.chain
             }
 
             val lsu = p.debugTriggersLsu generate new Area {
@@ -569,10 +573,20 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         for (slotId <- slots.indices) {
           val slot = slots(slotId)
           slotId match {
-            case 0 => slot.chainBroken := False
+            case 0 => {
+              slot.chainBroken := False
+              for (laneId <- 0 until Decode.LANES) {
+                val execute = slot.tdata2.execute(laneId)
+                execute.chainBroken := False
+              }
+            }
             case _ => {
               val prev = slots(slotId - 1)
               slot.chainBroken := prev.tdata1.chain && (prev.chainBroken || p.debugTriggersLsu.mux(!prev.tdata2.lsu.hitNoChain, False))
+              for (laneId <- 0 until Decode.LANES) {
+                val execute = slot.tdata2.execute(laneId)
+                execute.chainBroken := prev.tdata1.chain && !prev.tdata2.execute(laneId).hitNoChain
+              }
             }
           }
 

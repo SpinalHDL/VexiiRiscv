@@ -606,7 +606,10 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
           if (fl1p.nonEmpty) fetchL1Invalidate(hartId).cmd.valid := False
           if (lsu.nonEmpty) lsuL1Invalidate(hartId).cmd.valid := False
           val trapEnterDebug = RegInit(False)
-          val triggerEbreak = (priv.p.debugTriggers == 0).mux(False, !pending.state.exception && pending.state.code === TrapReason.DEBUG_TRIGGER && csr.trigger.slots.reader(pending.state.tval.asUInt.resized)(_.tdata1.doEbreak))
+          val triggerEbreak = (priv.p.debugTriggers == 0).mux(
+            False,
+            !pending.state.exception && pending.state.code === TrapReason.DEBUG_TRIGGER && !csr.trigger.slots.zipWithIndex.map { case (slot, slotId) => pending.state.tval(slotId) && !slot.tdata1.doEbreak}.orR
+          )
           val triggerEbreakReg = Reg(Bool())
           // Got a trap, need to figure out exactly what to do.
           COMPUTE.whenIsActive{
@@ -614,8 +617,10 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             if(priv.p.debugTriggers > 0 ) {
               pending.state.exception setWhen(triggerEbreak) //Patch to reduce logic in next stages
               when(!pending.state.exception && pending.state.code === TrapReason.DEBUG_TRIGGER) {
-                csr.trigger.slots.onSel(U(pending.state.tval).resized) { slot =>
-                  slot.tdata1.hit := True
+                for ((slot, slotId) <- csr.trigger.slots.zipWithIndex) {
+                  when(pending.state.tval(slotId)) {
+                    slot.tdata1.hit := True
+                  }
                 }
               }
             }
