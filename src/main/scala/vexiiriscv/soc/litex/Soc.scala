@@ -110,30 +110,47 @@ class SocConfig(){
     periph.addOptions(parser)
     TilelinkVgaCtrlSpec.addOption(parser, video)
     MacSgFiberSpec.addOption(parser, macSg)
-    opt[Int]("litedram-width") action { (v, c) => litedramWidth = v }
-    opt[Seq[String]]("l2-self-flush") action { (v, c) =>
+    opt[Int]("litedram-width").action { (v, c) => litedramWidth = v }
+      .text("Set the LiteDRAM data width in bits; default: 32.")
+    opt[Seq[String]]("l2-self-flush").action { (v, c) =>
       selfFlush = coherent.SelfFLush(BigInt(v(0), 16), BigInt(v(1), 16), BigInt(v(2)))
     }
-    opt[Int]("cpu-count") action { (v, c) => cpuCount = v }
-    opt[Int]("l2-bytes") action { (v, c) => l2Bytes = v }
-    opt[Int]("l2-ways") action { (v, c) => l2Ways = v }
-    opt[Boolean]("debug-sysbus") action { (v, c) => debugSysBus = v }
-    opt[Unit]("with-dma") action { (v, c) => withDma = true }
-    opt[Unit]("with-cpu-clk") action { (v, c) => withCpuCd = true }
-    opt[Unit]("with-axi3") action { (v, c) => withAxi3 = true }
-    opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
-    opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
-    opt[Unit]("with-swd") text("Add a SWD debug transport (custom DTM, SWCLK/SWDIO). Not to be combined with the JTAG ones.") action { (v, c) => withSwd = true; vexiiParam.privParam.withDebug = true }
-    opt[Unit]("with-debug-probe-pc0") text("Allows to profile the CPU via JTAG. See ElfMapper.") action { (v, c) => withDebugProbePc0 = true }
-    opt[Unit]("with-aplic") action { (v, c) => withAPlic = true }
-    opt[Unit]("with-axilite-xlen") action { (v, c) => axiLiteForce32 = false }
-    opt[Map[String, BigInt]]("device-region").unbounded() action { (v, c) => deviceMapping ++= v }
-    opt[Seq[String]]("memory-region").unbounded() action { (v, c) =>
+      .text("Configure L2 self-flush as START,END,CYCLES; addresses are hexadecimal.")
+    opt[Int]("cpu-count").action { (v, c) => cpuCount = v }
+      .text("Set the number of VexiiRiscv harts; default: 1.")
+    opt[Int]("l2-bytes").action { (v, c) => l2Bytes = v }
+      .text("Set the L2 cache capacity in bytes; 0 disables L2; default: 0.")
+    opt[Int]("l2-ways").action { (v, c) => l2Ways = v }
+      .text("Set the L2 cache associativity in ways.")
+    opt[Boolean]("debug-sysbus").action { (v, c) => debugSysBus = v }
+      .text("Enable the debug module system bus; default: false.")
+    opt[Unit]("with-dma").action { (v, c) => withDma = true }
+      .text("Enable the coherent DMA bus.")
+    opt[Unit]("with-cpu-clk").action { (v, c) => withCpuCd = true }
+      .text("Use a separate clock domain for the CPU.")
+    opt[Unit]("with-axi3").action { (v, c) => withAxi3 = true }
+      .text("Use AXI3 for the memory interface.")
+    opt[Unit]("with-jtag-tap").action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
+      .text("Enable the embedded JTAG TAP.")
+    opt[Unit]("with-jtag-instruction").action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
+      .text("Enable the embedded JTAG instruction transport.")
+    opt[Unit]("with-swd").action { (v, c) => withSwd = true; vexiiParam.privParam.withDebug = true }
+      .text("Add an SWD debug transport; do not combine it with the JTAG options.")
+    opt[Unit]("with-debug-probe-pc0").action { (v, c) => withDebugProbePc0 = true }
+      .text("Profile the CPU via JTAG; see ElfMapper.")
+    opt[Unit]("with-aplic").action { (v, c) => withAPlic = true }
+      .text("Use the APLIC interrupt controller.")
+    opt[Unit]("with-axilite-xlen").action { (v, c) => axiLiteForce32 = false }
+      .text("Use an XLEN-wide AXI-Lite data path instead of the default 32-bit path.")
+    opt[Map[String, BigInt]]("device-region").unbounded().action { (v, c) => deviceMapping ++= v }
+      .text("Override a device base address using NAME=ADDRESS; repeatable.")
+    opt[Seq[String]]("memory-region").unbounded().action { (v, c) =>
       assert(v.length == 4, "--memory-region need 4 parameters")
       val r = new LitexMemoryRegion(SizeMapping(BigInt(v(0)), BigInt(v(1))), v(2), v(3))
       regions += r
       assert(!(r.onMemory && !r.isCachable), s"Region $r isn't supported by VexiiRiscv, data cache will always cache memory")
     }
+      .text("Define a region as BASE,SIZE,MODE,BUS; BUS is m for memory or p for peripheral; repeatable.")
   }
 
   def withL2 = l2Bytes > 0
@@ -591,9 +608,12 @@ object SocGen extends App{
     help("help").text("prints this usage text")
     socConfig.addOptions(this)
     analysis.addOption(this)
-    opt[String]("netlist-directory") action { (v, c) => netlistDirectory = v }
-    opt[String]("netlist-name") action { (v, c) => netlistName = v }
-    opt[Unit]("reduced-io") action { (v, c) => reducedIo = true }
+    opt[String]("netlist-directory").action { (v, c) => netlistDirectory = v }
+      .text("Set the generated Verilog output directory; default: current directory.")
+    opt[String]("netlist-name").action { (v, c) => netlistName = v }
+      .text("Set the generated top-level netlist module name; default: VexiiRiscvLitex.")
+    opt[Unit]("reduced-io").action { (v, c) => reducedIo = true }
+      .text("Reduce the generated top-level input and output ports.")
   }.parse(args, ()).nonEmpty)
 
   vexiiParam.lsuL1Coherency = cpuCount > 1 || withDma
@@ -627,7 +647,8 @@ object PythonArgsGen extends App{
   assert(new scopt.OptionParser[Unit]("Vexii") {
     help("help").text("prints this usage text")
     socConfig.addOptions(this)
-    opt[String]("python-file") action { (v, c) => pythonPath = v }
+    opt[String]("python-file").action { (v, c) => pythonPath = v }
+      .text("Set the generated Python argument file path; default: miaou.py.")
 
   }.parse(args, ()).nonEmpty)
 
