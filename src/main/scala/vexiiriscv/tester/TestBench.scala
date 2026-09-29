@@ -173,7 +173,8 @@ object TestBench extends App {
 
     assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
       help("help").text("prints this usage text")
-      opt[Int]("cpu-count") action { (v, c) => cpuCount = v }
+      opt[Int]("cpu-count").action { (v, c) => cpuCount = v }
+        .text("Number of TestBench CPU instances; default: 1.")
       simConfig.addOptions(this)
       testOpt.addOptions(this)
       param.addOptions(this)
@@ -252,42 +253,76 @@ class TestOptions {
 
   def addOptions(parser : scopt.OptionParser[Unit]): Unit = {
     import parser._
-    opt[String]("name") action { (v, c) => testName = Some(v) }
-    opt[Unit]("dual-sim") action { (v, c) => dualSim = true }
-    opt[Unit]("with-wave") action { (v, c) => traceWave = true }
-    opt[Unit]("with-konata") action { (v, c) => traceKonata = true }
-    opt[Unit]("with-rvls-log") action { (v, c) => traceRvlsLog = true }
-    opt[Unit]("with-spike-log") action { (v, c) => traceSpikeLog = true }
-    opt[Unit]("no-stdin") action { (v, c) => withStdIn = false }
-    opt[Unit]("print-stats") action { (v, c) => printStats = true }
-    opt[Unit]("trace-all") action { (v, c) => traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true; printStats = true }
-    opt[Unit]("no-probe") action { (v, c) => withProbe = false; }
-    opt[Unit]("no-rvls-check") action { (v, c) => withRvlsCheck = false;  }
-    opt[Long]("fail-after") action { (v, c) => failAfter = Some(v) }
-    opt[Long]("pass-after") action { (v, c) => passAfter = Some(v) }
-    opt[Double]("sim-speed-printer") action { (v, c) => simSpeedPrinter = Some(v) }
-    opt[Seq[String]]("load-bin").unbounded() action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
-    opt[Seq[String]]("load-u32").unbounded() action { (v, c) => u32s += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Integer.parseInt(v(1).replace("0x", ""), 16) }
-    opt[String]("load-elf").unbounded() action { (v, c) => elfs += new File(v) }
-    opt[String]("start-symbol") action { (v, c) => startSymbol = Some(v) }
-    opt[Map[Int, String]]("hart-start-symbol").unbounded() action { (v, c) => hartStartSymbol ++= v }
-    opt[(Int, Map[String, BigInt])]("hart-register").unbounded() action { case ((h, v), c) => addRegisterValueMapping(h, v) }
-    opt[String]("pass-symbol") action { (v, c) => passSymbolName = v }
-    opt[String]("fail-symbol") action { (v, c) => failSymbolName = v }
-    opt[Map[Int, String]]("hart-pass-symbol").unbounded() action { (v, c) => hartPassSymbolNames ++= v }
-    opt[Map[Int, String]]("hart-fail-symbol").unbounded() action { (v, c) => hartFailSymbolNames ++= v }
-    opt[String]("pass-policy") action { (v, c) => passPolicy = v }
-    opt[String]("fail-policy") action { (v, c) => failPolicy = v }
-    opt[Long]("start-symbol-offset") action { (v, c) => startSymbolOffset = v }
-    opt[Double]("ibus-ready-factor").unbounded() action { (v, c) => ibusReadyFactor = v.toFloat }
-    opt[Double]("dbus-ready-factor").unbounded() action { (v, c) => dbusReadyFactor = v.toFloat }
-    opt[Unit]("jtag-remote").unbounded() action { (v, c) => jtagRemote = true }
-    opt[Int]("memory-latency") action { (v, c) => dbusBaseLatency = v; ibusBaseLatency = v }
+    opt[String]("name").action { (v, c) => testName = Some(v) }
+      .text("Name of the test and its simulation workspace; default: test.")
+    opt[Unit]("dual-sim").action { (v, c) => dualSim = true }
+      .text("Run a shadow simulation and capture its trace when the primary simulation fails.")
+    opt[Unit]("with-wave").action { (v, c) => traceWave = true }
+      .text("Enable waveform capture when tracing is enabled.")
+    opt[Unit]("with-konata").action { (v, c) => traceKonata = true }
+      .text("Enable Konata instruction tracing.")
+    opt[Unit]("with-rvls-log").action { (v, c) => traceRvlsLog = true }
+      .text("Write the RVLS trace log.")
+    opt[Unit]("with-spike-log").action { (v, c) => traceSpikeLog = true }
+      .text("Enable RVLS Spike-compatible debug logging.")
+    opt[Unit]("no-stdin").action { (v, c) => withStdIn = false }
+      .text("Disable simulated standard input.")
+    opt[Unit]("print-stats").action { (v, c) => printStats = true }
+      .text("Print probe statistics when the simulation ends.")
+    opt[Unit]("trace-all").action { (v, c) => traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true; printStats = true }
+      .text("Enable all available traces and print simulation statistics.")
+    opt[Unit]("no-probe").action { (v, c) => withProbe = false; }
+      .text("Disable the VexiiRiscv simulation probe.")
+    opt[Unit]("no-rvls-check").action { (v, c) => withRvlsCheck = false;  }
+      .text("Disable RVLS instruction checking.")
+    opt[Long]("fail-after").action { (v, c) => failAfter = Some(v) }
+      .text("Fail the simulation after the specified simulation time.")
+    opt[Long]("pass-after").action { (v, c) => passAfter = Some(v) }
+      .text("Pass the simulation after the specified simulation time.")
+    opt[Double]("sim-speed-printer").action { (v, c) => simSpeedPrinter = Some(v) }
+      .text("Print simulation speed periodically; period in seconds, default: 1.0.")
+    opt[Seq[String]]("load-bin").unbounded().action { (v, c) => bins += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> new File(v(1)) }
+      .text("Load a binary at ADDRESS,FILE; repeatable; hexadecimal addresses are supported.")
+    opt[Seq[String]]("load-u32").unbounded().action { (v, c) => u32s += java.lang.Long.parseLong(v(0).replace("0x", ""), 16) -> java.lang.Integer.parseInt(v(1).replace("0x", ""), 16) }
+      .text("Write a 32-bit VALUE at ADDRESS; use ADDRESS,VALUE and repeat as needed.")
+    opt[String]("load-elf").unbounded().action { (v, c) => elfs += new File(v) }
+      .text("Load an ELF file; repeatable.")
+    opt[String]("start-symbol").action { (v, c) => startSymbol = Some(v) }
+      .text("Set the initial program counter to SYMBOL from each loaded ELF.")
+    opt[Map[Int, String]]("hart-start-symbol").unbounded().action { (v, c) => hartStartSymbol ++= v }
+      .text("Override the start symbol per hart using HART=SYMBOL; repeatable.")
+    opt[(Int, Map[String, BigInt])]("hart-register").unbounded().action { case ((h, v), c) => addRegisterValueMapping(h, v) }
+      .text("Initialize integer registers using HART=xN=VALUE,...; repeatable.")
+    opt[String]("pass-symbol").action { (v, c) => passSymbolName = v }
+      .text("Set the default software pass symbol; default: pass.")
+    opt[String]("fail-symbol").action { (v, c) => failSymbolName = v }
+      .text("Set the default software fail symbol; default: fail.")
+    opt[Map[Int, String]]("hart-pass-symbol").unbounded().action { (v, c) => hartPassSymbolNames ++= v }
+      .text("Override the pass symbol per hart using HART=SYMBOL; repeatable.")
+    opt[Map[Int, String]]("hart-fail-symbol").unbounded().action { (v, c) => hartFailSymbolNames ++= v }
+      .text("Override the fail symbol per hart using HART=SYMBOL; repeatable.")
+    opt[String]("pass-policy").action { (v, c) => passPolicy = v }
+      .text("Pass when any or all harts reach pass; accepted values: any, all; default: all.")
+    opt[String]("fail-policy").action { (v, c) => failPolicy = v }
+      .text("Fail when any or all harts reach fail; accepted values: any, all; default: any.")
+    opt[Long]("start-symbol-offset").action { (v, c) => startSymbolOffset = v }
+      .text("Add an address offset to the selected start symbol; default: 0.")
+    opt[Double]("ibus-ready-factor").unbounded().action { (v, c) => ibusReadyFactor = v.toFloat }
+      .text("Set the instruction-bus ready/response randomization factor; default: 1.01.")
+    opt[Double]("dbus-ready-factor").unbounded().action { (v, c) => dbusReadyFactor = v.toFloat }
+      .text("Set the data-bus ready/response randomization factor; default: 1.01.")
+    opt[Unit]("jtag-remote").unbounded().action { (v, c) => jtagRemote = true }
+      .text("Enable remote JTAG; requires --debug-jtag-tap.")
+    opt[Int]("memory-latency").action { (v, c) => dbusBaseLatency = v; ibusBaseLatency = v }
+      .text("Set the base latency for both instruction and data memory accesses; default: 0.")
     FsmOption(parser, fsmTasksGen)
-    opt[Int]("seed") action { (v, c) => seed = v }
-    opt[Unit]("rand-seed") action { (v, c) => seed = scala.util.Random.nextInt() }
+    opt[Int]("seed").action { (v, c) => seed = v }
+      .text("Set the simulation random seed; default: 2.")
+    opt[Unit]("rand-seed").action { (v, c) => seed = scala.util.Random.nextInt() }
+      .text("Generate a random simulation seed.")
 
-    opt[String]("spawn-process").unbounded() action { (v, c) => spawnProcess = Some(v) }
+    opt[String]("spawn-process").unbounded().action { (v, c) => spawnProcess = Some(v) }
+      .text("Start an external command and finish the simulation from its exit status.")
     checkConfig { _ => if(passPolicy == "all" && failPolicy == "all") failure("--pass-policy and --fail-policy cannot both be all") else success }
   }
 
