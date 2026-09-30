@@ -8,11 +8,12 @@ object Riscv extends AreaObject {
   val XLEN = blocking[Int]
   val FLEN = blocking[Int]
   val LSLEN = blocking[Int]
+
   val RVC, RVM, RVE, RVD, RVF, RVA, RVB, RVQ, RVH = blocking[Boolean]
   val RVZaamo, RVZalrsc = blocking[Boolean]
   val RVZba, RVZbb, RVZbc, RVZbs = blocking[Boolean]
   val RVZfa, RVZfh = blocking[Boolean]
-  val RVZcbm = blocking[Boolean]
+  val RVZicbom = blocking[Boolean]
 
   def withFpu = RVF || RVD
 
