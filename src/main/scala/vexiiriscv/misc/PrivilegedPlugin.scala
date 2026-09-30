@@ -326,6 +326,10 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         }
 
         val dpc = crs.readWriteRam(CSR.DPC)
+        cap.onWrite(CSR.DPC, false) {
+          cap.bus.write.bits(0, log2Up(Fetch.SLICE_BYTES) bits) := 0
+        }
+
         val dcsr = new Area {
           val prv       = Reg(PrivilegeMode.TYPE()) init(PrivilegeMode.M)
           val step      = RegInit(False) //TODO
@@ -338,6 +342,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val ebreaku   = p.withUser generate RegInit(False)
           val ebreaks   = p.withSupervisor generate RegInit(False)
           val ebreakm   = RegInit(False)
+          val ebreakvu  = p.withHypervisor generate RegInit(False)
+          val ebreakvs  = p.withHypervisor generate RegInit(False)
           val xdebugver = U(4, 4 bits)
 
           val stepLogic = new StateMachine {
@@ -384,28 +390,37 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
 
           api.read(CSR.DCSR, 3 -> nmip, 6 -> cause, 28 -> xdebugver, 4 -> mprven)
-          api.readWrite(CSR.DCSR, 0 -> prv, 2 -> step, 9 -> stoptime, 10 -> stopcount, 11 -> stepie, 15 -> ebreakm)
+          api.readWrite(CSR.DCSR, 2 -> step, 9 -> stoptime, 10 -> stopcount, 11 -> stepie, 15 -> ebreakm)
+          api.read(CSR.DCSR, 0 -> prv(1 downto 0))
           if (p.withSupervisor) api.readWrite(CSR.DCSR, 13 -> ebreaks)
           if (p.withUser) api.readWrite(CSR.DCSR, 12 -> ebreaku)
+          if (p.withHypervisor) api.readWrite(CSR.DCSR, 5 -> prv(2), 16 -> ebreakvu, 17 -> ebreakvs)
 
           when(debugMode || step || bus.haltReq) {
             tp.askWake(hartId)
           }
+
+          api.onWrite(CSR.DCSR, false) {
+            val targetVirtual = cap.bus.write.bits(5)
+            val targetPrivilege = cap.bus.write.bits(1 downto 0)
+            when ((targetVirtual && targetPrivilege.andR) || targetPrivilege === B"10") {
+              prv := PrivilegeMode.M
+            } otherwise {
+              prv := (targetVirtual ## targetPrivilege).asSInt
+            }
+          }
         }
-        val stoptime = out(RegNext(debugMode && dcsr.stoptime) init(False))
+        val needDebugTime = debugMode && dcsr.stoptime
+        val stoptime = out(RegNext(needDebugTime) init(False))
       }
 
-      val noTrigger = (p.debugTriggers == 0) generate new Area {
-        cap.allowCsr(CSR.TSELECT)
-        cap.allowCsr(CSR.TDATA1)
-        cap.allowCsr(CSR.TDATA2)
-      }
       val trigger = (p.debugTriggers > 0) generate new Area {
+        require(p.debugTriggers <= TVAL_WIDTH.get, "debugTriggers exceeds the DEBUG_TRIGGER tval bitmap width")
         val tselect = new Area {
           val index = Reg(UInt(log2Up(p.debugTriggers) bits)) init(0)
           api.readWrite(index, CSR.TSELECT)
 
-          val outOfRange = if (isPow2(p.debugTriggers)) False else index < p.debugTriggers
+          val outOfRange = if (isPow2(p.debugTriggers)) False else index > (p.debugTriggers - 1)
         }
 
         //TODO may remove tinfo, as it is optional
@@ -425,7 +440,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val trapPort = tp.newTrap(dpp.getAge(pcBreakTrapAt), Decode.LANES, subAge = 1)
           trapPort.valid     := doIt
           trapPort.exception := False
-          trapPort.tval      := B(OHToUInt(PC_TRIGGER_HITS)).resized
+          trapPort.tval      := PC_TRIGGER_HITS.resized
           trapPort.tval2     := 0
           trapPort.code      := TrapReason.DEBUG_TRIGGER
           trapPort.arg       := 0
@@ -492,8 +507,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             val chain = RegInit(False).allowUnsetRegToAvoidLatch
             val select = False
             val matcher = Reg(Bits(4 bits)) init (0)
+            if (slotId < p.debugTriggers - 1) csrrw(CSR.TDATA1, read, 11 -> chain)
             if (p.debugTriggersLsu) {
-              csrrw(CSR.TDATA1, read, 11 -> chain, 0 -> load, 1 -> store, 7 -> matcher)
+              csrrw(CSR.TDATA1, read, 0 -> load, 1 -> store, 7 -> matcher)
               csrr(CSR.TDATA1, read, 18 -> (load && select))
             }
           }
@@ -506,7 +522,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
 
             val execute = for (laneId <- 0 until Decode.LANES) yield new dpp.LaneArea(pcBreakMatchAt, laneId) {
-              PC_TRIGGER_HITS(slotId) := enabled && tdata1.execute && U(value) === Global.PC
+              val chainBroken = Bool()
+              val hitNoChain = enabled && tdata1.execute && U(value) === Global.PC && !chainBroken
+              PC_TRIGGER_HITS(slotId) := hitNoChain && !tdata1.chain
             }
 
             val lsu = p.debugTriggersLsu generate new Area {
@@ -555,10 +573,20 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         for (slotId <- slots.indices) {
           val slot = slots(slotId)
           slotId match {
-            case 0 => slot.chainBroken := False
+            case 0 => {
+              slot.chainBroken := False
+              for (laneId <- 0 until Decode.LANES) {
+                val execute = slot.tdata2.execute(laneId)
+                execute.chainBroken := False
+              }
+            }
             case _ => {
               val prev = slots(slotId - 1)
               slot.chainBroken := prev.tdata1.chain && (prev.chainBroken || p.debugTriggersLsu.mux(!prev.tdata2.lsu.hitNoChain, False))
+              for (laneId <- 0 until Decode.LANES) {
+                val execute = slot.tdata2.execute(laneId)
+                execute.chainBroken := prev.tdata1.chain && !prev.tdata2.execute(laneId).hitNoChain
+              }
             }
           }
 
@@ -568,6 +596,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         api.read(CSR.TDATA1, 0 -> slots.map(_.tdata1.read).read(tselect.index))
         api.read(CSR.TDATA2, 0 -> S(slots.map(_.tdata2.value).read(tselect.index)).resize(XLEN))
+      }
+
+      /* For debug mode, use cached time source when stoptime is set */
+      val rdtimeInternal = if(p.withDebug && p.withRdTime) {
+        val debugRdtime = RegNextWhen(rdtime, !debugMode, init = U(0, 64 bits))
+        debug.needDebugTime.mux(debugRdtime, rdtime)
+      } else {
+        rdtime
       }
 
       val m = new Area {
@@ -781,7 +817,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         val timedelta = p.withRdTime generate new Area {
           val delta = RegInit(U(0, 64 bits))
-          val calibrated = rdtime + delta
+          val calibrated = rdtimeInternal + delta
 
           XLEN.get match {
             case 32 => {
@@ -941,7 +977,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val sstc = new Area {
           val logic = p.withSSTC generate new Area {
             val cmp = RegInit(U(64 bits, default -> true))
-            val ip = RegNext(rdtime >= cmp)
+            val ip = RegNext(rdtimeInternal >= cmp)
 
             val accessable =  withMachinePrivilege || (m.counteren.tm && m.envcfg.stce)
 
@@ -1246,8 +1282,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
       val time = p.withRdTime generate new Area {
         val time = p.withHypervisor.mux(
-          isGuestMode.mux(h.timedelta.calibrated, rdtime),
-          rdtime
+          isGuestMode.mux(h.timedelta.calibrated, rdtimeInternal),
+          rdtimeInternal
         )
 
         def check(timeCsr: Int) = {

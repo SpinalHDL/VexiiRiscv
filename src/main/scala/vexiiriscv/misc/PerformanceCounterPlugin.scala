@@ -47,6 +47,8 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val ignoreNextCommit = RegInit(False) clearWhen (commitMask.orR)
     val commitCount = CountOne(commitMask) - U(ignoreNextCommit && commitMask.orR)
 
+    val stopCount = priv.p.withDebug.mux(priv.logic.harts(0).debug.dcsr.stopcount && priv.logic.harts(0).debugMode, False)
+
     val eventCycles = createEventPort(PerformanceCounterService.CYCLES)
     val eventInstructions = Vec.fill(widthOf(commitMask))(createEventPort(PerformanceCounterService.INSTRUCTIONS))
 
@@ -109,8 +111,8 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       eventCycles := True
       eventInstructions := (commitMask.andMask(!ignoreNextCommit)).asBools
 
-      cycle.value := cycle.value + (!cycle.mcountinhibit).asUInt
-      instret.value := instret.value + RegNext(commitCount.andMask(!instret.mcountinhibit)).init(0)
+      cycle.value := cycle.value + (!(cycle.mcountinhibit || stopCount)).asUInt
+      instret.value := instret.value + RegNext(commitCount.andMask(!(instret.mcountinhibit || stopCount))).init(0)
 
       if (withSmcntrpmf) Riscv.XLEN.get match {
         case 32 => {
@@ -218,7 +220,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
       interrupt.ip.setWhen(overflowEvent && !counter.OF)
 
       val incr    = if(events.sums.isEmpty) U(0) else events.sums.map(e => e._2.andMask(eventId === e._1).resize(events.widthMax)).toList.reduceBalancedTree(_ | _)
-      when(!counter.inhibit) {
+      when(!(counter.inhibit || stopCount)) {
         counter.value := counter.value + incr
       }
       csr.readWrite(CSR.MHPMEVENT0 + id, 0 -> eventId)
@@ -439,9 +441,5 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     }
     csrRetainer.release()
 //    trapLock.release()
-
-    if(priv.p.withDebug) when(priv.logic.harts(0).debugMode){
-      commitCount := 0
-    }
   }
 }
