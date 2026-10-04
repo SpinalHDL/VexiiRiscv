@@ -52,10 +52,10 @@ class FpuMvPlugin(val layer : LaneLayer,
       }
     }
 
-    val f64 = FORMAT -> FpuFormat.DOUBLE
-    val f32 = FORMAT -> FpuFormat.FLOAT
-    val f16 = FORMAT -> FpuFormat.HALF
-    val f128 = FORMAT -> FpuFormat.QUAD
+    def f64 = FORMAT -> FpuFormatEncoding.DOUBLE
+    def f32 = FORMAT -> FpuFormatEncoding.FLOAT
+    def f16 = FORMAT -> FpuFormatEncoding.HALF
+    def f128 = FORMAT -> FpuFormatEncoding.QUAD
 
     add(Rvfd.FMV_W_X, f32, SEL_FLOAT -> True)
     add(Rvfd.FMV_X_W, f32, SEL_INT   -> True)

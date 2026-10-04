@@ -5,6 +5,13 @@ import spinal.lib.misc.pipeline.Payload
 import vexiiriscv.riscv.Riscv
 import vexiiriscv.riscv.Riscv.XLEN
 
+object FpuFormatEncoding {
+  def FLOAT = U(FpuUtils.FpuEncoding(FpuFormat.FLOAT), FpuUtils.formatWidth bits)
+  def DOUBLE = U(FpuUtils.FpuEncoding(FpuFormat.DOUBLE), FpuUtils.formatWidth bits)
+  def QUAD = U(FpuUtils.FpuEncoding(FpuFormat.QUAD), FpuUtils.formatWidth bits)
+  def HALF = U(FpuUtils.FpuEncoding(FpuFormat.HALF), FpuUtils.formatWidth bits)
+}
+
 case class FpuConst(
   bits: Int,
   expWidth: Int,
@@ -52,7 +59,7 @@ object FpuConst {
     expOne = 16383,
   )
 
-  val supported = Map[FpuFormat.E, FpuConst](
+  val supported = Map[FpuFormatTrait, FpuConst](
     FpuFormat.FLOAT  -> f32,
     FpuFormat.DOUBLE -> f64,
     FpuFormat.QUAD   -> f128,
@@ -71,19 +78,22 @@ object FpuUtils extends AreaObject {
   def rvq = Riscv.RVQ.get
   def rvzfh = Riscv.RVZfh.get
   def rv64 = XLEN.get == 64
-  val FORMAT = Payload(FpuFormat())
+  val FORMAT = Payload(UInt(formatWidth bits))
   val ROUNDING = Payload(FpuRoundMode())
+  def formatWidth = (supported.size > 0).mux(log2Up(supported.size), 0) max 1
 
-  def supported = Seq[FpuFormat.E]() ++
+  def supported = Seq[FpuFormatTrait]() ++
     (if (rvq) Seq(FpuFormat.QUAD) else Seq.empty) ++
     (if (rvd) Seq(FpuFormat.DOUBLE) else Seq.empty) ++
     (if (rvf) Seq(FpuFormat.FLOAT) else Seq.empty) ++
     (if (rvzfh) Seq(FpuFormat.HALF) else Seq.empty)
 
-  def whenFormat(format: FpuFormat.C)(cases: PartialFunction[FpuFormat.E, Unit]): Unit = {
+  def FpuEncoding(format: FpuFormatTrait): Int = supported.indexOf(format)
+
+  def whenFormat(format: UInt)(cases: PartialFunction[FpuFormatTrait, Unit]): Unit = {
     switch(format) {
       for (f <- supported) {
-        if (cases.isDefinedAt(f)) is(f) {
+        if (cases.isDefinedAt(f)) is(FpuEncoding(f)) {
           cases(f)
         }
       }
@@ -92,13 +102,10 @@ object FpuUtils extends AreaObject {
     }
   }
 
-  def muxFormat[T <: Data](format : FpuFormat.C)(cases: PartialFunction[FpuFormat.E, T]): T = format.muxListDc(supported.filter(cases.isDefinedAt(_)).map(f => f -> cases(f)))
+  def muxFormat[T <: Data](format: UInt)(cases: PartialFunction[FpuFormatTrait, T]): T = format.muxListDc(supported.filter(cases.isDefinedAt(_)).map(f => FpuEncoding(f) -> cases(f)))
 
-  def muxFormat[T <: Data](format : Bits)(cases: PartialFunction[FpuFormat.E, T]): T ={
-    val tmp = FpuFormat()
-    tmp.assignFromBits(format)
-    muxFormat(tmp)(cases)
-  }
+  def muxFormat[T <: Data](format : Bits)(cases: PartialFunction[FpuFormatTrait, T]): T = muxFormat(format.asUInt)(cases)
+
 
   def muxRv64[T <: Data](format : Bool)(yes : => T)(no : => T): T ={
     if(rv64) ((format) ? { yes } | { no })

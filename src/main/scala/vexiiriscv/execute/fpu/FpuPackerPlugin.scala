@@ -20,7 +20,7 @@ case class FpuPackerCmd(p : FloatUnpackedParam,
                         ats : Seq[Int]) extends Bundle {
   val at = Bits(ats.size bits)
   val value = FloatUnpacked(p)
-  val format = FpuFormat()
+  val format = FpuUtils.FORMAT()
   val roundMode = FpuRoundMode()
   val hartId = Global.HART_ID()
   val uopId = Decode.UOP_ID()

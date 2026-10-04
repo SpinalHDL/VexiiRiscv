@@ -36,6 +36,8 @@ class FpuXxPlugin(val layer : LaneLayer,
     )
     val packPort = fpp.createPort(List(packAt), packParam)
 
+    val TO = Payload(UInt(p.formatWidth bits))
+
     layer.lane.setDecodingDefault(SEL, False)
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
@@ -49,39 +51,36 @@ class FpuXxPlugin(val layer : LaneLayer,
     }
 
     if (p.rvd) {
-      add(Rvfd.FCVT_D_S, FORMAT -> FpuFormat.FLOAT)
-      add(Rvfd.FCVT_S_D, FORMAT -> FpuFormat.DOUBLE)
+      add(Rvfd.FCVT_D_S, FORMAT -> FpuFormatEncoding.FLOAT, TO -> FpuFormatEncoding.DOUBLE)
+      add(Rvfd.FCVT_S_D, FORMAT -> FpuFormatEncoding.DOUBLE, TO -> FpuFormatEncoding.FLOAT)
     }
     if (p.rvzfh) {
-      add(Rvfd.FCVT_H_S, FORMAT -> FpuFormat.FLOAT)
-      add(Rvfd.FCVT_S_H, FORMAT -> FpuFormat.HALF)
+      add(Rvfd.FCVT_H_S, FORMAT -> FpuFormatEncoding.FLOAT, TO -> FpuFormatEncoding.HALF)
+      add(Rvfd.FCVT_S_H, FORMAT -> FpuFormatEncoding.HALF, TO -> FpuFormatEncoding.FLOAT)
     }
     if (p.rvq) {
-      add(Rvfd.FCVT_Q_S, FORMAT -> FpuFormat.FLOAT)
-      add(Rvfd.FCVT_S_Q, FORMAT -> FpuFormat.QUAD)
+      add(Rvfd.FCVT_Q_S, FORMAT -> FpuFormatEncoding.FLOAT, TO -> FpuFormatEncoding.QUAD)
+      add(Rvfd.FCVT_S_Q, FORMAT -> FpuFormatEncoding.QUAD, TO -> FpuFormatEncoding.FLOAT)
     }
     if (p.rvd && p.rvzfh) {
-      add(Rvfd.FCVT_H_D, FORMAT -> FpuFormat.DOUBLE)
-      add(Rvfd.FCVT_D_H, FORMAT -> FpuFormat.HALF)
+      add(Rvfd.FCVT_H_D, FORMAT -> FpuFormatEncoding.DOUBLE, TO -> FpuFormatEncoding.HALF)
+      add(Rvfd.FCVT_D_H, FORMAT -> FpuFormatEncoding.HALF, TO -> FpuFormatEncoding.DOUBLE)
     }
     if (p.rvd && p.rvq) {
-      add(Rvfd.FCVT_Q_D, FORMAT -> FpuFormat.DOUBLE)
-      add(Rvfd.FCVT_D_Q, FORMAT -> FpuFormat.QUAD)
+      add(Rvfd.FCVT_Q_D, FORMAT -> FpuFormatEncoding.DOUBLE, TO -> FpuFormatEncoding.QUAD)
+      add(Rvfd.FCVT_D_Q, FORMAT -> FpuFormatEncoding.QUAD, TO -> FpuFormatEncoding.DOUBLE)
     }
     if (p.rvzfh && p.rvq) {
-      add(Rvfd.FCVT_Q_H, FORMAT -> FpuFormat.HALF)
-      add(Rvfd.FCVT_H_Q, FORMAT -> FpuFormat.QUAD)
+      add(Rvfd.FCVT_Q_H, FORMAT -> FpuFormatEncoding.HALF, TO -> FpuFormatEncoding.QUAD)
+      add(Rvfd.FCVT_H_Q, FORMAT -> FpuFormatEncoding.QUAD, TO -> FpuFormatEncoding.HALF)
     }
     uopLock.release()
 
     val RS1_FP = fup(RS1)
 
     val onPack = new layer.Execute(packAt) {
-      val packFormat = FpuFormat()
-      packFormat.assignFromBits(Decode.UOP(25, 2 bits))
-
       packPort.cmd.at(0) := isValid && SEL
-      packPort.cmd.format := packFormat
+      packPort.cmd.format := TO
       packPort.cmd.roundMode := FpuUtils.ROUNDING
       packPort.cmd.hartId := Global.HART_ID
       packPort.cmd.uopId := Decode.UOP_ID

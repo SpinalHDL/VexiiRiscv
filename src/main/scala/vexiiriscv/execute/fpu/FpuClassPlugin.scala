@@ -38,15 +38,15 @@ class FpuClassPlugin(val layer : LaneLayer,
       fup.unpack(uop, RS1)
     }
 
-    add(Rvfd.FCLASS_S, FORMAT -> FpuFormat.FLOAT)
+    add(Rvfd.FCLASS_S, FORMAT -> FpuFormatEncoding.FLOAT)
     if(Riscv.RVD.get) {
-      add(Rvfd.FCLASS_D, FORMAT -> FpuFormat.DOUBLE)
+      add(Rvfd.FCLASS_D, FORMAT -> FpuFormatEncoding.DOUBLE)
     }
     if(Riscv.RVQ.get) {
-      add(Rvfd.FCLASS_Q, FORMAT -> FpuFormat.QUAD)
+      add(Rvfd.FCLASS_Q, FORMAT -> FpuFormatEncoding.QUAD)
     }
     if(Riscv.RVZfh.get) {
-      add(Rvfd.FCLASS_H, FORMAT -> FpuFormat.HALF)
+      add(Rvfd.FCLASS_H, FORMAT -> FpuFormatEncoding.HALF)
     }
 
     uopLock.release()

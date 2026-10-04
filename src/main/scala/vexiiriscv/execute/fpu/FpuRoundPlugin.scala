@@ -58,10 +58,10 @@ class FpuRoundPlugin(val layer: LaneLayer,
       packPort.uopsAt += spec -> packAt
     }
 
-    val f128 = FORMAT -> FpuFormat.QUAD
-    val f64 = FORMAT -> FpuFormat.DOUBLE
-    val f32 = FORMAT -> FpuFormat.FLOAT
-    val f16 = FORMAT -> FpuFormat.HALF
+    def f128 = FORMAT -> FpuFormatEncoding.QUAD
+    def f64 = FORMAT -> FpuFormatEncoding.DOUBLE
+    def f32 = FORMAT -> FpuFormatEncoding.FLOAT
+    def f16 = FORMAT -> FpuFormatEncoding.HALF
 
     f2i(Rvfd.FROUND_S  , f32, NX -> False)
     f2i(Rvfd.FROUNDNX_S, f32, NX -> True)

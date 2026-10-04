@@ -52,10 +52,10 @@ class FpuF2iPlugin(val layer : LaneLayer,
       }
     }
 
-    val f128 = FORMAT -> FpuFormat.QUAD
-    val f64 = FORMAT -> FpuFormat.DOUBLE
-    val f32 = FORMAT -> FpuFormat.FLOAT
-    val f16 = FORMAT -> FpuFormat.HALF
+    def f128 = FORMAT -> FpuFormatEncoding.QUAD
+    def f64 = FORMAT -> FpuFormatEncoding.DOUBLE
+    def f32 = FORMAT -> FpuFormatEncoding.FLOAT
+    def f16 = FORMAT -> FpuFormatEncoding.HALF
 
     f2i(Rvfd.FCVT_WU_S, 32, f32)
     f2i(Rvfd.FCVT_W_S , 32, f32)

@@ -35,10 +35,10 @@ class FpuFliPlugin(val layer : LaneLayer,
       fwbp.addMicroOp(fwb, spec)
     }
 
-    add(Rvfd.FLI_S, FORMAT -> FpuFormat.FLOAT)
-    if (Riscv.RVD) add(Rvfd.FLI_D, FORMAT -> FpuFormat.DOUBLE)
-    if (Riscv.RVZfh) add(Rvfd.FLI_H, FORMAT -> FpuFormat.HALF)
-    if (Riscv.RVQ) add(Rvfd.FLI_Q, FORMAT -> FpuFormat.QUAD)
+    add(Rvfd.FLI_S, FORMAT -> FpuFormatEncoding.FLOAT)
+    if (Riscv.RVD) add(Rvfd.FLI_D, FORMAT -> FpuFormatEncoding.DOUBLE)
+    if (Riscv.RVZfh) add(Rvfd.FLI_H, FORMAT -> FpuFormatEncoding.HALF)
+    if (Riscv.RVQ) add(Rvfd.FLI_Q, FORMAT -> FpuFormatEncoding.QUAD)
 
     uopLock.release()
 

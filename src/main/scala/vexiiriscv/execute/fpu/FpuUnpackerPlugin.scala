@@ -82,10 +82,10 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
       rsUnsignedPlugin.addUop(spec, signed)
     }
 
-    val f128 = FORMAT -> FpuFormat.QUAD
-    val f64 = FORMAT -> FpuFormat.DOUBLE
-    val f32 = FORMAT -> FpuFormat.FLOAT
-    val f16 = FORMAT -> FpuFormat.HALF
+    def f128 = FORMAT -> FpuFormatEncoding.QUAD
+    def f64 = FORMAT -> FpuFormatEncoding.DOUBLE
+    def f32 = FORMAT -> FpuFormatEncoding.FLOAT
+    def f16 = FORMAT -> FpuFormatEncoding.HALF
 
     i2f(Rvfd.FCVT_S_WU, 32, false, f32)
     i2f(Rvfd.FCVT_S_W , 32, true , f32)
@@ -304,16 +304,16 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
 
         val badBoxing = new Area {
           val hit = False
-          if (Riscv.FLEN.get > 32) when (p.FORMAT === FpuFormat.FLOAT) {
+          if (Riscv.FLEN.get > 32) when (p.FORMAT === FpuFormatEncoding.FLOAT) {
             hit := !input((Riscv.FLEN - 1) downto 32).andR
           }
-          if (Riscv.FLEN.get > 64) when (p.FORMAT === FpuFormat.DOUBLE) {
+          if (Riscv.FLEN.get > 64 && p.rvd) when (p.FORMAT === FpuFormatEncoding.DOUBLE) {
             hit := !input((Riscv.FLEN - 1) downto 64).andR
           }
-          if (Riscv.FLEN.get > 128) when (p.FORMAT === FpuFormat.QUAD) {
+          if (Riscv.FLEN.get > 128 && p.rvq) when (p.FORMAT === FpuFormatEncoding.QUAD) {
             hit := !input((Riscv.FLEN - 1) downto 128).andR
           }
-          if (Riscv.FLEN.get > 16) when (p.FORMAT === FpuFormat.HALF) {
+          if (Riscv.FLEN.get > 16 && p.rvzfh) when (p.FORMAT === FpuFormatEncoding.HALF) {
             hit := !input((Riscv.FLEN - 1) downto 16).andR
           }
           val HIT = insert(hit)

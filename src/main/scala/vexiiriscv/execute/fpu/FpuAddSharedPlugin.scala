@@ -19,7 +19,7 @@ case class FpuAddSharedCmd(p1 : FloatUnpackedParam, p2 : FloatUnpackedParam, ats
   val at = Bits(ats.size bits)
   val rs1 = FloatUnpacked(p1)
   val rs2 = FloatUnpacked(p2)
-  val format = FpuFormat()
+  val format = FpuUtils.FORMAT()
   val roundMode = FpuRoundMode()
   val hartId = Global.HART_ID()
   val uopId = Decode.UOP_ID()
@@ -37,7 +37,7 @@ case class FpuAddSharedParam(var preShiftStage : Int = 0,
                              var normStage : Int = 3,
                              var packAt : Int = 4)
 
-/** This plugin implements an shared hardware floating point adder and provide an API for 
+/** This plugin implements an shared hardware floating point adder and provide an API for
   * other plugins to time share it. In practice, the RISC-V FADD and FMA instruction use it.
   * The actual adder hardware is provided by `FpuAddPlugin`.
   */
