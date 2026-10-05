@@ -70,7 +70,7 @@ class FpuMvPlugin(val layer : LaneLayer,
         add(Rvfd.FMV_X_D, f64, SEL_INT -> True)
       }
     }
-    if (Riscv.RVZfh) {
+    if (Riscv.RVZfh || Riscv.RVZfbfmin) {
       add(Rvfd.FMV_H_X, f16, SEL_FLOAT -> True)
       add(Rvfd.FMV_X_H, f16, SEL_INT -> True)
       iwbp.signExtend(iwb, layer(Rvfd.FMV_X_H), 16)

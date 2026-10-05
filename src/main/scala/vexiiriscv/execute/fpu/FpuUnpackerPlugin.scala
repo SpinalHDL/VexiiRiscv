@@ -224,6 +224,11 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
           val exponent = input(10, 5 bits).asUInt
           val sign = input(15)
         }
+        val bf16 = p.rvzfbfmin generate new Area {
+          val mantissa = input(0, 7 bits).asUInt
+          val exponent = input(7, 8 bits).asUInt
+          val sign = input(15)
+        }
 
         RS_PRE_NORM.sign := f32.sign
         RS_PRE_NORM.quiet := f32.mantissa.msb
@@ -266,6 +271,16 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
             expZero := f16.exponent === 0
             expOne := f16.exponent.andR
             recodedExpSub := -FpuConst.f16.expOne + 1
+          }
+          case FpuFormat.BHALF => {
+            RS_PRE_NORM.sign := bf16.sign
+            RS_PRE_NORM.mantissa.raw := bf16.mantissa.asBits << (p.mantissaWidth - FpuConst.bf16.manWidth)
+            RS_PRE_NORM.quiet := bf16.mantissa.msb
+            RS_PRE_NORM.exponent := bf16.exponent.resize(p.exponentWidth) - FpuConst.bf16.expOne
+            manZero := bf16.mantissa === 0
+            expZero := bf16.exponent === 0
+            expOne := bf16.exponent.andR
+            recodedExpSub := -FpuConst.bf16.expOne + 1
           }
         }
         RS_PRE_NORM.mode := (expOne ## expZero).mux(
@@ -313,7 +328,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
           if (Riscv.FLEN.get > 128 && p.rvq) when (p.FORMAT === FpuFormatEncoding.QUAD) {
             hit := !input((Riscv.FLEN - 1) downto 128).andR
           }
-          if (Riscv.FLEN.get > 16 && p.rvzfh) when (p.FORMAT === FpuFormatEncoding.HALF) {
+          if (Riscv.FLEN.get > 16) when (p.rvzfh.mux(p.FORMAT === FpuFormatEncoding.HALF, False) || p.rvzfbfmin.mux(p.FORMAT === FpuFormatEncoding.BHALF, False)) {
             hit := !input((Riscv.FLEN - 1) downto 16).andR
           }
           val HIT = insert(hit)

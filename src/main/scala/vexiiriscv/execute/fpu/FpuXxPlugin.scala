@@ -74,6 +74,10 @@ class FpuXxPlugin(val layer : LaneLayer,
       add(Rvfd.FCVT_Q_H, FORMAT -> FpuFormatEncoding.HALF, TO -> FpuFormatEncoding.QUAD)
       add(Rvfd.FCVT_H_Q, FORMAT -> FpuFormatEncoding.QUAD, TO -> FpuFormatEncoding.HALF)
     }
+    if (p.rvzfbfmin) {
+      add(Rvfd.FCVT_BF16_S, FORMAT -> FpuFormatEncoding.FLOAT, TO -> FpuFormatEncoding.BHALF)
+      add(Rvfd.FCVT_S_BF16, FORMAT -> FpuFormatEncoding.BHALF, TO -> FpuFormatEncoding.FLOAT)
+    }
     uopLock.release()
 
     val RS1_FP = fup(RS1)

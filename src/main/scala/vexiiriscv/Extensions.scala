@@ -108,6 +108,7 @@ object ExtensionList {
     E("zfa").depend("f"),
     E("zfhmin").depend("f"),
     E("zfh").depend("zfhmin"),
+    E("zfbfmin").depend("zfhmin"),
     E("zknd"),
     E("zkne"),
     E("zknh"),

@@ -56,7 +56,7 @@ class AguFrontend(
   val writeRfFloat = ArrayBuffer[MicroOp]()
   if (RVF) writeRfFloat ++= List(Rvfd.FLW)
   if (RVD) writeRfFloat ++= List(Rvfd.FLD)
-  if (RVZfh) writeRfFloat ++= List(Rvfd.FLH)
+  if (RVZfh || RVZfbfmin) writeRfFloat ++= List(Rvfd.FLH)
   if (RVQ) writeRfFloat ++= List(Rvfd.FLQ)
   writingRf ++= writeRfFloat
   for (op <- writingRf) add(op).srcs(sk.Op.ADD, sk.SRC1.RF, sk.SRC2.I).decode(dec(LOAD -> True, FLOAT -> Bool(writeRfFloat.contains(op))))
@@ -75,7 +75,7 @@ class AguFrontend(
   for (store <- writingMem) add(store).srcs(storeOps).decode(dec(STORE -> True))
   if (RVF) writingMem += add(Rvfd.FSW).srcs(storeOps).decode(dec(STORE -> True, FLOAT -> True)).uop
   if (RVD) writingMem += add(Rvfd.FSD).srcs(storeOps).decode(dec(STORE -> True, FLOAT -> True)).uop
-  if (RVZfh) writingMem += add(Rvfd.FSH).srcs(storeOps).decode(dec(STORE -> True, FLOAT -> True)).uop
+  if (RVZfh || RVZfbfmin) writingMem += add(Rvfd.FSH).srcs(storeOps).decode(dec(STORE -> True, FLOAT -> True)).uop
   if (RVQ) writingMem += add(Rvfd.FSQ).srcs(storeOps).decode(dec(STORE -> True, FLOAT -> True)).uop
 
   val writingMemGuest = ArrayBuffer[MicroOp]()

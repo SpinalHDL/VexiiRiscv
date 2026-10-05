@@ -10,6 +10,7 @@ object FpuFormatEncoding {
   def DOUBLE = U(FpuUtils.FpuEncoding(FpuFormat.DOUBLE), FpuUtils.formatWidth bits)
   def QUAD = U(FpuUtils.FpuEncoding(FpuFormat.QUAD), FpuUtils.formatWidth bits)
   def HALF = U(FpuUtils.FpuEncoding(FpuFormat.HALF), FpuUtils.formatWidth bits)
+  def BHALF = U(FpuUtils.FpuEncoding(FpuFormat.BHALF), FpuUtils.formatWidth bits)
 }
 
 case class FpuConst(
@@ -59,11 +60,21 @@ object FpuConst {
     expOne = 16383,
   )
 
+  val bf16 = FpuConst(
+    bits = 16,
+    expWidth = 8,
+    manWidth = 7,
+    expSubnormal = -127,
+    expMax = 127,
+    expOne = 127,
+  )
+
   val supported = Map[FpuFormatTrait, FpuConst](
     FpuFormat.FLOAT  -> f32,
     FpuFormat.DOUBLE -> f64,
     FpuFormat.QUAD   -> f128,
     FpuFormat.HALF   -> f16,
+    FpuFormat.BHALF  -> bf16,
   )
 }
 
@@ -77,6 +88,7 @@ object FpuUtils extends AreaObject {
   def rvf = Riscv.RVF.get
   def rvq = Riscv.RVQ.get
   def rvzfh = Riscv.RVZfh.get
+  def rvzfbfmin = Riscv.RVZfbfmin.get
   def rv64 = XLEN.get == 64
   val FORMAT = Payload(UInt(formatWidth bits))
   val ROUNDING = Payload(FpuRoundMode())
@@ -86,7 +98,9 @@ object FpuUtils extends AreaObject {
     (if (rvq) Seq(FpuFormat.QUAD) else Seq.empty) ++
     (if (rvd) Seq(FpuFormat.DOUBLE) else Seq.empty) ++
     (if (rvf) Seq(FpuFormat.FLOAT) else Seq.empty) ++
-    (if (rvzfh) Seq(FpuFormat.HALF) else Seq.empty)
+    (if (rvzfh) Seq(FpuFormat.HALF) else Seq.empty) ++
+    (if (rvzfbfmin) Seq(FpuFormat.BHALF) else Seq.empty)
+
 
   def FpuEncoding(format: FpuFormatTrait): Int = supported.indexOf(format)
 

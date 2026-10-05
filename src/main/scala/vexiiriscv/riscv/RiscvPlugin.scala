@@ -34,6 +34,7 @@ class RiscvPlugin(var xlen : Int,
     if(Riscv.RVZbs.isEmpty) Riscv.RVZbs.set(has("zbs"))
     if(Riscv.RVZfa.isEmpty) Riscv.RVZfa.set(has("zfa"))
     if(Riscv.RVZfh.isEmpty) Riscv.RVZfh.set(has("zfh"))
+    if(Riscv.RVZfbfmin.isEmpty) Riscv.RVZfbfmin.set(has("zfbfmin"))
     Riscv.XLEN.set(xlen)
     Riscv.FLEN.set(FpuUtils.rsFloatWidth)
     Riscv.LSLEN.set(List(Riscv.XLEN.get, Riscv.FLEN.get).max)
