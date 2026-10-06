@@ -53,15 +53,15 @@ class FpuDivPlugin(val layer : LaneLayer,
       packPort.uopsAt += spec -> exeAt
     }
 
-    add(Rvfd.FDIV_S, FORMAT -> FpuFormat.FLOAT)
+    add(Rvfd.FDIV_S, FORMAT -> FpuFormatEncoding.FLOAT)
     if(Riscv.RVD) {
-      add(Rvfd.FDIV_D, FORMAT -> FpuFormat.DOUBLE)
+      add(Rvfd.FDIV_D, FORMAT -> FpuFormatEncoding.DOUBLE)
     }
     if(Riscv.RVQ) {
-      add(Rvfd.FDIV_Q, FORMAT -> FpuFormat.QUAD)
+      add(Rvfd.FDIV_Q, FORMAT -> FpuFormatEncoding.QUAD)
     }
     if(Riscv.RVZfh) {
-      add(Rvfd.FDIV_H, FORMAT -> FpuFormat.HALF)
+      add(Rvfd.FDIV_H, FORMAT -> FpuFormatEncoding.HALF)
     }
 
     uopLock.release()

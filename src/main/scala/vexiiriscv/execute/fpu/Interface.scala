@@ -69,14 +69,17 @@ case class FloatUnpacked(p : FloatUnpackedParam) extends Bundle{
   }
 }
 
-object FpuFormat extends SpinalEnum{
-  val FLOAT, DOUBLE, HALF, QUAD = newElement()
-  defaultEncoding = SpinalEnumEncoding("opt")(
-    FLOAT  -> 0,
-    DOUBLE -> 1,
-    HALF   -> 2,
-    QUAD   -> 3,
-  )
+sealed trait FpuFormatTrait
+
+object FpuFormat {
+  object FLOAT extends FpuFormatTrait
+  object DOUBLE extends FpuFormatTrait
+  object HALF extends FpuFormatTrait
+  object QUAD extends FpuFormatTrait
+  object BHALF extends FpuFormatTrait
+
+  implicit def fpuFormatToInt(f: FpuFormatTrait): Int = FpuUtils.FpuEncoding(f)
+  implicit def fpuFormatToUInt(f: FpuFormatTrait): UInt = U(FpuUtils.FpuEncoding(f), FpuUtils.formatWidth bits)
 }
 
 object FpuRoundMode extends SpinalEnum(){
