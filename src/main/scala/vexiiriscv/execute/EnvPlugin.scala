@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import spinal.lib.misc.pipeline._
 import vexiiriscv.misc.{PrivilegedPlugin, TrapReason, TrapService}
-import vexiiriscv.riscv.{Const, CSR, PrivilegeMode, Rvi, Rvh}
+import vexiiriscv.riscv.{Const, CSR, PrivilegeMode, RiscvPlugin, Rvi, Rvh}
 import vexiiriscv._
 import vexiiriscv.Global._
 import vexiiriscv.decode.Decode
@@ -44,6 +44,8 @@ class EnvPlugin(layer : LaneLayer,
     if (ps.implementSupervisor) add(Rvi.SRET).decode(OP -> EnvPluginOp.PRIV_RET)
     if (ps.implementUserTrap)   add(Rvi.URET).decode(OP -> EnvPluginOp.PRIV_RET)
 
+    assert(host[RiscvPlugin].has("zifencei"), "The zifencei extension isn't part" +
+      "of the ISA configuration, while EnvPlugin unconditionally implements FENCE.I")
     add(Rvi.FENCE_I).decode(OP -> EnvPluginOp.FENCE_I)
     add(Rvi.WFI).decode(OP -> EnvPluginOp.WFI)
     if (ps.implementSupervisor) add(Rvi.SFENCE_VMA).srcs(SRC1.RF, SRC2.RF).decode(OP -> EnvPluginOp.SFENCE_VMA)
