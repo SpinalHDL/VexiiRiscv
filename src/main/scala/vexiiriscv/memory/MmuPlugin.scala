@@ -338,9 +338,10 @@ class MmuPlugin(var spec : MmuSpec,
 
     assert(HART_COUNT.get == 1)
     val satp = new Area {
+      val physicalPpnWidth = physicalWidth - 12
       val (modeOffset, modeWidth, ppnWidth, asidOffset, asidWidthMax) = XLEN.get match {
-        case 32 => (31, 1, 20, 22, 9) //20 instead of 22 to avoid 34 physical bits
-        case 64 => (60, 4, 44, 44, 16)
+        case 32 => (31, 1, 20 min physicalPpnWidth, 22, 9) //20 instead of 22 to avoid 34 physical bits, and it should not exceed the physical range
+        case 64 => (60, 4, 44 min physicalPpnWidth, 44, 16)
       }
       assert(asidWidth <= asidWidthMax, "asidWidth is too big")
       val mode = Reg(Bits(modeWidth bits)) init(0)
@@ -683,7 +684,7 @@ class MmuPlugin(var spec : MmuSpec,
     }
 
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
-        val pteFault = (load.exception || load.levelException(levelId)) || (levelId == 0).mux(!load.leaf, False)
+        val pteFault = load.exception || (load.leaf && load.levelException(levelId)) || (levelId == 0).mux(!load.leaf, False)
         val pteReadError = load.rsp.error(0)
         val shadowReadError = load.rsp.error(1)
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
@@ -744,7 +745,7 @@ class MmuPlugin(var spec : MmuSpec,
             levelId match {
               case 0 => rspCheck
               case _ => {
-                when(load.exception) {
+                when(load.exception || leafAccessFault) {
                   goto(DONE(levelId))
                 } elsewhen(load.leaf) {
                   rspCheck
