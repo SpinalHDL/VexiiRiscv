@@ -58,9 +58,10 @@ class ShadowMmuPlugin(var spec : MmuSpec,
 
     assert(HART_COUNT.get == 1)
     val hgatp = new Area {
+      val physicalPpnWidth = physicalWidth - 12
       val (modeOffset, modeWidth, ppnWidth, vmidOffset, vmidWidthMax) = XLEN.get match {
-        case 32 => (31, 1, 20, 22, 7) //20 instead of 22 to avoid 34 physical bits
-        case 64 => (60, 4, 44, 44, 14)
+        case 32 => (31, 1, 20 min physicalPpnWidth, 22, 7) //20 instead of 22 to avoid 34 physical bits, and it should not exceed the physical range
+        case 64 => (60, 4, 44 min physicalPpnWidth, 44, 14)
       }
       assert(vmidWidth <= vmidWidthMax, "vmidWidth is too big")
       val mode = Reg(Bits(modeWidth bits)) init(0)
@@ -333,7 +334,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       }
 
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
-        val pteFault = load.exception || load.levelException(levelId) || (levelId == 0).mux(!load.leaf, False)
+        val pteFault = load.exception || (load.leaf && load.levelException(levelId)) || (levelId == 0).mux(!load.leaf, False)
         val pteReadError = load.rsp.error.orR
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
         val pageFault = !pteReadError && pteFault
@@ -362,7 +363,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
             levelId match {
               case 0 => rspCheck
               case _ => {
-                when(load.exception) {
+                when(load.exception || leafAccessFault) {
                   goto(DONE(levelId))
                 } elsewhen(load.leaf) {
                   rspCheck
