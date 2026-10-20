@@ -156,6 +156,7 @@ object CSR {
   def MVIEN     = 0x308 // MRW Machine virtual interrupt enables.
   def MVIP      = 0x309 // MRW Machine virtual interrupt-pending bits.
   def MSTATUSH  = 0x310 // MRW Upper 32 bits of mstatus, RV32I only.
+  def MEDELEGH  = 0x312 // MRW Upper 32 bits of medeleg, RV32I only.
   def MIDELEGH  = 0x313 // MRW Upper 32 bits of mideleg, RV32I only.
   def MIEH      = 0x314 // Upper 32 bits of mie, RV32I only.
   def MVIENH    = 0x318 // Upper 32 bits of mvien, RV32I only.

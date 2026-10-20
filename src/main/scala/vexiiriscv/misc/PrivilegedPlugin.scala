@@ -745,6 +745,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val tval2 = p.withHypervisor generate crs.readWriteRam(CSR.MTVAL2)
         val tinst = p.withHypervisor generate crs.readWriteRam(CSR.MTINST)
 
+        if (XLEN.get == 32) api.allowCsr(CsrListFilter(Seq(CSR.MIDELEGH,CSR.MEDELEGH, CSR.MSTATUSH)), True)
+
         spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = PrivilegeMode.M, delegators = Nil)
         spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = PrivilegeMode.M, delegators = Nil)
         spec.addInterrupt(ip.meip && ie.meie, id = 11, privilege = PrivilegeMode.M, delegators = Nil)

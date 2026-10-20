@@ -35,7 +35,7 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val csrRetainer = csr.csrLock()
     val ramCsrRetainer = ram.csrLock()
     val ramPortRetainer = ram.portLock()
-//    val trapLock = tp.trapLock()
+    val trapLock = retains(tp.trapLock)
     awaitBuild()
 
 
@@ -152,8 +152,6 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
     val writePort = ram.ramWritePort(CsrRamService.priority.COUNTER)
     ramPortRetainer.release()
 
-    elaborationLock.await()
-
     val csrFilter = CsrListFilter(mappings.map(m => m.csrId))
 
     val interrupt = new Area {
@@ -203,6 +201,9 @@ class PerformanceCounterPlugin(var additionalCounterCount : Int,
         delegators = priv.implementSupervisor.mux(List(Delegator(sup.deleg, PrivilegeMode.M)), Nil)
       )
     }
+    trapLock.release()
+
+    elaborationLock.await()
 
     val events = new Area {
       val selWidth = log2Up((specs.map(_.id) :+ 0).max + 1)
