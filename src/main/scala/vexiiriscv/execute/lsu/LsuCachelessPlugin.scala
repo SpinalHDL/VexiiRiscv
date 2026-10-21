@@ -324,7 +324,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.valid :=  False
       trapPort.hartId := Global.HART_ID
       trapPort.laneAge := Execute.LANE_AGE
-      trapPort.tval := onAddress.RAW_ADDRESS.asBits.resized //PC RESIZED
+      trapPort.tval := Global.expendPc(onAddress.RAW_ADDRESS, Global.TVAL_WIDTH).asBits //PC RESIZED
       trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
