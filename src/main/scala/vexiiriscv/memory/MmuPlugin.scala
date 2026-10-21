@@ -326,9 +326,10 @@ class MmuPlugin(var spec : MmuSpec,
     PHYSICAL_WIDTH.set(physicalWidth)
     VIRTUAL_WIDTH.set(spec.virtualWidth)
     MIXED_WIDTH.set(VIRTUAL_WIDTH.get)
-    PC_WIDTH.set(MIXED_WIDTH)
-    TVAL_WIDTH.set(MIXED_WIDTH)
+    TVAL_WIDTH.set(XLEN.get min (MIXED_WIDTH.get + 1))
+    PC_WIDTH.set(TVAL_WIDTH)
     assert(VIRTUAL_WIDTH.get == XLEN.get || XLEN.get > VIRTUAL_WIDTH.get && VIRTUAL_WIDTH.get > physicalWidth)
+    assert(PC_WIDTH.get <= (VIRTUAL_WIDTH.get + 1) && PC_WIDTH.get >= VIRTUAL_WIDTH.get)
 
     val accessBus = access.newDBusAccess(priv.implementHypervisor)
 
@@ -517,12 +518,14 @@ class MmuPlugin(var spec : MmuSpec,
         })
         requireMmuLockup clearWhen(ps.req.FORCE_PHYSICAL)
 
+        val badAddress = Global.checkBadAddress(ps.req.PRE_ADDRESS, ps.req.PRE_ADDRESS(VIRTUAL_WIDTH - 1))
+
         import ps.rsp.keys._
         when(requireMmuLockup) {
           HAZARD        := False
-          REFILL        := !hit
+          REFILL        := !(hit || badAddress)
           TRANSLATED    := lineTranslated
-          PAGE_FAULT    := permRsp.page_fault
+          PAGE_FAULT    := permRsp.page_fault || badAddress
           ACCESS_FAULT  := False
         } otherwise {
           HAZARD        := False

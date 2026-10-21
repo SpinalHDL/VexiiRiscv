@@ -40,8 +40,8 @@ class PcCalc(bp: BranchPlugin, at: Int) extends Area {
   val srcp = host.find[SrcPlugin](_.layer == layer)
   val imm = IMM(UOP)
   val target_a = BRANCH_CTRL.mux(
-    default -> S(PC),
-    BranchCtrlEnum.JALR -> srcp.SRC1.resize(PC_WIDTH)
+    default -> Global.expendPc(PC, Riscv.XLEN.get).asSInt,
+    BranchCtrlEnum.JALR -> ctrl(srcp.SRC1)
   )
 
   val target_b = BRANCH_CTRL.mux(
@@ -52,11 +52,19 @@ class PcCalc(bp: BranchPlugin, at: Int) extends Area {
 
   val slices = Decode.INSTRUCTION_SLICE_COUNT +^ 1
   val sliceShift = Fetch.SLICE_RANGE_LOW.get
-  val PC_TRUE = insert(U(target_a + target_b).resize(PC_WIDTH));
+  val pc_target = U(target_a + target_b)
+  val pc_true = pc_target.resize(PC_WIDTH)
+  val PC_TRUE = insert(pc_true);
   PC_TRUE(0) := False //PC RESIZED
+  val PC_CANONICAL = insert((Riscv.XLEN > PC_WIDTH).mux(pc_target.drop(PC_WIDTH.get).asBools.map(_ === Global.pcWithSignMsb.mux(pc_true.msb, False)).andR, True))
   val PC_FALSE = insert(PC + (slices << sliceShift))
   val PC_LAST_SLICE = insert(PC + (Decode.INSTRUCTION_SLICE_COUNT << sliceShift))
 
+  if (PC_WIDTH.get > VIRTUAL_WIDTH.get) {
+    when(!PC_CANONICAL) {
+      PC_TRUE(VIRTUAL_WIDTH.get) := !pc_true(VIRTUAL_WIDTH.get - 1)
+    }
+  }
 
   // Without those KeepAttribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
   // with the 32 bits of the TRUE/FALSE adders, ending up in a quite long combinatorial path (21 lut XD)
@@ -157,6 +165,7 @@ class BranchPlugin(val layer : LaneLayer,
     val PC_TRUE = pcCalc.PC_TRUE
     val PC_FALSE = pcCalc.PC_FALSE
     val PC_LAST_SLICE = pcCalc.PC_LAST_SLICE
+    val PC_CANONICAL = pcCalc.PC_CANONICAL
 
     val alu = new el.Execute(aluAt) {
       val ss = SrcStageables
@@ -167,8 +176,8 @@ class BranchPlugin(val layer : LaneLayer,
 //        val REAL_TARGET = insert(COND.mux[UInt](PC_TRUE, PC_FALSE))
       }
 
-      val expectedMsb = host.find[AddressTranslationService](!_.isShadowMmu).getSignExtension(AddressTranslationPortUsage.FETCH, srcp.SRC1.asUInt)
-      val MSB_FAILED = insert(BRANCH_CTRL === BranchCtrlEnum.JALR && srcp.SRC1.dropLow(MIXED_WIDTH).asBools.map(_ =/= expectedMsb).orR)
+      val expectedMsb = host.find[AddressTranslationService](!_.isShadowMmu).getSignExtension(AddressTranslationPortUsage.FETCH, PC_TRUE)
+      val MSB_FAILED = insert(PC_TRUE.dropLow(MIXED_WIDTH).asBools.map(_ =/= expectedMsb).orR || !PC_CANONICAL)
     }
 
     val jumpLogic = new el.Execute(jumpAt) {
@@ -189,7 +198,7 @@ class BranchPlugin(val layer : LaneLayer,
 
 
       val wrongCond = withBtb.mux[Bool](Prediction.ALIGNED_JUMPED =/= COND     , COND )
-      val needFix   = withBtb.mux[Bool](wrongCond || COND && alu.btb.BAD_TARGET, wrongCond) || alu.MSB_FAILED
+      val needFix   = withBtb.mux[Bool](wrongCond || COND && alu.btb.BAD_TARGET, wrongCond) || (alu.MSB_FAILED && COND)
       val doIt = isValid && SEL && needFix
       val pcTarget = withBtb.mux[UInt](btb.REAL_TARGET, PC_TRUE)
 
@@ -223,7 +232,7 @@ class BranchPlugin(val layer : LaneLayer,
       }
 
       pcPort.valid := doIt
-      pcPort.fault := alu.MSB_FAILED
+      pcPort.fault := alu.MSB_FAILED && COND
       pcPort.pc := pcTarget
       pcPort.laneAge := Execute.LANE_AGE
 

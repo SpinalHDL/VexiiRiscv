@@ -43,7 +43,7 @@ case class FetchL1TimingParameter(var readAt: Int = 0,
 
 /**
  * Implement and bind a instruction L1 cache to the CPU
- * The main particularity of this implementation is that the cache is 
+ * The main particularity of this implementation is that the cache is
  * non-blocking and can connect to prefetching plugins.
  */
 class FetchL1Plugin(var translationStorageParameter: Any,
@@ -535,7 +535,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       val trapSent = RegInit(False) setWhen (trapPort.valid) clearWhen (up.isCancel)
 
       trapPort.valid := False
-      trapPort.tval := Fetch.WORD_PC.asBits
+      trapPort.tval := Global.expendPc(Fetch.WORD_PC, Global.TVAL_WIDTH).asBits
       trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
