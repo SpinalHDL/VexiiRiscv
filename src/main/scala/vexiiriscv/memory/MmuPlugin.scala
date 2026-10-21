@@ -304,7 +304,7 @@ class MmuPlugin(var spec : MmuSpec,
       case AddressTranslationPortUsage.FETCH => api.fetchTranslationEnable
       case AddressTranslationPortUsage.LOAD_STORE => api.lsuTranslationEnable
     }
-    translationEnable.mux(rawAddress(MIXED_WIDTH-1), False)
+    translationEnable.mux(rawAddress(VIRTUAL_WIDTH-1), False)
   }
 
   val logic = during setup new Area{
