@@ -311,6 +311,13 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
       //TODO amo AQ/RL
 
+      // PC RESIZED
+      val tvalAddress = onAddress.RAW_ADDRESS.resize(Global.TVAL_WIDTH)
+      val badAddress = (Riscv.XLEN.get > Global.PC_WIDTH.get).mux(onAddress.RAW_ADDRESS.drop(Global.VIRTUAL_WIDTH.get).asBools.map(_ =/= onAddress.RAW_ADDRESS(Global.VIRTUAL_WIDTH.get - 1)).orR, False)
+      if (Global.PC_WIDTH.get > Global.VIRTUAL_WIDTH.get) when (badAddress) {
+        tvalAddress(Global.VIRTUAL_WIDTH.get) := !onAddress.RAW_ADDRESS(Global.VIRTUAL_WIDTH.get - 1)
+      }
+
       val freezeIt = bus.cmd.isStall || doFence //TODO less combinatorial path
       elp.freezeWhen(freezeIt)
 
@@ -324,7 +331,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       trapPort.valid :=  False
       trapPort.hartId := Global.HART_ID
       trapPort.laneAge := Execute.LANE_AGE
-      trapPort.tval := Global.expendPc(onAddress.RAW_ADDRESS, Global.TVAL_WIDTH).asBits //PC RESIZED
+      trapPort.tval := tvalAddress.asBits
       trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
       trapPort.exception.assignDontCare()
       trapPort.code.assignDontCare()
