@@ -941,6 +941,13 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
           }
 
           val readed = RegNextWhen(crsPorts.read.data, crsPorts.read.valid && crsPorts.read.ready)
+          if (PC_WIDTH.get > VIRTUAL_WIDTH.get) {
+            when (Global.checkBadAddress(crsPorts.read.data.asUInt, crsPorts.read.data(VIRTUAL_WIDTH - 1))) {
+              // Others bits will be dropped, so only change msb of the PC
+              readed(PC_WIDTH - 1) := !crsPorts.read.data(VIRTUAL_WIDTH - 1)
+            }
+          }
+
           TRAP_TVEC.whenIsActive {
             crsPorts.read.valid := True
             val addressMapping = mutable.LinkedHashMap[Int, UInt](
