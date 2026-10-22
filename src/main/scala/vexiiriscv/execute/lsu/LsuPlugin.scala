@@ -792,8 +792,8 @@ class LsuPlugin(var layer : LaneLayer,
         val addressCheck = address === l1.PHYSICAL_ADDRESS
 
         when(!elp.isFreezed() && isValid && FROM_LSU && l1.SEL && !lsuTrap && !onPma.IO) {
-          when(l1.STORE && (isSc || addressCheck)){
-            reserved := False // SC always clears the reservation; other stores only clear a matching reservation
+          when(l1.STORE) { // All stores (including AMO) stay here so they never reach the LR capture below
+            reserved clearWhen(isSc || addressCheck) // SC always clears the reservation; other stores only clear a matching reservation
           } elsewhen(apply(l1.ATOMIC)) {
             capture := True // Load Reserve
           }
