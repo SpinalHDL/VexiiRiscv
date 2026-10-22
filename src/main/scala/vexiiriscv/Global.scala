@@ -1,6 +1,7 @@
 package vexiiriscv
 
 import spinal.core._
+import spinal.lib._
 import spinal.lib.misc.database.Database.blocking
 import spinal.lib.misc.pipeline.Payload
 import vexiiriscv.fetch.Fetch
@@ -34,6 +35,7 @@ object Global extends AreaRoot {
     pc.asSInt.resize(width bits).asUInt,
     pc.resize(width bits)
   )
+  def checkBadAddress(address: UInt, msb: Bool) = address.dropLow(VIRTUAL_WIDTH).asBools.map(_ =/= msb).orR
 
   // Pipelining keys
   val MIXED_ADDRESS = Payload(UInt(MIXED_WIDTH bits))
@@ -51,5 +53,4 @@ object Global extends AreaRoot {
   def HART_ID_WIDTH = log2Up(HART_COUNT)
   val HART_ID = Payload(UInt(HART_ID_WIDTH bits))
   def hartsIds = 0 until HART_COUNT
-
 }

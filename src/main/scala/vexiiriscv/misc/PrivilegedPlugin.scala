@@ -523,7 +523,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
             val execute = for (laneId <- 0 until Decode.LANES) yield new dpp.LaneArea(pcBreakMatchAt, laneId) {
               val chainBroken = Bool()
-              val hitNoChain = enabled && tdata1.execute && U(value) === Global.PC && !chainBroken
+              val hitNoChain = enabled && tdata1.execute && Global.expendPc(value.asUInt, Global.PC_WIDTH) === Global.PC && !chainBroken
               PC_TRIGGER_HITS(slotId) := hitNoChain && !tdata1.chain
             }
 

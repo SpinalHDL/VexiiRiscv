@@ -304,7 +304,7 @@ class MmuPlugin(var spec : MmuSpec,
       case AddressTranslationPortUsage.FETCH => api.fetchTranslationEnable
       case AddressTranslationPortUsage.LOAD_STORE => api.lsuTranslationEnable
     }
-    translationEnable.mux(rawAddress(MIXED_WIDTH-1), False)
+    translationEnable.mux(rawAddress(VIRTUAL_WIDTH-1), False)
   }
 
   val logic = during setup new Area{
@@ -326,9 +326,10 @@ class MmuPlugin(var spec : MmuSpec,
     PHYSICAL_WIDTH.set(physicalWidth)
     VIRTUAL_WIDTH.set(spec.virtualWidth)
     MIXED_WIDTH.set(VIRTUAL_WIDTH.get)
-    PC_WIDTH.set(MIXED_WIDTH)
-    TVAL_WIDTH.set(MIXED_WIDTH)
+    TVAL_WIDTH.set(XLEN.get min (MIXED_WIDTH.get + 1))
+    PC_WIDTH.set(TVAL_WIDTH)
     assert(VIRTUAL_WIDTH.get == XLEN.get || XLEN.get > VIRTUAL_WIDTH.get && VIRTUAL_WIDTH.get > physicalWidth)
+    assert(PC_WIDTH.get <= (VIRTUAL_WIDTH.get + 1) && PC_WIDTH.get >= VIRTUAL_WIDTH.get)
 
     val accessBus = access.newDBusAccess(priv.implementHypervisor)
 
@@ -338,9 +339,10 @@ class MmuPlugin(var spec : MmuSpec,
 
     assert(HART_COUNT.get == 1)
     val satp = new Area {
+      val physicalPpnWidth = physicalWidth - 12
       val (modeOffset, modeWidth, ppnWidth, asidOffset, asidWidthMax) = XLEN.get match {
-        case 32 => (31, 1, 20, 22, 9) //20 instead of 22 to avoid 34 physical bits
-        case 64 => (60, 4, 44, 44, 16)
+        case 32 => (31, 1, 20 min physicalPpnWidth, 22, 9) //20 instead of 22 to avoid 34 physical bits, and it should not exceed the physical range
+        case 64 => (60, 4, 44 min physicalPpnWidth, 44, 16)
       }
       assert(asidWidth <= asidWidthMax, "asidWidth is too big")
       val mode = Reg(Bits(modeWidth bits)) init(0)
@@ -516,12 +518,14 @@ class MmuPlugin(var spec : MmuSpec,
         })
         requireMmuLockup clearWhen(ps.req.FORCE_PHYSICAL)
 
+        val badAddress = Global.checkBadAddress(ps.req.PRE_ADDRESS, ps.req.PRE_ADDRESS(VIRTUAL_WIDTH - 1))
+
         import ps.rsp.keys._
         when(requireMmuLockup) {
           HAZARD        := False
-          REFILL        := !hit
+          REFILL        := !(hit || badAddress)
           TRANSLATED    := lineTranslated
-          PAGE_FAULT    := permRsp.page_fault
+          PAGE_FAULT    := permRsp.page_fault || badAddress
           ACCESS_FAULT  := False
         } otherwise {
           HAZARD        := False
@@ -683,7 +687,7 @@ class MmuPlugin(var spec : MmuSpec,
     }
 
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
-        val pteFault = (load.exception || load.levelException(levelId)) || (levelId == 0).mux(!load.leaf, False)
+        val pteFault = load.exception || (load.leaf && load.levelException(levelId)) || (levelId == 0).mux(!load.leaf, False)
         val pteReadError = load.rsp.error(0)
         val shadowReadError = load.rsp.error(1)
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
@@ -744,7 +748,7 @@ class MmuPlugin(var spec : MmuSpec,
             levelId match {
               case 0 => rspCheck
               case _ => {
-                when(load.exception) {
+                when(load.exception || leafAccessFault) {
                   goto(DONE(levelId))
                 } elsewhen(load.leaf) {
                   rspCheck
