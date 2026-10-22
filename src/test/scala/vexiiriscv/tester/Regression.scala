@@ -57,7 +57,6 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("default", List("--with-isa m --performance-counters 4"))
   addDim("lanes", List(1, 2).map(v => s"--lanes $v --decoders $v"))
   addDim("rf", List("--regfile-sync", "--regfile-async"))
-  addDim("rfPorts", List("--regfile-infer-ports", "--regfile-dual-ports"))
   addDim("bypass", List(0,0,0,1,2,3,100).map(v => s"--allow-bypass-from $v")) //More weight to fully bypassed configs
   addDim("xlen", List(32, 64).map(v => s"--xlen $v"))
   addDim("prediction", List("", "--with-btb", "--with-btb --with-ras", "--with-btb --with-ras --with-gshare"))
@@ -207,6 +206,13 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
       if(!state.withMmu) return ""
       if(state.xlen == 32) List("", "--asid-width=9").randomPick(random)
       else List("", "--asid-width=16").randomPick(random)
+    }
+  }
+
+  dimensions += new Dimensions[ParamSimple]("rfPorts") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(state.privParam.withSupervisor) return "--regfile-infer-ports" //setting register file in simulation is only supported with --regfile-infer-ports
+      List("--regfile-infer-ports", "--regfile-dual-ports").randomPick(random)
     }
   }
 
