@@ -312,9 +312,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       //TODO amo AQ/RL
 
       // PC RESIZED
-      val tvalAddress = onAddress.RAW_ADDRESS.resize(Global.TVAL_WIDTH)
-      val badAddress = (Riscv.XLEN.get > Global.PC_WIDTH.get).mux(onAddress.RAW_ADDRESS.drop(Global.VIRTUAL_WIDTH.get).asBools.map(_ =/= onAddress.RAW_ADDRESS(Global.VIRTUAL_WIDTH.get - 1)).orR, False)
-      if (Global.PC_WIDTH.get > Global.VIRTUAL_WIDTH.get) when (badAddress) {
+      val tvalAddress = Global.expendPc(onAddress.RAW_ADDRESS.resize(Global.MIXED_WIDTH), Global.TVAL_WIDTH)
+      val badAddress = (Riscv.XLEN.get > Global.MIXED_WIDTH.get).mux(onAddress.RAW_ADDRESS.drop(Global.MIXED_WIDTH.get).asBools.map(_ =/= tpk.ADDRESS_EXTENSION).orR, False)
+      if (Global.TVAL_WIDTH.get > Global.VIRTUAL_WIDTH.get) when (badAddress) {
         tvalAddress(Global.VIRTUAL_WIDTH.get) := !onAddress.RAW_ADDRESS(Global.VIRTUAL_WIDTH.get - 1)
       }
 
