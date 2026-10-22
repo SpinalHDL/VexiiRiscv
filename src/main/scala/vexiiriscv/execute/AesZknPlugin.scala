@@ -587,7 +587,7 @@ class Aes64MainZknPlugin(
       }
     }
 
-    val onData = new el.Execute(readAt + 2) {
+    val onData = new el.Execute(readAt + 1) {
       val romInitData = (AesZknPlugin.SBOX ++ AesZknPlugin.SBOX_INV).map(BigInt(_))
       val rom = onRead.reader.map(reader => new Area {
         val storage = Mem(Bits(8 bits), 512) initBigInt(romInitData)
