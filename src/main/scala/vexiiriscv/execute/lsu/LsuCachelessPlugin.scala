@@ -418,7 +418,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(onAddress.MISS_ALIGNED).resized
       }
 
-      when(onTrigger.HIT) {
+      when(onTrigger.HIT && !badAddress) {
         skip := True
         trapPort.exception := False
         trapPort.code := TrapReason.DEBUG_TRIGGER

@@ -958,7 +958,7 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code := l1.STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(preCtrl.MISS_ALIGNED).resized
         }
 
-        when(onTrigger.HIT) {
+        when(onTrigger.HIT && !onPma.FROM_LSU_MSB_FAILED) {
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.DEBUG_TRIGGER
