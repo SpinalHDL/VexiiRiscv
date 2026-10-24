@@ -18,7 +18,7 @@ class RiscvPlugin(var xlen : Int,
 
   val logic = during build new Area {
     if(Riscv.RVC.isEmpty) Riscv.RVC.set(has("c"))
-    if(Riscv.RVM.isEmpty) Riscv.RVM.set(false)
+    if(Riscv.RVM.isEmpty) Riscv.RVM.set(has("m"))
     if(Riscv.RVF.isEmpty) Riscv.RVF.set(has("f"))
     if(Riscv.RVD.isEmpty) Riscv.RVD.set(has("d"))
     if(Riscv.RVE.isEmpty) Riscv.RVE.set(has("e"))

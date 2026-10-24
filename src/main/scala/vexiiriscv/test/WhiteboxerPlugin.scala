@@ -225,7 +225,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE)
-        address := c(p.logic.tpk.TRANSLATED)
+        address := c(LsuL1.PHYSICAL_ADDRESS)
         data := c(LsuL1.WRITE_DATA)
         storeId := c(Decode.STORE_ID)
         amo := False
