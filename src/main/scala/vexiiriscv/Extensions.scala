@@ -166,6 +166,7 @@ case class ExtensionManager(isa: Set[String] = Set[String]()) extends Dynamic {
 
     case "withMul" => check("zmmul")
     case "withDiv" => check("m")
+    case "withFp" => check("f")
 
     case "withIndirectCsr" => check("smcsrind") // sscsrind implies sscsrind
     case "withRdTime" => check("zicntr")
@@ -208,6 +209,9 @@ case class ExtensionManager(isa: Set[String] = Set[String]()) extends Dynamic {
     }
 
     /* ISA change for VexiiRiscv implementation */
+
+    /* FP support always want M extension */
+    if (check("f")) add("m")
 
     /* C extension check */
     if (check("zca")) add("c")
