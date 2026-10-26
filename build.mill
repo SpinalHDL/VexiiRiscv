@@ -1,4 +1,5 @@
 //| mill-allow-nested-build-mill: true
+//| bspScriptIgnore: ["**"]
 //| mvnDeps:
 //| - com.typesafe:config:1.4.3
 package build
