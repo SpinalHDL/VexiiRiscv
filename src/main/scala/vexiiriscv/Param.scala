@@ -15,7 +15,7 @@ import vexiiriscv.execute.cfu.{CfuBusParameter, CfuPlugin, CfuPluginEncoding}
 import vexiiriscv.execute.fpu.{FpuAddSharedParam, FpuMulParam}
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.{FetchCachelessAxi4Plugin, FetchCachelessPlugin, FetchCachelessWishbonePlugin, FetchL1Axi4Plugin, FetchL1Plugin, FetchL1WishbonePlugin, PrefetcherNextLinePlugin}
-import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter}
+import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter, ShadowMmuPlugin, TranslatedDBusAccessPlugin}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.riscv.{FloatRegFile, IntRegFile}
@@ -23,8 +23,10 @@ import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
 import java.security.MessageDigest
-import scala.collection.mutable.{ArrayBuffer, Set}
+import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
+import vexiiriscv.fetch.FetchCachelessTimingParameter
+import vexiiriscv.fetch.FetchL1TimingParameter
 
 
 object FetchBusEnum extends Enumeration {
@@ -43,14 +45,15 @@ object LsuL1BusEnum extends Enumeration {
 object ParamSimple{
   def addOptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
     import parser._
-    opt[Map[String, String]]("region").unbounded() action { (v, c) =>
+    opt[Map[String, String]]("region").unbounded().action { (v, c) =>
       regions += PmaRegionImpl(
         mapping = SizeMapping(BigInt(v("base"), 16), BigInt(v("size"), 16)),
         transfers = M2sTransfers.all,
         isMain = v("main") == "1",
         isExecutable = v("exe") == "1"
       )
-    } text ("Specify a memory region, for instance : --region base=80000000,size=80000000,main=1,exe=1 --region base=10000000,size=10000000,main=0,exe=0")
+    }
+      .text("Specify a memory region as base=HEX,size=HEX,main=0|1,exe=0|1; repeatable.")
   }
 
   val defaultPma = List[PmaRegion](
@@ -99,7 +102,7 @@ object ParamSimple{
  */
 class ParamSimple() {
   var xlen = 32
-  var withISA = Set[String]("i", "zicsr", "zifencei")
+  var extension = ExtensionManager(Set("zicsr", "zifencei"))
   var withAlignerBuffer = false
   var withDispatcherBuffer = false
   var hartCount = 1
@@ -174,12 +177,15 @@ class ParamSimple() {
   var btbHashWidth = 16
   var embeddedJtagTap = false
   var embeddedJtagInstruction = false
+  var embeddedSwd = false
   var embeddedJtagCd: ClockDomain = null
   var embeddedJtagNoTapCd: ClockDomain = null
   var bootMemClear = false
   var mulKeepSrc = false
   var withCfu = false
   var gshareBytes = 4 KiB
+  var recordHtinst = false
+  var withImplicitPtwTlb = false
   val prefetcherRptParam = new PrefetcherRptParam()
 
   var fetchTsp = MmuStorageParameter(
@@ -197,6 +203,7 @@ class ParamSimple() {
     ),
     priority = 0
   )
+
 
   var pmpParam = new PmpParam(
     pmpSize = 0,
@@ -271,10 +278,92 @@ class ParamSimple() {
     rspAt = 1
   )
 
+  def fetchCachelessTiming = FetchCachelessTimingParameter(
+    addressAt = 0,
+    pmaAt     = 0,
+    forkAt    = fetchForkAt,
+    joinAt    = fetchForkAt+1 //You can for instance allow the external memory to have more latency by changing this
+  )
+  def fetchCachelessHypervisorTiming = FetchCachelessTimingParameter(
+    addressAt = 0,
+    pmaAt     = 1,
+    forkAt    = fetchForkAt+1,
+    joinAt    = fetchForkAt+2 //You can for instance allow the external memory to have more latency by changing this
+  )
 
-  def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt)
+  def fetchL1Timing = FetchL1TimingParameter(
+    readAt      = 0,
+    hitsAt      = 1,
+    hitAt       = 1,
+    bankMuxesAt = 1,
+    bankMuxAt   = 2,
+    ctrlAt      = 2
+  )
+  def fetchL1HypervisorTiming = FetchL1TimingParameter(
+    readAt      = 0,
+    hitsAt      = 2,
+    hitAt       = 2,
+    bankMuxesAt = 2,
+    bankMuxAt   = 3,
+    ctrlAt      = 3
+  )
+
+  def lsuCachelessTiming = LsuCachelessTimingParameter(
+    addressAt = 0,
+    triggerAt = 0,
+    pmaAt     = lsuPmaAt,
+    forkAt    = lsuForkAt+0,
+    joinAt    = lsuForkAt+1,
+    wbAt      = 2 //TODO
+  )
+  def lsuCachelessHypervisorTiming = LsuCachelessTimingParameter(
+    addressAt = 0,
+    triggerAt = 1,
+    pmaAt     = lsuPmaAt+1,
+    forkAt    = lsuForkAt+1,
+    joinAt    = lsuForkAt+2,
+    wbAt      = 3 //TODO
+  )
+
+  def lsuTiming = LsuTimingParameter(
+    addressAt = 0,
+    pmaAt = 1,
+    triggerAt = 1,
+    ctrlAt = 2,
+    wbAt = 2,
+    addressLength = 1
+  )
+  def lsuHypervisorTiming = LsuTimingParameter(
+    addressAt = 0,
+    pmaAt = 2,
+    triggerAt = 2,
+    ctrlAt = 3,
+    wbAt = 3,
+    addressLength = 2
+  )
+
+  def lsuL1Timing = LsuL1TimingParameter(
+    bankReadAt = 0,
+    wayReadAt = 0,
+    hitsAt = 1,
+    hitAt = 2,
+    bankMuxesAt = 1,
+    bankMuxAt = 2,
+    ctrlAt = 2
+  )
+  def lsuL1HypervisorTiming = LsuL1TimingParameter(
+    bankReadAt = 0,
+    wayReadAt = 0,
+    hitsAt = 2,
+    hitAt = 3,
+    bankMuxesAt = 2,
+    bankMuxAt = 3,
+    ctrlAt = 3
+  )
+
+  def alignerPluginFetchAt = fetchL1Enable.mux(2, 1+fetchForkAt) + extension.withRvh.toInt
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
-  def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
+  def lsuMemDataWidth = xlen max lsuMemDataWidthMin max extension.withRvd.mux(64, 0) max extension.withRvq.mux(128, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
 
   //  Debug modifiers
@@ -457,7 +546,9 @@ class ParamSimple() {
         case e: Long => md ++= s" $e"
         case e: BigInt => md ++= s" $e"
         case e: String => md ++= s" $e"
+        case e: ExtensionManager => md ++= s" ${e.getIsaStr(includeIgnored = true)}"
         case e : Product => md ++= s" $e"
+        case e: Set[_] => md ++= s" ${e.map(_.toString).toSeq.sorted.mkString(" ")}"
         case e => {
           if(e.getClass.getName == "scala.Enumeration$Val"){
             md ++= s" ${e.toString}"
@@ -471,82 +562,34 @@ class ParamSimple() {
     Math.abs(md.toString.hashCode())
   }
 
-  def addISA(exts: String*): Unit = withISA ++= exts.map(_.toLowerCase())
-  def removeISA(exts: String*): Unit = withISA --= exts.map(_.toLowerCase())
-  def checkISA(exts: String*) = exts.map(withISA contains _.toLowerCase()).reduce(_ && _)
+  def addISA(exts: String*): Unit = extension.add(exts :_*)
+  def removeISA(exts: String*): Unit = extension.remove(exts :_*)
+  def checkISA(exts: String*) = extension.check(exts :_*)
 
-  def withRve = checkISA("e")
-  def withRva = checkISA("a")
-  def withRvf = checkISA("f")
-  def withRvd = checkISA("f", "d")
-  def withRvc = checkISA("c")
-  def withRvcbm = checkISA("zicbom")
-  def withRvZknAes = checkISA("zkne") || checkISA("zknd")
-  def withRvZba = checkISA("zba")
-  def withRvZbb = checkISA("zbb")
-  def withRvZbc = checkISA("zbc")
-  def withRvZbs = checkISA("zbs")
-  def withRvb = checkISA("zba", "zbb", "zbc", "zbs")
-  def withSscofpmf = checkISA("sscofpmf")
-  def withSstc = checkISA("sstc")
-  def withSxaia = checkISA("smaia") || checkISA("ssaia")
-
-  def withMul = checkISA("m") || checkISA("zmmul")
-  def withDiv = checkISA("m")
-  def withMmu = checkISA("s") && !disableMmu
-  def withRdTime = checkISA("zicntr")
-  def withSupervisor = checkISA("s")
-  def withUser = checkISA("u")
-  def withHypervisor = checkISA("h")
-  def withIndirectCsr = checkISA("smcsrind") || checkISA("sscsrind")
-  def withPerformanceCounters = checkISA("zihpm") || checkISA("zicntr")
-  def withPerformanceScountovf = checkISA("sscofpmf")
-  def withInterrutpFilter = checkISA("ssaia")
+  def withMmu = extension.withSupervisor && !disableMmu
 
   def fixIsaParams() = {
-    if(checkISA("h")) addISA("s")
-    if(checkISA("s")) addISA("u")
-
-    if(checkISA("g")) addISA("i", "m", "a", "f", "d", "s", "u")
-    if(checkISA("b")) {
-      addISA("zba", "zbb", "zbc", "zbs")
-      removeISA("b")
+    if(privParam.imsicInterrupts > 0) {
+      addISA("smaia")
+      if(extension.withSupervisor) addISA("ssaia")
     }
+    if(!withMmu) removeISA("svade")
+    extension.finialize(xlen)
+    println(s"ISA extensions: ${extension.getIsaNameArray().mkString(", ")}")
 
-    if(privParam.imsicInterrupts > 0) addISA("smaia", "ssaia")
-    if(withSxaia) addISA("smcsrind", "sscsrind")
-
-    if(!checkISA("s")) {
-      removeISA("sscsrind", "ssaia", "sstc")
-    }
-    if(checkISA("zihpm") || withSstc) addISA("zicntr")
-
-    if(withSupervisor) privParam.withSupervisor = true
-    if(withHypervisor) privParam.withHypervisor = true
-    if(withUser) privParam.withUser = true
-    if(withSstc) privParam.withSSTC = true
-    if(withRdTime) privParam.withRdTime = true
-    if(withInterrutpFilter) privParam.withInterrutpFilter = true
-    if(withRvc) withAlignerBuffer = true
+    if(extension.withSupervisor) privParam.withSupervisor = true
+    if(extension.withHypervisor) privParam.withHypervisor = true
+    if(extension.withUser) privParam.withUser = true
+    if(extension.withSstc) privParam.withSSTC = true
+    if(extension.withRdTime) privParam.withRdTime = true
+    if(extension.withSsaia) privParam.withSsaia = true
+    if(extension.withRvc) withAlignerBuffer = true
   }
 
-  // Generate a human redable name from most of the supported configuration
+  // Generate a human readable name from most of the supported configuration
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
-    var isa = s"rv${xlen}"
-    if (withRve) isa += "e" else isa += "i"
-    if (withMul) isa += s"m"
-    if (withRva) isa += "a"
-    if (withRvf) isa += "f"
-    if (withRvd) isa += "d"
-    if (withRvc) isa += "c"
-    if (withRvZba) isa += "Zba"
-    if (withRvZbb) isa += "Zbb"
-    if (withRvZbc) isa += "Zbc"
-    if (withRvZbs) isa += "Zbs"
-    if (withIndirectCsr) isa += "Smcsrind" + privParam.withSupervisor.mux("Sscsrind", "")
-    if (privParam.withSupervisor) isa += "s"
-    if (privParam.withUser) isa += "u"
+    val isa = s"rv${xlen}${extension.getIsaStr()}"
     val r = new ArrayBuffer[String]()
     r += isa
     r += s"d${decoders}At${decoderAt}"
@@ -565,37 +608,59 @@ class ParamSimple() {
     if (relaxedBranch) r += "rbra"
     if (relaxedShift) r += "rsft"
     if (relaxedSrc) r += "rsrc"
-    if (withPerformanceCounters) r += s"pc$additionalPerformanceCounters"
+    if (extension.withPerformanceCounters) r += s"pc$additionalPerformanceCounters"
+    if (withMmu) r += s"asid$asidWidth"
     if (withIterativeShift) r += "isft"
-    if (withDiv) r += s"d${divRadix}${divImpl}${if(divArea)"Area" else ""}"
+    if (extension.withDiv) r += s"d${divRadix}${divImpl}${if(divArea)"Area" else ""}"
+    if (privParam.withImsic) r += s"if${privParam.imsicInterrupts}gf${privParam.guestExternalInterruptFiles}"
     if (privParam.withDebug) r += s"pdbg"
+    if (privParam.withExternalInterrupt) r += "nei"
     if (embeddedJtagTap) r += s"jtagt"
     if (embeddedJtagInstruction) r += s"jtagi"
+    if (embeddedSwd) r += s"swd"
     r.mkString("_")
   }
 
   // Initialize a scopt command line argument parser to take control of this SimpleParam
   def addOptions(parser: scopt.OptionParser[Unit]) = {
     import parser._
-    opt[Int]("xlen") action { (v, c) => xlen = v }
-    opt[Int]("decoders") action { (v, c) => decoders = v }
-    opt[Int]("lanes") action { (v, c) => lanes = v }
-    opt[Int]("decoder-at") action { (v, c) => decoderAt = v }
-    opt[Int]("dispatcher-at") action { (v, c) => dispatcherAt = v }
-    opt[Long]("reset-vector").unbounded() action { (v, c) => resetVector = v }
-    opt[Unit]("relaxed-div") action { (v, c) => relaxedDiv = true }
-    opt[Unit]("relaxed-mul-inputs") action { (v, c) => relaxedMulInputs = true }
-    opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
-    opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
-    opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
-    opt[Unit]("relaxed-btb") action { (v, c) => relaxedBtb = true }
-    opt[Unit]("relaxed-btb-hit") action { (v, c) => relaxedBtbHit = true }
-    opt[Unit]("stressed-btb") action { (v, c) => relaxedBtb = false }
-    opt[Unit]("stressed-div") action { (v, c) => relaxedDiv = false }
-    opt[Unit]("stressed-branch") action { (v, c) => relaxedBranch = false }
-    opt[Unit]("stressed-shift") action { (v, c) => relaxedShift = false }
-    opt[Unit]("stressed-src") action { (v, c) => relaxedSrc = false }
-    opt[Unit]("stressed-fpu") action { (v, c) =>
+    opt[Int]("xlen").action { (v, c) => xlen = v }
+      .text("Set the RISC-V XLEN in bits; default: 32.")
+    opt[Int]("decoders").action { (v, c) => decoders = v }
+      .text("Set the number of instruction decoders; default: 1.")
+    opt[Int]("lanes").action { (v, c) => lanes = v }
+      .text("Set the number of execution lanes; default: 1.")
+    opt[Int]("decoder-at").action { (v, c) => decoderAt = v }
+      .text("Set the decoder pipeline stage; default: 1.")
+    opt[Int]("dispatcher-at").action { (v, c) => dispatcherAt = v }
+      .text("Set the dispatcher pipeline stage; default: 1.")
+    opt[Long]("reset-vector").unbounded().action { (v, c) => resetVector = v }
+      .text("Set the reset vector address; default: 0x80000000.")
+    opt[Unit]("relaxed-div").action { (v, c) => relaxedDiv = true }
+      .text("Use relaxed timing for div.")
+    opt[Unit]("relaxed-mul-inputs").action { (v, c) => relaxedMulInputs = true }
+      .text("Use relaxed timing for mul inputs.")
+    opt[Unit]("relaxed-branch").action { (v, c) => relaxedBranch = true }
+      .text("Use relaxed timing for branch.")
+    opt[Unit]("relaxed-shift").action { (v, c) => relaxedShift = true }
+      .text("Use relaxed timing for shift.")
+    opt[Unit]("relaxed-src").action { (v, c) => relaxedSrc = true }
+      .text("Use relaxed timing for src.")
+    opt[Unit]("relaxed-btb").action { (v, c) => relaxedBtb = true }
+      .text("Use relaxed timing for btb.")
+    opt[Unit]("relaxed-btb-hit").action { (v, c) => relaxedBtbHit = true }
+      .text("Use relaxed timing for btb hit.")
+    opt[Unit]("stressed-btb").action { (v, c) => relaxedBtb = false }
+      .text("Use stressed timing for btb.")
+    opt[Unit]("stressed-div").action { (v, c) => relaxedDiv = false }
+      .text("Use stressed timing for div.")
+    opt[Unit]("stressed-branch").action { (v, c) => relaxedBranch = false }
+      .text("Use stressed timing for branch.")
+    opt[Unit]("stressed-shift").action { (v, c) => relaxedShift = false }
+      .text("Use stressed timing for shift.")
+    opt[Unit]("stressed-src").action { (v, c) => relaxedSrc = false }
+      .text("Use stressed timing for src.")
+    opt[Unit]("stressed-fpu").action { (v, c) =>
       fpuMulParam.expAt = 0
       fpuMulParam.normAt = 2
       fpuMulParam.packAt = 2
@@ -606,118 +671,243 @@ class ParamSimple() {
       fpuAddSharedParam.packAt = 2
       fpuWbAt = 1
     }
-    opt[Seq[String]]("with-isa").unbounded() action { (v, c) => addISA(v: _*) }
-    opt[Unit]("with-rvm") action { (v, c) => addISA("m") }
-    opt[Unit]("with-rve") action { (v, c) => addISA("e"); removeISA("i") }
-    opt[Unit]("with-rva") action { (v, c) => addISA("a") }
-    opt[Unit]("with-rvf") action { (v, c) => addISA("f") }
-    opt[Unit]("with-rvd") action { (v, c) => addISA("f", "d") }
-    opt[Unit]("with-rvc") action { (v, c) => addISA("c") }
-    opt[Unit]("with-rvZb") action { (v, c) => addISA("zba", "zbb", "zbc", "zbs") }
-    opt[Unit]("with-rvZba") action { (v, c) => addISA("zba") }
-    opt[Unit]("with-rvZbb") action { (v, c) => addISA("zbb") }
-    opt[Unit]("with-rvZbc") action { (v, c) => addISA("zbc") }
-    opt[Unit]("with-rvZbs") action { (v, c) => addISA("zbs") }
-    opt[Unit]("with-rvZcbm") action { (v, c) => addISA("zicbom"); }
-    opt[Unit]("with-rvZcbm-llc") action { (v, c) => addISA("zicbom"); withRvcbmLlc = true }
-    opt[Unit]("with-rvZknAes") action { (v, c) => addISA("zkne", "zknd") }
-    opt[Unit]("with-sxaia") action { (v, c) => addISA("smaia", "ssaia") }
-    opt[Int]("imsic-interrupt-number") action { (v, c) => addISA("smcsrind", "sscsrind", "smaia", "ssaia"); privParam.imsicInterrupts = v }
-    opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
-    opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
-    opt[Unit]("with-hart-id-input-defaulted") action { (v, c) => privParam.withHartIdInputDefaulted = true }
-    opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuMulParam.fmaFullAccuracy = false }
-    opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
-    opt[Unit]("with-aligner-buffer").unbounded() action { (v, c) => withAlignerBuffer = true }
-    opt[Unit]("with-dispatcher-buffer") action { (v, c) => withDispatcherBuffer = true }
-    opt[Unit]("with-supervisor") action { (v, c) => addISA("s", "u") }
-    opt[Unit]("with-user") action { (v, c) => addISA("u") }
-    opt[Unit]("without-mmu") action { (v, c) => disableMmu = false }
-    opt[Unit]("without-mul") action { (v, c) => removeISA("m", "zmmul") }
-    opt[Unit]("without-div") action { (v, c) => if(checkISA("m")) {removeISA("m"); addISA("zmmul")} }
-    opt[Unit]("with-tester-plugin") action { (v, c) => withTesterPlugin = true }
-    opt[Unit]("with-mul") action { (v, c) => addISA("zmmul") }
-    opt[Unit]("with-div") action { (v, c) => addISA("m") }
-    opt[Unit]("with-gshare") action { (v, c) => withGShare = true }
-    opt[Unit]("with-btb") action { (v, c) => withBtb = true }
-    opt[Unit]("with-ras") action { (v, c) => withRas = true }
-    opt[Unit]("without-ras") action { (v, c) => withRas = false }
-    opt[Int]("gshare-banks") action { (v, c) => gshareBanks = v }
-    opt[Unit]("btb-single-port-ram") action { (v, c) => btbDualPortRam = false }
-    opt[Unit]("with-late-alu") action { (v, c) => withLateAlu = true; allowBypassFrom = 0; storeRs2Late = true }
-    opt[Unit]("with-store-rs2-late") action { (v, c) => storeRs2Late = true }
-    opt[Unit]("without-late-alu") action { (v, c) => withLateAlu = false; storeRs2Late = false }
-    opt[Int]("btb-sets") action { (v, c) => btbSets = v }
-    opt[Int]("btb-hash-width") action { (v, c) => btbHashWidth = v }
-    opt[Unit]("regfile-async") action { (v, c) => regFileSync = false }
-    opt[Unit]("regfile-sync") action { (v, c) => regFileSync = true }
-    opt[Unit]("regfile-dual-ports") action { (v, c) => regFileDualPortRam = true }
-    opt[Unit]("regfile-infer-ports") action { (v, c) => regFileDualPortRam = false }
-    opt[Unit]("regfile-reg-based") action { (v, c) => regFileRegBasedRam = true; regFileDualPortRam = false}
-    opt[Int]("allow-bypass-from") action { (v, c) => allowBypassFrom = v }
-    opt[Unit]("with-indirect-csr") action { (v, c) => addISA("smcsrind", "sscsrind") }
-    opt[Int]("performance-counters").unbounded() action { (v, c) => addISA("zicntr", "zihpm"); additionalPerformanceCounters = v }
-    opt[Unit]("without-performance-scountovf").unbounded() action { (v, c) => removeISA("sscofpmf") }
-    opt[Unit]("with-fetch-l1").unbounded() action { (v, c) => fetchL1Enable = true }
-    opt[Unit]("with-lsu-l1") action { (v, c) => lsuL1Enable = true }
-    opt[Unit]("fetch-axi4") action { (v, c) => fetchBus = FetchBusEnum.axi4 }
-    opt[Unit]("fetch-wishbone") action { (v, c) => fetchBus = FetchBusEnum.wishbone }
-    opt[Unit]("lsu-axi4") action { (v, c) => lsuBus = LsuBusEnum.axi4 }
-    opt[Unit]("lsu-wishbone") action { (v, c) => lsuBus = LsuBusEnum.wishbone }
-    opt[Unit]("lsu-l1-axi4") action { (v, c) => lsuL1Bus = LsuL1BusEnum.axi4 }
-    opt[Unit]("lsu-l1-wishbone") action { (v, c) => lsuL1Bus = LsuL1BusEnum.wishbone }
-    opt[Unit]("fetch-l1") action { (v, c) => fetchL1Enable = true }
-    opt[Unit]("lsu-l1") action { (v, c) => lsuL1Enable = true }
-    opt[Int]("fetch-l1-sets").unbounded() action { (v, c) => fetchL1Sets = v }
-    opt[Int]("fetch-l1-ways").unbounded() action { (v, c) => fetchL1Ways = v }
-    opt[Int]("fetch-l1-refill-count").unbounded() action { (v, c) => fetchL1RefillCount = v }
-    opt[Unit]("fetch-l1-tags-read-async") action { (v, c) =>  fetchL1TagsReadAsync = true }
-    opt[String]("fetch-l1-hardware-prefetch") action { (v, c) => fetchL1Prefetch = v }
-    opt[Int]("fetch-l1-mem-data-width-min").unbounded() action { (v, c) => fetchMemDataWidthMin = v }
-    opt[Unit]("fetch-reduced-bank") action { (v, c) => fetchL1ReducedBank = true }
-    opt[Int]("lsu-l1-sets").unbounded() action { (v, c) => lsuL1Sets = v }
-    opt[Int]("lsu-l1-ways").unbounded() action { (v, c) => lsuL1Ways = v }
-    opt[Int]("lsu-l1-store-buffer-slots") action { (v, c) => lsuStoreBufferSlots = v }
-    opt[Int]("lsu-l1-store-buffer-ops") action { (v, c) => lsuStoreBufferOps = v }
-    opt[Unit]("lsu-l1-tags-read-async") action { (v, c) =>  lsuL1TagsReadAsync = true }
-    opt[String]("lsu-hardware-prefetch") action { (v, c) => lsuHardwarePrefetch = v }
-    opt[Unit]("lsu-software-prefetch") action { (v, c) => lsuSoftwarePrefetch = true }
-    opt[Int]("lsu-rpt-block-ahead-max") action { (v, c) => prefetcherRptParam.blockAheadMax = v }
-    opt[Int]("lsu-l1-refill-count") action { (v, c) => lsuL1RefillCount = v }
-    opt[Int]("lsu-l1-writeback-count") action { (v, c) => lsuL1WritebackCount = v }
-    opt[Int]("lsu-l1-mem-data-width-min").unbounded() action { (v, c) => lsuMemDataWidthMin = v }
-    opt[Unit]("lsu-l1-coherency") action { (v, c) => lsuL1Coherency = true}
-    opt[Unit]("with-lsu-bypass") action { (v, c) => withLsuBypass = true }
-    opt[Unit]("without-lsu-bypass") action { (v, c) => withLsuBypass = false }
-    opt[Unit]("with-iterative-shift") action { (v, c) => withIterativeShift = true }
-    opt[Int]("div-radix") action { (v, c) => divRadix = v }
-    opt[String]("div-impl") action { (v, c) => divImpl = v }
-    opt[Unit]("div-ipc") action { (v, c) => divArea = false }
-    opt[Int]("fetch-fork-at") action { (v, c) => fetchForkAt = v }
-    opt[Int]("lsu-fork-at") action { (v, c) => lsuForkAt = v }
-    opt[Int]("lsu-pma-at") action { (v, c) => lsuPmaAt = v }
-    opt[Unit]("debug-privileged") action { (v, c) => privParam.withDebug = true }
-    opt[Int] ("debug-triggers") action { (v, c) => privParam.debugTriggers = v }
-    opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
-    opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true; privParam.withDebug = true }
-    opt[Unit]("debug-jtag-instruction") action { (v, c) => embeddedJtagInstruction = true; privParam.withDebug = true }
-    opt[Unit]("with-boot-mem-init") action { (v, c) => bootMemClear = true }
-    opt[Int]("physical-width") action { (v, c) => physicalWidth = v }
-    opt[Unit]("mul-keep-src") action { (v, c) => mulKeepSrc = true }
-    opt[Unit]("mmu-sync-read") action { (v, c) => withMmuSyncRead() }
-    opt[Int]("pmp-size") action { (v, c) => pmpParam.pmpSize = v }
-    opt[Int]("pmp-granularity") action { (v, c) => pmpParam.granularity = v }
-    opt[Unit]("pmp-tor-disable") action { (v, c) => pmpParam.withTor = false }
-    opt[Unit]("with-rdtime") action { (v, c) => addISA("zicntr") }
-    opt[Unit]("with-sstc") action { (v, c) => addISA("sstc") }
-    opt[Unit]("with-cfu") action { (v, c) => withCfu = true }
-    opt[Int]("asid-width") action{ (v,c) => asidWidth = v }
-    opt[Int]("gshare-bytes") action{ (v,c) => gshareBytes = v }
-    opt[Unit]("dual-issue") action { (v, c) =>
+      .text("Use the stressed FPU pipeline timing preset.")
+    opt[Seq[String]]("with-isa").unbounded().action { (v, c) => addISA(v: _*) }
+      .text("Add comma-separated ISA extensions; repeatable.")
+    opt[Seq[String]]("without-isa").unbounded().action { (v, c) => removeISA(v: _*) }
+      .text("Remove comma-separated ISA extensions; repeatable.")
+    opt[Unit]("with-rvm").action { (v, c) => addISA("m") }
+      .text("Enable M extension; suggest --with-isa m.")
+    opt[Unit]("with-rve").action { (v, c) => addISA("e") }
+      .text("Enable E extension; suggest --with-isa e.")
+    opt[Unit]("with-rva").action { (v, c) => addISA("a") }
+      .text("Enable A extension; suggest --with-isa a.")
+    opt[Unit]("with-rvf").action { (v, c) => addISA("f") }
+      .text("Enable F extension; suggest --with-isa f.")
+    opt[Unit]("with-rvd").action { (v, c) => addISA("f", "d") }
+      .text("Enable F and D extensions; suggest --with-isa f,d.")
+    opt[Unit]("with-rvc").action { (v, c) => addISA("c") }
+      .text("Enable C extension; suggest --with-isa c.")
+    opt[Unit]("with-rvZb").action { (v, c) => addISA("zba", "zbb", "zbc", "zbs") }
+      .text("Enable Zba, Zbb, Zbc and Zbs extensions; suggest --with-isa zba,zbb,zbc,zbs.")
+    opt[Unit]("with-rvZba").action { (v, c) => addISA("zba") }
+      .text("Enable Zba extension; suggest --with-isa zba.")
+    opt[Unit]("with-rvZbb").action { (v, c) => addISA("zbb") }
+      .text("Enable Zbb extension; suggest --with-isa zbb.")
+    opt[Unit]("with-rvZbc").action { (v, c) => addISA("zbc") }
+      .text("Enable Zbc extension; suggest --with-isa zbc.")
+    opt[Unit]("with-rvZbs").action { (v, c) => addISA("zbs") }
+      .text("Enable Zbs extension; suggest --with-isa zbs.")
+    opt[Unit]("with-rvZcbm").action { (v, c) => addISA("zicbom"); }
+      .text("Enable Zicbom extension; suggest --with-isa zicbom.")
+    opt[Unit]("with-rvZcbm-llc").action { (v, c) => addISA("zicbom"); withRvcbmLlc = true }
+      .text("Enable Zicbom and LLC integration; suggest --with-isa zicbom without LLC integration.")
+    opt[Unit]("with-rvZknAes").action { (v, c) => addISA("zkne", "zknd") }
+      .text("Enable Zkne and Zknd AES extensions; suggest --with-isa zkne,zknd.")
+    opt[Unit]("with-sxaia").action { (v, c) => addISA("smaia", "ssaia") }
+      .text("Enable the Smaia and Ssaia extensions.")
+    opt[Int]("imsic-interrupt-number").action { (v, c) => privParam.imsicInterrupts = v }
+      .text("Set the number of IMSIC interrupt sources; default: 0.")
+    opt[Int]("guest-external-interrupt-file-number").action { (v, c) => privParam.guestExternalInterruptFiles = v }
+      .text("Set the number of guest external interrupt files; default: 0.")
+    opt[Unit]("without-external-interrupt").action { (v, c) => privParam.withExternalInterrupt = false }
+      .text("Disable the external interrupt input.")
+    opt[Unit]("with-whiteboxer-outputs").action { (v, c) => withWhiteboxerOutputs = true }
+      .text("Expose Whiteboxer outputs.")
+    opt[Unit]("with-hart-id-input").action { (v, c) => withHartIdInput = true }
+      .text("Add a hart ID input.")
+    opt[Unit]("with-hart-id-input-defaulted").action { (v, c) => privParam.withHartIdInputDefaulted = true }
+      .text("Provide a default value for the hart ID input.")
+    opt[Unit]("fma-reduced-accuracy").action { (v, c) => fpuMulParam.fmaFullAccuracy = false }
+      .text("Use reduced-accuracy FMA arithmetic.")
+    opt[Unit]("fpu-ignore-subnormal").action { (v, c) => fpuIgnoreSubnormal = true }
+      .text("Ignore floating-point subnormal values.")
+    opt[Unit]("with-aligner-buffer").unbounded().action { (v, c) => withAlignerBuffer = true }
+      .text("Enable the instruction aligner buffer.")
+    opt[Unit]("with-dispatcher-buffer").action { (v, c) => withDispatcherBuffer = true }
+      .text("Enable the dispatcher buffer.")
+    opt[Unit]("with-hypervisor").action { (v, c) => addISA("h", "s", "u") }
+      .text("Enable hypervisor, supervisor and user modes.")
+    opt[Unit]("with-supervisor").action { (v, c) => addISA("s", "u") }
+      .text("Enable supervisor and user modes.")
+    opt[Unit]("with-user").action { (v, c) => addISA("u") }
+      .text("Enable user mode.")
+    opt[Unit]("with-implicit-ptw-tlb").action { (v, c) => withImplicitPtwTlb = true }
+      .text("Enable the implicit page-table-walk TLB.")
+    opt[Unit]("without-mmu").action { (v, c) => disableMmu = true }
+      .text("Disable the MMU.")
+    opt[Unit]("without-mul").action { (v, c) => removeISA("m", "zmmul") }
+      .text("Disable M and Zmmul multiplication extensions.")
+    opt[Unit]("without-div").action { (v, c) => if(checkISA("m")) {removeISA("m"); addISA("zmmul")} }
+      .text("Disable division while retaining Zmmul when applicable.")
+    opt[Unit]("with-tester-plugin").action { (v, c) => withTesterPlugin = true }
+      .text("Enable the tester plugin.")
+    opt[Unit]("with-mul").unbounded().action { (v, c) => addISA("zmmul") }
+      .text("Enable the Zmmul multiplication extension.")
+    opt[Unit]("with-div").unbounded().action { (v, c) => addISA("m") }
+      .text("Enable the M multiplication and division extension.")
+    opt[Unit]("with-gshare").action { (v, c) => withGShare = true }
+      .text("Enable the GShare branch predictor.")
+    opt[Unit]("with-btb").action { (v, c) => withBtb = true }
+      .text("Enable the branch target buffer.")
+    opt[Unit]("with-ras").action { (v, c) => withRas = true }
+      .text("Enable the return address stack.")
+    opt[Unit]("without-ras").action { (v, c) => withRas = false }
+      .text("Disable the return address stack.")
+    opt[Int]("gshare-banks").action { (v, c) => gshareBanks = v }
+      .text("Set the number of GShare banks; default: 1.")
+    opt[Unit]("btb-single-port-ram").action { (v, c) => btbDualPortRam = false }
+      .text("Use single-port RAM for the BTB.")
+    opt[Unit]("with-late-alu").action { (v, c) => withLateAlu = true; allowBypassFrom = 0; storeRs2Late = true }
+      .text("Enable the late ALU and its bypass configuration.")
+    opt[Unit]("with-store-rs2-late").action { (v, c) => storeRs2Late = true }
+      .text("Read store RS2 in a late pipeline stage.")
+    opt[Unit]("without-late-alu").action { (v, c) => withLateAlu = false; storeRs2Late = false }
+      .text("Disable the late ALU and late store RS2.")
+    opt[Int]("btb-sets").action { (v, c) => btbSets = v }
+      .text("Set the number of BTB sets; default: 512.")
+    opt[Int]("btb-hash-width").action { (v, c) => btbHashWidth = v }
+      .text("Set the BTB hash width in bits; default: 16.")
+    opt[Unit]("regfile-async").action { (v, c) => regFileSync = false }
+      .text("Use an asynchronous register file.")
+    opt[Unit]("regfile-sync").action { (v, c) => regFileSync = true }
+      .text("Use a synchronous register file.")
+    opt[Unit]("regfile-dual-ports").action { (v, c) => regFileDualPortRam = true }
+      .text("Use dual-port register-file RAM.")
+    opt[Unit]("regfile-infer-ports").action { (v, c) => regFileDualPortRam = false }
+      .text("Infer register-file RAM ports.")
+    opt[Unit]("regfile-reg-based").action { (v, c) => regFileRegBasedRam = true; regFileDualPortRam = false}
+      .text("Implement the register file using registers.")
+    opt[Int]("allow-bypass-from").action { (v, c) => allowBypassFrom = v }
+      .text("Allow bypassing from the specified pipeline stage; 100 disables it.")
+    opt[Unit]("with-indirect-csr").action { (v, c) => addISA("smcsrind", "sscsrind") }
+      .text("Enable indirect CSR access extensions.")
+    opt[Int]("performance-counters").unbounded().action { (v, c) => addISA("zicntr", "zihpm"); additionalPerformanceCounters = v }
+      .text("Enable performance counters and set the additional counter count; default: 0.")
+    opt[Unit]("without-performance-scountovf").unbounded().action { (v, c) => removeISA("sscofpmf") }
+      .text("Disable the supervisor counter overflow extension.")
+    opt[Unit]("with-fetch-l1").unbounded().action { (v, c) => fetchL1Enable = true }
+      .text("Enable the Fetch L1 cache.")
+    opt[Unit]("with-lsu-l1").action { (v, c) => lsuL1Enable = true }
+      .text("Enable the LSU L1 cache.")
+    opt[Unit]("fetch-axi4").action { (v, c) => fetchBus = FetchBusEnum.axi4 }
+      .text("Use AXI4 for the fetch bus.")
+    opt[Unit]("fetch-wishbone").action { (v, c) => fetchBus = FetchBusEnum.wishbone }
+      .text("Use Wishbone for the fetch bus.")
+    opt[Unit]("lsu-axi4").action { (v, c) => lsuBus = LsuBusEnum.axi4 }
+      .text("Use AXI4 for the LSU bus.")
+    opt[Unit]("lsu-wishbone").action { (v, c) => lsuBus = LsuBusEnum.wishbone }
+      .text("Use Wishbone for the LSU bus.")
+    opt[Unit]("lsu-l1-axi4").action { (v, c) => lsuL1Bus = LsuL1BusEnum.axi4 }
+      .text("Use AXI4 for the LSU L1 bus.")
+    opt[Unit]("lsu-l1-wishbone").action { (v, c) => lsuL1Bus = LsuL1BusEnum.wishbone }
+      .text("Use Wishbone for the LSU L1 bus.")
+    opt[Unit]("fetch-l1").action { (v, c) => fetchL1Enable = true }
+      .text("Enable the Fetch L1 cache; alias of --with-fetch-l1.")
+    opt[Unit]("lsu-l1").action { (v, c) => lsuL1Enable = true }
+      .text("Enable the LSU L1 cache; alias of --with-lsu-l1.")
+    opt[Int]("fetch-l1-sets").unbounded().action { (v, c) => fetchL1Sets = v }
+      .text("Set the Fetch L1 set count; default: 64.")
+    opt[Int]("fetch-l1-ways").unbounded().action { (v, c) => fetchL1Ways = v }
+      .text("Set the Fetch L1 way count; default: 1.")
+    opt[Int]("fetch-l1-refill-count").unbounded().action { (v, c) => fetchL1RefillCount = v }
+      .text("Set the Fetch L1 refill count; default: 1.")
+    opt[Unit]("fetch-l1-tags-read-async").action { (v, c) =>  fetchL1TagsReadAsync = true }
+      .text("Use asynchronous Fetch L1 tag reads.")
+    opt[String]("fetch-l1-hardware-prefetch").action { (v, c) => fetchL1Prefetch = v }
+      .text("Set Fetch L1 hardware prefetch; accepted values: none, nl.")
+    opt[Int]("fetch-l1-mem-data-width-min").unbounded().action { (v, c) => fetchMemDataWidthMin = v }
+      .text("Set the minimum Fetch L1 memory data width in bits; default: 32.")
+    opt[Unit]("fetch-reduced-bank").action { (v, c) => fetchL1ReducedBank = true }
+      .text("Use a reduced Fetch L1 memory bank.")
+    opt[Int]("lsu-l1-sets").unbounded().action { (v, c) => lsuL1Sets = v }
+      .text("Set the LSU L1 set count; default: 64.")
+    opt[Int]("lsu-l1-ways").unbounded().action { (v, c) => lsuL1Ways = v }
+      .text("Set the LSU L1 way count; default: 1.")
+    opt[Int]("lsu-l1-store-buffer-slots").action { (v, c) => lsuStoreBufferSlots = v }
+      .text("Set the LSU L1 store buffer slot count; default: 0.")
+    opt[Int]("lsu-l1-store-buffer-ops").action { (v, c) => lsuStoreBufferOps = v }
+      .text("Set the LSU L1 store buffer operation count; default: 0.")
+    opt[Unit]("lsu-l1-tags-read-async").action { (v, c) =>  lsuL1TagsReadAsync = true }
+      .text("Use asynchronous LSU L1 tag reads.")
+    opt[String]("lsu-hardware-prefetch").action { (v, c) => lsuHardwarePrefetch = v }
+      .text("Set LSU hardware prefetch; accepted values: none, nl, rpt.")
+    opt[Unit]("lsu-software-prefetch").action { (v, c) => lsuSoftwarePrefetch = true }
+      .text("Enable software prefetch support.")
+    opt[Int]("lsu-rpt-block-ahead-max").action { (v, c) => prefetcherRptParam.blockAheadMax = v }
+      .text("Set the RPT prefetch block-ahead limit.")
+    opt[Int]("lsu-l1-refill-count").action { (v, c) => lsuL1RefillCount = v }
+      .text("Set the LSU L1 refill count; default: 1.")
+    opt[Int]("lsu-l1-writeback-count").action { (v, c) => lsuL1WritebackCount = v }
+      .text("Set the LSU L1 writeback count; default: 1.")
+    opt[Int]("lsu-l1-mem-data-width-min").unbounded().action { (v, c) => lsuMemDataWidthMin = v }
+      .text("Set the minimum LSU L1 memory data width in bits; default: 32.")
+    opt[Unit]("lsu-l1-coherency").action { (v, c) => lsuL1Coherency = true}
+      .text("Enable LSU L1 cache coherency.")
+    opt[Unit]("with-lsu-bypass").action { (v, c) => withLsuBypass = true }
+      .text("Enable LSU bypass paths.")
+    opt[Unit]("without-lsu-bypass").action { (v, c) => withLsuBypass = false }
+      .text("Disable LSU bypass paths.")
+    opt[Unit]("with-iterative-shift").action { (v, c) => withIterativeShift = true }
+      .text("Use the iterative shift implementation.")
+    opt[Int]("div-radix").action { (v, c) => divRadix = v }
+      .text("Set the divider radix; default: 2.")
+    opt[String]("div-impl").action { (v, c) => divImpl = v }
+      .text("Select the divider implementation; accepted values: empty, bitpasta, vexii.")
+    opt[Unit]("div-ipc").action { (v, c) => divArea = false }
+      .text("Use the divider IPC-oriented implementation instead of area-oriented mode.")
+    opt[Int]("fetch-fork-at").action { (v, c) => fetchForkAt = v }
+      .text("Set the fetch pipeline fork stage; default: 0.")
+    opt[Int]("lsu-fork-at").action { (v, c) => lsuForkAt = v }
+      .text("Set the LSU pipeline fork stage; default: 0.")
+    opt[Int]("lsu-pma-at").action { (v, c) => lsuPmaAt = v }
+      .text("Set the LSU PMA pipeline stage; default: 0.")
+    opt[Unit]("debug-privileged").action { (v, c) => privParam.withDebug = true }
+      .text("Enable privileged debug support.")
+    opt[Int] ("debug-triggers").action { (v, c) => privParam.debugTriggers = v }
+      .text("Set the number of debug triggers; default: 0.")
+    opt[Unit]("debug-triggers-lsu").action { (v, c) => privParam.debugTriggersLsu = true }
+      .text("Enable LSU debug trigger matching.")
+    opt[Unit]("debug-jtag-tap").action { (v, c) => embeddedJtagTap = true; privParam.withDebug = true }
+      .text("Enable the embedded JTAG TAP.")
+    opt[Unit]("debug-jtag-instruction").action { (v, c) => embeddedJtagInstruction = true; privParam.withDebug = true }
+      .text("Enable the embedded JTAG instruction transport.")
+    opt[Unit]("debug-swd").action { (v, c) => embeddedSwd = true; privParam.withDebug = true }
+      .text("Enable embedded SWD debug transport; do not combine with the JTAG options.")
+    opt[Unit]("with-boot-mem-init").action { (v, c) => bootMemClear = true }
+      .text("Initialize boot memories during reset.")
+    opt[Int]("physical-width").action { (v, c) => physicalWidth = v }
+      .text("Set the physical address width in bits; default: 32.")
+    opt[Unit]("mul-keep-src").action { (v, c) => mulKeepSrc = true }
+      .text("Keep the multiplier source operand.")
+    opt[Unit]("mmu-sync-read").action { (v, c) => withMmuSyncRead() }
+      .text("Use synchronous MMU storage and port reads.")
+    opt[Int]("pmp-size").action { (v, c) => pmpParam.pmpSize = v }
+      .text("Set the number of PMP entries; default: 0.")
+    opt[Int]("pmp-granularity").action { (v, c) => pmpParam.granularity = v }
+      .text("Set PMP granularity in bytes; default: 4096.")
+    opt[Unit]("pmp-tor-disable").action { (v, c) => pmpParam.withTor = false }
+      .text("Disable PMP TOR support.")
+    opt[Unit]("with-rdtime").action { (v, c) => addISA("zicntr") }
+      .text("Enable the RDTIME counter extension.")
+    opt[Unit]("with-sstc").action { (v, c) => addISA("sstc") }
+      .text("Enable the Sstc timer compare extension.")
+    opt[Unit]("with-cfu").action { (v, c) => withCfu = true }
+      .text("Enable the custom function unit interface.")
+    opt[Int]("asid-width").action { (v,c) => asidWidth = v }
+      .text("Set the ASID width in bits; default: 0.")
+    opt[Int]("gshare-bytes").action { (v,c) => gshareBytes = v }
+      .text("Set the GShare storage size in bytes; default: 4 KiB.")
+    opt[Unit]("record-htinst").action { (v, c) => recordHtinst = true }
+      .text("Record the HTINST value.")
+    opt[Int]("injected-guest-interrupt-width").action { (v, c) => privParam.injectedInterruptWidth = v }
+      .text("Set the injected guest interrupt width; default: 6.")
+    opt[Unit]("dual-issue").action { (v, c) =>
       decoders = 2
       lanes = 2
     }
-    opt[Unit]("max-ipc") action { (v, c) =>
+      .text("Enable dual issue by setting decoders and lanes to 2.")
+    opt[Unit]("max-ipc").action { (v, c) =>
       withBtb = true
       withGShare = true
       withRas = true
@@ -739,6 +929,7 @@ class ParamSimple() {
       lsuSoftwarePrefetch = true
       lsuHardwarePrefetch = "rpt"
     }
+      .text("Apply the maximum-IPC throughput configuration preset.")
     checkConfig(c => {
       fixIsaParams()
       success
@@ -753,15 +944,25 @@ class ParamSimple() {
     if(withMmu && lsuL1Enable) assert(lsuL1Sets <= 64, "MMU require not more than 64 sets in the LSU L1")
     if(withMmu && fetchL1Enable) assert(fetchL1Sets <= 64, "MMU require not more than 64 sets in the FETCH L1")
 
-    val intWritebackAt = 2 //Alias for "trap at" as well
+    val intWritebackAt = 2 + extension.withRvh.toInt //Alias for "trap at" as well
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rve = withRve)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, isa = extension.getIsaNameArray(includeIgnored = true).toSet)
+    if (withMmu) plugins += new TranslatedDBusAccessPlugin(withPtwTlb = withImplicitPtwTlb)
     withMmu match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new vexiiriscv.memory.MmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
         physicalWidth = physicalWidth,
-        asidWidth = asidWidth
+        asidWidth = asidWidth,
+        withGuestSfenceCheck = extension.withHypervisor
+      )
+    }
+    (extension.withRvh && withMmu) match {
+      case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth, 1)
+      case true => plugins += new vexiiriscv.memory.ShadowMmuPlugin(
+        spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
+        physicalWidth = physicalWidth,
+        vmidWidth = 0 /* TODO */
       )
     }
 
@@ -798,8 +999,8 @@ class ParamSimple() {
       plugins += new prediction.HistoryPlugin()
     }
     def shifter(layer: LaneLayer, shiftAt: Int = 0, formatAt: Int = 0) = withIterativeShift match {
-      case false => new BarrelShifterPlugin(layer, with_slli_uw=withRvZba, shiftAt=shiftAt, formatAt=formatAt)
-      case true => new IterativeShifterPlugin(layer, with_slli_uw=withRvZba, shiftAt=shiftAt, formatAt=formatAt)
+      case false => new BarrelShifterPlugin(layer, with_slli_uw=extension.withZba, shiftAt=shiftAt, formatAt=formatAt)
+      case true => new IterativeShifterPlugin(layer, with_slli_uw=extension.withZba, shiftAt=shiftAt, formatAt=formatAt)
     }
 
 
@@ -808,10 +1009,12 @@ class ParamSimple() {
     plugins += new fetch.FetchPipelinePlugin()
     if(!fetchL1Enable) {
       plugins += new fetch.FetchCachelessPlugin(
-        forkAt = fetchForkAt,
-        joinAt = fetchForkAt+1, //You can for instance allow the external memory to have more latency by changing this
+        timingParameter = extension.withRvh match {
+          case true => fetchCachelessHypervisorTiming
+          case false => fetchCachelessTiming
+        },
         wordWidth = fetchMemDataWidth,
-        pmpPortParameter = fetchNoL1PmpParam,
+        pmpPortParameter = fetchNoL1PmpParam.offset(extension.withRvh.toInt),
         translationStorageParameter = fetchTsp,
         translationPortParameter = withMmu match {
           case false => null
@@ -847,7 +1050,11 @@ class ParamSimple() {
           case false => null
           case true => fetchTpp
         },
-        pmpPortParameter = fetchL1PmpParam
+        pmpPortParameter = fetchL1PmpParam.offset(extension.withRvh.toInt),
+        timingParameter = extension.withRvh match {
+          case true => fetchL1HypervisorTiming
+          case false => fetchL1Timing
+        }
       )
 
       fetchL1Prefetch match {
@@ -882,7 +1089,7 @@ class ParamSimple() {
 
     plugins += new regfile.RegFilePlugin(
       spec = riscv.IntRegFile,
-      physicalDepth = if(withRve) 16 else 32,
+      physicalDepth = if(extension.withRve) 16 else 32,
       preferedWritePortForInit = "lane0",
       syncRead = regFileSync,
       dualPortRam = regFileDualPortRam,
@@ -910,7 +1117,10 @@ class ParamSimple() {
     plugins += shifter(early0, formatAt = relaxedShift.toInt)
     plugins += new IntFormatPlugin(lane0)
     plugins += new BranchPlugin(layer=early0, aluAt=0, jumpAt=relaxedBranch.toInt, wbAt=0)
-    if(withRvZknAes) plugins += new AesZknPlugin(layer = early0)
+    if(extension.withRvZknAes) plugins ++= AesZknPlugin.make(layer = early0, xlen = xlen)
+    if (extension.withZknh) plugins ++= ZknhPlugin.make(layer = early0, xlen = xlen)
+    if (extension.withZksh) plugins += new Sm3ZkshPlugin(layer = early0)
+    if (extension.withZksed) plugins += new Sm4ZksedPlugin(layer = early0)
     if(withCfu) plugins += new CfuPlugin(
       layer = early0,
       forkAt = 0,
@@ -949,10 +1159,8 @@ class ParamSimple() {
 
     plugins ++= ZbPlugin.make(
       early0,
-      zba = withRvZba,
-      zbb = withRvZbb,
-      zbc = withRvZbc,
-      zbs = withRvZbs,
+      exts = extension,
+      xlen = xlen,
       executeAt=0,
       formatAt=0
     )
@@ -966,14 +1174,14 @@ class ParamSimple() {
     if(!lsuL1Enable) {
       plugins += new LsuCachelessPlugin(
         layer     = early0,
-        withAmo   = withRva,
+        withZaamo = extension.withZaamo,
+        withZalrsc = extension.withZalrsc,
         withSpeculativeLoadFlush = true,
-        addressAt = 0,
-        pmaAt     = lsuPmaAt,
-        forkAt    = lsuForkAt+0,
-        joinAt    = lsuForkAt+1,
-        wbAt      = 2, //TODO
-        pmpPortParameter = lsuNoL1PmpParam,
+        timingParameter = extension.withRvh match {
+          case true => lsuCachelessHypervisorTiming
+          case false => lsuCachelessTiming
+        },
+        pmpPortParameter = lsuNoL1PmpParam.offset(extension.withRvh.toInt),
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null
@@ -987,16 +1195,22 @@ class ParamSimple() {
       )
     }
     if(lsuL1Enable){
+      val needLlc = extension.withZicbom && (withRvcbmLlc || lsuL1Coherency)
       plugins += new LsuPlugin(
+        timingParameter = extension.withRvh match {
+          case true => lsuHypervisorTiming
+          case false => lsuTiming
+        },
         layer = early0,
-        withRva = withRva,
+        withZaamo = extension.withZaamo,
+        withZalrsc = extension.withZalrsc,
         storeRs2At = storeRs2Late.mux(2, 0),
         storeBufferSlots = lsuStoreBufferSlots,
         storeBufferOps = lsuStoreBufferOps,
         softwarePrefetch = lsuSoftwarePrefetch,
-        withCbm = withRvcbm,
-        withLlcFlush = withRvcbmLlc,
-        pmpPortParameter = fetchL1PmpParam,
+        withCbm = extension.withZicbom,
+        withLlcFlush = needLlc,
+        pmpPortParameter = lsuL1PmpParam.offset(extension.withRvh.toInt),
         translationStorageParameter = lsuTsp,
         translationPortParameter = withMmu match {
           case false => null
@@ -1006,16 +1220,20 @@ class ParamSimple() {
       plugins += new LsuL1Plugin(
         lane           = lane0,
         memDataWidth   = lsuMemDataWidth,
-        cpuDataWidth   = xlen max withRvd.mux(64, 0),
+        cpuDataWidth   = xlen max extension.withRvd.mux(64, 0) max extension.withRvq.mux(128, 0),
         refillCount    = lsuL1RefillCount,
         writebackCount = lsuL1WritebackCount,
         setCount       = lsuL1Sets,
         wayCount       = lsuL1Ways,
         withBypass     = withLsuBypass,
         withCoherency  = lsuL1Coherency,
-        withCbm        = withRvcbm && !withRvcbmLlc,
+        withCbm        = extension.withZicbom && !needLlc,
         bootMemClear = bootMemClear,
-        tagsReadAsync  = lsuL1TagsReadAsync
+        tagsReadAsync  = lsuL1TagsReadAsync,
+        timingParameter = extension.withRvh match {
+          case true => lsuL1HypervisorTiming
+          case false => lsuL1Timing
+        }
       )
 
       lsuHardwarePrefetch match {
@@ -1033,10 +1251,10 @@ class ParamSimple() {
       }
     }
 
-    if(withMul) {
+    if(extension.withMul) {
       plugins += new MulPlugin(early0, keepMulSrc = mulKeepSrc, mulAt = relaxedMulInputs.toInt)
     }
-    if(withDiv) {
+    if(extension.withDiv) {
       plugins += new RsUnsignedPlugin("lane0")
       plugins += new DivPlugin(
         layer = early0,
@@ -1057,14 +1275,22 @@ class ParamSimple() {
     }
 
     plugins += new CsrRamPlugin()
-    if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters, withScountovf = withSscofpmf)
+    if(extension.withPerformanceCounters) plugins += new PerformanceCounterPlugin(
+      additionalCounterCount  = additionalPerformanceCounters,
+      withSmcntrpmf           = extension.withSmcntrpmf,
+      withScountovf           = extension.withSscofpmf,
+      withShlcofideleg        = extension.withShlcofideleg
+    )
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    if(withIndirectCsr) plugins += new IndirectCsrPlugin(checkISA("sscsrind"))
+    if(extension.withIndirectCsr) plugins += new IndirectCsrPlugin(extension.withSscsrind, privParam.withHypervisor && extension.withSscsrind)
+    if(privParam.withImsic) plugins += new ImsicPlugin(privParam)
     plugins += new PrivilegedPlugin(privParam, withHartIdInput.mux(null, hartId until hartId+hartCount))
-    plugins += new TrapPlugin(trapAt = intWritebackAt)
+    plugins += new TrapPlugin(trapAt = intWritebackAt, recordHtinst = recordHtinst)
     if(withTesterPlugin) plugins += new TesterPlugin()
     plugins += new EnvPlugin(early0, executeAt = 0)
-    if(embeddedJtagTap || embeddedJtagInstruction) plugins += new EmbeddedRiscvJtag(
+    // RISC-V debug spec Ch. 6 : using several DTM at once isn't supported, SWD replaces the JTAG ones.
+    assert(!(embeddedSwd && (embeddedJtagTap || embeddedJtagInstruction)), "--debug-swd can't be combined with --debug-jtag-tap / --debug-jtag-instruction")
+    if(embeddedJtagTap || embeddedJtagInstruction || embeddedSwd) plugins += new EmbeddedRiscvJtag(
       p = DebugTransportModuleParameter(
         addressWidth = 7,
         version = 1,
@@ -1072,6 +1298,7 @@ class ParamSimple() {
       ),
       withTunneling = false,
       withTap = embeddedJtagTap,
+      withSwd = embeddedSwd,
       debugCd = embeddedJtagCd,
       noTapCd = embeddedJtagNoTapCd
     )
@@ -1087,10 +1314,8 @@ class ParamSimple() {
       plugins += new BranchPlugin(late0, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
       plugins ++= ZbPlugin.make(
         late0,
-        zba = withRvZba,
-        zbb = withRvZbb,
-        zbc = withRvZbc,
-        zbs = withRvZbs,
+        exts = extension,
+        xlen = xlen,
         executeAt=lateAluAt,
         formatAt=lateAluAt
       )
@@ -1111,10 +1336,8 @@ class ParamSimple() {
       plugins += new BranchPlugin(early1, aluAt = 0, jumpAt = relaxedBranch.toInt, wbAt = 0)
       plugins ++= ZbPlugin.make(
         early1,
-        zba = withRvZba,
-        zbb = withRvZbb,
-        zbc = withRvZbc,
-        zbs = withRvZbs,
+        exts = extension,
+        xlen = xlen,
         executeAt=0,
         formatAt=0
       )
@@ -1128,10 +1351,8 @@ class ParamSimple() {
         plugins += new BranchPlugin(late1, aluAt = lateAluAt, jumpAt = lateAluAt/*+relaxedBranch.toInt*/, wbAt = lateAluAt, withJalr = false)
         plugins ++= ZbPlugin.make(
           late1,
-          zba = withRvZba,
-          zbb = withRvZbb,
-          zbc = withRvZbc,
-          zbs = withRvZbs,
+          exts = extension,
+          xlen = xlen,
           executeAt=lateAluAt,
           formatAt=lateAluAt
         )
@@ -1148,7 +1369,7 @@ class ParamSimple() {
     }
 
     // FPU
-    if (withRvf || withRvd) {
+    if (extension.withRvf || extension.withRvd) {
       plugins += new regfile.RegFilePlugin(
         spec = riscv.FloatRegFile,
         physicalDepth = 32,
@@ -1170,9 +1391,11 @@ class ParamSimple() {
       plugins += new execute.fpu.FpuCmpPlugin(early0)
       plugins += new execute.fpu.FpuF2iPlugin(early0)
       plugins += new execute.fpu.FpuMvPlugin(early0, floatWbAt = 2)
-      if(withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
+      if(extension.withRvd || extension.withRvq || extension.withZfh) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0, ignoreSubnormal = fpuIgnoreSubnormal, wbAt = fpuWbAt)
+      if (extension.withZfa) plugins += new execute.fpu.FpuFliPlugin(early0)
+      if (extension.withZfa) plugins += new execute.fpu.FpuRoundPlugin(early0)
     }
 
     plugins += new WhiteboxerPlugin(

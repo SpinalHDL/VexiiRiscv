@@ -58,7 +58,7 @@ class PcCalc(bp: BranchPlugin, at: Int) extends Area {
   val PC_LAST_SLICE = insert(PC + (Decode.INSTRUCTION_SLICE_COUNT << sliceShift))
 
 
-  // Without those keepattribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
+  // Without those KeepAttribute, Vivado will transform the logic in a way which will serialize the 32 bits of the COND comparator,
   // with the 32 bits of the TRUE/FALSE adders, ending up in a quite long combinatorial path (21 lut XD)
   KeepAttribute(apply(PC_TRUE))
   KeepAttribute(apply(PC_FALSE))
@@ -66,14 +66,14 @@ class PcCalc(bp: BranchPlugin, at: Int) extends Area {
 }
 
 /**
- * Implement the branch/jump handeling in the execute stage.
- * Depending if the CPU has a BTB it work completly differently.
- * - If there is no BTB, then the plugin work very "normaly" and just execute the incoming instructions
+ * Implement the branch/jump handling in the execute stage.
+ * Depending if the CPU has a BTB it work completely differently.
+ * - If there is no BTB, then the plugin work very "normally" and just execute the incoming instructions
  * - If there is a BTB, then the goal of the plugin is to check if the predictions done were right, and correct if necessary
  *
  * In the case there is multiple BranchPlugin on a given execution lane, they will share quite a bit of hardware via the PcCalc Area.
  * Also, only the last instance of BranchPlugin on a given execution lane will feed the LearnPlugin via its LearnSource service.
- * This reduce the hardware area aswell as reducing the possibility of multiple BranchPlugin providing LearnSource request at the same time.
+ * This reduce the hardware area as well as reducing the possibility of multiple BranchPlugin providing LearnSource request at the same time.
  */
 class BranchPlugin(val layer : LaneLayer,
                    var aluAt : Int = 0,
@@ -167,7 +167,7 @@ class BranchPlugin(val layer : LaneLayer,
 //        val REAL_TARGET = insert(COND.mux[UInt](PC_TRUE, PC_FALSE))
       }
 
-      val expectedMsb = host[AddressTranslationService].getSignExtension(AddressTranslationPortUsage.FETCH, srcp.SRC1.asUInt)
+      val expectedMsb = host.find[AddressTranslationService](!_.isShadowMmu).getSignExtension(AddressTranslationPortUsage.FETCH, srcp.SRC1.asUInt)
       val MSB_FAILED = insert(BRANCH_CTRL === BranchCtrlEnum.JALR && srcp.SRC1.dropLow(MIXED_WIDTH).asBools.map(_ =/= expectedMsb).orR)
     }
 
@@ -199,11 +199,11 @@ class BranchPlugin(val layer : LaneLayer,
       // - The BtbPlugin may not be aware of all the branch that he is running through
       // - There may be multiple instances of the branch plugin working in parallel
       // So what we do here is that we transport the BRANCH_HISTORY
-      // aswell as what the BTB predicted of the instruction stream via ALIGNED_SLICES_BRANCH/ALIGNED_SLICES_TAKEN
+      // as well as what the BTB predicted of the instruction stream via ALIGNED_SLICES_BRANCH/ALIGNED_SLICES_TAKEN
       // Then we compute what would be the future history using that BTB "view" with the only correction for the current
       // instruction is taken/non-taken
       // As a result, we can be sure that we have a good coherency between the BtbPlugin and the BranchPlugin.
-      // But the down side, is that if the BTB learn about a new branch instruction in a sequance, the history layout will change.
+      // But the down side, is that if the BTB learn about a new branch instruction in a sequence, the history layout will change.
       val history = historyPort.nonEmpty generate new Area{
         val fetched, next = Prediction.BRANCH_HISTORY()
         val slice = PC(Fetch.SLICE_RANGE.get)
@@ -240,11 +240,12 @@ class BranchPlugin(val layer : LaneLayer,
       flushPort.self := False
 
       val MISSALIGNED = insert(PC_TRUE(0, Fetch.SLICE_RANGE_LOW bits) =/= 0 && COND)
-      if (catchMissaligned) { //Non RVC can trap on missaligned branches
+      if (catchMissaligned) { // Non RVC can trap on misaligned branches
         trapPort.valid := False
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.FETCH_MISSALIGNED
         trapPort.tval := B(PC_TRUE)
+        trapPort.tval2 := 0
         trapPort.arg := 0
         trapPort.laneAge := Execute.LANE_AGE
 

@@ -3,7 +3,7 @@
 VexiiRiscv (Vex2Risc5) is the successor of VexRiscv. Work in progress, here are its currently implemented features :
 
 - RV32/64 I[M][A][F][D][C][S][U][B]
-- Up to 5.24 coremark/Mhz 2.50 dhystone/Mhz
+- Up to 5.24 coremark/MHz 2.50 dhystone/MHz
 - In-order execution
 - early [late-alu]
 - single/dual issue (can be asymmetric)
@@ -19,7 +19,7 @@ VexiiRiscv (Vex2Risc5) is the successor of VexRiscv. Work in progress, here are 
 
 Here is a demonstration of a quad core VexiiRiscv running debian on FPGA : https://youtu.be/dR_jqS13D2c?t=112
 
-Overall the goal is to have a design which can stretch (through configuration) from Cortex M0 up to a Cortex A53 and potentialy beyond.
+Overall the goal is to have a design which can stretch (through configuration) from Cortex M0 up to a Cortex A53 and potentially beyond.
 
 Here is the online documentation : 
 

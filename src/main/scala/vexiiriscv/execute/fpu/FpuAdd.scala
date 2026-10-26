@@ -38,8 +38,8 @@ class FpuAdd(rs1 : Payload[FloatUnpacked],
   val shifter = new Area {
     import shifterStage._
 
-    //Assume the shifter can totaly clear things
-    //Note that rs1ExponentBigger can be replaced by absRs1Bigger bellow to avoid xsigned two complement in math block at expense of combinatorial path
+    // Assume the shifter can totally clear things
+    // Note that rs1ExponentBigger can be replaced by absRs1Bigger bellow to avoid xsigned two complement in math block at expense of combinatorial path
     val xySign             = insert(absRs1Bigger ? rs1.sign | rs2.sign)
     val xMantissa          = insert((absRs1Bigger ? rs1.mantissa | rs2.mantissa) + AFix(1))
     val yMantissaUnshifted = insert((absRs1Bigger ? rs2.mantissa | rs1.mantissa) +  AFix(1))
@@ -61,7 +61,7 @@ class FpuAdd(rs1 : Payload[FloatUnpacked],
 
   val norm = new Area{
     import normStage._
-    val shiftOh        = insert(OHMasking.firstV2(xyMantissa.raw.reversed)) //The OhMasking.first can be processed in parallel to the xyMantissa carry chaine
+    val shiftOh        = insert(OHMasking.firstV2(xyMantissa.raw.reversed)) // The OhMasking.first can be processed in parallel to the xyMantissa carry chain
     val shift          = insert(AFix(OHToUInt(shiftOh), widthOf(shiftOh)-1, 0 exp))
     val forceInfinity  = insert((rs1.isInfinity || rs2.isInfinity))
     val forceZero      = insert(xyMantissa.isZero() || (rs1.isZero && rs2.isZero))

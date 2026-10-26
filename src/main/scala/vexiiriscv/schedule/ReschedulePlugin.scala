@@ -14,7 +14,7 @@ import scala.collection.mutable.ArrayBuffer
 
 /**
  * The ReschedulePlugin act as a arbiter for all the different plugins which want to reschedule what the CPU should execute,
- * aswell as a registry for all the plugins which need to know if the CPU is being flushed until a given point in the pipeline.
+ * as well as a registry for all the plugins which need to know if the CPU is being flushed until a given point in the pipeline.
  *
  */
 class ReschedulePlugin extends FiberPlugin with ScheduleService {

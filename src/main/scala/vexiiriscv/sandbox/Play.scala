@@ -47,7 +47,7 @@ object Miaouuuu9 extends App{
   }
 
 
-  //For the demo we want to be able to instanciate this plugin multiple times, so we add a prefix parameter
+  // For the demo we want to be able to instantiate this plugin multiple times, so we add a prefix parameter
   class EventSourcePlugin(prefix : String) extends FiberPlugin{
     withPrefix(prefix)
 

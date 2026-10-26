@@ -13,7 +13,7 @@ import scala.collection.mutable.ArrayBuffer
 
 /**
  * Reading the RISC-V spec to figure out all the flags/details of the PMP is just too tricky.
- * A good way to figure things out is to loook at spike (software implementation) :
+ * A good way to figure things out is to look at spike (software implementation) :
  * - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
  * - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/csrs.cc#L183
  * - https://github.com/riscv-software-src/riscv-isa-sim/blob/2c67071743d4b55719cee22fdb319df2a0756db7/riscv/mmu.cc#L348
@@ -29,7 +29,16 @@ case class PmpPortParameter(var napotMatchAt : Int,
                             var torCmpAt : Int,
                             var torHitsAt : Int,
                             var hitsAt : Int,
-                            var rspAt : Int)
+                            var rspAt : Int) {
+  def offset(v: Int) = PmpPortParameter(
+    napotMatchAt = napotMatchAt  + v,
+    napotHitsAt  = napotHitsAt   + v,
+    torCmpAt     = torCmpAt      + v,
+    torHitsAt    = torHitsAt     + v,
+    hitsAt       = hitsAt        + v,
+    rspAt        = rspAt         + v
+  )
+}
 
 
 case class PmpParam(
@@ -128,10 +137,8 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
         cfg := cfgNext
         cfg.write clearWhen (!cfgNext.read)
         if(!p.withTor) when(cfgNext.kind === 1) {cfg.kind := 0}
-        if(!p.withNapot){
-          if(granularity > 4) when(cfgNext.kind === 2) {cfg.kind := 0}
-          when(cfgNext.kind === 3) {cfg.kind := 0}
-        }
+        if(granularity > 4) when(cfgNext.kind === 2) {cfg.kind := 0}
+        if(!p.withNapot) when(cfgNext.kind === 3) {cfg.kind := 0}
       }
 
       if(i == 0){

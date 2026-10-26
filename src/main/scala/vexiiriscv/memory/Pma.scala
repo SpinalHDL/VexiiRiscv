@@ -15,6 +15,7 @@ import scala.collection.mutable.ArrayBuffer
 trait PmaOp
 object PmaLoad extends PmaOp
 object PmaStore extends PmaOp
+object PmaLoadExecute extends PmaOp
 
 class PmaCmd(addressWidth : Int, sizes : Seq[Int], ops : Seq[PmaOp]) extends Bundle {
   val address = UInt(addressWidth bits)
@@ -70,7 +71,7 @@ class PmaLogic(port : PmaPort, regions : scala.collection.Seq[PmaRegion]) extend
       for((op, opId) <- ops.zipWithIndex){
         val mask = opMask(opId, sizeId)
         val ok = op match {
-          case PmaLoad => transfer match {
+          case PmaLoad | PmaLoadExecute => transfer match {
             case t: M2sTransfers => t.get.contains(size) || t.acquireB.contains(size)
           }
           case PmaStore => transfer match {
@@ -85,7 +86,13 @@ class PmaLogic(port : PmaPort, regions : scala.collection.Seq[PmaRegion]) extend
     val hit = argsHit && addressHit
   }
 
+  val checkLoadExecute = ops.contains(PmaLoadExecute)
+  val loadExecute = checkLoadExecute generate new Area {
+    val needCheck = cmd.op === B(ops.indexOf(PmaLoadExecute), widthOf(cmd.op) bits)
+    val fault = !executableSpec.build(addressBits, hitsTerms) && needCheck
+  }
+  val executeFault = checkLoadExecute.mux(loadExecute.fault, False)
 
-  port.rsp.fault := !(Symplify(addressBits, hitsTerms) && onTransfers.map(_.hit).orR)
+  port.rsp.fault := !(Symplify(addressBits, hitsTerms) && onTransfers.map(_.hit).orR) || executeFault
   port.rsp.io := !mainSpec.build(addressBits, hitsTerms)
 }

@@ -62,7 +62,7 @@ object RvcDecompressor{
       is(2){ret.inst := lwImm ## rch ## B"010" ## rcl ## B"0000011"} //C.LW -> lw rd', offset[6:2](rs1')
       if(xlen == 32 && rvf) is(3){ret.inst := lwImm ## rch ##  B"010" ## rcl ## B"0000111"} // C.FLW
       if(xlen == 64) is(3) {ret.inst := ldImm ## rch ##  B"011" ## rcl ## B"0000011"} // C.LD
-      is(5){ret.inst := sdImm(11 downto 5) ## rcl  ## rch ## B"011" ## sdImm(4 downto 0) ## B"0100111"} // C.FSD
+      if(rvd) is(5){ret.inst := sdImm(11 downto 5) ## rcl  ## rch ## B"011" ## sdImm(4 downto 0) ## B"0100111"} // C.FSD
       is(6){ret.inst := swImm(11 downto 5) ## rcl  ## rch ## B"010" ## swImm(4 downto 0) ## B"0100011"} //C.SW -> sw rs2',offset[6:2](rs1')
       if(xlen == 32 && rvf) is(7){ret.inst := swImm(11 downto 5) ## rcl  ## rch ## B"010" ## swImm(4 downto 0) ## B"0100111"} // C.FSW
       if(xlen == 64) is(7){ret.inst := sdImm(11 downto 5) ## rcl  ## rch ## B"011" ## sdImm(4 downto 0) ## B"0100011"} // C.SD

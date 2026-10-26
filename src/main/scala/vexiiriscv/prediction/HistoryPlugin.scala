@@ -18,7 +18,7 @@ case class HistoryJump(laneAgeWidth : Int) extends Bundle{
 }
 
 /**
- * This the plugin in change of handeling the branch history state, provide ports to modify it, and inject it in the fetch pipeline
+ * This the plugin in change of handling the branch history state, provide ports to modify it, and inject it in the fetch pipeline
  */
 class HistoryPlugin(var historyFetchBypass : Boolean = true) extends FiberPlugin {
 

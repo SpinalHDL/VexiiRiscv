@@ -5,9 +5,9 @@ import spinal.lib.DoCmd
 
 /**
  * This is hardware test utility which cycle debian boot again and again to test stability.
- * - Assume a FPGA board is preconfigured with a litex bitstream and boot debian automaticaly on power-on.
- * - This utilty connect to a ttyUSB to monitor and sent stimulus to the board's debian.
- * - Once a full boot/shutdown sequance id done, it restart the board using openocd/JTAG
+ * - Assume a FPGA board is preconfigured with a Litex bitstream and boot debian automatically on power-on.
+ * - This utility connect to a ttyUSB to monitor and sent stimulus to the board's debian.
+ * - Once a full boot/shutdown sequence id done, it restart the board using openocd/JTAG
  */
 object BootTester extends App{
   var tty = "/dev/ttyUSB2"

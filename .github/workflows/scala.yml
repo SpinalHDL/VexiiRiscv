@@ -15,18 +15,21 @@ jobs:
       matrix:
         scala_version: ["2.12.18", "2.13.12"]
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
 
-      - name: Set up JDK 11
+      - name: Set up JDK 21
         uses: actions/setup-java@v3
         with:
-          java-version: '11'
+          java-version: '21'
           distribution: 'temurin'
+
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
 
       - name: Install packages
         run: source .github/workflows/tools.sh && install_packages
@@ -47,13 +50,23 @@ jobs:
             ~/.sbt
           key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt') }}
 
+      - name: Compute tools cache key
+        id: tools-key
+        shell: bash
+        run: |
+          rvls_commit="$(git -C ext/rvls rev-parse HEAD)"
+          spike_commit="$(git -C ext/riscv-isa-sim rev-parse HEAD)"
+          recipe_commit="$(git rev-parse HEAD:.github/workflows/tools.sh)"
+
+          echo "key=tools-rvls${rvls_commit}-spike${spike_commit}-${recipe_commit}" >> "$GITHUB_OUTPUT"
+
       - name: Cache tools
         id: tools
         uses: actions/cache@v4
         with:
           path: |
             ~/tools
-          key: ${{ runner.os }}-tools_v8
+          key: ${{ runner.os }}-${{ steps.tools-key.outputs.key }}
 
       - name: Setup env
         run: echo "$HOME/tools/bin" >> $GITHUB_PATH
@@ -68,5 +81,6 @@ jobs:
       - name: Compile
         run: sbt ++${{ matrix.scala_version }} clean compile
 
-#      - name: Test
-#        run: NAXRISCV_REGRESSION_THREAD_COUNT=1 SBT_OPTS="-Xmx2G -XX:+UseConcMarkSweepGC -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=2G -Xss2M  -Duser.timezone=GMT" sbt test
+      - name: Test
+        if: matrix.scala_version == '2.12.18'
+        run: VEXIIRISCV_REGRESSION_CONFIG_COUNT=20 VEXIIRISCV_REGRESSION_THREAD_COUNT=1 VEXIIRISCV_REGRESSION_BUILDROOT_ENABLED=0 VEXIIRISCV_REGRESSION_FREERTOS_COUNT=0 VEXIIRISCV_REGRESSION_JTAG=false SBT_OPTS="-Xmx2G" sbt test

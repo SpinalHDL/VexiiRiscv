@@ -39,7 +39,7 @@ class Reservation{
 /**
  * MulSpliter is a tool which will cut a multiplication into multiple smaller multiplications
  * Those smaller multiplication results would need to be summed together.
- * MulSpliter Doesn't generate any hardware by itself, but instead provide you with the datamodel
+ * MulSpliter Doesn't generate any hardware by itself, but instead provide you with the data model
  * of the work to do.
  * Useful for large multiplications which need to be pipelined on multiple cycles when retiming isn't good
  */
@@ -209,7 +209,7 @@ object AdderAggregator {
               source.offsetTmp = logicOffsetNext
               srcs.remove(iSource)
               if (source.offsetTmp < source.offsetNext) {
-                // soure need to stay
+                // source need to stay
                 val iTarget = srcs.indexWhere(source.offsetTmp < _.offsetTmp) match {
                   case -1 => srcs.size
                   case v => v

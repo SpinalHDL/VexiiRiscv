@@ -2,7 +2,8 @@ package vexiiriscv.misc
 import spinal.core._
 import spinal.lib._
 import spinal.lib.com.jtag.{Jtag, JtagTapInstructionCtrl}
-import spinal.lib.cpu.riscv.debug.{DebugModule, DebugModuleCpuConfig, DebugModuleParameter, DebugTransportModuleJtagTap, DebugTransportModuleJtagTapWithTunnel, DebugTransportModuleParameter, DebugTransportModuleTunneled}
+import spinal.lib.com.swd.Swd
+import spinal.lib.cpu.riscv.debug.{DebugModule, DebugModuleCpuConfig, DebugModuleParameter, DebugTransportModuleJtagTap, DebugTransportModuleJtagTapWithTunnel, DebugTransportModuleParameter, DebugTransportModuleSwd, DebugTransportModuleTunneled}
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.riscv.Riscv._
@@ -10,12 +11,16 @@ import vexiiriscv.riscv.Riscv._
 /**
  * This is an optional plugin which will integrate the whole RISC-V debug infrastructure in the CPU itself instead of letting that to the SoC toplevel.
  * So it integrate the jtag TAP (DMI) and the RISC-V debug "hub" (DM). This ease the integration of VexiiRiscv into simple SoC.
+ *
+ * withSwd replaces the JTAG transport by a SWD one (SWCLK/SWDIO, a RISC-V debug spec custom DTM). withTap and
+ * withTunneling are then ignored, as only one debug transport can be used at a time (RISC-V debug spec Ch. 6).
  */
 class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
                         var debugCd: ClockDomain = null,
                         var noTapCd: ClockDomain = null,
                         var withTap : Boolean = true,
-                        var withTunneling : Boolean = false
+                        var withTunneling : Boolean = false,
+                        var withSwd : Boolean = false
                        ) extends FiberPlugin {
 
 
@@ -24,8 +29,9 @@ class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
   }
 
   val logic = during build new Area {
-    val jtag = withTap generate slave(Jtag())
-    val jtagInstruction = !withTap generate slave(JtagTapInstructionCtrl())
+    val jtag = (withTap && !withSwd) generate slave(Jtag())
+    val jtagInstruction = (!withTap && !withSwd) generate slave(JtagTapInstructionCtrl())
+    val swd = withSwd generate slave(Swd())
     val ndmreset = out(Bool())
     assert(debugCd != null, "You need to set the debugCd of the VexRiscv EmbeddedRiscvJtag.")
     val onDebugCd = debugCd on new Area {
@@ -45,7 +51,7 @@ class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
 
       ndmreset := dm.io.ndmreset
 
-      val dmiDirect = if (withTap && !withTunneling) new Area {
+      val dmiDirect = if (withTap && !withTunneling && !withSwd) new Area {
         val logic = DebugTransportModuleJtagTap(
           p.copy(addressWidth = 7),
           debugCd = ClockDomain.current
@@ -53,7 +59,7 @@ class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
         dm.io.ctrl <> logic.io.bus
         logic.io.jtag <> jtag
       }
-      val dmiTunneled = if (withTap && withTunneling) new Area {
+      val dmiTunneled = if (withTap && withTunneling && !withSwd) new Area {
         val logic = DebugTransportModuleJtagTapWithTunnel(
           p.copy(addressWidth = 7),
           debugCd = ClockDomain.current
@@ -61,7 +67,7 @@ class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
         dm.io.ctrl <> logic.io.bus
         logic.io.jtag <> jtag
       }
-      val dmiNoTap = if (!withTap) new Area {
+      val dmiNoTap = if (!withTap && !withSwd) new Area {
         val logic = DebugTransportModuleTunneled(
           p = p,
           jtagCd = noTapCd,
@@ -69,6 +75,15 @@ class EmbeddedRiscvJtag(var p : DebugTransportModuleParameter,
         )
         jtagInstruction <> logic.io.instruction
         dm.io.ctrl <> logic.io.bus
+      }
+      // SWCLK is a pin of the transport itself, so unlike the JTAG instruction port no clock domain is needed.
+      val dmiSwd = if (withSwd) new Area {
+        val logic = DebugTransportModuleSwd(
+          p.copy(addressWidth = 7),
+          debugCd = ClockDomain.current
+        )
+        dm.io.ctrl <> logic.io.bus
+        logic.io.swd <> swd
       }
 
       assert(Global.HART_COUNT.get == 1)

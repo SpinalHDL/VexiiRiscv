@@ -20,7 +20,7 @@ import vexiiriscv.execute.BranchPlugin
 import scala.util.Random
 
 /**
- * Implement the Branch Target Buffer in the fetch stages, aswell as the Return Address Stack.
+ * Implement the Branch Target Buffer in the fetch stages, as well as the Return Address Stack.
  * See https://spinalhdl.github.io/VexiiRiscv-RTD/master/VexiiRiscv/BranchPrediction/index.html#btbplugin for more doc.
  * in particular to understand the chunk topology.
  */
@@ -68,7 +68,7 @@ class BtbPlugin(var sets : Int,
 
     val withRas = rasDepth > 0
 
-    // Imeplement the RAS stack using a simple RAM
+    // Implement the RAS stack using a simple RAM
     val ras = withRas generate new Area{
       assert(HART_COUNT.get == 1)
       val mem = new Area{
@@ -196,8 +196,8 @@ class BtbPlugin(var sets : Int,
       val HAZARDS = insert(memWrite.mask.andMask(memWrite.valid && memWrite.address === memRead.cmd.payload))
       // To fix read during write conflicts, we just prevent the pipeline from progressing when we make the BTB learn stuff.
       // This implementation relax timings on the BTB read port, at the cost of IPC.
-      // Note that this implementation is compabitle with a single port ram BTB (for ASIC)
-      haltWhen(memWrite.valid) //Omit readPort.cmd.payload to avoid creating long path. Also, this is inline with a single port RW BTB memory.
+      // Note that this implementation is compatible with a single port ram BTB (for ASIC)
+      haltWhen(memWrite.valid) // Omit readPort.cmd.payload to avoid creating long path. Also, this is inline with a single port RW BTB memory.
     }
 
 
@@ -290,7 +290,7 @@ class BtbPlugin(var sets : Int,
       }
     }
 
-    // Ensure the BTB ram is cleared on reset. Else we get siulation x-prop :(
+    // Ensure the BTB ram is cleared on reset. Else we get simulation x-prop :(
     val initializer = bootMemClear generate new Area {
       val counter = Reg(UInt(log2Up(sets max rasDepth) + 1 bits)) init (0)
       val busy = !counter.msb

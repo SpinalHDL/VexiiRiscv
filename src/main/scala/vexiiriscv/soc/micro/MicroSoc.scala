@@ -21,6 +21,7 @@ import vexiiriscv.soc.TilelinkVexiiRiscvFiber
 class MicroSoc(p : MicroSocParam) extends Component {
   // socCtrl will provide clocking, reset controllers and debugModule (through jtag) to our SoC
   val socCtrl = new SocCtrl(p.socCtrl)
+  if(p.socCtrl.withDebug) socCtrl.debugModule.dm.dmp.withSysBus = p.withDebugSysBus
 
   val system = new ClockingArea(socCtrl.system.cd) {
     // Let's define our main tilelink bus on which the CPU, RAM and peripheral "portal" will be plugged later.
@@ -30,6 +31,11 @@ class MicroSoc(p : MicroSocParam) extends Component {
     if(p.socCtrl.withDebug) socCtrl.debugModule.bindHart(cpu)
     mainBus << cpu.buses
     cpu.dBus.setDownConnection(a = StreamPipe.S2M) // Let's add a bit of pipelining on the cpu.dBus to increase FMax
+
+    val sysbus = (p.socCtrl.withDebug && p.withDebugSysBus) generate{
+      val area = socCtrl.debugModule.dm.makeSysbusTilelink()
+      mainBus << area.filter.down
+    }
 
     val ram = new tilelink.fabric.RamFiber(p.ramBytes)
     ram.up at 0x80000000l of mainBus
@@ -60,7 +66,7 @@ class MicroSoc(p : MicroSocParam) extends Component {
       plic.mapUpInterrupt(1, uart.interrupt)
 
       val spiFlash = p.withSpiFlash generate new TilelinkSpiXdrMasterFiber(SpiXdrMasterCtrl.MemoryMappingParameters(
-        SpiXdrMasterCtrl.Parameters(8, 12, SpiXdrParameter(2, 2, 1)).addFullDuplex(0,1,false),
+        SpiXdrMasterCtrl.Parameters(8, 12, SpiXdrParameter(2, 1, 1)).addFullDuplex(0,1,false),
         xipEnableInit = true,
         xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 6)
       )) {
@@ -88,6 +94,8 @@ class MicroSoc(p : MicroSocParam) extends Component {
     val patcher = Fiber patch new Area {
       p.ramElf.foreach(new Elf(_, p.vexii.xlen).init(ram.thread.logic.mem, 0x80000000l))
       println(MemoryConnection.getMemoryTransfers(cpu.dBus).mkString("\n"))
+
+      val spiFlash = (p.withSpiFlash && p.withSpiPhy) generate master(peripheral.spiFlash.logic.spi.setAsDirectionLess().toSpi().setName(""))
     }
   }
 }

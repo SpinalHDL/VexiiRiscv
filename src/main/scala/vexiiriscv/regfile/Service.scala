@@ -76,6 +76,8 @@ trait RegfileService {
   def newWrite(withReady : Boolean, sharingKey : Any = null, priority : Int = 0) : RegFileWrite
 
   def getWrites() : scala.collection.Seq[RegFileWrite] // Used in the hardware simulation to probe all the register writes of the CPU.
+
+  def simSetRegister(id: Int, value : BigInt) : Unit // Used by SpinalSim testbench to force the register at a given value
 }
 
 

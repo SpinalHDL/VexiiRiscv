@@ -6,12 +6,12 @@
 
 install_verilator(){
   sudo apt-get update
-  sudo apt install -y git make autoconf g++ flex libfl-dev bison  # First time prerequisites
+  sudo apt install -y git make autoconf g++ flex libfl-dev bison help2man # First time prerequisites
   git clone https://github.com/verilator/verilator.git   # Only first time
   unset VERILATOR_ROOT  # For bash
   cd verilator
   git pull        # Make sure we're up-to-date
-  git checkout v4.216
+  git checkout v5.044
   autoconf        # Create ./configure script
   ./configure --prefix ~/tools
   make -j$(nproc)

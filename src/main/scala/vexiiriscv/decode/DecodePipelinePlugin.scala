@@ -24,7 +24,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
 
   override def getLinks(): Seq[Link] = logic.connectors
   val idToCtrl = mutable.LinkedHashMap[Int, Ctrl]()
-
+  def ids: Seq[Int] = idToCtrl.keys.toSeq.sorted
 
   class Ctrl() extends Area{
     val idToLane = mutable.LinkedHashMap[Int, LaneImpl]()
@@ -81,7 +81,7 @@ class DecodePipelinePlugin extends FiberPlugin with PipelineService{
       val age = getAge(ctrlId)
       val c = idToCtrl(ctrlId)
 
-      //TODO throw whole pipeline when all lanes are dead ? probably not that usefull
+      // TODO throw whole pipeline when all lanes are dead ? probably not that useful
       val onLanes = for (laneId <- 0 until Decode.LANES) yield new Area {
         val l = c.lane(laneId)
         if (ctrlId != 0) l.up(l.LANE_SEL).setAsReg().init(False)

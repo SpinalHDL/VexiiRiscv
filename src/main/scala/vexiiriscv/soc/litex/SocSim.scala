@@ -52,7 +52,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 /*
-SocSim is a simple developpment testbench of the SoC. This is not meant to be used as a regression tool.
+SocSim is a simple development testbench of the SoC. This is not meant to be used as a regression tool.
 Here is an example of arguments :
   --sim-peripheral --regfile-async --with-rvm --with-rva --with-rvc --with-rvd --allow-bypass-from=0 --performance-counters=0 --fetch-l1 --fetch-l1-ways=4 --lsu-l1 --lsu-l1-ways=4 --with-lsu-bypass --relaxed-branch --with-supervisor --fetch-l1-ways=4 --fetch-l1-mem-data-width-min=64 --lsu-l1-ways=4 --lsu-l1-mem-data-width-min=64 --xlen=64 --fma-reduced-accuracy --fpu-ignore-subnormal --with-btb --with-ras --with-gshare --fetch-l1-hardware-prefetch=nl --fetch-l1-refill-count=2 --fetch-l1-mem-data-width-min=128 --lsu-l1-mem-data-width-min=128 --lsu-software-prefetch --lsu-hardware-prefetch rpt --performance-counters 9 --lsu-l1-store-buffer-ops=32 --lsu-l1-refill-count 4 --lsu-l1-writeback-count 4 --lsu-l1-store-buffer-slots=4 --relaxed-div --reset-vector 2147483648 --cpu-count=1 --l2-bytes=524288 --l2-ways=4 --litedram-width=128 --memory-region=268435456,131072,rwx,p --memory-region=2147483648,1073741824,rwxc,m --with-jtag-tap --lsu-l1-coherency --max-ipc --decoders=2 --lanes=2 --load-elf ext/NaxSoftware/baremetal/dhrystone_vexii/build/rv64imafdc/dhrystone_vexii.elf --trace-rvls --trace-konata --trace-spike --trace-wave --reset-vector=0x80000000
  */
@@ -147,7 +147,7 @@ object SocSim extends App{
       new vexiiriscv.test.konata.Backend(new File(currentTestPath, "konata.log")).spinalSimFlusher(hzToLong(1000 Hz))
     )
 
-    // Will inspect the VexiiRiscv cores behaviour
+    // Will inspect the VexiiRiscv cores behavior
     val probes = for((vexii, hartId) <- dut.system.vexiis.zipWithIndex) yield new VexiiRiscvProbe(
       cpu = vexii.logic.core,
       kb = konata
@@ -253,7 +253,7 @@ object SocSim extends App{
 
     val onPbusSim = simPeripheral generate new Area {
       val axi = dut.system.patcher.pBus
-      val emu = new PeripheralEmulator(0x10000000, null, null) {
+      val emu = new PeripheralEmulator(Seq.empty, Seq.empty) {
         override def getClintTime() = simTime()/10000
       }
       new AxiLite4ReadOnlySlaveAgent(axi.ar, axi.r, dut.litexCd){
@@ -261,7 +261,7 @@ object SocSim extends App{
           super.doRead(addr)
           axi.r.payload.data.randomize()
           val data = Array.fill[Byte](axi.config.bytePerWord)(0)
-          emu.access(false, addr.toLong, data)
+          emu.access(false, addr.toLong - 0x10000000, data)
           axi.r.payload.data #= data
         }
       }
@@ -271,7 +271,7 @@ object SocSim extends App{
           axi.r.payload.data.randomize()
           val buffer = Array.fill[Byte](axi.config.bytePerWord)(0)
           buffer(0) = data.toByte
-          emu.access(true, addr.toLong, buffer)
+          emu.access(true, addr.toLong - 0x10000000, buffer)
         }
       }
     }

@@ -14,7 +14,7 @@ import scala.collection.mutable.ArrayBuffer
 
 /**
  * Implement a RAM and provide an API (CsrRamService) that allows other plugins to :
- * - Staticaly allocate memory space
+ * - Statically allocate memory space
  * - Map the allocated memory space on the CPU CSR instruction
  * - Create new read/write access ports to the memory.
  *
@@ -60,11 +60,6 @@ class CsrRamPlugin extends FiberPlugin with CsrRamService with InitService {
             val mask = Masked(csrId, 0xFFF)
             addressDecoder.addNeeds(mask, Masked(e.alloc.at + e.offset, ramAddressMask))
             selDecoder += csrId
-          }
-          case filter: CsrCondFilter => {
-            val mask = Masked(filter.csrId, 0xFFF)
-            addressDecoder.addNeeds(mask, Masked(e.alloc.at + e.offset, ramAddressMask))
-            selDecoder += filter.csrId
           }
           case csrId: Int => {
             is(csrId) {

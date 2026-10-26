@@ -629,11 +629,11 @@ case class LsuL1ProbeCmd(p : LsuL1BusParameter) extends Bundle {
 case class LsuL1ProbeRsp(p : LsuL1BusParameter, fromProbe : Boolean) extends Bundle {
   val id = UInt(p.probeIdWidth bits)
   val address = UInt(p.addressWidth bits)
-  val fromUnique, fromShared = Bool() //Initial state of the cache line
+  val fromUnique, fromShared = Bool() // Initial state of the cache line
   val toShared, toUnique = Bool() // Final state of the cache line
-  val allowShared, allowUnique, getDirtyData = Bool() //Probe request parameters it came from, Used for redo
-  val redo = fromProbe generate Bool() //We got a probe failure (likely due to hazard in the data cache)
-  val writeback = fromProbe generate Bool() //The probe produced a permition downgrade which has to be handled by the writeback logic of the cache instead.
+  val allowShared, allowUnique, getDirtyData = Bool() // Probe request parameters it came from, Used for redo
+  val redo = fromProbe generate Bool() // We got a probe failure (likely due to hazard in the data cache)
+  val writeback = fromProbe generate Bool() // The probe produced a permission downgrade which has to be handled by the writeback logic of the cache instead.
 
   def assignTilelinkC(c : ChannelC) = {
     c.opcode := tilelink.Opcode.C.PROBE_ACK()

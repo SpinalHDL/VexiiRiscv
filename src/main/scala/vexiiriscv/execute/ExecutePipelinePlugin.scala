@@ -38,6 +38,8 @@ class ExecutePipelinePlugin() extends FiberPlugin with PipelineService{
     idToCtrl.getOrElseUpdate(id, CtrlLink().setCompositeName(this, "ctrl" + id))
   }
 
+  def ids: Seq[Int] = idToCtrl.keys.toSeq.sorted
+
   val freeze = during build new Area{
     val requests = ArrayBuffer[Bool]()
     val valid = Bool()

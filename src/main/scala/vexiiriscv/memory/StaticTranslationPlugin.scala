@@ -12,14 +12,20 @@ import scala.collection.mutable.ArrayBuffer
 
 /**
  * This plugin implement a dummy memory translation (for CPU without MMU).
- * That way, the plugins like the LSU/Fetch always have a MMU-like interface, which symplify their code.
+ * That way, the plugins like the LSU/Fetch always have a MMU-like interface, which simplify their code.
  */
 
-class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with AddressTranslationService {
+class StaticTranslationPlugin(var physicalWidth: Int, val translationLevel : Int = 0) extends FiberPlugin with AddressTranslationService {
+  override def isShadowMmu : Boolean = translationLevel != 0
   override def mayNeedRedo: Boolean = false
   override def newStorage(pAny: Any, pmuStorageId : Int): Any = { }
   override def getStorageId(s: Any): Int = 0
   override def getStorageIdWidth(): Int = 0
+
+  override def getInvalidationPortParam = AddressTranslationInvalidationParam(
+    asidWidth       = 0,
+    requestAddress  = false
+  )
 
   case class PortSpec(stages: Seq[NodeBaseApi],
                       req: AddressTranslationReq,
@@ -42,14 +48,32 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
     ).rsp
   }
 
+  override def newTranslationAccess(usage: AddressTranslationPortUsage,
+                                    portSpec: Any,
+                                    storageSpec: Any): AddressTranslationAccess = {
+    val access = AddressTranslationAccess()
+    access.cmd.ready := access.rsp.ready
+    access.rsp.valid := access.cmd.valid
+    access.rsp.translated := access.cmd.address.resized
+    access.rsp.hazard := False
+    access.rsp.refill := False
+    access.rsp.pageFault := False
+    access.rsp.accessFault := access.cmd.address.drop(physicalWidth) =/= 0
+    access.rsp.bypassTranslation := True
+    access.rsp.addressExtension := False
+    access
+  }
+
   override def getSignExtension(kind: AddressTranslationPortUsage, rawAddress: UInt): Bool = False
 
   val logic = during build new Area {
-    PHYSICAL_WIDTH.set(physicalWidth)
-    VIRTUAL_WIDTH.set(physicalWidth)
-    MIXED_WIDTH.set(physicalWidth)
-    PC_WIDTH.set(physicalWidth)
-    TVAL_WIDTH.set(physicalWidth)
+    if (!isShadowMmu) {
+      PHYSICAL_WIDTH.set(physicalWidth)
+      VIRTUAL_WIDTH.set(physicalWidth)
+      MIXED_WIDTH.set(physicalWidth)
+      PC_WIDTH.set(physicalWidth)
+      TVAL_WIDTH.set(physicalWidth)
+    }
 
     portsLock.await()
     assert(refillPorts.isEmpty)
@@ -67,6 +91,7 @@ class StaticTranslationPlugin(var physicalWidth: Int) extends FiberPlugin with A
       TRANSLATED := spec.req.PRE_ADDRESS.resized //PC RESIZED
       PAGE_FAULT := False
       ACCESS_FAULT := spec.req.PRE_ADDRESS.drop(physicalWidth) =/= 0
+      ADDRESS_EXTENSION := False
       BYPASS_TRANSLATION := True
     }
   }

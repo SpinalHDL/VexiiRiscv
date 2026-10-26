@@ -144,13 +144,18 @@ class DispatchPlugin(var dispatchAt : Int,
     val eusFlushHazardUpTo = mutable.LinkedHashMap[ExecuteLaneService, Int]()
     for (elp <- eus) yield new Area {
       val flushUpTo = elp.getUopLayerSpec().flatMap(e => e.mayFlushUpTo).fold(-100)(_ max _)
-      val hazardRange = dontFlushFromMin+1 to flushUpTo //+1 because the flush hazard on the same warp are handled somewere else, here we just need to care about past cycles
+
+      // +1 because the flush hazard on the same warp are handled somewhere else, here we just need
+      // to care about past cycles
+      val hazardRange = dontFlushFromMin + 1 to flushUpTo 
       eusFlushHazardUpTo(elp) = flushUpTo
       for (i <- hazardRange) hmKeys += getDontFlush(i)
     }
     val dontFlushDecoding = for (spec <- dontFlushSpecs.values) yield new Area {
       for ((uop, dontFlushFrom) <- uopsDontFlushFrom) {
-        dp.addMicroOpDecoding(uop, spec.value, Bool(dontFlushFrom < spec.at)) //Answer the question : For this uop, when it reach the dontFlush point in the pipeline, is it not ok to have another op which emit flushes in the given spec.at stage
+        // Answer the question : For this uop, when it reach the dontFlush point in the pipeline,
+        // is it not ok to have another op which emit flushes in the given spec.at stage
+        dp.addMicroOpDecoding(uop, spec.value, Bool(dontFlushFrom < spec.at)) 
       }
     }
 
@@ -209,6 +214,7 @@ class DispatchPlugin(var dispatchAt : Int,
       val laneLayerHits = Bits(lanesLayers.size bits)
       val hartId = Global.HART_ID()
       val uop = Decode.UOP()
+      val uopIsCompressed = Decode.UOP_IS_COMPRESSED()
       val hm = new HardMap()
       hmKeys.foreach(e => hm.add(e))
     }
@@ -226,16 +232,16 @@ class DispatchPlugin(var dispatchAt : Int,
       trapPendings(hartId) := slots.map(s => s.ctx.valid && s.ctx.hm(TRAP)).orR
     }
 
-    // Candidates is an array of ordred instruction which are ready/waiting to be issued.
-    // This is the main interferace through which this plugin work
+    // Candidates is an array of ordered instructions which are ready/waiting to be issued.
+    // This is the main interface through which this plugin work
     val candidates = for(cId <- 0 until slotsCount + Decode.LANES) yield new Area{
       val ctx = MicroOpCtx()
       val fire = Bool()
       val cancel = Bool()
 
       val rsHazards = Bits(lanesLayers.size bits) // Hazard on register sources
-      val reservationHazards = Bits(lanesLayers.size bits) // Instruction have the ability to reserve shared ressources (ex floating point rounding unit). This specifies if the given instruction has hazard for that.
-      val flushHazards = Bool() // Instruction can specifie that they can't be flushed past a given point in the pipeline. This check that schedulability condition. Implemented in a pessimistic way, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
+      val reservationHazards = Bits(lanesLayers.size bits) // Instruction have the ability to reserve shared resources (ex floating point rounding unit). This specifies if the given instruction has hazard for that.
+      val flushHazards = Bool() // Instruction can specify that they can't be flushed past a given point in the pipeline. This check that schedulability condition. Implemented in a pessimistic way, could instead track the flush hazard per layer, but that's likely overkill, as instruction which may have flush hazard are likely single layer
       val fenceOlderHazards = Bool() // Instruction can ask that all the side effects of older instruction should be applied before being scheduled.
       val age = Execute.LANE_AGE() // For instruction being issued the same cycle, this specifies their relative age. (lowest => oldest)
       val moving = !ctx.valid || fire || cancel
@@ -364,9 +370,10 @@ class DispatchPlugin(var dispatchAt : Int,
       c.ctx.laneLayerHits := LANES_LAYER_HIT.values.map(this(_)).asBits()
       c.ctx.hartId := Global.HART_ID
       c.ctx.uop := Decode.UOP
+      c.ctx.uopIsCompressed := !Decode.INSTRUCTION_RAW(0, 2 bits).andR
       for (k <- hmKeys) c.ctx.hm(k).assignFrom(this(k))
       dispatchCtrl.link.down.ready clearWhen(isValid && !sent && !c.fire)
-      when(Global.TRAP){ //TODO  May it could be injected futher down the arbitration ?
+      when(Global.TRAP){ //TODO  May it could be injected further down the arbitration ?
         c.ctx.laneLayerHits := 1 << lanesLayers.indexOf(trapLayer)
       }
     }
@@ -435,6 +442,7 @@ class DispatchPlugin(var dispatchAt : Int,
       insertNode(CtrlLaneApi.LANE_SEL) := oh.orR && !mux(_.cancel) && !api.haltDispatch
       Global.HART_ID := mux(_.ctx.hartId)
       Decode.UOP := mux(_.ctx.uop)
+      Decode.UOP_IS_COMPRESSED := mux(_.ctx.uopIsCompressed)
       for(k <- hmKeys) insertNode(k).assignFrom(mux(_.ctx.hm(k)))
       when(!CtrlLaneApi.LANE_SEL || trap){
         //Allow to avoid having to check the valid down the pipeline
@@ -449,7 +457,7 @@ class DispatchPlugin(var dispatchAt : Int,
       val layer = layersOfInterest.map(e => B(eu.getLayerId(e._1), log2Up(eu.getLayers().size) bits) -> layerOhUnfiltred(e._2))
       eu.LAYER_SEL := OHMux.or(layer.map(_._2).asBits(), layer.map(_._1), true)
     }
-    
+
     val events = pcs map(pcs => new Area {
       val frontendStall = pcs.createEventPort(PerformanceCounterService.STALLED_CYCLES_FRONTEND, candidates.map(_.ctx.valid).norR)
       val backendStall = pcs.createEventPort(PerformanceCounterService.STALLED_CYCLES_BACKEND, candidates.map(_.ctx.valid).orR && candidates.map(_.fire).norR)

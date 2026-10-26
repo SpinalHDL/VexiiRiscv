@@ -15,7 +15,7 @@ import scala.collection.mutable
  * Used to define a few signal which travel on the fetch pipeline for prediction purposes
  */
 object Prediction extends AreaObject{
-  //Used by the BbtPlugin in the fetch pipeline to notify the AlignerPlugin of the predictions which happend
+  // Used by the BbtPlugin in the fetch pipeline to notify the AlignerPlugin of the predictions which happened
   val WORD_JUMPED = Payload(Bool()) // A prediction was taken
   val WORD_JUMP_SLICE = Payload(Fetch.SLICE_ID) // Which slice of the fetched word got the prediction (last slice of the instruction)
   val WORD_JUMP_PC = Payload(Global.PC) // Where the prediction jumped to.
@@ -86,7 +86,7 @@ case class ForgetCmd() extends Bundle{
 
 /**
  * Provide an API allowing plugins to access the LearnCmd interface (used by BtbPlugin/GSharePlugin),
- * aswell as a way to specify additional execute pipeline payload which should be collected and feeded to the LearnCmd
+ * as well as a way to specify additional execute pipeline payload which should be collected and feeded to the LearnCmd
  */
 trait LearnService{
   val learnLock = Retainer()

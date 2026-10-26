@@ -6,6 +6,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.execute.{CsrService, ExecuteLanePlugin, ExecutePipelinePlugin}
 import vexiiriscv.execute.lsu.LsuPlugin
 import vexiiriscv.memory.{AddressTranslationService, MmuPlugin}
+import vexiiriscv.schedule.DispatchPlugin
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -32,7 +33,9 @@ class TesterPlugin extends FiberPlugin{
   }
 
   val ptw = during setup (host.get[MmuPlugin].nonEmpty generate new Area{
-    val ats = host[AddressTranslationService]
+    val ats = host.find[AddressTranslationService](!_.isShadowMmu)
+    val priv = host[PrivilegedPlugin]
+    val dp = host[DispatchPlugin]
     val earlyLock = retains(ats.portsLock)
 
     awaitBuild()
@@ -50,6 +53,12 @@ class TesterPlugin extends FiberPlugin{
     ptw.cmd.address := address.value.asSInt.resize(widthOf(ptw.cmd.address)).asUInt
     ptw.cmd.storageId := 0
     ptw.cmd.storageEnable := False
+    ptw.cmd.forceGuest := False
+    ptw.cmd.permission.read := True
+    ptw.cmd.permission.write := False
+    ptw.cmd.permission.execute := False
+    if (priv.implementHypervisor) ptw.cmd.indirect := False
+    ptw.rsp.ready := True
 
     val pending = CounterUpDown(4, ptw.cmd.fire, ptw.rsp.fire)
     when(pending.mayOverflow){
@@ -60,10 +69,8 @@ class TesterPlugin extends FiberPlugin{
     when(pending === 0 || ptw.rsp.fire){
       timeout.clear()
     }
-    val el = host[ExecutePipelinePlugin]
-    when(timeout.state){
-      el.freezeIt()
-    }
+
+    dp.haltDispatchWhen(timeout.state)
   })
 
 

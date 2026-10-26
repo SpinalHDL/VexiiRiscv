@@ -77,7 +77,7 @@ case class CachelessRsp(p : CachelessBusParam, withId : Boolean = true) extends 
 }
 
 /**
- * The fetch CachelessBus has the following caracteristics :
+ * The fetch CachelessBus has the following characteristics :
  * - address in byte, always aligned on the full data width
  * - supports out of order responses via the id signals
  * - Only one transaction per id can be inflight at a given time

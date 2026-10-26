@@ -16,14 +16,14 @@ trait LsuCachelessBusProvider {
 
 /**
  * Allows a plugin to specifies to others that CMO are implemented
- * This is used by the IntAluPlugin to avoid overlaping the ORI instruction with the CMO's prefetch instructions
+ * This is used by the IntAluPlugin to avoid overlapping the ORI instruction with the CMO's prefetch instructions
  */
 trait CmoService{
   def withSoftwarePrefetch : Boolean
 }
 
 /**
- * Used by the TrapPlugin to flush the L1 data cache durring a fence.i instruction
+ * Used by the TrapPlugin to flush the L1 data cache during a fence.i instruction
  */
 case class LsuL1InvalidationCmd() extends Bundle //Empty for now, as we flush the whole cache
 case class LsuL1InvalidationBus() extends Bundle {

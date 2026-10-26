@@ -22,7 +22,7 @@ object CsrFsm{
 }
 
 /**
- * Implements the RISC-V CSR read/write instructions, aswell as provide an API for other plugin to populate the CSR space.
+ * Implements the RISC-V CSR read/write instructions, as well as provide an API for other plugin to populate the CSR space.
  * In other words, this plugin do not define any CSR, but provide an API to define them (that API is defined in CsrService).
  *
  * To help with the FMax, CSR accesses are implemented by using a state-machine. Accesses are done over 4 cycles :
@@ -112,6 +112,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
     }
 
     val grouped = spec.groupByLinked(_.csrFilter)
+    val condGrouped = grouped.keys.filter(_.isInstanceOf[CsrCondFilter]).map(_.asInstanceOf[CsrCondFilter]).groupByLinked(_.csrId)
 
     val fsm = new StateMachine{
       val IDLE = makeInstantEntry()
@@ -131,12 +132,26 @@ class CsrAccessPlugin(val layer : LaneLayer,
         val rdPhys = rd.PHYS()
         val rdEnable = Bool()
         val fire = False
+        val csrId = Reg(UInt(12 bits))
+      }
+
+      def csrAddressFix(csrId: UInt): UInt = {
+        val address = CombInit(csrId)
+
+        for(filter <- remapping) {
+          when(filter.from === csrId && filter.cond) {
+            address := filter.to
+          }
+        }
+
+        address
       }
 
       val inject = new elp.Execute(injectAt){
         assert(!(up(LANE_SEL) && SEL && isCancel), "CsrAccessPlugin saw forbidden select && cancel request")
         val imm = IMM(UOP)
-        val csrAddress = UOP(Const.csrRange)
+        val csrAddress = csrAddressFix(UOP(Const.csrRange).asUInt)
+        val csrPriv = UOP(Const.csrRange)(8, 2 bits)
         val immZero = imm.z === 0
         val srcZero = CSR_IMM ? immZero otherwise UOP(Const.rs1Range) === 0
         val csrWrite = !(CSR_MASK && srcZero)
@@ -149,6 +164,8 @@ class CsrAccessPlugin(val layer : LaneLayer,
         })
         val implemented = sels.values.orR
 
+        val condImplemented = condGrouped.map(_._1 === csrAddress).orR
+
         val onDecodeDo = isValid && SEL && isActive(IDLE)
         val priorities = spec.collect { case e: CsrOnDecode => e.priority }.distinct.sorted
         for (priority <- priorities) {
@@ -160,12 +177,13 @@ class CsrAccessPlugin(val layer : LaneLayer,
           }
         }
 
-        val trap = !implemented || bus.decode.exception
+        val trap = !implemented || bus.decode.exception || bus.decode.hostDenied
 
         bus.decode.read := csrRead
         bus.decode.write := csrWrite
         bus.decode.hartId := Global.HART_ID
-        bus.decode.address := csrAddress.asUInt
+        bus.decode.address := csrAddress
+        bus.decode.privilege := csrPriv
 
         val unfreeze = RegNext(False) init(False)
         interface.hartId := Global.HART_ID
@@ -179,6 +197,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         interface.doClear := CSR_CLEAR
         interface.rdEnable := up(rd.ENABLE)
         interface.rdPhys := rd.PHYS
+        interface.csrId := csrAddress
 
         val freeze = isValid && SEL && !unfreeze
         elp.freezeWhen(freeze)
@@ -193,8 +212,12 @@ class CsrAccessPlugin(val layer : LaneLayer,
         trapPort.exception := True
         trapPort.code := CSR.MCAUSE_ENUM.ILLEGAL_INSTRUCTION
         trapPort.tval := UOP.resized
+        trapPort.tval2 := 0
         trapPort.arg := 0
         trapPort.laneAge := Execute.LANE_AGE
+        when((implemented || condImplemented) && !bus.decode.hostDenied && bus.decode.virtual) {
+          trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
+        }
 
         val flushReg = RegInit(False) setWhen(flushPort.valid) clearWhen(!elp.isFreezed())
         when(flushReg) {
@@ -202,7 +225,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
           bypass(Global.TRAP) := True
         }
 
-        // For timing reasons, avoinding trap to get long combinatorial path
+        // For timing reasons, avoiding trap to get long combinatorial path
         val sampled = RegNext(elp.isFreezed()) init(False)
         val trapReg = RegNext(trap)
         val busTrapReg = RegNext(bus.decode.trap)
@@ -244,7 +267,7 @@ class CsrAccessPlugin(val layer : LaneLayer,
         val onReadsDo = False
         val onReadsFireDo = False
         bus.read.valid := onReadsDo
-        bus.read.address := U(interface.uop(Const.csrRange))
+        bus.read.address := interface.csrId
 
         bus.read.moving := !bus.read.halt //TODO || eu.getExecute(0).isFlushed
 
@@ -319,7 +342,10 @@ class CsrAccessPlugin(val layer : LaneLayer,
 
         interface.onWriteBits := alu.result
         bus.write.bits := alu.result
-        bus.write.address := U(interface.uop(Const.csrRange))
+        bus.write.maskBit := alu.mask
+        bus.write.clear := interface.doClear
+        bus.write.mask := interface.doMask
+        bus.write.address := interface.csrId
 
         val onWritesDo = False
         val onWritesFireDo = False

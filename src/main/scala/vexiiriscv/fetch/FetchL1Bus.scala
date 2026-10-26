@@ -77,13 +77,13 @@ case class FetchL1BusParam(physicalWidth : Int,
 }
 
 /**
- * Here are the carracteristics of this memory bus :
+ * Here are the characteristics of this memory bus :
  * - Address are 'in byte, and always aligned to the cache line size
  * - Each cmd transaction generates a burst of rsp of the cache line size
  * - Memory responses can be out of order via the id signal
  * - Only one transaction per id can be inflight at a given time
  *
- * This class provide a fiew functions to bridge to other memory buses.
+ * This class provide a few functions to bridge to other memory buses.
  */
 case class FetchL1Bus(p : FetchL1BusParam) extends Bundle with IMasterSlave {
   import p._

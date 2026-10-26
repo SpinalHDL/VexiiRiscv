@@ -28,10 +28,10 @@ class DivComp(val width : Int, val radixBits : Int) extends Component{
   val io = DivIo(width, radixBits)
 }
 
-/**
- * Implement a unsigned hardware divided which supports radix 2 and 4 (1 and 2 bits per cycle being solved)
- * Radix 4 is supported by "brutfocfing" all 4 values the next 2 bits of the division could be, and selecting the bigggest fit.
- */
+/** Implement a unsigned hardware divided which supports radix 2 and 4 (1 and 2 bits
+  * per cycle being solved). Radix 4 is supported by "brute-forcing" all 4 values
+  * the next 2 bits of the division could be, and selecting the biggest fit.
+  */
 class DivRadix(width: Int, radix: Int) extends DivComp(width, radix match {
   case 2 => 1
   case 4 => 2

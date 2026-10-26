@@ -11,7 +11,7 @@ import vexiiriscv.fetch.JumpCmd
 
 /**
  * This contains the integer constant which allows to compute identifier for a given point in the pipeline.
- * This id can then be used with the ReschedulePlugin to querry/register flushes
+ * This id can then be used with the ReschedulePlugin to query/register flushes
  *
  * So for instance, if you want to get the age id for the execute stage 3, then you do EXECUTE + 3*STAGE + NOT_PREDICTION
  */
@@ -37,7 +37,7 @@ case class FlushCmd(age : Int, laneAgeWidth : Int, withUopId : Boolean) extends 
  */
 trait ScheduleService {
   def newFlushPort(age: Int, laneAgeWidth: Int, withUopId: Boolean): Flow[FlushCmd]
-  def isFlushedAt(age: Int, hartId : UInt, laneAge : UInt): Option[Bool] // Querry if the given place in the CPU is being flushed
+  def isFlushedAt(age: Int, hartId : UInt, laneAge : UInt): Option[Bool] // Query if the given place in the CPU is being flushed
   val elaborationLock = Retainer()
 }
 

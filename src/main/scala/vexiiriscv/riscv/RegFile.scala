@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-// This file defines the integer and floating point RISC-V register file, 
+// This file defines the integer and floating point RISC-V register file,
 // as well as a few utilities to easily the instructions working with them.
 
 package vexiiriscv.riscv
@@ -19,6 +19,10 @@ object IntRegFile extends RegfileSpec with AreaObject {
   def TypeR(key : MaskedLiteral) = SingleDecoding(
     key = key,
     resources = List(RS1, RS2, RD).map(this -> _)
+  )
+  def TypeR3(key : MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(RS1, RS2, RS3, RD).map(this -> _)
   )
   def TypeI(key : MaskedLiteral) = SingleDecoding(
     key = key,
@@ -41,6 +45,10 @@ object IntRegFile extends RegfileSpec with AreaObject {
     key = key,
     resources = List(RD).map(this -> _)
   )
+  def TypeRS(key : MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(RS1, RS2).map(this -> _)
+  )
   def TypeUPC(key : MaskedLiteral) = SingleDecoding(
     key = key,
     resources = List(RD).map(this -> _) :+ PC_READ
@@ -48,6 +56,14 @@ object IntRegFile extends RegfileSpec with AreaObject {
   def TypeILQ(key : MaskedLiteral) = SingleDecoding(
     key = key,
     resources = List(RS1, RD).map(this -> _) :+ LQ :+ PC_READ //PC_READ is used to reschedule a load which had some store hazard
+  )
+  def TypeRLQ(key : MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(RS1, RD).map(this -> _) :+ LQ :+ PC_READ //PC_READ is used to reschedule a load which had some store hazard
+  )
+  def TypeRSQ(key : MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(RS1, RS2).map(this -> _) :+ SQ
   )
   def TypeSSQ(key : MaskedLiteral) = SingleDecoding(
     key = key,
@@ -80,7 +96,7 @@ object IntRegFile extends RegfileSpec with AreaObject {
 
 object FloatRegFile extends RegfileSpec with AreaObject {
   override def sizeArch = 32
-  override def width = if(Riscv.RVD) 64 else 32
+  override def width = Riscv.FLEN
   override def x0AlwaysZero = false
   override def getName() = "float"
   override def initialValue: BigInt = 0 //Was if(Riscv.RVD) 0x7FF8000000000000l else 0x7fc00000l, but that is a paine in the ass to sync with spike
@@ -105,6 +121,10 @@ object FloatRegFile extends RegfileSpec with AreaObject {
     key = key,
     resources = List(RS1, RD).map(this -> _) :+ FPU
   )
+  def TypeFLI(key : MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(this -> RD, FPU)
+  )
 
   def TypeILQ(key : MaskedLiteral) = SingleDecoding(
     key = key,
@@ -126,6 +146,10 @@ object FloatRegFile extends RegfileSpec with AreaObject {
   def TypeI2F(key : MaskedLiteral) = SingleDecoding(
     key = key,
     resources = List(IntRegFile -> RS1, this -> RD) :+ FPU
+  )
+  def TypeI2F2(key : MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(IntRegFile -> RS1, IntRegFile -> RS2, this -> RD) :+ FPU
   )
   def TypeI2F_RM(key : MaskedLiteral) = SingleDecoding(
     key = key,

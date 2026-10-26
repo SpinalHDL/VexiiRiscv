@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * In this file are implemented a bunch of multiport ram (especialy multiple write ports, *r *w) using different technics which only require simple dual port ram (1r 1w)
+ * In this file are implemented a bunch of multiport ram (especially multiple write ports, *r *w) using different technics which only require simple dual port ram (1r 1w)
  *
  * See https://tomverbeure.github.io/2019/08/03/Multiport-Memories.html for more info.
  */

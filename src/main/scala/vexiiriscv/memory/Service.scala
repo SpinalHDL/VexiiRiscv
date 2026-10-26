@@ -15,16 +15,44 @@ trait AddressTranslationPortUsage
 object AddressTranslationPortUsage{
   object FETCH extends AddressTranslationPortUsage
   object LOAD_STORE extends AddressTranslationPortUsage
+  object IMPLICIT_LOAD extends AddressTranslationPortUsage
+}
+
+case class AddressTranslationRefillCmdPerm() extends Bundle{
+  val read = Bool()
+  val write = Bool()
+  val execute = Bool()
 }
 
 case class AddressTranslationRefillCmd(storageWidth : Int) extends Bundle{
   val address = MIXED_ADDRESS()
+  /*
+   * For first-stage MMU:
+   *    false : this request is a one-stage translation.
+   *    true  : this request is a two-stage translation.
+   *
+   * For shadow (second-stage) MMU
+   *    false : this request is for explicit memory access.
+   *    true  : this request is for implicit memory access.
+   */
+  val indirect = Bool()
   val storageId = UInt(storageWidth bits)
   val storageEnable = Bool()
+
+  /*
+   * This is used to track translation requrest from HLV/HSV.
+   * This signal is only valid for first-stage MMU, for second-stage
+   * MMU, it will be always false.
+   */
+  val forceGuest = Bool()
+
+  val permission = AddressTranslationRefillCmdPerm()
 }
 
 case class AddressTranslationRefillRsp() extends Bundle{
-  val pageFault, accessFault = Bool()
+  val pageFault, accessFault, guestFault = Bool()
+
+  val bypass = Bool()
 
   val ae_ptw = Bool()
   val ae_final = Bool()
@@ -37,15 +65,10 @@ case class AddressTranslationRefillRsp() extends Bundle{
 
   val pte = new Bundle{
     val ppn =  UInt(PHYSICAL_WIDTH - 12 bits)
-    val d = Bool()
-    val a = Bool()
-    val g = Bool()
-    val u = Bool()
-    val x = Bool()
-    val w = Bool()
-    val r = Bool()
-    val v = Bool()
+    val flags = MmuEntryFlags()
   }
+
+  val address = UInt(PHYSICAL_WIDTH bits)
 
   val level = UInt(2 bits)
 }
@@ -55,27 +78,44 @@ case class AddressTranslationRefillRsp() extends Bundle{
  */
 case class AddressTranslationRefill(storageWidth : Int) extends Bundle{
   val cmd = Stream(AddressTranslationRefillCmd(storageWidth))
-  val rsp = Flow(AddressTranslationRefillRsp())
+  val rsp = Stream(AddressTranslationRefillRsp())
 
   cmd.payload.setName("bits")
   rsp.payload.setName("bits")
 }
 
-case class AddressTranslationInvalidationCmd() extends Bundle {
+case class AddressTranslationInvalidationParam(
+  asidWidth: Int = 0,
+  requestAddress: Boolean = false,
+  requestGuest: Boolean = false
+)
+
+case class AddressTranslationInvalidationCmd(p: AddressTranslationInvalidationParam) extends Bundle {
+  def withAnyAsid = p.asidWidth > 0
+  def withAnyAddress = p.requestAddress
+
   val hartId = HART_ID()
+  val asid = Bits(p.asidWidth bits)
+  val address = p.requestAddress generate MIXED_ADDRESS()
+  val guest = p.requestGuest generate Bool()
+  val anyAddress = p.requestAddress generate Bool()
+  val anyAsid = withAnyAsid generate Bool()
+  /* For reset */
+  val force = Bool()
 }
 
 /**
- * Used by the TrapPlugin to ask the MmuPlugin to invalidate its TLB (on sfence.vma / satp updates)
+ * Used by the TrapPlugin to ask the MmuPlugin to invalidate its TLB (on SFENCE.VMA)
  */
-case class AddressTranslationInvalidation() extends Bundle {
-  val cmd = Stream(AddressTranslationInvalidationCmd())
+case class AddressTranslationInvalidation(p: AddressTranslationInvalidationParam) extends Bundle {
+  val cmd = Stream(AddressTranslationInvalidationCmd(p))
 }
 
 /**
  * Implemented by the MmuPlugin, allows other plugins to create new address translation interfaces
  */
 trait AddressTranslationService extends Area {
+  def isShadowMmu : Boolean
   def mayNeedRedo : Boolean
   val storageLock = Retainer()
   val portsLock = Retainer()
@@ -83,6 +123,7 @@ trait AddressTranslationService extends Area {
   def getStorageId(s : Any) : Int
   def getStorageIdWidth() : Int
   def getSignExtension(kind : AddressTranslationPortUsage, rawAddress : UInt) : Bool
+  def getInvalidationPortParam : AddressTranslationInvalidationParam
 
   val regionRetainer = Retainer()
 
@@ -93,11 +134,15 @@ trait AddressTranslationService extends Area {
                          portSpec: Any,
                          storageSpec: Any): AddressTranslationRsp
 
+  def newTranslationAccess(usage: AddressTranslationPortUsage,
+                           portSpec: Any,
+                           storageSpec: Any): AddressTranslationAccess
+
   val refillPorts = ArrayBuffer[AddressTranslationRefill]()
   def newRefillPort() = refillPorts.addRet(AddressTranslationRefill(getStorageIdWidth()))
 
   val invalidationPorts = ArrayBuffer[AddressTranslationInvalidation]()
-  def newInvalidationPort() = invalidationPorts.addRet(AddressTranslationInvalidation())
+  def newInvalidationPort() = invalidationPorts.addRet(AddressTranslationInvalidation(getInvalidationPortParam))
 }
 
 case class AddressTranslationReq(
@@ -105,12 +150,13 @@ case class AddressTranslationReq(
   LOAD: Payload[Bool],
   STORE: Payload[Bool],
   EXECUTE: Payload[Bool],
+  FORCE_GUEST: Payload[Bool],
   FORCE_PHYSICAL: Payload[Bool]
 )
 
 class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) extends Area {
   val keys = new Area {
-    setName("MMU")
+    // setName("MMU")
     val TRANSLATED = Payload(PHYSICAL_ADDRESS)
     val HAZARD = Payload(Bool())
     val REFILL = Payload(Bool())
@@ -119,7 +165,32 @@ class AddressTranslationRsp(s : AddressTranslationService, val wayCount : Int) e
     val WAYS_OH  = Payload(Bits(wayCount bits))
     val WAYS_PHYSICAL  = Payload(Vec.fill(wayCount)(PHYSICAL_ADDRESS()))
     val BYPASS_TRANSLATION = Payload(Bool())
+    val ADDRESS_EXTENSION = Payload(Bool())
   }
+}
+
+case class AddressTranslationAccessCmd() extends Bundle {
+  val address = MIXED_ADDRESS()
+  val load = Bool()
+  val store = Bool()
+  val execute = Bool()
+  val forceGuest = Bool()
+  val forcePhysical = Bool()
+}
+
+case class AddressTranslationAccessRsp() extends Bundle {
+  val translated = PHYSICAL_ADDRESS()
+  val hazard = Bool()
+  val refill = Bool()
+  val pageFault = Bool()
+  val accessFault = Bool()
+  val bypassTranslation = Bool()
+  val addressExtension = Bool()
+}
+
+case class AddressTranslationAccess() extends Bundle {
+  val cmd = Stream(AddressTranslationAccessCmd())
+  val rsp = Stream(AddressTranslationAccessRsp())
 }
 
 trait PmpService extends Area {
@@ -167,3 +238,27 @@ case class DBusAccessRsp(refillCount : Int) extends Bundle {
   val waitAny  = Bool()
 }
 
+/*
+ * Two-stage translation abstract
+ */
+trait TranslatedDBusAccessService{
+  def newDBusAccess(requestGuest: Boolean) : TranslatedDBusAccess = dbusAccesses.addRet(new TranslatedDBusAccess(requestGuest))
+  val dbusAccesses = ArrayBuffer[TranslatedDBusAccess]()
+  val accessRetainer = Retainer()
+}
+
+case class TranslatedDBusAccess(requestGuest : Boolean) extends Bundle {
+  val cmd = Stream(TranslatedDBusAccessCmd(requestGuest))
+  val rsp = Flow(TranslatedDBusAccessRsp())
+}
+
+case class TranslatedDBusAccessCmd(requestGuest : Boolean) extends Bundle {
+  val address = Global.PHYSICAL_ADDRESS()
+  val guest = requestGuest generate Bool()
+  val size = UInt(2 bits)
+}
+
+case class TranslatedDBusAccessRsp() extends Bundle {
+  val data = Bits(Riscv.XLEN bits)
+  val error = Bits(2 bits)
+}

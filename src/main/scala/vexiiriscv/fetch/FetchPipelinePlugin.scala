@@ -13,7 +13,7 @@ import scala.collection.mutable
 
 
 /**
- * Provide a fethc pipeline skeleton, used by other plugins to compose the fethc pipeline.
+ * Provide a fetch pipeline skeleton, used by other plugins to compose the fetch pipeline.
  */
 class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   setName("fetch")
@@ -23,6 +23,7 @@ class FetchPipelinePlugin extends FiberPlugin with PipelineService{
   override def getLinks(): Seq[Link] = logic.connectors
   val idToFetch = mutable.LinkedHashMap[Int, pipeline.CtrlLink]()
   def fetch(id : Int) = idToFetch.getOrElseUpdate(id, pipeline.CtrlLink())
+  def ids: Seq[Int] = idToFetch.keys.toSeq.sorted
 
   val persistenceSpec = mutable.LinkedHashSet[Int]()
   def setPersistence(id : Int) = persistenceSpec += id

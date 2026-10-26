@@ -39,17 +39,20 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
     }
 
     val fpp = host[FetchPipelinePlugin]
-    val dpp = host[DecodePipelinePlugin]
-    val fetch = new Area {
-      val c = fpp.fetch(0)
-      val fire = wrap(c.down.isFiring)
+    fpp.logic.await()
+    val fetchs = for (stage <- fpp.ids) yield new Area {
+      val c = fpp.fetch(stage)
+      val stageId = stage
+      val fire = wrap(c.down.isValid && !RegNext(c.down.isValid, False).clearWhen(c.down.isReady || c.down.isCancel))
       val hartId = wrap(c(Global.HART_ID))
       val fetchId = wrap(c(Fetch.ID))
     }
 
-
-    val decodes = for (laneId <- 0 until Decode.LANES) yield new Area {
-      val c = dpp.ctrl(0).lane(laneId)
+    val dpp = host[DecodePipelinePlugin]
+    val decodes = for (lane <- 0 until Decode.LANES; stage <- dpp.ids) yield new Area {
+      val c = dpp.ctrl(stage).lane(lane)
+      val stageId = stage
+      val laneId = lane
       val fire = wrap(c.up.isFiring)
       val spawn = wrap(c.up.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
@@ -70,17 +73,21 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val microOp = wrap(c(Decode.UOP))
     }
 
-    val dispatches = for (eu <- host.list[ExecuteLaneService]) yield new Area {
+    val dispatches = for ((eu, euid) <- host.list[ExecuteLaneService].zipWithIndex) yield new Area {
       val c = eu.ctrl(0)
       val fire = wrap(c.down.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
+      val laneId = euid
       val microOpId = wrap(c(Decode.UOP_ID))
     }
 
-
-    val executes = for (eu <- host.list[ExecuteLaneService]) yield new Area {
-      val c = eu.ctrl(eu.executeAt)
-      val fire = wrap(c.down.transactionSpawn && c.down(Global.COMMIT))
+    val eupp = host[ExecutePipelinePlugin]
+    eupp.logic.await()
+    val executes = for ((eu, euid) <- host.list[ExecuteLaneService].zipWithIndex; stage <- eupp.ids if stage >= eu.executeAt) yield new Area {
+      val c = eu.ctrl(stage)
+      val stageId = stage
+      val laneId = euid
+      val fire = wrap(c.down.transactionSpawn)
       val hartId = wrap(c(Global.HART_ID))
       val microOpId = wrap(c(Decode.UOP_ID))
     }
@@ -154,7 +161,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val fire = Bool()
       val hartId = Global.HART_ID()
       val uopId = Decode.UOP_ID()
-      val size = UInt(2 bits)
+      val size = UInt(Riscv.LSU_SIZE_WIDTH bits)
       val address = Global.PHYSICAL_ADDRESS()
       val data = Bits(Riscv.LSLEN bits)
 
@@ -162,11 +169,11 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.wbCtrl
-        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(TRAP) && !c(p.logic.onPma.RSP).io
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.LOAD) || c(AguPlugin.EXECUTE)) && !c(TRAP) && !c(p.logic.onPma.RSP).io
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
-        address := c(p.logic.tpk.TRANSLATED)
+        address := c(p.logic.stpk.TRANSLATED)
         data := host.find[IntFormatPlugin](_.lane == p.layer.lane).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload.resized
         if(p.logic.fpwb.nonEmpty) when(p.logic.fpwb.get.valid){
           data := p.logic.fpwb.get.payload.asSInt.resize(widthOf(data)).asBits.resized
@@ -176,7 +183,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
 
       val lp = host.get[LsuPlugin] map (p => new Area {
         val c = p.logic.onWb
-        fire := c.down.isFiring && c(AguPlugin.SEL) && c(AguPlugin.LOAD) && !c(p.logic.LSU_PREFETCH) && !c(TRAP) && !c(p.logic.onPma.IO)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.LOAD) || c(AguPlugin.EXECUTE)) && !c(p.logic.LSU_PREFETCH) && !c(TRAP) && !c(p.logic.onPma.IO)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
@@ -193,7 +200,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val hartId = Global.HART_ID()
       val uopId = Decode.UOP_ID()
       val storeId = Decode.STORE_ID()
-      val size = UInt(2 bits)
+      val size = UInt(Riscv.LSU_SIZE_WIDTH bits)
       val address = Global.PHYSICAL_ADDRESS()
       val data = Bits(Riscv.LSLEN bits)
       val amo = Bool()
@@ -209,7 +216,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
         address := bus.cmd.address
         data := bus.cmd.data
         storeId := c(Decode.UOP_ID).resized
-        amo := p.withAmo.mux(bus.cmd.amoEnable, False)
+        amo := p.withAtomics.mux(bus.cmd.amoEnable, False)
       })
 
       val lp = host.get[LsuPlugin] map (p => new Area {
@@ -218,7 +225,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE)
-        address := c(p.logic.tpk.TRANSLATED)
+        address := c(LsuL1.PHYSICAL_ADDRESS)
         data := c(LsuL1.WRITE_DATA)
         storeId := c(Decode.STORE_ID)
         amo := False
@@ -235,14 +242,14 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
 
       val lcp = host.get[LsuCachelessPlugin] map (p => new Area {
         val c = p.logic.wbCtrl
-        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.ATOMIC) && !c(AguPlugin.LOAD)) && !c(TRAP)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.ATOMIC) && !(c(AguPlugin.LOAD) || c(AguPlugin.EXECUTE))) && !c(TRAP)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         miss := c(p.logic.onJoin.SC_MISS)
       })
       val lp = host.get[LsuPlugin] map (p => new Area {
         val c = p.logic.onWb
-        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.ATOMIC) && !c(AguPlugin.LOAD)) && !c(TRAP)
+        fire := c.down.isFiring && c(AguPlugin.SEL) && (c(AguPlugin.ATOMIC) && !(c(AguPlugin.LOAD) || c(AguPlugin.EXECUTE))) && !c(TRAP)
         hartId := c(Global.HART_ID)
         uopId := c(Decode.UOP_ID)
         miss := c(p.logic.onCtrl.SC_MISS)
@@ -294,7 +301,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
 
     def self = this
     abstract class Proxies {
-      val fetch = new FetchProxy()
+      val fetchs = self.fetchs.indices.map(new FetchProxy(_))
       val decodes = self.decodes.indices.map(new DecodeProxy(_)).toArray
       val serializeds = self.serializeds.indices.map(new SerializedProxy(_)).toArray
       val dispatches = self.dispatches.indices.map(new DispatchProxy(_)).toArray
@@ -338,9 +345,11 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
         for ((hart, hartId) <- priv.logic.harts.zipWithIndex) {
           checkers += new InterruptChecker(hartId, hart.int.m.timer,  7)
           checkers += new InterruptChecker(hartId, hart.int.m.software,  3)
-          checkers += new InterruptChecker(hartId, hart.int.m.external, 11)
-          if (priv.p.withSupervisor) {
-            checkers += new InterruptChecker(hartId, hart.int.s.external, 9)
+          if (priv.p.withExternalInterrupt) {
+            checkers += new InterruptChecker(hartId, hart.int.m.external, 11)
+            if (priv.p.withSupervisor) {
+              checkers += new InterruptChecker(hartId, hart.int.s.external, 9)
+            }
           }
         }
         def check(): Unit = {
@@ -354,14 +363,18 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
     }
 
 
-    class FetchProxy {
-      val fire = fetch.fire.simProxy()
-      val hartd = fetch.hartId.simProxy()
-      val id = fetch.fetchId.simProxy()
+    class FetchProxy(stage: Int) {
+      val self = fetchs(stage)
+      val stageId = self.stageId
+      val fire = self.fire.simProxy()
+      val hartd = self.hartId.simProxy()
+      val id = self.fetchId.simProxy()
     }
 
-    class DecodeProxy(laneId: Int) {
-      val self = decodes(laneId)
+    class DecodeProxy(idx: Int) {
+      val self = decodes(idx)
+      val laneId = self.laneId
+      val stageId = self.stageId
       val spawn = self.spawn.simProxy()
       val fire = self.fire.simProxy()
       val hartId = self.hartId.simProxy()
@@ -379,15 +392,18 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val microOp = self.microOp.simProxy()
     }
 
-    class DispatchProxy(laneId: Int) {
-      val self = dispatches(laneId)
+    class DispatchProxy(id: Int) {
+      val self = dispatches(id)
       val fire = self.fire.simProxy()
       val hartId = self.hartId.simProxy()
+      val laneId = self.laneId
       val microOpId = self.microOpId.simProxy()
     }
 
-    class ExecuteProxy(laneId: Int) {
-      val self = executes(laneId)
+    class ExecuteProxy(stage: Int) {
+      val self = executes(stage)
+      val stageId = self.stageId
+      val laneId = self.laneId
       val fire = self.fire.simProxy()
       val hartId = self.hartId.simProxy()
       val microOpId = self.microOpId.simProxy()

@@ -14,7 +14,7 @@ import spinal.lib.bus.amba4.axilite.sim.{AxiLite4ReadOnlySlaveAgent, AxiLite4Wri
 import spinal.lib.bus.misc.args.{PeriphSpecs, PeriphTilelinkFiber}
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.tilelink
-import spinal.lib.bus.tilelink.coherent.{CacheFiber, HubFiber, SelfFLush}
+import spinal.lib.bus.tilelink.coherent.{CacheFiber, FlushArbiter, FlushParam, HubFiber, SelfFLush}
 import spinal.lib.bus.tilelink.{coherent, fabric}
 import spinal.lib.bus.tilelink.fabric.Node
 import spinal.lib.com.eth.sg.{MacSgFiber, MacSgFiberSpec, MacSgParam}
@@ -31,10 +31,10 @@ import spinal.lib.misc.{InterruptNode, InterruptCtrlFiber}
 import spinal.lib.sim.SparseMemory
 import spinal.lib.{AnalysisUtils, Delay, Flow, ResetCtrlFiber, StreamPipe, master, memPimped, slave, traversableOncePimped}
 import spinal.lib.system.tag.{MemoryConnection, MemoryEndpoint, MemoryEndpointTag, MemoryTransferTag, MemoryTransfers, PMA, VirtualEndpoint}
-import vexiiriscv.{Global, ParamSimple}
+import vexiiriscv.ParamSimple
 import vexiiriscv.compat.{EnforceSyncRamPhase, MultiPortWritesSymplifier}
 import vexiiriscv.execute.ExecuteLanePlugin
-import vexiiriscv.execute.lsu.LsuL1Plugin
+import vexiiriscv.execute.lsu.{LsuL1Plugin, LsuPlugin}
 import vexiiriscv.fetch.{Fetch, FetchL1Plugin, FetchPipelinePlugin, PcPlugin}
 import vexiiriscv.misc.{PrivilegedPlugin, TrapPlugin}
 import vexiiriscv.prediction.GSharePlugin
@@ -53,7 +53,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 /**
- * Because VexiiRiscv implement PMA (Physical Memory Access) checking staticaly, we need to know what is mapped behind the litex memory busses.
+ * Because VexiiRiscv implement PMA (Physical Memory Access) checking statically, we need to know what is mapped behind the Litex memory busses.
  */
 case class LitexMemoryRegion(mapping : SizeMapping, mode : String, bus : String){
   def isExecutable = mode.contains("x")
@@ -73,13 +73,15 @@ class SocConfig(){
   val regions = ArrayBuffer[LitexMemoryRegion]()
   var withJtagTap = false
   var withJtagInstruction = false
+  var withSwd = false
   var withDebugProbePc0 = false
-  def withDebug = withJtagInstruction || withJtagTap || withDebugProbePc0
+  def withDebug = withJtagInstruction || withJtagTap || withSwd || withDebugProbePc0
   var withDma = false
   var mBusWidth = 64
   var l2Bytes = 0
   var l2Ways = 0
   var cpuCount = 1
+  var debugSysBus = false
   var litedramWidth = 32
   var withAxi3 = false
   var withPeripheralCd = false
@@ -99,34 +101,56 @@ class SocConfig(){
     "imsic_s" -> 0xF1200000l,
   )
 
+  def dmaAddressWidth = if(vexiiParam.physicalWidth <= 32) 32 else 64
+  def externalAddressWidth = if(withDma) dmaAddressWidth else vexiiParam.physicalWidth
+
   def addOptions(parser: scopt.OptionParser[Unit]): Unit = {
     import parser._
     vexiiParam.addOptions(parser)
     periph.addOptions(parser)
     TilelinkVgaCtrlSpec.addOption(parser, video)
     MacSgFiberSpec.addOption(parser, macSg)
-    opt[Int]("litedram-width") action { (v, c) => litedramWidth = v }
-    opt[Seq[String]]("l2-self-flush") action { (v, c) =>
+    opt[Int]("litedram-width").action { (v, c) => litedramWidth = v }
+      .text("Set the LiteDRAM data width in bits; default: 32.")
+    opt[Seq[String]]("l2-self-flush").action { (v, c) =>
       selfFlush = coherent.SelfFLush(BigInt(v(0), 16), BigInt(v(1), 16), BigInt(v(2)))
     }
-    opt[Int]("cpu-count") action { (v, c) => cpuCount = v }
-    opt[Int]("l2-bytes") action { (v, c) => l2Bytes = v }
-    opt[Int]("l2-ways") action { (v, c) => l2Ways = v }
-    opt[Unit]("with-dma") action { (v, c) => withDma = true }
-    opt[Unit]("with-cpu-clk") action { (v, c) => withCpuCd = true }
-    opt[Unit]("with-axi3") action { (v, c) => withAxi3 = true }
-    opt[Unit]("with-jtag-tap") action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
-    opt[Unit]("with-jtag-instruction") action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
-    opt[Unit]("with-debug-probe-pc0") text("Allows to profile the CPU via JTAG. See ElfMapper.") action { (v, c) => withDebugProbePc0 = true }
-    opt[Unit]("with-aplic") action { (v, c) => withAPlic = true }
-    opt[Unit]("with-axilite-xlen") action { (v, c) => axiLiteForce32 = false }
-    opt[Map[String, BigInt]]("device-region").unbounded() action { (v, c) => deviceMapping ++= v }
-    opt[Seq[String]]("memory-region").unbounded() action { (v, c) =>
+      .text("Configure L2 self-flush as START,END,CYCLES; addresses are hexadecimal.")
+    opt[Int]("cpu-count").action { (v, c) => cpuCount = v }
+      .text("Set the number of VexiiRiscv harts; default: 1.")
+    opt[Int]("l2-bytes").action { (v, c) => l2Bytes = v }
+      .text("Set the L2 cache capacity in bytes; 0 disables L2; default: 0.")
+    opt[Int]("l2-ways").action { (v, c) => l2Ways = v }
+      .text("Set the L2 cache associativity in ways.")
+    opt[Boolean]("debug-sysbus").action { (v, c) => debugSysBus = v }
+      .text("Enable the debug module system bus; default: false.")
+    opt[Unit]("with-dma").action { (v, c) => withDma = true }
+      .text("Enable the coherent DMA bus.")
+    opt[Unit]("with-cpu-clk").action { (v, c) => withCpuCd = true }
+      .text("Use a separate clock domain for the CPU.")
+    opt[Unit]("with-axi3").action { (v, c) => withAxi3 = true }
+      .text("Use AXI3 for the memory interface.")
+    opt[Unit]("with-jtag-tap").action { (v, c) => withJtagTap = true; vexiiParam.privParam.withDebug = true }
+      .text("Enable the embedded JTAG TAP.")
+    opt[Unit]("with-jtag-instruction").action { (v, c) => withJtagInstruction = true; vexiiParam.privParam.withDebug = true }
+      .text("Enable the embedded JTAG instruction transport.")
+    opt[Unit]("with-swd").action { (v, c) => withSwd = true; vexiiParam.privParam.withDebug = true }
+      .text("Add an SWD debug transport; do not combine it with the JTAG options.")
+    opt[Unit]("with-debug-probe-pc0").action { (v, c) => withDebugProbePc0 = true }
+      .text("Profile the CPU via JTAG; see ElfMapper.")
+    opt[Unit]("with-aplic").action { (v, c) => withAPlic = true }
+      .text("Use the APLIC interrupt controller.")
+    opt[Unit]("with-axilite-xlen").action { (v, c) => axiLiteForce32 = false }
+      .text("Use an XLEN-wide AXI-Lite data path instead of the default 32-bit path.")
+    opt[Map[String, BigInt]]("device-region").unbounded().action { (v, c) => deviceMapping ++= v }
+      .text("Override a device base address using NAME=ADDRESS; repeatable.")
+    opt[Seq[String]]("memory-region").unbounded().action { (v, c) =>
       assert(v.length == 4, "--memory-region need 4 parameters")
       val r = new LitexMemoryRegion(SizeMapping(BigInt(v(0)), BigInt(v(1))), v(2), v(3))
       regions += r
       assert(!(r.onMemory && !r.isCachable), s"Region $r isn't supported by VexiiRiscv, data cache will always cache memory")
     }
+      .text("Define a region as BASE,SIZE,MODE,BUS; BUS is m for memory or p for peripheral; repeatable.")
   }
 
   def withL2 = l2Bytes > 0
@@ -136,8 +160,8 @@ class SocConfig(){
  * This is the VexiiRiscv SoC toplevel used with Litex.
  * - Based on tilelink for its memory interconnect
  * - Integrate the PLIC and CLINT peripherals
- * - Access the main memory through a dedicated AXI bus instead of the regular litex wishbone (for performance reasons)
- * - Can be multicore
+ * - Access the main memory through a dedicated AXI bus instead of the regular Litex wishbone (for performance reasons)
+ * - Can be multi-core
  * - Implement memory coherency between the code and a AXI DMA access bus
  * - Has an option L2 cache
  * - Supports JTAG debug
@@ -172,11 +196,23 @@ class Soc(c : SocConfig) extends Component {
   cpuResetCtrl.addAsyncReset(litexCd.isResetActive, HIGH)
   val cpuCd = cpuResetCtrl.cd
 
+  val debugReset = c.withDebug generate in.Bool()
+  // RISC-V debug spec Ch. 6 : using several DTM at once isn't supported, SWD replaces the JTAG ones.
+  assert(!(withSwd && (withJtagTap || withJtagInstruction)), "--with-swd can't be combined with --with-jtag-tap / --with-jtag-instruction")
+  assert(!(withDebugProbePc0 && !withJtagTap), "--with-debug-probe-pc0 needs --with-jtag-tap")
+  val debug = c.withDebug generate ClockDomain(cpuCd.clock, debugReset)(new DebugModuleSocFiber(withJtagTap, withJtagInstruction) {
+    // SWCLK is a pin of the transport itself, so unlike the JTAG instruction port no clock domain is needed.
+    val swd = withSwd generate dm.withSwdTransport()
+    out(dm.ndmreset)
+    dm.dmp.withSysBus = c.debugSysBus
+  })
+  val debugSysBus = c.debugSysBus generate cpuCd(debug.dm.makeSysbusTilelink())
 
   val system = cpuCd on new AreaRoot {
     val mainDataWidth = vexiiParam.memDataWidth
     val withCoherency = vexiiParam.lsuL1Coherency
     val withSupervisor = vexiiParam.privParam.withSupervisor
+    val withHypervisor = vexiiParam.privParam.withHypervisor
     val vexiis = for (hartId <- 0 until cpuCount) yield new TilelinkVexiiRiscvFiber(vexiiParam.plugins(hartId))
     for (vexii <- vexiis) {
       if (vexiiParam.fetchL1Enable) vexii.iBus.setDownConnection { (down, up) =>
@@ -308,6 +344,7 @@ class Soc(c : SocConfig) extends Component {
 
           for (vexii <- vexiis) {
             vexii.bind(msi, 1)
+            if (withHypervisor && vexiiParam.privParam.withGuestImsic) vexii.bind(msi, -3)
           }
         }
       }
@@ -344,12 +381,12 @@ class Soc(c : SocConfig) extends Component {
       }
     }
 
-    // Implement a memory coherent AXI bus that the litex DMA's can use.
+    // Implement a memory coherent AXI bus that the Litex DMA's can use.
     val dma = c.withDma generate new ClockingArea(litexCd){
       val bus = slave(
         Axi4(
           Axi4Config(
-            addressWidth = 32,
+            addressWidth = dmaAddressWidth,
             dataWidth = mainDataWidth,
             idWidth = 4
           )
@@ -364,7 +401,7 @@ class Soc(c : SocConfig) extends Component {
       val filter = new fabric.TransferFilter()
       filter.up << bridge.down
 
-      //As litex reset will release before our one, we need to ensure that we don't eat a transaction
+      //As Litex reset will release before our one, we need to ensure that we don't eat a transaction
       Fiber build {
         bridge.read.get
         bridge.write.get
@@ -430,6 +467,7 @@ class Soc(c : SocConfig) extends Component {
           mBus << List(vexii.iBus, vexii.lsuL1Bus)
           ioBus << List(vexii.dBus)
         }
+        if(c.debugSysBus) mBus << debugSysBus.filter.down
       }
 
       val wc = withCoherency generate new Area {
@@ -440,12 +478,21 @@ class Soc(c : SocConfig) extends Component {
           ioBus << List(vexii.dBus)
         }
 
+        if(c.debugSysBus) cBus << debugSysBus.filter.down
+
         for (video <- video) cBus << video.ctrl.dma
         if(dmaFilter != null) cBus << dmaFilter.down
 
         if(withDma) {
           (cBus << dma.filter.down).setDownConnection(a = StreamPipe.FULL)
         }
+
+        val llcLsuPlugins = vexiis.flatMap(_.plugins.collect {
+          case p : LsuPlugin if p.withLlcFlush => p
+        })
+        assert(llcLsuPlugins.isEmpty || withL2, "Hub-only coherent Zicbom is unsupported; enable L2 so CBO can use the coherent CacheFiber FlushBus.")
+        val llcFlushAddressWidth = vexiiParam.xlen max vexiiParam.physicalWidth
+        val flushParam = llcLsuPlugins.nonEmpty generate FlushParam(llcFlushAddressWidth, log2Up(llcLsuPlugins.size))
 
         val hub = (withCoherency && !withL2) generate new Area {
           val hub = new HubFiber()
@@ -456,7 +503,7 @@ class Soc(c : SocConfig) extends Component {
         }
 
         val l2 = (withCoherency && withL2) generate new Area {
-          val cache = new CacheFiber(withCtrl = false)
+          val cache = new CacheFiber(withCtrl = false, flushBusParam = flushParam)
           cache.parameter.cacheWays = l2Ways
           cache.parameter.cacheBytes = l2Bytes
           cache.parameter.selfFlush = selfFlush
@@ -468,6 +515,19 @@ class Soc(c : SocConfig) extends Component {
           cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
           cache.down.setDownConnection(d = StreamPipe.S2M)
           cache.down.forceDataWidth(mainDataWidth)
+          if(llcLsuPlugins.nonEmpty) {
+            val arbiter = new FlushArbiter(flushParam, llcLsuPlugins.size)
+            cache.flush.cmd << arbiter.io.output.cmd
+            arbiter.io.output.rsp << cache.flush.rsp
+
+            Fiber build new Area {
+              val llcBuses = llcLsuPlugins.map(_.logic.llcBus)
+              for((input, bus) <- (arbiter.io.inputs, llcBuses).zipped) {
+                input.cmd << bus.cmd
+                bus.rsp << input.rsp
+              }
+            }
+          }
           mBus << cache.down
         }
 
@@ -475,7 +535,7 @@ class Soc(c : SocConfig) extends Component {
       }
     }
 
-    // Fix up a few things, like additional pipelining, nameing and bridges.
+    // Fix up a few things, like additional pipelining, naming and bridges.
     val patcher = Fiber build new AreaRoot {
       val mBusAxi = withMem generate mem.toAxi4.down.expendId(8)
       val mBus = withMem generate Axi4SpecRenamer(master(
@@ -511,11 +571,7 @@ class Soc(c : SocConfig) extends Component {
     }
   }
 
-  val debugReset = c.withDebug generate in.Bool()
-  val debug = c.withDebug generate ClockDomain(cpuCd.clock, debugReset)(new DebugModuleSocFiber(withJtagTap, withJtagInstruction) {
-    out(dm.ndmreset)
-    system.vexiis.foreach(bindHart)
-  })
+  if(c.withDebug) system.vexiis.foreach(debug.bindHart)
 
   if(c.withDebugProbePc0) {
     debug.dm.p.probeWidth = 32
@@ -537,7 +593,7 @@ object blackboxPolicy extends MemBlackboxingPolicy{
   override def onUnblackboxable(topology: MemTopology, who: Any, message: String): Unit = generateUnblackboxableError(topology, who, message)
 }
 
-// Used by litex to generate the SoC verilog
+// Used by Litex to generate the SoC verilog
 object SocGen extends App{
   var netlistDirectory = "."
   var netlistName = "VexiiRiscvLitex"
@@ -552,9 +608,12 @@ object SocGen extends App{
     help("help").text("prints this usage text")
     socConfig.addOptions(this)
     analysis.addOption(this)
-    opt[String]("netlist-directory") action { (v, c) => netlistDirectory = v }
-    opt[String]("netlist-name") action { (v, c) => netlistName = v }
-    opt[Unit]("reduced-io") action { (v, c) => reducedIo = true }
+    opt[String]("netlist-directory").action { (v, c) => netlistDirectory = v }
+      .text("Set the generated Verilog output directory; default: current directory.")
+    opt[String]("netlist-name").action { (v, c) => netlistName = v }
+      .text("Set the generated top-level netlist module name; default: VexiiRiscvLitex.")
+    opt[Unit]("reduced-io").action { (v, c) => reducedIo = true }
+      .text("Reduce the generated top-level input and output ports.")
   }.parse(args, ()).nonEmpty)
 
   vexiiParam.lsuL1Coherency = cpuCount > 1 || withDma
@@ -581,15 +640,21 @@ object SocGen extends App{
  * and propagate them to the python environnement by generating some sort of python "header"
  */
 object PythonArgsGen extends App{
-  val vexiiParam = new ParamSimple()
+  val socConfig = new SocConfig()
+  val vexiiParam = socConfig.vexiiParam
   import vexiiParam._
   var pythonPath ="miaou.py"
   assert(new scopt.OptionParser[Unit]("Vexii") {
     help("help").text("prints this usage text")
-    vexiiParam.addOptions(this)
-    opt[String]("python-file") action { (v, c) => pythonPath = v }
+    socConfig.addOptions(this)
+    opt[String]("python-file").action { (v, c) => pythonPath = v }
+      .text("Set the generated Python argument file path; default: miaou.py.")
 
   }.parse(args, ()).nonEmpty)
+
+  vexiiParam.lsuL1Coherency = socConfig.cpuCount > 1 || socConfig.withDma
+
+  val isaMap = extension.getIsaNameArray(includeIgnored = true).map(s => s"'$s'").mkString("{", ", ", "}")
 
   import java.io.PrintWriter
 
@@ -597,15 +662,17 @@ object PythonArgsGen extends App{
     write(
       s"""
          |VexiiRiscv.xlen = $xlen
-         |VexiiRiscv.with_rvm = ${(withMul && withDiv).toInt}
-         |VexiiRiscv.with_rva = ${withRva.toInt}
-         |VexiiRiscv.with_rvf = ${withRvf.toInt}
-         |VexiiRiscv.with_rvd = ${withRvd.toInt}
-         |VexiiRiscv.with_rvc = ${withRvc.toInt}
-         |VexiiRiscv.with_rvcbom = ${withRvcbm.toInt}
+         |VexiiRiscv.isa_map = ${isaMap}
          |VexiiRiscv.with_lsu_software_prefetch = ${lsuSoftwarePrefetch.toInt}
          |VexiiRiscv.with_lsu_hardware_prefetch = "${lsuHardwarePrefetch}"
          |VexiiRiscv.internal_bus_width = ${memDataWidth}
+         |VexiiRiscv.pbus_address_width = ${socConfig.externalAddressWidth}
+         |VexiiRiscv.pbus_data_width = ${if(socConfig.axiLiteForce32) 32 else xlen}
+         |VexiiRiscv.mbus_address_width = ${socConfig.externalAddressWidth}
+         |VexiiRiscv.mbus_id_width = 8
+         |VexiiRiscv.dma_address_width = ${socConfig.dmaAddressWidth}
+         |VexiiRiscv.dma_data_width = ${memDataWidth}
+         |VexiiRiscv.dma_id_width = 4
          |""".stripMargin)
     close()
   }

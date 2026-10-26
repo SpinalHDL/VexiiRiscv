@@ -34,9 +34,9 @@ trait MulReuse {
  *    a[31:16]*b[15: 0] +
  *    a[31:16]*b[31:16]
  *
- *  This calculation is splited over multiple stages to get a good FMax on FPGA (in general)
+ *  This calculation is split over multiple stages to get a good FMax on FPGA (in general)
  *
- *  bufferedHigh can be used to buffer the mulh instruction one extra cycle on the stage to improve the FMax at the cost of one idle cycle.
+ *  bufferedHigh can be used to buffer the MULH instruction one extra cycle on the stage to improve the FMax at the cost of one idle cycle.
  */
 class MulPlugin(val layer : LaneLayer,
                 var cmdAt : Int = 0,
@@ -76,7 +76,6 @@ class MulPlugin(val layer : LaneLayer,
   }
 
   val logic = during setup new Logic {
-    if(Riscv.RVM.isEmpty) Riscv.RVM.set(true)
     awaitBuild()
     import SrcKeys._
 

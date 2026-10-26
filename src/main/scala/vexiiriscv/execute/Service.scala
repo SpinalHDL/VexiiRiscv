@@ -32,9 +32,9 @@ case class RsSpec(rf : RegfileSpec,
 
 /**
  * Used to model an execution lane layer.
- * For isntance if you have a dual issue pipeline with early and late ALUs, then you will have 4 LaneLayers
+ * For instance if you have a dual issue pipeline with early and late ALUs, then you will have 4 LaneLayers
  *
- * So, this class will store the model of every micro-op that it supports, aswell as the timing that they have
+ * So, this class will store the model of every micro-op that it supports, as well as the timing that they have
  * (when do they use RS1/RS2, when do they provide a RD value, ..., by using the UopLayerSpec class.
  */
 class LaneLayer(val name : String, val lane : ExecuteLaneService, var priority : Int){
@@ -161,7 +161,7 @@ trait ExecuteLaneService extends Area {
   // Get an API to access a given stage of the pipeline
   // ctrl is the raw API, where id 0 map the stage directly connected to the dispatcher
   def ctrl(id: Int): CtrlLaneApi
-  // execute provide the pipeline API offseted to were the ALU plugins should start to operate.
+  // execute provide the pipeline API offset to were the ALU plugins should start to operate.
   def execute(id: Int): CtrlLaneApi
 
   // Create Area which implicitly work in a given stage of the execute lane

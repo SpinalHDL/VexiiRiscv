@@ -10,16 +10,46 @@ import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.memory.{PmpPlugin, PmpService}
-import vexiiriscv.misc.PrivilegedPlugin
+import vexiiriscv.memory.{MmuPlugin, PmpPlugin, PmpService}
+import vexiiriscv.misc.{PerformanceCounterPlugin, PrivilegedPlugin}
 import vexiiriscv.riscv.FloatRegFile
 //import vexiiriscv.execute.LsuCachelessPlugin
 import vexiiriscv.fetch.Fetch
-import vexiiriscv.riscv.{IntRegFile, Riscv}
-import vexiiriscv.test.konata.{Comment, Flush, Retire, Spawn, Stage}
+import vexiiriscv.riscv.{IntRegFile, Riscv, RiscvPlugin}
+import vexiiriscv.test.konata.{Comment, End, Flush, Retire, Spawn, Stage}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
+object VexiiRiscvProbe {
+  def amoWriteValue(operation: Int, bytes: Int, operand: Long, oldMemoryValue: Long): Long = {
+    import LsuCachelessBusAmo._
+
+    val bits = bytes match {
+      case 1 | 2 | 4 | 8 => bytes * 8
+      case _ => throw new IllegalArgumentException(s"Unsupported AMO width $bytes")
+    }
+    val mask = if(bits == 64) -1L else (1L << bits) - 1
+    def truncated(value: Long) = value & mask
+    def signed(value: Long) = if(bits == 64) value else truncated(value) << (64 - bits) >> (64 - bits)
+
+    val rf = truncated(operand)
+    val mem = truncated(oldMemoryValue)
+    val result = operation match {
+      case AMOSWAP => rf
+      case AMOADD  => rf + mem
+      case AMOXOR  => rf ^ mem
+      case AMOAND  => rf & mem
+      case AMOOR   => rf | mem
+      case AMOMIN  => if(signed(rf) < signed(mem)) rf else mem
+      case AMOMAX  => if(signed(rf) > signed(mem)) rf else mem
+      case AMOMINU => if(java.lang.Long.compareUnsigned(rf, mem) < 0) rf else mem
+      case AMOMAXU => if(java.lang.Long.compareUnsigned(rf, mem) > 0) rf else mem
+      case _ => throw new IllegalArgumentException(f"Unsupported AMO operation 0x$operation%X")
+    }
+    truncated(result)
+  }
+}
 
 /**
  * VexiiRiscvProbe can be used in a simulation to probe the activities of VexiiRiscv
@@ -39,12 +69,13 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   var backends = ArrayBuffer[TraceBackend]()
   val commitsCallbacks = ArrayBuffer[(Int, Long) => Unit]()
   val autoStoreBroadcast = cpu.host.get[LsuCachelessPlugin].nonEmpty
+  val nativeCacheless = cpu.host.get[LsuCachelessPlugin].exists(p => !p.getLsuCachelessBus().cmd.valid.isDirectionLess)
 
   val hartsIds = cpu.host.get[PrivilegedPlugin].get.hartIds
 
   def get[T](e : Element[T]) = cpu.database(e)
   val xlen = get(Riscv.XLEN)
-  val floatOr = get(Riscv.RVD).mux(0, 0xFFFFFFFF00000000l)
+  val flen = get(Riscv.FLEN)
   val hartsCount = get(Global.HART_COUNT)
   val fetchIdWidth = get(Fetch.ID_WIDTH)
   val decodeIdWidth = get(Decode.DOP_ID_WIDTH)
@@ -197,6 +228,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
     var commits = 0l
 
+    val pendingTraps = mutable.Queue[(Boolean, Int, Int)]()
 
     val jbStats = mutable.HashMap[Long, JbStats]()
     val branchStats = new JbStats()
@@ -209,18 +241,19 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
           case Some(x) => "M" + x.p.withSupervisor.mux("S", "") + x.p.withUser.mux("U", "")
           case None => "M"
         }
-        var isa = s"RV${xlen}I"
-        if (get(Riscv.RVM)) isa += "M"
-        if (get(Riscv.RVA)) isa += "A"
-        if (get(Riscv.RVF)) isa += "F"
-        if (get(Riscv.RVD)) isa += "D"
-        if (get(Riscv.RVC)) isa += "C"
-        if (get(Riscv.RVZba)) isa += "_zba"
-        if (get(Riscv.RVZbb)) isa += "_zbb"
-        if (get(Riscv.RVZbc)) isa += "_zbc"
-        if (get(Riscv.RVZbs)) isa += "_zbs"
+        val riscvPlugin = cpu.host[RiscvPlugin]
+        val isa = s"RV${xlen}${ExtensionManager.getIsaStr(riscvPlugin.isa)}"
         tracer.newCpuMemoryView(hartId, 16, 1 << Decode.STORE_ID_WIDTH)
-        tracer.newCpu(hartId, isa, csrp, get(Global.PHYSICAL_WIDTH), cpu.host.get[PmpService].map(_.getPmpNum).getOrElse(0),  hartId)
+        tracer.newCpu(
+          hartId = hartId,
+          isa = isa,
+          priv = csrp,
+          physWidth = get(Global.PHYSICAL_WIDTH),
+          pmpNum = cpu.host.get[PmpService].map(_.getPmpNum).getOrElse(0),
+          triggerCount = cpu.host.get[PrivilegedPlugin].map(_.p.debugTriggers).getOrElse(0),
+          asidWidth = cpu.host.get[MmuPlugin].map(_.asidWidth).getOrElse(0),
+          memoryViewId = hartId
+        )
         val pc = if(xlen == 32) 0x80000000l else 0x80000000l
         tracer.setPc(hartId, pc)
       }
@@ -232,13 +265,13 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
   }
 
   class FetchCtx() {
-    var spawnAt = 1l
+    val spawnAts = mutable.LinkedHashMap[Int, Long]()
   }
 
   class DecodeCtx() {
+    var laneId = 0
     var fetchId = -1
-    var spawnAt = 0l
-    var fireAt = 0l
+    val spawnAts = mutable.LinkedHashMap[Int, Long]()
     var pc = 0l
   }
 
@@ -248,7 +281,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     var decodeId = -1
     var spawnAt = -1l
     var issueAt = -1l
-    var executeAt = -1l
+    val executeAts = mutable.LinkedHashMap[Int, Long]()
+    var executeLaneId = -1
     var completionAt = -1l
     var flushAt = -1l
     var retireAt = -1l
@@ -261,27 +295,27 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     var trap, commit = false
 
     var integerWriteValid = false
-    var integerWriteData = -1l
+    var integerWriteData = Array.empty[Byte]
     var floatWriteValid = false
-    var floatWriteData = -1l
+    var floatWriteData = Array.empty[Byte]
     var floatFlags = -1
 
     var csrValid = false
     var csrWriteDone = false
     var csrReadDone = false
     var csrAddress = -1
-    var csrWriteData = -1l
-    var csrReadData = -1l
+    var csrWriteData = Array.empty[Byte]
+    var csrReadData = Array.empty[Byte]
 
     var lsuAddress = -1l
     var lsuLen = 0
     var lsuAmo = false
     var storeValid = false
-    var storeData = -1l
+    var storeData = Array.empty[Byte]
     var storeSqId = -1
     var loadValid = false
     var loadLqId = 0
-    var loadData = -1l
+    var loadData = Array.empty[Byte]
 
     var isSc = false
     var scFailure = false
@@ -298,18 +332,38 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       val instruction = if(withRvls) rvls.jni.Frontend.disassemble(disass, this.instruction) else "? rvls disabled ?"
 
       val i = new konata.Instruction()
-      if (fetch.spawnAt != -1) {
-        i += new Spawn(fetch.spawnAt, hart.hartId)
-        i += new Stage(fetch.spawnAt, "A")
-        if(withFetch) i += new Stage(fetch.spawnAt+1, "F")
+      assert(fetch.spawnAts.contains(0))
+      assert(decode.spawnAts.contains(0))
+      val fetchSpawnAt = fetch.spawnAts(0)
+      i += new Spawn(fetchSpawnAt, hart.hartId)
+
+      val fetchs = fetch.spawnAts.toSeq.filter(_._2 <= decode.spawnAts(0)).sortBy { case (stageId, at) => (at, stageId) }
+      assert(fetchs.nonEmpty)
+      fetchs.foreach { case (stageId, at) =>
+        i += new Stage(at, 0, s"F$stageId")
       }
-      if (decode.spawnAt != -1) {
-        i += new Comment(decode.spawnAt, f"${decode.pc}%X : $instruction")
+      fetchs.lastOption.foreach { case (stageId, at) =>
+        i += new End(decode.spawnAts(0), 0, s"F$stageId")
       }
-      if(decode.fireAt != -1){
-        i += new Stage(decode.fireAt+1, "D")
+
+      i += new Comment(decode.spawnAts(0), f"${decode.pc}%X : $instruction")
+      val decodes = decode.spawnAts.toSeq.sortBy { case (stageId, at) => (at, stageId) }
+      assert(decodes.nonEmpty)
+      decodes.foreach { case (stageId, at) =>
+        i += new Stage(at, decode.laneId, s"D${stageId}")
       }
-      if (executeAt != -1) i += new Stage(executeAt, "E")
+      val endAt = if (didCommit) retireAt else flushAt max retireAt
+      val executes = executeAts.toSeq.filter(_._2 <= endAt).sortBy { case (stageId, at) => (at, stageId) }
+      decodes.lastOption.foreach { case (stageId, at) =>
+        val stopAt = executes.headOption.map(_._2).getOrElse(endAt)
+        i += new End(stopAt, decode.laneId, s"D${stageId}")
+      }
+      executes.foreach { case (stageId, at) =>
+        i += new Stage(at, executeLaneId, s"E$stageId")
+      }
+      executes.lastOption.foreach { case (stageId, at) =>
+        i += new End(endAt, executeLaneId, s"E$stageId")
+      }
       if (didCommit) {
         i += new Retire(retireAt)
       } else {
@@ -323,7 +377,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       decodeId = -1
       spawnAt = -1l
       issueAt = -1l
-      executeAt = -1l
+      executeAts.clear()
+      executeLaneId = -1
       completionAt = -1l
       flushAt = -1l
       retireAt = -1l
@@ -345,48 +400,44 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     clear()
   };
 
-
-  val sizeMask = Array(0xFFl, 0xFFFFl, 0xFFFFFFFFl, -1l)
-
   val lsuClpb = cpu.host.get[LsuCachelessBusProvider].map(_.getLsuCachelessBus())
-  val pendingIo = mutable.Queue[ProbeTraceIo]()
+  val pendingLsu = lsuClpb.map(bus => Array.fill[ProbeTraceLsu](bus.p.pendingMax)(null))
 
-  class ProbeTraceIo extends TraceIo {
+  class ProbeTraceLsu extends TraceIo {
     var sizel2 = 0
     var io = false
     var fromHart = false
+    var threadId = 0
     var hartId = 0
+    var uopId = 0
+    var amoEnable = false
+    var amoOp = 0
   }
 
 
   def checkPipelines(): Unit = {
     import proxies._
 
-    if (proxies.fetch.fire.toBoolean) {
+    for (fetch <- proxies.fetchs) if (fetch.fire.toBoolean) {
       val hart = harts(fetch.hartd.toInt)
       val fetchId = fetch.id.toInt
-      hart.fetch(fetchId).spawnAt = cycle
+      val ctx = hart.fetch(fetchId)
+      if (fetch.stageId == 0) ctx.spawnAts.clear()
+      ctx.spawnAts(fetch.stageId) = cycle
     }
 
-    for(decode <-decodes) {
-      val spawn = decode.spawn.toBoolean
-      val fire = decode.fire.toBoolean
+    for (decode <- decodes) if (decode.spawn.toBoolean) {
+      val hart = harts(decode.hartId.toInt)
+      val decodeId = decode.decodeId.toInt
+      val ctx = hart.decode(decodeId)
 
-      if (spawn || fire) {
-        val hart = harts(decode.hartId.toInt)
-        val decodeId = decode.decodeId.toInt
-        val ctx = hart.decode(decodeId)
-        if(spawn){
-          val fetchId = decode.fetchId.toInt
-          ctx.pc = decode.pc.toLong
-          ctx.fetchId = fetchId
-          ctx.spawnAt = cycle
-          ctx.fireAt = -1
-        }
-        if(fire){
-          ctx.fireAt = cycle
-        }
-      }
+      if (decode.stageId == 0) ctx.spawnAts.clear()
+
+      val fetchId = decode.fetchId.toInt
+      ctx.pc = decode.pc.toLong
+      ctx.fetchId = fetchId
+      ctx.laneId = decode.laneId
+      ctx.spawnAts(decode.stageId) = cycle
     }
 
     for(serialized <- wbp.serializeds) if (serialized.fire.toBoolean) {
@@ -406,13 +457,16 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
     for (dispatch <- dispatches) if (dispatch.fire.toBoolean) {
       val hart = harts(dispatch.hartId.toInt)
       val ctx = hart.microOp(dispatch.microOpId.toInt)
+      assert(ctx.executeLaneId == -1 || ctx.executeLaneId == dispatch.laneId)
+      ctx.executeLaneId = dispatch.laneId
       ctx.issueAt = cycle
     }
 
     for (execute <- executes) if (execute.fire.toBoolean) {
       val hart = harts(execute.hartId.toInt)
       val ctx = hart.microOp(execute.microOpId.toInt)
-      ctx.executeAt = cycle
+      ctx.executeAts(execute.stageId) = cycle
+      if (ctx.spawned) assert(ctx.executeLaneId == execute.laneId)
     }
 
     if (loadExecute.fire.toBoolean) {
@@ -423,9 +477,9 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       val address = loadExecute.address.toLong
       val bytes = 1 << loadExecute.size.toInt
       uop.loadValid = true
-      uop.loadData = loadExecute.data.toLong
+      uop.loadData = (loadExecute.data.toBigInt & ((BigInt(1) << bytes*8)-1)).toBytes(bytes*8)
       uop.loadLqId = uopId & 0xF
-      backends.foreach(_.loadExecute(hart.hartId, uop.loadLqId, address, bytes, uop.loadData))
+      if(!nativeCacheless) backends.foreach(_.loadExecute(hart.hartId, uop.loadLqId, address, bytes, uop.loadData))
     }
 
     if (storeCommit.fire.toBoolean) {
@@ -436,7 +490,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       val address = storeCommit.address.toLong
       val bytes = 1 << storeCommit.size.toInt
       uop.storeValid = true
-      uop.storeData = storeCommit.data.toLong
+      uop.storeData = (storeCommit.data.toBigInt & ((BigInt(1) << bytes*8)-1)).toBytes(bytes*8)
       uop.storeSqId = storeCommit.storeId.toInt
       uop.lsuAddress = address
       uop.lsuLen = bytes
@@ -469,8 +523,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       uop.csrAddress = csr.address.toInt
       uop.csrWriteDone = csr.writeDone.toBoolean
       uop.csrReadDone = csr.readDone.toBoolean
-      uop.csrWriteData = csr.write.toLong
-      uop.csrReadData = csr.read.toLong
+      uop.csrWriteData = csr.write.toBigInt.toBytes(64)
+      uop.csrReadData = csr.read.toBigInt.toBytes(64)
     })
 
     for (port <- rfWrites) if (port.valid.toBoolean) {
@@ -479,11 +533,11 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       port.port.rfSpec match {
         case IntRegFile => {
           ctx.integerWriteValid = true
-          ctx.integerWriteData = xlenExtends(port.data.toLong)
+          ctx.integerWriteData = BigInt(xlenExtends(port.data.toLong)).toBytes(64)
         }
         case FloatRegFile => {
           ctx.floatWriteValid = true
-          ctx.floatWriteData = port.data.toLong | floatOr
+          ctx.floatWriteData = port.data.toBigInt.toBytes(flen).padTo(16, 0xff.toByte)
         }
       }
     }
@@ -491,29 +545,64 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
     for(bus <- lsuClpb) {
       if(bus.cmd.valid.toBoolean && bus.cmd.ready.toBoolean){
-        val trace = new ProbeTraceIo
+        val trace = new ProbeTraceLsu
         trace.sizel2 = bus.cmd.size.toInt
         trace.write = bus.cmd.write.toBoolean
         trace.address = bus.cmd.address.toLong
         trace.size = 1 << trace.sizel2
         trace.io = bus.cmd.io.toBoolean
         trace.fromHart = bus.cmd.fromHart.toBoolean
-        trace.hartId = hartsIds(bus.cmd.hartId.toInt)
-        val offset = trace.address.toInt & (trace.size - 1)
-        trace.data = bus.cmd.data.toLong
-        pendingIo += trace
+        trace.threadId = bus.cmd.hartId.toInt
+        if(trace.fromHart) trace.hartId = hartsIds(trace.threadId)
+        trace.uopId = bus.cmd.uopId.toInt
+        trace.amoEnable = bus.cmd.amoEnable != null && bus.cmd.amoEnable.toBoolean
+        trace.amoOp = if(bus.cmd.amoOp != null) bus.cmd.amoOp.toInt else 0
+        val offset = trace.address.toInt & (bus.p.dataWidth/8 - 1)
+        trace.data = if(trace.write) bus.cmd.data.toBigInt.toBytes(bus.p.dataWidth).slice(offset, offset + trace.size) else Array.fill[Byte](trace.size)(0)
+        val transactionId = bus.cmd.id.toInt
+        assert(pendingLsu.get(transactionId) == null)
+        pendingLsu.get(transactionId) = trace
       }
 
       if (bus.rsp.valid.toBoolean) {
-        val trace = pendingIo.dequeue()
+        val transactionId = bus.rsp.id.toInt
+        val trace = pendingLsu.get(transactionId)
+        assert(trace != null)
+        pendingLsu.get(transactionId) = null
         if(trace.fromHart && trace.io){
           if(!trace.write){
-            trace.data = bus.rsp.data.toLong
+            val offset = trace.address.toInt & (bus.p.dataWidth/8 - 1)
+            trace.data = bus.rsp.data.toBigInt.toBytes(bus.p.dataWidth).slice(offset, offset + trace.size)
           }
-          val offset = trace.address.toInt & (bus.p.dataWidth/8 - 1)
-          trace.data = (trace.data >> offset*8) & sizeMask(trace.sizel2)
           trace.error = bus.rsp.error.toBoolean
           backends.foreach(_.ioAccess(trace.hartId, trace))
+        } else if(nativeCacheless && trace.fromHart && !bus.rsp.error.toBoolean) {
+          import LsuCachelessBusAmo._
+          val hart = harts(trace.threadId)
+          val uop = hart.microOp(trace.uopId)
+          val offset = trace.address.toInt & (bus.p.dataWidth/8 - 1)
+          val loadData = bus.rsp.data.toBigInt.toBytes(bus.p.dataWidth).slice(offset, offset + trace.size)
+          val writeData = trace.data
+          def loadExecute() = backends.foreach(_.loadExecute(trace.hartId, trace.uopId & 0xF, trace.address, trace.size, loadData))
+          def storeExecute(data: Array[Byte]) = backends.foreach(_.storeExecute(trace.hartId, uop.storeSqId, trace.address, trace.size, data))
+          def storeBroadcast() = backends.foreach(_.storeBroadcast(trace.hartId, uop.storeSqId))
+          if(!trace.amoEnable) {
+            if(trace.write) storeBroadcast() else loadExecute()
+          } else trace.amoOp match {
+            case LR => loadExecute()
+            case SC => if(!bus.rsp.scMiss.toBoolean) {
+              storeExecute(writeData)
+              storeBroadcast()
+            }
+            case amoOp =>
+              loadExecute()
+              // rsp.data carries the old memory value returned to rd; the native TestBench response has no field for the post-AMO memory value, so recompute it here with the shared pure helper.
+              def bytesToLong(data: Array[Byte]) = data.zipWithIndex.map { case (value, index) => (value.toLong & 0xFFL) << index*8 }.reduce(_ | _)
+              val finalWrite = VexiiRiscvProbe.amoWriteValue(amoOp, trace.size, bytesToLong(writeData), bytesToLong(loadData))
+              val finalWriteBytes = (BigInt(finalWrite) & ((BigInt(1) << trace.size*8)-1)).toBytes(trace.size*8)
+              storeExecute(finalWriteBytes)
+              storeBroadcast()
+          }
         }
       }
     }
@@ -578,6 +667,13 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         simFailure(f"Vexii hasn't committed anything for too long, $status")
       }
 
+      def flushDueTraps(): Unit = {
+        while (hart.pendingTraps.nonEmpty && hart.pendingTraps.head._3 == hart.microOpRetirePtr) {
+          val (interrupt, cause, _) = hart.pendingTraps.dequeue()
+          backends.foreach(_.trap(hart.hartId, interrupt, cause))
+        }
+      }
+      flushDueTraps()
       while (hart.microOpRetirePtr != hart.microOpAllocPtr && hart.microOp(hart.microOpRetirePtr).done) {
         import hart._
         val uopId = hart.microOpRetirePtr
@@ -587,7 +683,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
           val decode = hart.decode(uop.decodeId)
 
           hart.lastUopId = uopId
-          hart.konataThread.foreach(_.cycleLock = fetch.spawnAt)
+          hart.konataThread.foreach(_.cycleLock = fetch.spawnAts(0))
 
           uop.toKonata(hart)
           if (uop.didCommit) {
@@ -600,7 +696,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
               backends.foreach(_.storeConditional(hartId, uop.scFailure))
             }
             if (uop.storeValid) {
-              if(uop.lsuAmo){
+              if(uop.lsuAmo && !nativeCacheless){
                 backends.foreach(_.storeExecute(hart.hartId, uop.storeSqId, uop.lsuAddress, uop.lsuLen, uop.storeData))
               }
               backends.foreach(_.storeCommit(hartId, uop.storeSqId))
@@ -615,8 +711,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
               if (uop.csrReadDone) backends.foreach(_.readRf(hartId, 4, uop.csrAddress, uop.csrReadData))
               if (uop.csrWriteDone) backends.foreach(_.writeRf(hartId, 4, uop.csrAddress, uop.csrWriteData))
             }
-            if(uop.commit) backends.foreach(_.commit(hartId, decode.pc))
-            if (autoStoreBroadcast && uop.storeValid) {
+            if(uop.commit) backends.foreach(_.commit(hartId, decode.pc, uop.instruction))
+            if (autoStoreBroadcast && !nativeCacheless && uop.storeValid) {
               backends.foreach(_.storeBroadcast(hartId, uop.storeSqId))
             }
             if(!uop.trap) commitsCallbacks.foreach(_(hartId, decode.pc))
@@ -624,6 +720,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
           uop.clear()
         }
         hart.microOpRetirePtr = (hart.microOpRetirePtr + 1) & microOpIdMask
+        flushDueTraps()
       }
     }
   }
@@ -640,7 +737,12 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
 
   def checkTraps(): Unit = {
     for(trap <- proxies.trap) if(trap.fire.toBoolean){
-      backends.foreach(_.trap(hartsIds(trap.hartId), trap.interrupt.toBoolean, trap.cause.toInt))
+      val hart = harts(trap.hartId)
+      if (hart.microOpRetirePtr == hart.microOpAllocPtr && hart.pendingTraps.isEmpty) {
+        backends.foreach(_.trap(hartsIds(trap.hartId), trap.interrupt.toBoolean, trap.cause.toInt))
+      } else {
+        hart.pendingTraps.enqueue((trap.interrupt.toBoolean, trap.cause.toInt, hart.microOpAllocPtr))
+      }
     }
   }
 

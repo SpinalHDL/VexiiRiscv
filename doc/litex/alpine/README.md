@@ -1,13 +1,13 @@
 # Getting Alpine linux to run on RISC-V
 
-So this README compile a set of command lines which were used to get it up on running on the VexiiRiscv RV64GC litex SoC.
-You can find most of the fundamental informations on the links bellow : 
+So this README compile a set of command lines which were used to get it up on running on the VexiiRiscv RV64GC Litex SoC.
+You can find most of the fundamental information on the links bellow : 
 
 - https://blog.ari.lt/b/how-to-manually-install-alpine-linux-on-any-linux-distribution/
 - https://wiki.gentoo.org/wiki/OpenRC_to_systemd_Cheatsheet
 
 Overall, if you have a system which can run Debian, then it should be able to run Alpine without issues.
-The one tricky thing with alpine linux is that the image you can download generaly need a few tweeks using chroot to be functional.
+The one tricky thing with alpine linux is that the image you can download generally need a few tweaks using chroot to be functional.
 
 ## Image setup 
 

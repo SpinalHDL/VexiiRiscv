@@ -5,7 +5,7 @@ import spinal.core
 import spinal.core._
 import spinal.lib.misc._
 import spinal.core.fiber._
-import spinal.lib.{DataCc, StreamCCByToggle}
+import spinal.lib.{DataCc, Stream, StreamCCByToggle}
 import spinal.lib.bus.tilelink.fabric._
 import spinal.lib.cpu.riscv.RiscvHart
 import spinal.lib.cpu.riscv.debug.DebugHartBus
@@ -20,7 +20,7 @@ import vexiiriscv.{ParamSimple, VexiiRiscv}
 import vexiiriscv.execute.lsu.{LsuCachelessPlugin, LsuCachelessTileLinkPlugin, LsuL1Plugin, LsuL1TileLinkPlugin, LsuPlugin, LsuTileLinkPlugin}
 import vexiiriscv.fetch.{FetchCachelessPlugin, FetchCachelessTileLinkPlugin, FetchL1TileLinkPlugin, FetchL1Plugin}
 import vexiiriscv.memory.AddressTranslationService
-import vexiiriscv.misc.PrivilegedPlugin
+import vexiiriscv.misc.{ImsicPlugin, PrivilegedPlugin}
 import vexiiriscv.riscv.{PrivilegeMode, Riscv}
 
 import java.io.{BufferedWriter, File, FileWriter}
@@ -45,8 +45,16 @@ class TilelinkVexiiRiscvFiber(val plugins : ArrayBuffer[Hostable]) extends Area 
       val sei = p.p.withSupervisor generate InterruptNode.slave()
       val stoptime = Bool()
       val rdtime = p.p.withRdTime generate UInt(64 bits)
-      val mmsi = p.p.withImsic generate Bits(p.p.imsicInterrupts - 1 bits)
-      val smsi = (p.p.withImsic && p.p.withSupervisor) generate Bits(p.p.imsicInterrupts - 1 bits)
+    }
+  }
+
+  val imsic = plugins.collectFirst {
+    case p: ImsicPlugin => new Area {
+      val plugin = p
+      val priv = plugins.collectFirst { case p: PrivilegedPlugin => p}.get
+      val mmsi = Stream(UInt(ImsicTriggerMapper.registerWidth bits))
+      val smsi = p.p.withSupervisor generate Stream(UInt(ImsicTriggerMapper.registerWidth bits))
+      val vsmsi = (p.p.withHypervisor && p.p.withGuestImsic) generate Vec.fill(p.p.guestExternalInterruptFiles)(Stream(UInt(ImsicTriggerMapper.registerWidth bits)))
     }
   }
 
@@ -86,15 +94,21 @@ class TilelinkVexiiRiscvFiber(val plugins : ArrayBuffer[Hostable]) extends Area 
     }
   }
 
-  def bind(msi: TilelinkImsicTriggerFiber, mode: Int) = priv match {
-    case Some(priv) => new Area {
-      val pp = priv.plugin
+  def bind(msi: TilelinkImsicTriggerFiber, mode: Int) = imsic match {
+    case Some(imsic) => new Area {
+      val pp = imsic.priv
       val intIdBase = pp.hartIds(0)
       val intNum = pp.p.imsicInterrupts
+      val sourceIds = 1 until intNum
+      val guestIds = 1 to pp.p.guestExternalInterruptFiles
 
       mode match {
-        case PrivilegeMode.M => priv.mmsi := msi.addImsicFileinfo(ImsicFileInfo(intIdBase, 1 until intNum))
-        case PrivilegeMode.S => priv.smsi := msi.addImsicFileinfo(ImsicFileInfo(intIdBase, 1 until intNum))
+        case PrivilegeMode.M => imsic.mmsi << msi.addImsicFileinfo(ImsicFileInfo(intIdBase, sourceIds))
+        case PrivilegeMode.S => imsic.smsi << msi.addImsicFileinfo(ImsicFileInfo(intIdBase, sourceIds))
+        case PrivilegeMode.VS => {
+          val vsmsi = guestIds.map(geid => msi.addImsicFileinfo(ImsicFileInfo(intIdBase, geid, sourceIds)))
+          imsic.vsmsi.zip(vsmsi).foreach(msi => msi._1 << msi._2)
+        }
       }
     }
   }
@@ -133,10 +147,12 @@ class TilelinkVexiiRiscvFiber(val plugins : ArrayBuffer[Hostable]) extends Area 
         priv.get.stoptime := p.p.withDebug.mux(hart.debug.stoptime, False)
         if (p.p.withSupervisor) hart.int.s.external := priv.get.sei.flag
         if (p.p.withRdTime) p.logic.rdtime := priv.get.rdtime
-        if (p.p.withImsic) {
-          hart.m.imsic.triggers := priv.get.mmsi
-          if (p.p.withSupervisor) hart.s.imsic.triggers := priv.get.smsi
-        }
+      }
+      case p: ImsicPlugin => {
+        val hart = p.logic.harts(0)
+        hart.m.trigger << imsic.get.mmsi
+        if (p.p.withSupervisor) hart.s.trigger << imsic.get.smsi
+        if (p.p.withGuestImsic) hart.vs.triggers.zip(imsic.get.vsmsi).foreach(t => t._1 << t._2)
       }
       case _ =>
     }

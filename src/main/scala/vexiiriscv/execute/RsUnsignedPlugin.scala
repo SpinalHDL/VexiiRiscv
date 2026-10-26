@@ -16,7 +16,7 @@ object RsUnsignedPlugin extends AreaObject {
 }
 
 /**
- * This plugin takes the integer RS1/RS2 and unsigne them. This can be used by other plugins to share that hardware.
+ * This plugin takes the integer RS1/RS2 and unsigns them. This can be used by other plugins to share that hardware.
  * ex : unsigned divider, unsigned multiplier, ...
  */
 class RsUnsignedPlugin(val laneName : String, executeAt : Int = 0) extends FiberPlugin{

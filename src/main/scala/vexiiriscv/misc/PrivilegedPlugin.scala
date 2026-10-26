@@ -5,7 +5,6 @@ import spinal.core.fiber.Retainer
 import spinal.lib._
 import spinal.lib.cpu.riscv.debug.{DebugDmToHartOp, DebugHartBus, DebugModule}
 import spinal.lib.fsm._
-import spinal.lib.misc.aia._
 import spinal.lib.misc.pipeline.Payload
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global._
@@ -25,11 +24,12 @@ import scala.collection.mutable.ArrayBuffer
 object PrivilegedParam{
   def base = PrivilegedParam(
     withSupervisor = false,
-    withHypervisor = false,
     withUser       = false,
     withUserTrap   = false,
+    withHypervisor = false,
     withRdTime     = false,
     withSSTC       = false,
+    withSsaia      = false,
     withDebug      = false,
     withXs         = false,
     mstatusFsInit  = 0,
@@ -37,10 +37,12 @@ object PrivilegedParam{
     archId         = 46, //As spike
     impId          = 0,
     imsicInterrupts = 0,
+    guestExternalInterruptFiles = 0,
+    injectedInterruptWidth = 6,
     debugTriggers  = 0,
     debugTriggersLsu = false,
     withHartIdInputDefaulted = false,
-    withInterrutpFilter = false
+    withExternalInterrupt = true,
   )
 }
 
@@ -48,7 +50,7 @@ class LsuTriggerBus(triggers : Int) extends Bundle {
   val hartId = Global.HART_ID()
   val load, store = Bool()
   val virtual = Global.MIXED_ADDRESS()
-  val size = UInt(2 bits)
+  val size = UInt(Riscv.LSU_SIZE_WIDTH bits)
   val hits = Bits(triggers bits)
 }
 
@@ -57,14 +59,14 @@ trait LsuTriggerService{
 }
 
 case class PrivilegedParam(var withSupervisor : Boolean,
-                           var withHypervisor : Boolean,
                            var withUser: Boolean,
                            var withUserTrap: Boolean,
+                           var withHypervisor : Boolean,
                            var withRdTime : Boolean,
                            var withSSTC : Boolean,
                            var withDebug: Boolean,
                            var withXs : Boolean,
-                           var withInterrutpFilter : Boolean,
+                           var withSsaia : Boolean,
                            var mstatusFsInit : Int,
                            var debugTriggers : Int,
                            var debugTriggersLsu : Boolean,
@@ -72,18 +74,39 @@ case class PrivilegedParam(var withSupervisor : Boolean,
                            var archId: Int,
                            var impId: Int,
                            var imsicInterrupts: Int,
-                           var withHartIdInputDefaulted : Boolean){
+                           var injectedInterruptWidth: Int,
+                           var guestExternalInterruptFiles: Int,
+                           var withHartIdInputDefaulted : Boolean,
+                           var withExternalInterrupt: Boolean){
   def withImsic = imsicInterrupts > 0
+  def withGuestImsic = withImsic && guestExternalInterruptFiles > 0
+  def externalInterruptPriorityWidth = log2Up(imsicInterrupts)
 
   def check(): Unit = {
     assert(!(withSupervisor && !withUser))
-    assert((withSSTC && withSupervisor && withRdTime) || !withSSTC)
+
+    /* SSTC check */
+    if (withSupervisor) {
+      if (withSSTC) assert(withRdTime)
+    }
+
+    /* Hypervisor check */
+    assert(!withHypervisor || withSupervisor)
+
+    /* IMSIC check */
     assert((imsicInterrupts == 0) || (isPow2(imsicInterrupts) && imsicInterrupts >= 64 && imsicInterrupts <= 2048))
+    assert(withExternalInterrupt || withImsic)
+    assert(guestExternalInterruptFiles < 64)
+    if (withHypervisor && withSsaia) {
+      assert(injectedInterruptWidth >= 6 && injectedInterruptWidth <= 12)
+      if (withImsic) assert(guestExternalInterruptFiles > 0)
+    }
   }
 }
 
 case class Delegator(var enable: Bool, privilege: Int)
 case class InterruptSpec(var cond: Bool, id: Int, privilege: Int, priority: Int, delegators: List[Delegator])
+case class InjectInterruptSpec(var cond: Bool, id: UInt, privilege: Int, priority: extendedInterruptPriority)
 case class ExceptionSpec(id: Int, delegators: List[Delegator])
 
 /**
@@ -93,6 +116,7 @@ case class ExceptionSpec(id: Int, delegators: List[Delegator])
  * - Debug interface (RISC-V debug spec)
  */
 class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends FiberPlugin with CommitService with LsuTriggerService{
+  def implementHypervisor = p.withHypervisor
   def implementSupervisor = p.withSupervisor
   def implementUser = p.withUser
   def implementUserTrap = p.withUserTrap
@@ -146,7 +170,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     val crs = withRam generate host[CsrRamService]
     val injs = host[InjectorService]
     val withIndirectCsr = host.get[IndirectCsrPlugin].nonEmpty
-    val indirect = withIndirectCsr generate host[IndirectCsrPlugin]
+    val imsicPlugin = p.withImsic generate host[ImsicPlugin]
     val buildBefore = retains(List(cap.csrLock, injs.injectRetainer, pcs.elaborationLock, tp.trapLock, dpp.elaborationLock, ss.elaborationLock) ++ withRam.option(crs.csrLock))
 
     awaitBuild()
@@ -156,20 +180,29 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
     if (RVC) addMisa('C')
     if (RVF) addMisa('F')
     if (RVD) addMisa('D')
+    if (RVQ) addMisa('Q')
     if (RVA) addMisa('A')
     if (RVM) addMisa('M')
+    if (RVB) addMisa('B')
     if (p.withUser) addMisa('U')
     if (p.withSupervisor) addMisa('S')
+    if (p.withHypervisor) addMisa('H')
 
-    val causesWidthMins = host.list[CauseUser].map(_.getCauseWidthMin())
-    CODE_WIDTH.set((5 +: causesWidthMins).max)
+    val codeWidths = ArrayBuffer[Int](5)
+    codeWidths ++= host.list[CauseUser].map(_.getCauseWidthMin())
+    if (p.withSsaia && p.withHypervisor) codeWidths += p.injectedInterruptWidth
+    CODE_WIDTH.set(codeWidths.max)
+    val trapIprioWidths = ArrayBuffer[Int](log2Up(InterruptInfo.defaultOrder.size + 1))
+    if (p.withImsic) trapIprioWidths += p.externalInterruptPriorityWidth
+    if (p.withSsaia && p.withHypervisor) trapIprioWidths += 9
+    TRAP_IPRIO_WIDTH.set(trapIprioWidths.max)
 
     assert(HART_COUNT.get == 1)
+    assert(XLEN.get == 64 || p.guestExternalInterruptFiles < 32)
     api.get
 
     val rdtime = in UInt (64 bits)
     val harts = for (hartId <- 0 until HART_COUNT) yield new Area {
-      val indirectHart = withIndirectCsr generate indirect.logic.harts(hartId)
       val xretAwayFromMachine = False
       val commitMask = Bits(host.list[ExecuteLanePlugin].size bits)
       val int = new Area {
@@ -177,10 +210,10 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val m = new Area {
           val timer = Verilator.public(in Bool())
           val software = Verilator.public(in Bool())
-          val external = Verilator.public(in Bool())
+          val external = p.withExternalInterrupt generate Verilator.public(in Bool())
         }
         val s = p.withSupervisor generate new Area {
-          val external = Verilator.public(in Bool())
+          val external = p.withExternalInterrupt generate Verilator.public(in Bool())
         }
         val u = p.withUserTrap generate new Area {
           val external = Verilator.public(in Bool())
@@ -188,21 +221,29 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
       }
       val spec = new Area {
         val interrupt = ArrayBuffer[InterruptSpec]()
+        val injectedInterrupt = ArrayBuffer[InjectInterruptSpec]()
         val exception = ArrayBuffer[ExceptionSpec]()
+
+        def addInterrupt(cond: Bool, id: Int, privilege: Int, priority: Int, delegators: List[Delegator]): Unit = interrupt += InterruptSpec(cond, id, privilege, priority, delegators)
 
         def addInterrupt(cond: Bool, id: Int, privilege: Int, delegators: List[Delegator]): Unit = {
           val iprio = InterruptInfo.defaultOrder.indexOf(id)
           require(iprio != -1, "New registered interrupt must be added to InterruptPrio.defaultOrder")
-
-          interrupt += InterruptSpec(cond, id, privilege, iprio + 1, delegators)
+          addInterrupt(cond, id, privilege, iprio + 1, delegators)
         }
+        def addInjectInterrupt(cond: Bool, id: UInt, privilege: Int, priority: extendedInterruptPriority): Unit = injectedInterrupt += InjectInterruptSpec(cond, id, privilege, priority)
       }
 
       val api = cap.hart(hartId)
       val withFs = RVF || p.withSupervisor
       val privilege = Reg(PrivilegeMode.TYPE()) init(PrivilegeMode.M)
+      val privilegeMode = PrivilegeMode.mode(privilege)
       val withMachinePrivilege = privilege >= PrivilegeMode.M
-      val withSupervisorPrivilege = privilege >= PrivilegeMode.S
+      val withHostSupervisorPrivilege = privilege >= PrivilegeMode.S
+      val withVirtualSupervisorPrivilege = privilege >= PrivilegeMode.VS
+      val withSupervisorPrivilege = privilegeMode >= PrivilegeMode.S
+      val isGuestMode = PrivilegeMode.isGuest(privilege)
+      val isHostMode = !isGuestMode
 
       val hartRunning = RegInit(True).allowUnsetRegToAvoidLatch()
       val debugMode = !hartRunning
@@ -285,6 +326,10 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         }
 
         val dpc = crs.readWriteRam(CSR.DPC)
+        cap.onWrite(CSR.DPC, false) {
+          cap.bus.write.bits(0, log2Up(Fetch.SLICE_BYTES) bits) := 0
+        }
+
         val dcsr = new Area {
           val prv       = Reg(PrivilegeMode.TYPE()) init(PrivilegeMode.M)
           val step      = RegInit(False) //TODO
@@ -297,6 +342,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val ebreaku   = p.withUser generate RegInit(False)
           val ebreaks   = p.withSupervisor generate RegInit(False)
           val ebreakm   = RegInit(False)
+          val ebreakvu  = p.withHypervisor generate RegInit(False)
+          val ebreakvs  = p.withHypervisor generate RegInit(False)
           val xdebugver = U(4, 4 bits)
 
           val stepLogic = new StateMachine {
@@ -343,28 +390,37 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
 
           api.read(CSR.DCSR, 3 -> nmip, 6 -> cause, 28 -> xdebugver, 4 -> mprven)
-          api.readWrite(CSR.DCSR, 0 -> prv, 2 -> step, 9 -> stoptime, 10 -> stopcount, 11 -> stepie, 15 -> ebreakm)
+          api.readWrite(CSR.DCSR, 2 -> step, 9 -> stoptime, 10 -> stopcount, 11 -> stepie, 15 -> ebreakm)
+          api.read(CSR.DCSR, 0 -> prv(1 downto 0))
           if (p.withSupervisor) api.readWrite(CSR.DCSR, 13 -> ebreaks)
           if (p.withUser) api.readWrite(CSR.DCSR, 12 -> ebreaku)
+          if (p.withHypervisor) api.readWrite(CSR.DCSR, 5 -> prv(2), 16 -> ebreakvu, 17 -> ebreakvs)
 
           when(debugMode || step || bus.haltReq) {
             tp.askWake(hartId)
           }
+
+          api.onWrite(CSR.DCSR, false) {
+            val targetVirtual = cap.bus.write.bits(5)
+            val targetPrivilege = cap.bus.write.bits(1 downto 0)
+            when ((targetVirtual && targetPrivilege.andR) || targetPrivilege === B"10") {
+              prv := PrivilegeMode.M
+            } otherwise {
+              prv := (targetVirtual ## targetPrivilege).asSInt
+            }
+          }
         }
-        val stoptime = out(RegNext(debugMode && dcsr.stoptime) init(False))
+        val needDebugTime = debugMode && dcsr.stoptime
+        val stoptime = out(RegNext(needDebugTime) init(False))
       }
 
-      val noTrigger = (p.debugTriggers == 0) generate new Area {
-        cap.allowCsr(CSR.TSELECT)
-        cap.allowCsr(CSR.TDATA1)
-        cap.allowCsr(CSR.TDATA2)
-      }
       val trigger = (p.debugTriggers > 0) generate new Area {
+        require(p.debugTriggers <= TVAL_WIDTH.get, "debugTriggers exceeds the DEBUG_TRIGGER tval bitmap width")
         val tselect = new Area {
           val index = Reg(UInt(log2Up(p.debugTriggers) bits)) init(0)
           api.readWrite(index, CSR.TSELECT)
 
-          val outOfRange = if (isPow2(p.debugTriggers)) False else index < p.debugTriggers
+          val outOfRange = if (isPow2(p.debugTriggers)) False else index > (p.debugTriggers - 1)
         }
 
         //TODO may remove tinfo, as it is optional
@@ -384,7 +440,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val trapPort = tp.newTrap(dpp.getAge(pcBreakTrapAt), Decode.LANES, subAge = 1)
           trapPort.valid     := doIt
           trapPort.exception := False
-          trapPort.tval      := B(OHToUInt(PC_TRIGGER_HITS)).resized
+          trapPort.tval      := PC_TRIGGER_HITS.resized
+          trapPort.tval2     := 0
           trapPort.code      := TrapReason.DEBUG_TRIGGER
           trapPort.arg       := 0
           trapPort.laneAge   := laneId
@@ -450,8 +507,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
             val chain = RegInit(False).allowUnsetRegToAvoidLatch
             val select = False
             val matcher = Reg(Bits(4 bits)) init (0)
+            if (slotId < p.debugTriggers - 1) csrrw(CSR.TDATA1, read, 11 -> chain)
             if (p.debugTriggersLsu) {
-              csrrw(CSR.TDATA1, read, 11 -> chain, 0 -> load, 1 -> store, 7 -> matcher)
+              csrrw(CSR.TDATA1, read, 0 -> load, 1 -> store, 7 -> matcher)
               csrr(CSR.TDATA1, read, 18 -> (load && select))
             }
           }
@@ -464,7 +522,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
 
             val execute = for (laneId <- 0 until Decode.LANES) yield new dpp.LaneArea(pcBreakMatchAt, laneId) {
-              PC_TRIGGER_HITS(slotId) := enabled && tdata1.execute && U(value) === Global.PC
+              val chainBroken = Bool()
+              val hitNoChain = enabled && tdata1.execute && U(value) === Global.PC && !chainBroken
+              PC_TRIGGER_HITS(slotId) := hitNoChain && !tdata1.chain
             }
 
             val lsu = p.debugTriggersLsu generate new Area {
@@ -473,10 +533,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
                 0 -> True,
                 1 -> (lsuTrigger.size === 0),
                 2 -> (lsuTrigger.size === 1),
-                3 -> (lsuTrigger.size === 2)
+                3 -> (lsuTrigger.size === 2),
               )
               if(XLEN.get >= 64) {
                 sizeSpec += 5 -> (lsuTrigger.size === 3)
+                if (Riscv.LSU_SIZE_WIDTH > 2) sizeSpec += 9 -> (lsuTrigger.size === 4)
                 sizeSpec += (default -> False)
               }
 
@@ -512,10 +573,20 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         for (slotId <- slots.indices) {
           val slot = slots(slotId)
           slotId match {
-            case 0 => slot.chainBroken := False
+            case 0 => {
+              slot.chainBroken := False
+              for (laneId <- 0 until Decode.LANES) {
+                val execute = slot.tdata2.execute(laneId)
+                execute.chainBroken := False
+              }
+            }
             case _ => {
               val prev = slots(slotId - 1)
               slot.chainBroken := prev.tdata1.chain && (prev.chainBroken || p.debugTriggersLsu.mux(!prev.tdata2.lsu.hitNoChain, False))
+              for (laneId <- 0 until Decode.LANES) {
+                val execute = slot.tdata2.execute(laneId)
+                execute.chainBroken := prev.tdata1.chain && !prev.tdata2.execute(laneId).hitNoChain
+              }
             }
           }
 
@@ -525,6 +596,14 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
         api.read(CSR.TDATA1, 0 -> slots.map(_.tdata1.read).read(tselect.index))
         api.read(CSR.TDATA2, 0 -> S(slots.map(_.tdata2.value).read(tselect.index)).resize(XLEN))
+      }
+
+      /* For debug mode, use cached time source when stoptime is set */
+      val rdtimeInternal = if(p.withDebug && p.withRdTime) {
+        val debugRdtime = RegNextWhen(rdtime, !debugMode, init = U(0, 64 bits))
+        debug.needDebugTime.mux(debugRdtime, rdtime)
+      } else {
+        rdtime
       }
 
       val m = new Area {
@@ -560,16 +639,18 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         val status = new api.Csr(CSR.MSTATUS) {
           val mie, mpie = RegInit(False)
           val mpp = p.withUser.mux(RegInit(U"00"), U"11")
+          val mpv = p.withHypervisor.mux(RegInit(False), False)
           val fs = withFs generate RegInit(U(p.mstatusFsInit, 2 bits))
           val sd = False
           val tsr, tvm = p.withSupervisor generate RegInit(False)
           val tw = p.withUser.mux(RegInit(False), False)
           val mprv = RegInit(False) clearWhen(xretAwayFromMachine)
           val xs = p.withXs generate RegInit(U(p.mstatusFsInit, 2 bits))
+          val gva = p.withHypervisor generate RegInit(False)
 
           if (RVF) {
-            fpuEnable(hartId) setWhen (fs =/= 0)
-            when(host.list[FpuDirtyService].map(_.gotDirty()).orR){
+            fpuEnable(hartId) setWhen (fs =/= 0 && p.withHypervisor.mux(isHostMode, True))
+            when(isHostMode && host.list[FpuDirtyService].map(_.gotDirty()).orR){
               fs := 3
             }
           }
@@ -596,8 +677,17 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           if (p.withSupervisor && XLEN.get == 64) read(34 -> U"10")
           if (p.withSupervisor) readWrite(22 -> tsr, 20 -> tvm)
           if (p.withUser) readWrite(21 -> tw)
+          if (p.withHypervisor && XLEN.get == 64) readWrite(38 -> gva, 39 -> mpv)
 
           cap.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUS)) // Status can have various side effect on the MMU and FPU
+        }
+
+        val statush = new api.Csr(CSR.MSTATUSH) {
+          import status._
+
+          if (p.withHypervisor && XLEN.get == 32) readWrite(6 -> gva, 7 -> mpv)
+
+          cap.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUSH)) // Status can have various side effect on the MMU and FPU
         }
 
         val cause = new api.Csr(CSR.MCAUSE) {
@@ -606,10 +696,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           readWrite(XLEN - 1 -> interrupt, 0 -> code)
         }
 
-        val imsic = p.withImsic generate genImsicArea(CSR.MIREG, CSR.MTOPEI, indirectHart.m.csrFilter(_, _))
+        val imsic = p.withImsic generate imsicPlugin.logic.harts(hartId).m
 
         val ip = new api.Csr(CSR.MIP) {
-          val mext = if (p.withImsic) imsic.deliveryArbiter(int.m.external) else int.m.external
+          val fromExternalCtrl = p.withExternalInterrupt.option(int.m.external)
+          val mext = if (p.withImsic) imsic.deliveryArbiter(fromExternalCtrl) else fromExternalCtrl.get
 
           val meip = RegNext(mext) init (False)
           val mtip = RegNext(int.m.timer) init (False)
@@ -622,35 +713,248 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           readWrite(11 -> meie, 7 -> mtie, 3 -> msie)
         }
 
+        // Interrupt conditions must be re-evaluated before the next instruction after a write.
+        cap.trapNextOnWrite += CsrListFilter(List(CSR.MIP, CSR.MIE))
+
         val edeleg = p.withSupervisor generate new api.Csr(CSR.MEDELEG) {
-          val iam, bp, eu, es, ipf, lpf, spf = RegInit(False)
-          val mapping = mutable.LinkedHashMap(0 -> iam, 3 -> bp, 8 -> eu, 9 -> es, 12 -> ipf, 13 -> lpf, 15 -> spf)
+          val iam = !RVC generate RegInit(False)
+          val iaf, ii, bp, lam, laf, sam, saf, eu, es, ipf, lpf, spf = RegInit(False)
+          val hef = p.withRdTime generate RegInit(False)
+          val eh, vi, igpf, lgpf, sgpf = p.withHypervisor generate RegInit(False)
+          val mapping = mutable.LinkedHashMap(1 -> iaf, 2 -> ii, 3 -> bp, 4 -> lam, 5 -> laf, 6 -> sam, 7 -> saf, 8 -> eu, 9 -> es, 12 -> ipf, 13 -> lpf, 15 -> spf)
+          if (!RVC) mapping += 0 -> iam
+          if (p.withRdTime) mapping += 19 -> hef
+          if (p.withHypervisor) mapping ++= mutable.LinkedHashMap(10 -> eh, 20 -> igpf, 21 -> lgpf, 22 -> vi, 23 -> sgpf)
+
           for ((id, enable) <- mapping) readWrite(id -> enable)
         }
+
         val ideleg = p.withSupervisor generate new api.Csr(CSR.MIDELEG) {
           val st, se, ss = RegInit(False)
           readWrite(9 -> se, 5 -> st, 1 -> ss)
+
+          if (p.withHypervisor) readWrite(12 -> True, 10 -> True, 6 -> True, 2 -> True)
         }
+        if (p.withSupervisor) cap.trapNextOnWrite += CsrListFilter(List(CSR.MIDELEG))
 
         val tvec = crs.readWriteRam(CSR.MTVEC)
         val tval = crs.readWriteRam(CSR.MTVAL)
         val epc  = crs.readWriteRam(CSR.MEPC)
         val scratch = crs.readWriteRam(CSR.MSCRATCH)
 
+        val tval2 = p.withHypervisor generate crs.readWriteRam(CSR.MTVAL2)
+        val tinst = p.withHypervisor generate crs.readWriteRam(CSR.MTINST)
+
+        if (XLEN.get == 32) api.allowCsr(CsrListFilter(Seq(CSR.MIDELEGH,CSR.MEDELEGH, CSR.MSTATUSH)), True)
+
         spec.addInterrupt(ip.mtip && ie.mtie, id = 7, privilege = PrivilegeMode.M, delegators = Nil)
         spec.addInterrupt(ip.msip && ie.msie, id = 3, privilege = PrivilegeMode.M, delegators = Nil)
         spec.addInterrupt(ip.meip && ie.meie, id = 11, privilege = PrivilegeMode.M, delegators = Nil)
+
+        /* interrupt information before interrupt injection */
+        val candidate = new Area {
+          val interrupt = Global.CODE().assignDontCare()
+          val priority = Global.TRAP_IPRIO().assignDontCare()
+        }
 
         val topi = new Area {
           val interrupt = Global.CODE().assignDontCare()
           val priority = Mux(interrupt === B(0), B(0), B(1))
           api.read(CSR.MTOPI, 0 -> priority, 16 -> interrupt)
         }
+
+        val envcfg = new Area {
+          val stce = p.withSSTC.mux(RegInit(False), False)
+
+          if (XLEN.get == 32) {
+            api.read(stce, CSR.MENVCFGH, 31)
+            if (p.withSSTC) api.write(stce, CSR.MENVCFGH, 31)
+          } else {
+            api.read(stce, CSR.MENVCFG, 63)
+            if (p.withSSTC) api.write(stce, CSR.MENVCFG, 63)
+          }
+        }
+        api.allowCsr(CSR.MENVCFG, True)
+        if (XLEN.get == 32) api.allowCsr(CSR.MENVCFGH, True)
+
+        val counteren = p.withRdTime generate new Area {
+          val tm = RegInit(True)
+          api.readWrite(tm, CSR.MCOUNTEREN, 1)
+        }
       }
 
-      val mcounteren = p.withRdTime generate new Area {
-        val tm = Reg(True)
-        api.readWrite(tm, CSR.MCOUNTEREN, 1)
+      val h = p.withHypervisor generate new Area {
+        val status = new api.Csr(CSR.HSTATUS) {
+          val vtsr, vtvm = RegInit(False)
+          val vtw = RegInit(False)
+          val hu = RegInit(False)
+          val gva = RegInit(False)
+          val spv, spvp = RegInit(False)
+
+          readWrite(6 -> gva, 7 -> spv, 8 -> spvp, 9 -> hu, 20 -> vtvm, 21 -> vtw, 22 -> vtsr)
+          if (XLEN.get == 64) read(32 -> U"10")
+        }
+
+        val envcfg = new Area {
+          val stce = p.withSSTC.mux(RegInit(False), False)
+          val stceOr = stce && m.envcfg.stce
+
+          val stceMap = new Area {
+            if (XLEN.get == 32) {
+              api.read(stceOr, CSR.HENVCFGH, 31)
+              if (p.withSSTC) api.writeWhen(stce, m.envcfg.stce, CSR.HENVCFGH, 31)
+            } else {
+              api.read(stceOr, CSR.HENVCFG, 63)
+              if (p.withSSTC) api.writeWhen(stce, m.envcfg.stce, CSR.HENVCFG, 63)
+            }
+          }
+        }
+        api.allowCsr(CSR.HENVCFG, True)
+        if (XLEN.get == 32) api.allowCsr(CSR.HENVCFGH, True)
+
+        val counteren = p.withRdTime generate new Area {
+          val tm = RegInit(False)
+          api.readWrite(tm, CSR.HCOUNTEREN, 1)
+        }
+
+        val timedelta = p.withRdTime generate new Area {
+          val delta = RegInit(U(0, 64 bits))
+          val calibrated = rdtimeInternal + delta
+
+          XLEN.get match {
+            case 32 => {
+              api.readWrite(delta(31 downto 0), CSR.HTIMEDELTA)
+              api.readWrite(delta(63 downto 32), CSR.HTIMEDELTAH)
+            }
+            case 64 => {
+              api.readWrite(delta, CSR.HTIMEDELTA)
+            }
+          }
+        }
+
+        val victl = p.withSsaia generate new api.Csr(CSR.HVICTL) {
+          val vti = RegInit(False)
+          val ipriom = RegInit(False)
+          val dpr = RegInit(False)
+          val iid = RegInit(U(0, p.injectedInterruptWidth bits))
+          val iprio = RegInit(U(0, 8 bits))
+
+          readWrite(0 -> iprio, 8 -> ipriom, 9 -> dpr, 16 -> iid, 30 -> vti)
+        }
+        val injectCheck = p.withSsaia.mux(!victl.vti, True)
+        if (p.withSsaia) cap.trapNextOnWrite += CsrListFilter(List(CSR.HVICTL))
+
+        val sstc = new Area {
+          val logic = p.withSSTC generate new Area {
+            val cmp = RegInit(U(64 bits, default -> true))
+            val ip = RegNext(timedelta.calibrated >= cmp)
+
+            val hostCheck = (m.counteren.tm && m.envcfg.stce) || withMachinePrivilege
+            val hcheck = counteren.tm && envcfg.stce
+            val accessable = withHostSupervisorPrivilege || (withVirtualSupervisorPrivilege && hcheck && injectCheck)
+
+            if (XLEN.get == 32) {
+              api.readWrite(cmp(31 downto 0), CSR.VSTIMECMP)
+              api.readWrite(cmp(63 downto 32), CSR.VSTIMECMPH)
+              api.allowCsr(CsrListFilter(Seq(CSR.VSTIMECMP, CSR.VSTIMECMPH)), accessable)
+              api.allowHostCsr(CsrListFilter(Seq(CSR.VSTIMECMP, CSR.VSTIMECMPH)), hostCheck)
+
+              api.remapWhen(CSR.STIMECMP, CSR.VSTIMECMP, isGuestMode)
+              api.remapWhen(CSR.STIMECMPH, CSR.VSTIMECMPH, isGuestMode)
+            } else {
+              api.readWrite(cmp, CSR.VSTIMECMP)
+              api.allowCsr(CSR.VSTIMECMP, accessable)
+              api.allowHostCsr(CSR.VSTIMECMP, hostCheck)
+
+              api.remapWhen(CSR.STIMECMP, CSR.VSTIMECMP, isGuestMode)
+            }
+          }
+
+          val interrupt = if (p.withSSTC) logic.ip else False
+        }
+
+        val edeleg = new api.Csr(CSR.HEDELEG) {
+          val iam, iaf, ii, bp, lam, laf, sam, saf, eu, ipf, lpf, spf = RegInit(False)
+          val hef = p.withRdTime generate RegInit(False)
+          val mapping = mutable.LinkedHashMap(0 -> iam, 1 -> iaf, 2 -> ii, 3 -> bp, 4 -> lam, 5 -> laf, 6 -> sam, 7 -> saf, 8 -> eu, 12 -> ipf, 13 -> lpf, 15 -> spf)
+          if (p.withRdTime) mapping += 19 -> hef
+          for ((id, enable) <- mapping) readWrite(id -> enable)
+        }
+
+        val imsic = p.withGuestImsic generate imsicPlugin.logic.harts(hartId).vs
+        if (p.withGuestImsic) {
+          api.remapWhen(CSR.STOPEI, CSR.VSTOPEI, isGuestMode)
+          api.read(CSR.HSTATUS, 12 -> imsic.mux)
+          api.onWrite(CSR.HSTATUS, true) {
+            val vgein = cap.bus.write.bits(12, 6 bits).asUInt
+            val isFullEncode = p.guestExternalInterruptFiles == 63
+            imsic.mux := isFullEncode.mux(vgein, Mux(vgein < p.guestExternalInterruptFiles + 1, vgein, U(0))).resized
+          }
+          cap.trapNextOnWrite += CsrListFilter(List(CSR.HSTATUS, CSR.HGEIE))
+        }
+
+        val gei = p.withGuestImsic generate new Area {
+          val ie = Vec.fill(p.guestExternalInterruptFiles)(RegInit(False))
+          val ip = Vec(imsic.files.zip(imsic.eidelivery).map{case (file, eidelivery) => file.identity =/= 0 && eidelivery})
+          val iep = Vec(ie.zip(ip).map{case (ie, ip) => ie & ip})
+
+          api.readWrite(CSR.HGEIE, 1 -> ie)
+          api.read(CSR.HGEIP, 1 -> ip)
+
+          val current = Mux(imsic.deliveryArbiter(), ip(imsic.currentMux), False)
+        }
+
+        val ideleg = new api.Csr(CSR.HIDELEG) {
+          val vst, vse, vss = RegInit(False)
+          readWrite(10 -> vse, 6 -> vst, 2 -> vss)
+          api.readWrite(CSR.MIDELEG, 10 -> vse, 6 -> vst, 2 -> vss)
+        }
+
+        val ie = new api.Csr(CSR.HIE) {
+          val vseie, vstie, vssie = RegInit(False)
+          val geie = RegInit(False)
+          readWrite(12 -> geie, 10 -> vseie, 6 -> vstie, 2 -> vssie)
+          api.readWrite(CSR.MIE, 12 -> geie, 10 -> vseie, 6 -> vstie, 2 -> vssie)
+        }
+
+        cap.trapNextOnWrite += CsrListFilter(List(CSR.HIDELEG, CSR.HIE, CSR.HIP, CSR.HVIP))
+
+        val ip = new Area {
+          val vstipSoft = RegInit(False)
+          val vstipOr = vstipSoft || Mux(envcfg.stceOr, sstc.interrupt, False)
+          val vseipInput = p.withGuestImsic.mux(RegNext(gei.current), False)
+          val vseipSoft = RegInit(False)
+          val vseipOr = vseipSoft || vseipInput
+          val vssip = RegInit(False)
+          val geip = p.withGuestImsic.mux(gei.iep.orR, False)
+        }
+
+        api.allowCsr(CsrListFilter(List(CSR.HVIPRIO1, CSR.HVIPRIO2)), True)
+        if (XLEN.get == 32) api.allowCsr(CsrListFilter(List(CSR.HVIPRIO1H, CSR.HVIPRIO2H)), True)
+
+        // sgeip
+        api.read(ip.geip, CsrListFilter(List(CSR.MIP, CSR.HIP)), 12)
+        api.read(False, CSR.HVIP, 12)
+        api.allowCsr(CsrListFilter(List(CSR.HGEIE, CSR.HGEIP)), True)
+
+        // vseip
+        api.write(ip.vseipSoft, CSR.HVIP, 10)
+        api.read(ip.vseipOr, CsrListFilter(List(CSR.MIP, CSR.HVIP, CSR.HIP)), 10)
+
+        // vstip
+        api.readWrite(ip.vstipSoft, CSR.HVIP, 6)
+        api.read(ip.vstipOr, CsrListFilter(List(CSR.MIP, CSR.HIP)), 6)
+
+        // vssip
+        api.readWrite(ip.vssip, CsrListFilter(List(CSR.MIP, CSR.HVIP, CSR.HIP)), 2)
+
+        val tval = crs.readWriteRam(CSR.HTVAL)
+        val tinst = crs.readWriteRam(CSR.HTINST)
+
+        if (p.withGuestImsic) spec.addInterrupt(ie.geie && ip.geip, id = 12, privilege = PrivilegeMode.S, delegators = List(Delegator(True, PrivilegeMode.M)))
+        spec.addInterrupt(ie.vseie && ip.vseipOr && !ideleg.vse, id = 10, privilege = PrivilegeMode.S, delegators = List(Delegator(True, PrivilegeMode.M)))
+        spec.addInterrupt(ie.vstie && ip.vstipOr && !ideleg.vst, id = 6, privilege = PrivilegeMode.S, delegators = List(Delegator(True, PrivilegeMode.M)))
+        spec.addInterrupt(ie.vssie && ip.vssip && !ideleg.vss, id = 2, privilege = PrivilegeMode.S, delegators = List(Delegator(True, PrivilegeMode.M)))
       }
 
       val s = p.withSupervisor generate new Area {
@@ -673,24 +977,11 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         }
 
         val sstc = new Area {
-          val envcfg = new Area {
-            val enable = RegInit(False)
-            val allowUpdate = Bool(p.withSSTC)
-
-            if (XLEN.get == 32) {
-              api.read(enable, CSR.MENVCFGH, 31)
-              api.writeWhen(enable, allowUpdate, CSR.MENVCFGH, 31)
-            } else {
-              api.read(enable, CSR.MENVCFG, 63)
-              api.writeWhen(enable, allowUpdate, CSR.MENVCFG, 63)
-            }
-          }
-
           val logic = p.withSSTC generate new Area {
             val cmp = RegInit(U(64 bits, default -> true))
-            val ip = RegNext(rdtime >= cmp)
+            val ip = RegNext(rdtimeInternal >= cmp)
 
-            val accessable =  withMachinePrivilege || (mcounteren.tm && envcfg.enable)
+            val accessable =  withMachinePrivilege || (m.counteren.tm && m.envcfg.stce)
 
             if (XLEN.get == 32) {
               api.readWrite(cmp(31 downto 0), CSR.STIMECMP)
@@ -706,16 +997,17 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           val interrupt = if (p.withSSTC) logic.ip else False
         }
 
-        val imsic = p.withImsic generate genImsicArea(CSR.SIREG, CSR.STOPEI, indirectHart.s.csrFilter(_, _))
+        val imsic = p.withImsic generate imsicPlugin.logic.harts(hartId).s
 
         val ip = new Area {
-          val sext = if (p.withImsic) imsic.deliveryArbiter(int.s.external) else int.s.external
+          val fromExternalCtrl = p.withExternalInterrupt.option(int.s.external)
+          val sext = if (p.withImsic) imsic.deliveryArbiter(fromExternalCtrl) else fromExternalCtrl.get
 
           val seipSoft = RegInit(False)
           val seipInput = RegNext(sext)
           val seipOr = seipSoft || seipInput
           val stipSoft = RegInit(False)
-          val stipOr = Mux(sstc.envcfg.enable, sstc.interrupt, stipSoft)
+          val stipOr = Mux(m.envcfg.stce, sstc.interrupt, stipSoft)
           val ssip = RegInit(False)
 
           val seipMasked = seipOr && m.ideleg.se
@@ -728,16 +1020,16 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         }
 
         // IE bits when mideleg = 0 and mvien = 1
-        val ieShadow = p.withInterrutpFilter generate new Area {
+        val ieShadow = p.withSsaia generate new Area {
           val seie, ssie = RegInit(False)
         }
 
-        val vie = p.withInterrutpFilter generate new api.Csr(CSR.MVIEN) {
+        val vie = p.withSsaia generate new api.Csr(CSR.MVIEN) {
           val seie, ssie = RegInit(False)
           readWrite(9 -> seie, 1 -> ssie)
         }
 
-        val vip = p.withInterrutpFilter generate new Area {
+        val vip = p.withSsaia generate new Area {
           val seip, ssip = RegInit(False)
 
           api.readWrite(seip, CsrCondFilter(CSR.MVIP, vie.seie), 9)
@@ -746,7 +1038,9 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           api.readWrite(ssip, CsrCondFilter(CSR.MVIP, vie.ssie), 1)
           api.readWrite(ip.ssip, CsrCondFilter(CSR.MVIP, !vie.ssie), 1)
           api.read(ip.stipOr, CSR.MVIP, 5)
-          api.writeWhen(ip.stipSoft, !sstc.envcfg.enable, CSR.MVIP, 5)
+          api.writeWhen(ip.stipSoft, !m.envcfg.stce, CSR.MVIP, 5)
+
+          cap.trapNextOnWrite += CsrListFilter(List(CSR.MVIEN, CSR.MVIP))
         }
 
         val tvec = crs.readWriteRam(CSR.STVEC)
@@ -757,7 +1051,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         if (withFs) api.readWrite(CSR.SSTATUS, 13 -> m.status.fs)
         if (p.withXs) api.readWrite(CSR.SSTATUS, 15 -> m.status.xs)
 
-        val iepNoFilter = !p.withInterrutpFilter generate new Area {
+        val iepNoFilter = !p.withSsaia generate new Area {
           def mapSie(supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
             api.read(reg && machineDeleg, supervisorCsr, bitId)
             if (sWrite) api.writeWhen(reg, machineDeleg, supervisorCsr, bitId)
@@ -771,7 +1065,7 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           mapSie(CSR.SIP, 1, ip.ssip, m.ideleg.ss)
         }
 
-        val iepFilter = p.withInterrutpFilter generate new Area {
+        val iepFilter = p.withSsaia generate new Area {
           def mapSie(supervisorCsr: Int, bitId: Int, reg: Bool, machineDeleg: Bool, sWrite: Boolean = true): Unit = {
             api.read(reg, CsrCondFilter(supervisorCsr, machineDeleg), bitId)
             if (sWrite) api.write(reg, CsrCondFilter(supervisorCsr, machineDeleg), bitId)
@@ -785,8 +1079,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           mapSie(CSR.SIE, 9, ie.seie, m.ideleg.se)
           mapVie(CSR.SIE, 9, ieShadow.seie, m.ideleg.se, vie.seie)
           // mapMie(CSR.MIE, CSR.SIE, 5, ie.stie, m.ideleg.st)
-          api.read(ie.stie && m.ideleg.st, CSR.SIE, 9)
-          api.writeWhen(ie.stie, m.ideleg.st, CSR.SIE, 9)
+          api.read(ie.stie && m.ideleg.st, CSR.SIE, 5)
+          api.writeWhen(ie.stie, m.ideleg.st, CSR.SIE, 5)
           mapSie(CSR.SIE, 1, ie.ssie, m.ideleg.ss)
           mapVie(CSR.SIE, 1, ieShadow.ssie, m.ideleg.ss, vie.ssie)
 
@@ -797,8 +1091,8 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
 
           // ssip
           mapSie(CSR.SIP, 1, ip.ssip, m.ideleg.ss)
-          api.read(vip.ssip && vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 9)
-          api.writeWhen(vip.ssip, vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 9)
+          api.read(vip.ssip && vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 1)
+          api.writeWhen(vip.ssip, vie.ssie, CsrCondFilter(CSR.SIP, !m.ideleg.ss), 1)
           mapVie(CSR.SIP, 1, vip.ssip, m.ideleg.ss, vie.ssie)
         }
 
@@ -806,86 +1100,231 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         api.read(ip.seipOr, CSR.MIP, 9)
         api.write(ip.seipSoft, CSR.MIP, 9)
         api.read(ip.stipOr, CSR.MIP, 5)
-        api.writeWhen(ip.stipSoft, !sstc.envcfg.enable, CSR.MIP, 5)
+        api.writeWhen(ip.stipSoft, !m.envcfg.stce, CSR.MIP, 5)
         api.read(ip.stipOr && m.ideleg.st, CSR.SIP, 5)
         api.readWrite(ip.ssip, CSR.MIP, 1)
         api.readToWrite(ip.seipSoft, CSR.MIP, 9) //Avoid an external interrupt value to propagate to the soft external interrupt register.
 
+        cap.trapNextOnWrite += CsrListFilter(List(CSR.SIP, CSR.SIE))
+
         spec.addInterrupt(ip.ssip && ie.ssie, id = 1, privilege = PrivilegeMode.S, delegators = List(Delegator(m.ideleg.ss, PrivilegeMode.M)))
         spec.addInterrupt(ip.stipOr && ie.stie, id = 5, privilege = PrivilegeMode.S, delegators = List(Delegator(m.ideleg.st, PrivilegeMode.M)))
         spec.addInterrupt(ip.seipOr && ie.seie, id = 9, privilege = PrivilegeMode.S, delegators = List(Delegator(m.ideleg.se, PrivilegeMode.M)))
-        if (p.withInterrutpFilter) {
+        if (p.withSsaia) {
           spec.addInterrupt(!m.ideleg.se && vip.seip && vie.seie && ieShadow.seie, id = 9, privilege = PrivilegeMode.S, delegators = List(Delegator(True, PrivilegeMode.M)))
           spec.addInterrupt(!m.ideleg.ss && vip.ssip && vie.ssie && ieShadow.ssie, id = 1, privilege = PrivilegeMode.S, delegators = List(Delegator(True, PrivilegeMode.M)))
         }
 
-        for ((id, enable) <- m.edeleg.mapping) spec.exception += ExceptionSpec(id, List(Delegator(enable, PrivilegeMode.M)))
+        /* interrupt information before interrupt injection */
+        val candidate = new Area {
+          val interrupt = Global.CODE().assignDontCare()
+          val priority = Global.TRAP_IPRIO().assignDontCare()
+        }
 
         val topi = new Area {
           val interrupt = Global.CODE().assignDontCare()
           val priority = Mux(interrupt === B(0), B(0), B(1))
           api.read(CSR.STOPI, 0 -> priority, 16 -> interrupt)
         }
+
+        api.allowCsr(CSR.SENVCFG, True)
+
+        val counteren = p.withRdTime generate new Area {
+          val tm = RegInit(True)
+          api.readWrite(tm, CSR.SCOUNTEREN, 1)
+        }
+      }
+
+      val vs = p.withHypervisor generate new Area {
+        val status = new api.Csr(CSR.VSSTATUS) {
+          val sie, spie = RegInit(False)
+          val spp = RegInit(U"0")
+          val fs = withFs generate RegInit(U(p.mstatusFsInit, 2 bits))
+          val xs = p.withXs generate RegInit(U(p.mstatusFsInit, 2 bits))
+          val sd = False
+
+          if (RVF) {
+            fpuEnable(hartId) setWhen (isGuestMode && fs =/= 0 && m.status.fs =/= 0)
+            when(isGuestMode && host.list[FpuDirtyService].map(_.gotDirty()).orR){
+              fs := 3
+              m.status.fs := 3
+            }
+          }
+
+          if (withFs) sd setWhen (fs === 3)
+          if (p.withXs) sd setWhen (xs === 3)
+
+          readWrite(8 -> spp, 5 -> spie, 1 -> sie)
+          read(XLEN - 1 -> sd)
+          if (withFs) readWrite(13 -> fs)
+          if (p.withXs) readWrite(15 -> xs)
+          if (XLEN.get == 64) read(32 -> U"10")
+          cap.trapNextOnWrite += CsrListFilter(List(CSR.VSSTATUS))
+        }
+        api.remapWhen(CSR.SSTATUS, CSR.VSSTATUS, isGuestMode)
+
+        val cause = new api.Csr(CSR.VSCAUSE) {
+          val interrupt = RegInit(False)
+          val code = Reg(CODE) init (0)
+          readWrite(XLEN - 1 -> interrupt, 0 -> code)
+        }
+        api.remapWhen(CSR.SCAUSE, CSR.VSCAUSE, isGuestMode)
+
+        def mapVSie(guestCsr: Int, bitId: Int, reg: Bool, hypervisorDeleg: Bool, sWrite: Boolean = true): Unit = {
+          api.read(reg && hypervisorDeleg, guestCsr, bitId)
+          if (sWrite) api.writeWhen(reg, hypervisorDeleg, guestCsr, bitId)
+        }
+
+        mapVSie(CSR.VSIE, 9, h.ie.vseie, h.ideleg.vse)
+        mapVSie(CSR.VSIE, 5, h.ie.vstie, h.ideleg.vst)
+        mapVSie(CSR.VSIE, 1, h.ie.vssie, h.ideleg.vss)
+        api.remapWhen(CSR.SIE, CSR.VSIE, isGuestMode)
+
+        mapVSie(CSR.VSIP, 9, h.ip.vseipOr, h.ideleg.vse, sWrite = false)
+        mapVSie(CSR.VSIP, 5, h.ip.vstipOr, h.ideleg.vst, sWrite = false)
+        mapVSie(CSR.VSIP, 1, h.ip.vssip, h.ideleg.vss)
+        api.remapWhen(CSR.SIP, CSR.VSIP, isGuestMode)
+
+        cap.trapNextOnWrite += CsrListFilter(List(CSR.VSIE, CSR.VSIP))
+
+        if (p.withSsaia) api.allowCsr(CsrListFilter(List(CSR.VSIP, CSR.VSIE)), withHostSupervisorPrivilege || (isGuestMode && h.injectCheck))
+
+        if (!p.withSsaia) spec.addInterrupt(h.ie.vseie && h.ip.vseipOr && h.ideleg.vse, id = 9, privilege = PrivilegeMode.VS, delegators = List(Delegator(True, PrivilegeMode.M), Delegator(True, PrivilegeMode.S)))
+        spec.addInterrupt(h.ie.vstie && h.ip.vstipOr && h.ideleg.vst, id = 5, privilege = PrivilegeMode.VS, delegators = List(Delegator(True, PrivilegeMode.M), Delegator(True, PrivilegeMode.S)))
+        spec.addInterrupt(h.ie.vssie && h.ip.vssip && h.ideleg.vss, id = 1, privilege = PrivilegeMode.VS, delegators = List(Delegator(True, PrivilegeMode.M), Delegator(True, PrivilegeMode.S)))
+
+        /* interrupt information before interrupt injection */
+        val candidate = new Area {
+          val interrupt = Global.CODE().assignDontCare()
+          val priority = Global.TRAP_IPRIO().assignDontCare()
+        }
+
+        val injectInterrupt = p.withSsaia generate new Area {
+          val vseiPriority = extendedInterruptPriority()
+          vseiPriority.high := False
+          vseiPriority.external := False
+          vseiPriority.default := InterruptInfo.defaultOrder.indexOf(9)
+          val vseiCandidates = WhenBuilder()
+          if (p.withGuestImsic) vseiCandidates.when(h.imsic.valid && h.imsic.identity =/= 0) {
+            vseiPriority.local := h.imsic.identity.resized
+          }
+          vseiCandidates.when(p.withGuestImsic.mux(h.imsic.mux === 0, True) && h.victl.iid === 9 && h.victl.iprio =/= 0) {
+            vseiPriority.local := h.victl.iprio.resized
+          }
+          vseiCandidates.otherwise {
+            vseiPriority.local := 256
+          }
+
+          spec.addInjectInterrupt(
+            h.ie.vseie && h.ip.vseipOr && h.ideleg.vse,
+            id = 9,
+            privilege = PrivilegeMode.VS,
+            priority = vseiPriority,
+          )
+
+          val candidatePriority = extendedInterruptPriority()
+          val candidateHighPriority = candidate.priority < InterruptInfo.defaultOrder.indexOf(9)
+          candidatePriority.default := candidate.priority.resized
+          candidatePriority.local := 0
+          candidatePriority.local(8) := !candidateHighPriority
+          candidatePriority.external := False
+          candidatePriority.high := candidateHighPriority
+
+          spec.addInjectInterrupt(
+            !h.victl.vti && candidate.interrupt.orR,
+            id = candidate.interrupt.asUInt,
+            privilege = PrivilegeMode.VS,
+            priority = candidatePriority,
+          )
+
+          val viPriority = extendedInterruptPriority()
+          val viHighPriority = !h.victl.iprio.orR && h.victl.dpr
+          viPriority.local(0, 8 bits) := h.victl.iprio.resized
+          viPriority.local(8) := !(h.victl.iprio.orR || h.victl.dpr)
+          viPriority.default := Mux(viHighPriority, U(0), U(InterruptInfo.defaultOrder.size -1))
+          viPriority.external := h.victl.iprio.orR
+          viPriority.high := viHighPriority
+          spec.addInjectInterrupt(
+            h.victl.vti && h.victl.iid =/= 9,
+            id = h.victl.iid,
+            privilege = PrivilegeMode.VS,
+            priority = viPriority,
+          )
+        }
+
+        val topi = new Area {
+          val interrupt = Global.CODE().assignDontCare()
+          val priority = UInt(8 bits)
+          val rectifiedPriority = Mux(interrupt.orR, p.withSsaia.mux(Mux(h.victl.ipriom, priority, U(1)), priority), U(0))
+
+          api.read(CSR.VSTOPI, 0 -> rectifiedPriority, 16 -> interrupt)
+          api.remapWhen(CSR.STOPI, CSR.VSTOPI, isGuestMode)
+        }
+
+        val tval = crs.readWriteRam(CSR.VSTVAL)
+        api.remapWhen(CSR.STVAL, CSR.VSTVAL, isGuestMode)
+
+        val epc = crs.readWriteRam(CSR.VSEPC)
+        api.remapWhen(CSR.SEPC, CSR.VSEPC, isGuestMode)
+
+        val scratch = crs.readWriteRam(CSR.VSSCRATCH)
+        api.remapWhen(CSR.SSCRATCH, CSR.VSSCRATCH, isGuestMode)
+
+        val tvec = crs.readWriteRam(CSR.VSTVEC)
+        api.remapWhen(CSR.STVEC, CSR.VSTVEC, isGuestMode)
+
+        if (withIndirectCsr) {
+          val iregs = Seq(CSR.VSIREG, CSR.VSIREG2, CSR.VSIREG3, CSR.VSIREG4, CSR.VSIREG5, CSR.VSIREG6)
+          for (ireg <- iregs) {
+            api.remapWhen(ireg - 0x100, ireg, isGuestMode)
+          }
+          api.remapWhen(CSR.SISELECT, CSR.VSISELECT, isGuestMode)
+        }
       }
 
       val time = p.withRdTime generate new Area {
-        val accessable =  withMachinePrivilege || mcounteren.tm
+        val time = p.withHypervisor.mux(
+          isGuestMode.mux(h.timedelta.calibrated, rdtimeInternal),
+          rdtimeInternal
+        )
+
+        def check(timeCsr: Int) = {
+          api.allowHostCsr(timeCsr, withMachinePrivilege || m.counteren.tm)
+          if (p.withHypervisor) api.allowCsr(timeCsr, isHostMode || h.counteren.tm)
+          if (p.withSupervisor) api.allowCsr(timeCsr, withSupervisorPrivilege || s.counteren.tm)
+        }
 
         XLEN.get match {
           case 32 => {
-            api.read(rdtime(31 downto 0), CSR.UTIME)
-            api.read(rdtime(63 downto 32), CSR.UTIMEH)
-            api.allowCsr(CSR.UTIME, accessable)
-            api.allowCsr(CSR.UTIMEH, accessable)
+            api.read(time(31 downto 0), CSR.UTIME)
+            api.read(time(63 downto 32), CSR.UTIMEH)
+            check(CSR.UTIME)
+            check(CSR.UTIMEH)
           }
           case 64 => {
-            api.read(rdtime, CSR.UTIME)
-            api.allowCsr(CSR.UTIME, accessable)
+            api.read(time, CSR.UTIME)
+            check(CSR.UTIME)
           }
         }
       }
 
-      def genImsicArea(ireg: Int, topei: Int, provider: (Int, Int) => CsrCondFilter) = new Area {
-        val file = ImsicFile(hartIds(hartId), 1 until p.imsicInterrupts)
-        val identity = file.identity
-        val triggers = in(file.triggers)
+      val exception = p.withSupervisor generate new Area {
+        for ((id, enable) <- m.edeleg.mapping) {
+          var delegator = List(Delegator(enable, PrivilegeMode.M))
 
-        api.readWrite(file.threshold, provider(IndirectCSR.eithreshold, ireg))
+          if (p.withHypervisor && h.edeleg.mapping.contains(id)) delegator = delegator ++ List(Delegator(h.edeleg.mapping(id), PrivilegeMode.S))
 
-        val sources = for (interrupt <- file.interrupts) yield new Area {
-          val id = interrupt.id
-          val offset = id / XLEN * (1 + (XLEN == 64).toInt)
-
-          api.readWrite(interrupt.ie, provider(IndirectCSR.eie0 + offset, ireg), id % XLEN)
-          api.readWrite(interrupt.ip, provider(IndirectCSR.eip0 + offset, ireg), id % XLEN)
-        }
-
-        api.read(topei, 0 -> identity, 16 -> identity)
-        val claim = new Area {
-          val toClaim = RegInit(U(0, file.idWidth bits))
-          api.onRead(topei, false){
-            toClaim := identity
-          }
-          api.onWrite(topei, true) {
-            file.claim(toClaim)
-          }
-        }
-
-        val eidelivery = RegInit(U(0x40000000, XLEN bits))
-        api.readWrite(eidelivery, provider(IndirectCSR.eidelivery, ireg))
-
-        def deliveryArbiter(aplicTarget: Bool): Bool = {
-          eidelivery.mux(
-            1 -> (identity > 0),
-            0x40000000 -> aplicTarget,
-            default -> False
-          )
+          spec.exception += ExceptionSpec(id, delegator)
         }
       }
+
+      def HostCsrFilter(id: Int): Any = p.withHypervisor.mux(HostCsrFilter(id, True), id)
+      def HostCsrFilter(id: Int, cond: Bool) = CsrCondFilter(id, isHostMode && cond)
+      def GuestCsrFilter(id: Int, cond: Bool = True) = CsrCondFilter(id, isGuestMode && cond)
     }
 
     val defaultTrap = new Area {
-      val csrPrivilege = cap.bus.decode.address(8, 2 bits)
+      val csrPrivilege = cap.bus.decode.privilege.asUInt
       val csrReadOnly = cap.bus.decode.address(10, 2 bits) === U"11"
       // todo
       val hartPrivilege = harts.reader(cap.bus.decode.hartId)(_.privilege)
@@ -899,14 +1338,27 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
         adjustPrivilege := hartPrivilege(1 downto 0).asUInt
       }
 
-      when(csrReadOnly && cap.bus.decode.write || csrPrivilege > adjustPrivilege) {
+      when(csrPrivilege > adjustPrivilege) {
         cap.bus.decode.doException()
+      }
+
+      when(csrReadOnly && cap.bus.decode.write) {
+        cap.bus.decode.doHostDenied()
+      }
+    }
+
+    val defaultVirtual = p.withHypervisor generate new Area {
+      val csrPrivilege = cap.bus.decode.address(8, 2 bits)
+      val hartPrivilege = harts.reader(cap.bus.decode.hartId)(_.privilege)
+
+      when(PrivilegeMode.isGuest(hartPrivilege) && csrPrivilege =/= PrivilegeMode.M) {
+        cap.bus.decode.doVirtual()
       }
     }
 
     val readAnyWriteLegal = new Area {
-      val tvecFilter = CsrListFilter(List(CSR.MTVEC) ++ p.withSupervisor.option(CSR.STVEC))
-      val epcFilter = CsrListFilter(List(CSR.MEPC) ++ p.withSupervisor.option(CSR.SEPC))
+      val tvecFilter = CsrListFilter(List(CSR.MTVEC) ++ p.withSupervisor.option(CSR.STVEC) ++ p.withHypervisor.option(CSR.VSTVEC))
+      val epcFilter = CsrListFilter(List(CSR.MEPC) ++ p.withSupervisor.option(CSR.SEPC) ++ p.withHypervisor.option(CSR.VSEPC))
       cap.onWrite(tvecFilter, false) {
         cap.bus.write.bits(0, 2 bits) := 0
       }

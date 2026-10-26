@@ -21,7 +21,7 @@ case class FpuFlagsWritebackPort(atsSpec : Seq[Int]) extends Bundle{
 }
 
 /**
- * Handle the update of the FPU flags for all inflight instruction (commited and uncommited)
+ * Handle the update of the FPU flags for all inflight instruction (committed and uncommitted)
  */
 class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extends FiberPlugin{
   val elaborationLock = Retainer()

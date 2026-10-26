@@ -159,10 +159,10 @@ object Rvi extends AreaObject {
 
   val FENCE              = TypeNone(M"-----------------000-----0001111")
   val FENCE_I            = TypeNone(M"-----------------001-----0001111")
-  val SFENCE_VMA         = TypeNone(M"0001001----------000000001110011")
+  val SFENCE_VMA         = TypeRS(M"0001001----------000000001110011")
 
   val FLUSH_DATA         = TypeNone(M"-------00000-----101-----0001111")
-  
+
   val ZKN_AES            = TypeR(M"--10--1----------000-----0110011")
 
   case class LoadSpec(width: Int, signed: Boolean)

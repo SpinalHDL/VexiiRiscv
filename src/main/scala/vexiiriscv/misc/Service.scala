@@ -50,6 +50,7 @@ object PerformanceCounterService{
   val DCACHE_LOAD_MISS   = 0x19
   val DCACHE_WAITING     = 0x1A
   val DCACHE_TLB_CYCLES  = 0x1B
+  val PTW_TLB_CYCLES     = 0x1C
 
 
   val DEV = 0x20

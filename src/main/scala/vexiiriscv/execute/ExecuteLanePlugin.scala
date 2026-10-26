@@ -153,7 +153,7 @@ class ExecuteLanePlugin(override val laneName : String,
         port.valid := !eupp.isFreezed() // && readCtrl(rfa.ENABLE) && rfa.is(spec.rf, readCtrl(rfa.RFID))
         port.address := readCtrl(rfa.PHYS)(log2Up(spec.rf.sizeArch) - 1 downto 0)
 
-        // Generate a bypass specification for the regfile readed data
+        // Generate a bypass specification for the regfile read data
         case class BypassSpec(eu: ExecuteLaneService, nodeId: Int, payload: Payload[Bits])
         val bypassSpecs = mutable.LinkedHashSet[BypassSpec]()
         val eus = host.list[ExecuteLaneService]

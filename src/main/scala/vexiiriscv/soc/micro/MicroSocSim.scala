@@ -36,6 +36,8 @@ object MicroSocSim extends App{
   }.parse(args, ()).nonEmpty)
   p.legalize()
 
+  p.withSpiPhy = false
+
   class MicroSocSim extends MicroSoc(p){
     Fiber patch{
       system.ram.thread.logic.mem.simPublic()

@@ -58,7 +58,7 @@ class AlignerPlugin(fetchAt : Int,
     val FETCH_MASK, FETCH_LAST = Payload(Bits(Fetch.SLICE_COUNT bits)) //You can assume that if a given bit of FETCH_LAST is set, you can assume it is valid data
 
 
-    val maskGen = new fpp.Fetch(fetchAt) { //Could be move up for better timings, partialy
+    val maskGen = new fpp.Fetch(fetchAt) { // Could be move up for better timings, partially
       val frontMasks = (0 until Fetch.SLICE_COUNT).map(i => B((1 << Fetch.SLICE_COUNT) - (1 << i), Fetch.SLICE_COUNT bits))
       val backMasks = (0 until Fetch.SLICE_COUNT).map(i => B((2 << i) - 1, Fetch.SLICE_COUNT bits))
       withBtb match {
@@ -145,7 +145,7 @@ class AlignerPlugin(fetchAt : Int,
     usedMask(0) := 0
     // The extractors will scan the slices for the firsts available instructions.
     val extractors = for (eid <- 0 until Decode.LANES) yield new Area {
-      val usableSliceRange = if(withBuffer) eid until scannerSlices else eid to eid //Can be tweek to generate smaller designs
+      val usableSliceRange = if(withBuffer) eid until scannerSlices else eid to eid // Can be tweaked to generate smaller designs
       val first = if(withBuffer) Bool(eid == 0) else slices.mask.takeLow(usableSliceRange.low) === 0
       val usableMask = usableSliceRange.map(sid => scanners(sid).valid && !usedMask(eid)(sid)).asBits
       val slicesOh = OHMasking.firstV2(usableMask)

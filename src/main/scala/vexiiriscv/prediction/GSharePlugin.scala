@@ -43,10 +43,10 @@ class GSharePlugin(var historyWidth : Int,
     val retainer = retains(ls.learnLock, dp.elaborationLock, ap.elaborationLock)
     awaitBuild()
 
-    assert(readAsync == false, "The issue with read async is that it may change while btb stage is stuck, producing transiants => missmatch between pc correction and announced prediction done to BranchPlugin")
+    assert(readAsync == false, "The issue with read async is that it may change while btb stage is stuck, producing transients => mismatch between pc correction and announced prediction done to BranchPlugin")
 
     // Specify to the pipeline plugins to carry the GSHARE_COUNTER all the way
-    // This will be used when a branch instruction is commited to make RAM learn. (increament/decrement)
+    // This will be used when a branch instruction is committed to make RAM learn. (increment/decrement)
     ls.addLearnCtx(GSHARE_COUNTER)
     dp.addDispatchCtx(GSHARE_COUNTER)
     ap.addLastSliceDataCtx(GSHARE_COUNTER)
@@ -96,7 +96,7 @@ class GSharePlugin(var historyWidth : Int,
       val readed = Vec(for(counter <- mem.banks) yield readMem(counter))
 
       this (GSHARE_COUNTER) := readed.read(this(HASH)(bankRange))
-      // Unlike the BTB, here we handle the read durring write using a bypass mux.
+      // Unlike the BTB, here we handle the read during write using a bypass mux.
       when(BYPASS.valid && this(BYPASS).address === HASH){
         this(GSHARE_COUNTER) := this(BYPASS).data
       }

@@ -57,7 +57,7 @@ object Generate extends App {
   }
 }
 
-//Generates a tilelink version of VexiiRiscv verilog using command line arguments
+// Generates a tilelink version of VexiiRiscv verilog using command line arguments
 object GenerateTilelink extends App {
   val param = new ParamSimple()
   val sc = SpinalConfig()
@@ -117,7 +117,9 @@ object GenerateTilelink extends App {
       cpu.priv.get.mei << mei; in(mei.flag)
 
       val sei = (cpu.priv.get.sei != null) generate InterruptNode.master()
-      if(sei != null) cpu.priv.get.sei << sei; in(sei.flag)
+      if(sei != null) { cpu.priv.get.sei << sei; in(sei.flag) }
+
+      (cpu.priv.get.rdtime != null) generate in(cpu.priv.get.rdtime)
 
       (cpu.priv.get.rdtime != null) generate in(cpu.priv.get.rdtime)
 
