@@ -43,7 +43,7 @@ case class FetchL1TimingParameter(var readAt: Int = 0,
 
 /**
  * Implement and bind a instruction L1 cache to the CPU
- * The main particularity of this implementation is that the cache is 
+ * The main particularity of this implementation is that the cache is
  * non-blocking and can connect to prefetching plugins.
  */
 class FetchL1Plugin(var translationStorageParameter: Any,
@@ -456,7 +456,21 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     val hazard = new pp.Fetch(readAt+1) {
       import cmd._
       val pageRange = 11 downto wordRange.high + 1
-      HAZARD := TAGS_UPDATE && TAGS_UPDATE_ADDRESS === MIXED_PC_SOLVED(lineRange) // || REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
+      val pcRange = MIXED_PC_SOLVED(lineRange)
+      val writeCheck = waysWrite.mask.orR && waysWrite.address === pcRange
+      val checkHold = RegInit(False) setWhen(writeCheck) clearWhen(up.isReady)
+      val wayWriteCheck = writeCheck || checkHold
+
+      HAZARD := (TAGS_UPDATE && TAGS_UPDATE_ADDRESS === pcRange) || wayWriteCheck // || REFILL_VALID && REFILL_ADDRESS(pageRange) === WORD_PC(pageRange) && REFILL_WORD <= WORD_PC(wordRange)
+    }
+
+    for (stage <- readAt + 2 to ctrlAt) new pp.Fetch(stage) {
+      val pcRange = MIXED_PC_SOLVED(lineRange)
+      val writeCheck = waysWrite.mask.orR && waysWrite.address === pcRange
+      val checkHold = RegInit(False) setWhen(writeCheck) clearWhen(up.isReady)
+      val wayWriteCheck = writeCheck || checkHold
+
+      bypass(HAZARD) := up(HAZARD) || wayWriteCheck
     }
 
     val hits = new pp.Fetch(hitsAt){
