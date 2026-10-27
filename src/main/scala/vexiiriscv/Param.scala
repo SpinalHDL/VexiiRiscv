@@ -108,6 +108,7 @@ class ParamSimple() {
   var hartCount = 1
   var disableMmu = false
   var asidWidth = 0
+  var vmidWidth = 0
   var physicalWidth = 32
   var resetVector = 0x80000000l
   var decoders = 1
@@ -610,6 +611,7 @@ class ParamSimple() {
     if (relaxedSrc) r += "rsrc"
     if (extension.withPerformanceCounters) r += s"pc$additionalPerformanceCounters"
     if (withMmu) r += s"asid$asidWidth"
+    if (withMmu && extension.withHypervisor) r += s"vmid$vmidWidth"
     if (withIterativeShift) r += "isft"
     if (extension.withDiv) r += s"d${divRadix}${divImpl}${if(divArea)"Area" else ""}"
     if (privParam.withImsic) r += s"if${privParam.imsicInterrupts}gf${privParam.guestExternalInterruptFiles}"
@@ -896,6 +898,8 @@ class ParamSimple() {
       .text("Enable the custom function unit interface.")
     opt[Int]("asid-width").action { (v,c) => asidWidth = v }
       .text("Set the ASID width in bits; default: 0.")
+    opt[Int]("vmid-width").action { (v,c) => vmidWidth = v }
+      .text("Set the VMID width in bits; default: 0.")
     opt[Int]("gshare-bytes").action { (v,c) => gshareBytes = v }
       .text("Set the GShare storage size in bytes; default: 4 KiB.")
     opt[Unit]("record-htinst").action { (v, c) => recordHtinst = true }
@@ -951,7 +955,7 @@ class ParamSimple() {
       p = MmuCtrlParameters(
         physicalWidth = physicalWidth,
         asidWidth     = asidWidth,
-        vmidWidth     = 0,
+        vmidWidth     = vmidWidth,
       ),
       supportSatpMode = withMmu,
       supportHgatpMode = extension.withRvh && withMmu,
@@ -971,7 +975,7 @@ class ParamSimple() {
       case true => plugins += new vexiiriscv.memory.ShadowMmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
         physicalWidth = physicalWidth,
-        vmidWidth = 0 /* TODO */
+        vmidWidth = vmidWidth,
       )
     }
 
