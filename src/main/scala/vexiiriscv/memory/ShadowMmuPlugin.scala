@@ -64,6 +64,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
     // Implement the hardware for all the TLB storages
     val tlbGenerateParam = MmuTlbStorageEntryParam(
       asidWidth   = 0,
+      vmidWidth   = vmidWidth,
       checkUser   = false,
       checkGlobal = false,
       checkGuest  = false
@@ -99,11 +100,13 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       val storage = storages.find(_.self == ps.ss).get
       val read = for (sl <- storage.sl) yield new Area {
         val readAddress = readStage(ps.req.PRE_ADDRESS)(sl.lineRange)
+        val currentVmid = hgatp.vmid
         for ((way, wayId) <- sl.ways.zipWithIndex) {
           /* The shadow MMU should not enable the "ASID" and "GUEST" field of TLB */
           val query = MmuTlbStorageEntryQuery(
             address = hitsStage(ps.req.PRE_ADDRESS),
             asid    = B(0),
+            vmid    = currentVmid,
             guest   = False
           )
 
@@ -173,6 +176,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
 
       val busy = !isActive(IDLE)
       val virtual = Reg(UInt(MIXED_WIDTH bits))
+      val vmid = Reg(Bits(vmidWidth bits))
 
       setEntry(IDLE)
 
@@ -194,6 +198,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
           load.address := (hgatp.ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
           isImplicitAccess := arbiter.io.output.indirect
           arbiter.io.output.ready := True
+          vmid := hgatp.vmid
 
           when(hgatp.mode === spec.satpMode) {
             goto(CMD(spec.levels.size - 1))
@@ -361,6 +366,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
             storageLevel.write.data.valid           := True
             storageLevel.write.data.virtualAddress  := virtual(specLevel.virtualOffset + log2Up(storageLevel.slp.sets), widthOf(storageLevel.write.data.virtualAddress) bits)
             storageLevel.write.data.physicalAddress := (load.levelToPhysicalAddress(levelId) >> specLevel.virtualOffset).resized
+            if (vmidWidth > 0) storageLevel.write.data.vmid := vmid
             storageLevel.write.data.allowRead       := load.flags.R
             storageLevel.write.data.allowWrite      := load.flags.W && load.flags.D
             storageLevel.write.data.allowExecute    := load.flags.X
