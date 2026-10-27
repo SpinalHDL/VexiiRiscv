@@ -106,12 +106,6 @@ class MmuCtrlPlugin(val p: MmuCtrlParameters, supportSatpMode: Boolean, supportH
       if (hgatpSpec.satpMode != 0) read(modeOffset -> mode)
       allowHostCsr(!priv.logic.harts(0).m.status.tvm || priv.isMachine(0))
 
-      onDecode() {
-        when (csr.bus.decode.write) {
-          csr.bus.decode.doTrap(TrapReason.HFENCE_GMA)
-        }
-      }
-
       if (hgatpSpec.satpMode != 0) onWrite(true) {
         val hgatpModeWrite = csr.bus.write.bits(modeOffset, modeWidth bits)
         when(hgatpModeWrite === 0) {

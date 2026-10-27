@@ -26,8 +26,8 @@ class ShadowMmuPlugin(var spec : MmuSpec,
   def getSignExtension(kind: AddressTranslationPortUsage, rawAddress: UInt) = False
 
   override def getInvalidationPortParam = AddressTranslationInvalidationParam(
-    asidWidth       = 0,
-    requestAddress  = false,
+    idWidth         = vmidWidth,
+    requestAddress  = true,
     requestGuest    = false,
   )
 
@@ -409,23 +409,49 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       val depthMax = storageSpecs.map(_.p.levels.map(_.sets).max).max
       val counter = Reg(UInt(log2Up(depthMax) bits))
       val busy = RegInit(False)
+      val vmid = RegInit(B(0, vmidWidth bits))
+      val address = RegInit(U(0, MIXED_WIDTH bits))
+      val force = RegInit(False)
+
+      val anyVmid = (vmidWidth > 0).mux(RegInit(False), True)
+      val anyAddress = RegInit(False)
+      val query = MmuTlbStorageEntryQuery(
+        address = address,
+        asid    = B(0),
+        vmid    = vmid,
+        guest   = False,
+      )
 
       arbiter.io.output.ready := False
       when(!busy){
         counter := 0
         when (arbiter.io.output.valid) {
           busy := True
+          vmid := arbiter.io.output.id.resized
+          address := arbiter.io.output.address.resized
+          anyAddress := arbiter.io.output.anyAddress || arbiter.io.output.force
+          if(vmidWidth > 0) anyVmid := arbiter.io.output.anyId
+          force := arbiter.io.output.force
         }
       } otherwise {
         assert(HART_COUNT.get == 1)
-        for (storage <- storages;
-             sl <- storage.sl) {
-          sl.write.mask := (default -> true)
-          sl.write.address := counter.resized
+        for (storage <- storages; sl <- storage.sl) {
+          val invalidateReadAddress = Mux(anyAddress, counter.resized, address(sl.lineRange))
+          val mask = B(sl.ways.map(way => {
+            val entry = way.readAsync(invalidateReadAddress)
+            entry.needFlush(query, False, anyVmid, anyAddress) || force
+          }))
+          sl.write.mask := mask
+          sl.write.address := invalidateReadAddress
           sl.write.data.valid := False
         }
-        counter := counter + 1
-        when(counter.andR){
+        when (anyAddress) {
+          counter := counter + 1
+          when(counter.andR){
+            busy := False
+            arbiter.io.output.ready := True
+          }
+        } otherwise {
           busy := False
           arbiter.io.output.ready := True
         }

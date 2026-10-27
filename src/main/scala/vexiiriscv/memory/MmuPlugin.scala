@@ -309,7 +309,7 @@ class MmuPlugin(var spec : MmuSpec,
   }
 
   override def getInvalidationPortParam = AddressTranslationInvalidationParam(
-    asidWidth       = asidWidth,
+    idWidth         = asidWidth,
     requestAddress  = true,
     requestGuest    = withGuestSfenceCheck
   )
@@ -797,11 +797,11 @@ class MmuPlugin(var spec : MmuSpec,
         counter := 0
         when (arbiter.io.output.valid) {
           busy := True
-          asid := arbiter.io.output.asid.resized
+          asid := arbiter.io.output.id.resized
           address := arbiter.io.output.address.resized
           anyAddress := arbiter.io.output.anyAddress || arbiter.io.output.force
           if (priv.implementHypervisor) vmid := hgatp.vmid
-          if(asidWidth > 0) anyAsid := arbiter.io.output.anyAsid
+          if(asidWidth > 0) anyAsid := arbiter.io.output.anyId
           force := arbiter.io.output.force
           if (withGuestSfenceCheck) guest := arbiter.io.output.guest
         }
