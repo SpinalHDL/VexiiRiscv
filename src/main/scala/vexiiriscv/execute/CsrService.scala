@@ -183,8 +183,8 @@ trait CsrService {
     reads += CsrOnReadData(bitOffset, converted)
   }
 
-  def write[T <: Data](value : T, csrId : Int, bitOffset : Int = 0) : T = {
-    onWrite(csrId, true){ value.assignFromBits(bus.write.bits(bitOffset, widthOf(value) bits)) }
+  def write[T <: Data](value : T, csrFilter : Any, bitOffset : Int = 0) : T = {
+    onWrite(csrFilter, true){ value.assignFromBits(bus.write.bits(bitOffset, widthOf(value) bits)) }
     value
   }
   def writeWhen[T <: Data](value : T, cond : Bool, csrId : Int, bitOffset : Int = 0) : T = {
@@ -216,6 +216,37 @@ trait CsrService {
   def hart(hartId : Int) = new CsrHartApi(this, hartId)
 
   def remapWhen(from: Int, to: Int, cond: Bool): Unit = remapping += CsrRemap(from, to, cond)
+
+  class Csr(csrFilter : Any) extends Area{
+    def onWrite(onlyOnFire: Boolean)(body: => Unit) = CsrService.this.onWrite(csrFilter, onlyOnFire) {
+      body
+    }
+    def onDecode(priority : Int = 0)(body: => Unit) = CsrService.this.onDecode(csrFilter, priority) {
+      body
+    }
+
+    def writeCancel(cond : Bool) = CsrService.this.writeCancel(csrFilter, cond)
+
+    def allowCsr(cond: Bool = True) = CsrService.this.allowCsr(csrFilter, cond)
+    def allowHostCsr(cond: Bool = True) = CsrService.this.allowHostCsr(csrFilter, cond)
+
+    def read[T <: Data](value: T, bitOffset: Int = 0): Unit = {
+      CsrService.this.read(value, csrFilter, bitOffset)
+    }
+    def write[T <: Data](value: T, bitOffset: Int = 0): Unit = {
+      CsrService.this.write(value, csrFilter, bitOffset)
+    }
+    def readWrite[T <: Data](value: T, bitOffset: Int = 0): Unit = {
+      read(value, bitOffset)
+      write(value, bitOffset)
+    }
+
+    def readWrite(thats: (Int, Data)*): Unit = for (that <- thats) readWrite(that._2, that._1)
+    def write(thats: (Int, Data)*): Unit = for (that <- thats) write(that._2, that._1)
+    def read(thats: (Int, Data)*): Unit = for (that <- thats) read(that._2, that._1)
+  }
+
+  def onCsr(csrFilter : Any) = new Csr(csrFilter)
 }
 
 class CsrHartApi(csrService: CsrService, hartId : Int){

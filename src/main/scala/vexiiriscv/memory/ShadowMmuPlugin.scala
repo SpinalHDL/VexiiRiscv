@@ -38,13 +38,10 @@ class ShadowMmuPlugin(var spec : MmuSpec,
 
   val logic = during setup new Area{
     val priv = host[PrivilegedPlugin]
-    val csr = host[CsrAccessPlugin]
     val access = host[TranslatedDBusAccessPlugin]
-    val ram = host[CsrRamService]
     val pcs = host.get[PerformanceCounterService]
-    val mmu = host[MmuPlugin]
+    val mcp = host[MmuCtrlPlugin]
 
-    val csrLock = retains(csr.csrLock, ram.csrLock)
     val accessLock = retains(access.accessRetainer)
     val buildBefore = retains(List(host[PipelineBuilderPlugin].elaborationLock) ++ pcs.map(_.elaborationLock))
 
@@ -57,38 +54,10 @@ class ShadowMmuPlugin(var spec : MmuSpec,
     def physCap(range : Range) = (range.high min physicalWidth-1) downto range.low
 
     assert(HART_COUNT.get == 1)
-    val hgatp = new Area {
-      val physicalPpnWidth = physicalWidth - 12
-      val (modeOffset, modeWidth, ppnWidth, vmidOffset, vmidWidthMax) = XLEN.get match {
-        case 32 => (31, 1, 20 min physicalPpnWidth, 22, 7) //20 instead of 22 to avoid 34 physical bits, and it should not exceed the physical range
-        case 64 => (60, 4, 44 min physicalPpnWidth, 44, 14)
-      }
-      assert(vmidWidth <= vmidWidthMax, "vmidWidth is too big")
-      val mode = Reg(Bits(modeWidth bits)) init(0)
-      val vmid = Reg(Bits(vmidWidth bits)) init(0)
-      val ppn =  Reg(UInt(ppnWidth bits))  init(0)
-    }
 
-    csr.readWrite(CSR.HGATP, hgatp.vmidOffset -> hgatp.vmid, 0 -> hgatp.ppn)
-    csr.read(CSR.HGATP, hgatp.modeOffset -> hgatp.mode)
-    csr.allowHostCsr(CSR.HGATP, !priv.logic.harts(0).m.status.tvm || priv.isMachine(0))
+    assert(mcp.hgatpSpec == spec)
+    val hgatp = mcp.logic.hgatp
 
-    csr.onDecode(CSR.HGATP) {
-      when (csr.bus.decode.write) {
-        csr.bus.decode.doTrap(TrapReason.HFENCE_GMA)
-      }
-    }
-
-    csr.onWrite(CSR.HGATP, true) {
-      val hgatpModeWrite = csr.bus.write.bits(hgatp.modeOffset, hgatp.modeWidth bits)
-      when(hgatpModeWrite === 0) {
-        hgatp.mode := 0
-      } elsewhen (hgatpModeWrite === spec.satpMode) {
-        hgatp.mode := spec.satpMode
-      }
-    }
-
-    csrLock.release()
     portsLock.await()
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
@@ -119,7 +88,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
     }
 
     def readAllowed(read: Bool, execute: Bool, implicitAccess: Bool): Bool = {
-      read || (execute && mmu.logic.status.mxr && !implicitAccess)
+      read || (execute && mcp.logic.status.mxr && !implicitAccess)
     }
 
     // Implement the hardware of very MMU ports on their respective pipelines / storages

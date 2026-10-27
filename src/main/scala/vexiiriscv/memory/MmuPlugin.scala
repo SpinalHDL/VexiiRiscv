@@ -55,6 +55,14 @@ case class MmuLevel(virtualWidth : Int,
 }
 
 object MmuSpec{
+  def svbare(physicalWidth: Int) = MmuSpec(
+    levels        = List(),
+    entryBytes    = 0,
+    virtualWidth  = physicalWidth,
+    physicalWidth = physicalWidth,
+    satpMode      = 0,
+    pteReserved   = 0
+  )
   val sv32 = MmuSpec(
     levels     = List(
       MmuLevel(virtualWidth = 10, physicalWidth = 10, virtualOffset =  12, physicalOffset = 12, entryOffset =  10),
@@ -309,15 +317,12 @@ class MmuPlugin(var spec : MmuSpec,
 
   val logic = during setup new Area{
     val priv = host[PrivilegedPlugin]
-    val csr = host[CsrAccessPlugin]
     val access = host[TranslatedDBusAccessService]
-    val ram = host[CsrRamService]
     val pcs = host.get[PerformanceCounterService]
+    val mcp = host[MmuCtrlPlugin]
 
-    val csrLock = retains(csr.csrLock, ram.csrLock)
     val accessLock = retains(access.accessRetainer)
     val buildBefore = retains(List(host[PipelineBuilderPlugin].elaborationLock) ++ pcs.map(_.elaborationLock))
-
 
     awaitBuild()
 
@@ -337,55 +342,14 @@ class MmuPlugin(var spec : MmuSpec,
     def physCap(range : Range) = (range.high min physicalWidth-1) downto range.low
 
     assert(HART_COUNT.get == 1)
-    val satp = new Area {
-      val physicalPpnWidth = physicalWidth - 12
-      val (modeOffset, modeWidth, ppnWidth, asidOffset, asidWidthMax) = XLEN.get match {
-        case 32 => (31, 1, 20 min physicalPpnWidth, 22, 9) //20 instead of 22 to avoid 34 physical bits, and it should not exceed the physical range
-        case 64 => (60, 4, 44 min physicalPpnWidth, 44, 16)
-      }
-      assert(asidWidth <= asidWidthMax, "asidWidth is too big")
-      val mode = Reg(Bits(modeWidth bits)) init(0)
-      val asid = Reg(Bits(asidWidth bits)) init(0)
-      val ppn =  Reg(UInt(ppnWidth bits))  init(0)
-    }
-    val status = new Area{
-      val mxr  = RegInit(False)
-      val sum  = RegInit(False)
-    }
 
-    val vsatp = priv.implementHypervisor generate new Area {
-      val mode = Reg(Bits(satp.modeWidth bits)) init(0)
-      val asid = Reg(Bits(asidWidth bits)) init(0)
-      val ppn =  Reg(UInt(satp.ppnWidth bits))  init(0)
-    }
-    val vsstatus = priv.implementHypervisor generate new Area{
-      val mxr  = RegInit(False)
-      val sum  = RegInit(False)
-    }
+    assert(mcp.satpSpec == spec)
 
-    for(offset <- List(CSR.MSTATUS, CSR.SSTATUS)) csr.readWrite(offset, 19 -> status.mxr, 18 -> status.sum)
+    val satp = mcp.logic.satp
+    val status = mcp.logic.status
+    val vsatp = mcp.logic.vsatp
+    val vsstatus = mcp.logic.vsstatus
 
-    csr.readWrite(CSR.SATP, satp.modeOffset -> satp.mode, satp.asidOffset -> satp.asid, 0 -> satp.ppn)
-    val satpModeWrite = csr.bus.write.bits(satp.modeOffset, satp.modeWidth bits)
-    csr.writeCancel(CSR.SATP, satpModeWrite =/= 0 && satpModeWrite =/= spec.satpMode)
-
-    csr.allowCsr(CSR.SATP, !priv.logic.harts(0).m.status.tvm || priv.isMachine(0))
-    csr.trapNextOnWrite += CsrListFilter(List(CSR.SATP))
-
-    if (priv.implementHypervisor) {
-      csr.readWrite(CSR.VSSTATUS, 19 -> vsstatus.mxr, 18 -> vsstatus.sum)
-
-      csr.readWrite(CSR.VSATP, satp.modeOffset -> vsatp.mode, satp.asidOffset -> vsatp.asid, 0 -> vsatp.ppn)
-      val vsatpModeWrite = csr.bus.write.bits(satp.modeOffset, satp.modeWidth bits)
-      csr.writeCancel(CSR.VSATP, vsatpModeWrite =/= 0 && vsatpModeWrite =/= spec.satpMode)
-
-      csr.remapWhen(CSR.SATP, CSR.VSATP, PrivilegeMode.isGuest(priv.getPrivilege(0)))
-
-      csr.allowCsr(CSR.VSATP, !priv.logic.harts(0).h.status.vtvm || priv.getPrivilege(0) =/= PrivilegeMode.VS)
-      csr.trapNextOnWrite += CsrListFilter(List(CSR.VSATP))
-    }
-
-    csrLock.release()
     portsLock.await()
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
