@@ -10,7 +10,7 @@ import vexiiriscv._
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.FetchPipelinePlugin
-import vexiiriscv.memory.{MmuPlugin, PmpPlugin, PmpService}
+import vexiiriscv.memory.{MmuCtrlPlugin, MmuPlugin, PmpPlugin, PmpService}
 import vexiiriscv.misc.{PerformanceCounterPlugin, PrivilegedPlugin}
 import vexiiriscv.riscv.FloatRegFile
 //import vexiiriscv.execute.LsuCachelessPlugin
@@ -252,6 +252,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
           pmpNum = cpu.host.get[PmpService].map(_.getPmpNum).getOrElse(0),
           triggerCount = cpu.host.get[PrivilegedPlugin].map(_.p.debugTriggers).getOrElse(0),
           asidWidth = cpu.host.get[MmuPlugin].map(_.asidWidth).getOrElse(0),
+          vmidWidth = cpu.host.get[MmuCtrlPlugin].map(_.p.vmidWidth).getOrElse(0),
           memoryViewId = hartId
         )
         val pc = if(xlen == 32) 0x80000000l else 0x80000000l
@@ -449,7 +450,7 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
       ctx.clear()
       ctx.fetchId = decodeCtx.fetchId
       ctx.decodeId = decodeId
-      ctx.instruction = serialized.microOp.toLong
+      ctx.instruction = serialized.instruction.toLong
       ctx.spawnAt = cycle
       hart.microOpAllocPtr = (microOpId+1) & microOpIdMask
     }
