@@ -49,7 +49,7 @@ class EnvPlugin(layer : LaneLayer,
     if (ps.implementSupervisor) add(Rvi.SFENCE_VMA).srcs(SRC1.RF, SRC2.RF).decode(OP -> EnvPluginOp.SFENCE_VMA)
     if (ps.implementHypervisor) {
       add(Rvh.HFENCE_VVMA).srcs(SRC1.RF, SRC2.RF).decode(OP -> EnvPluginOp.HFENCE_VVMA)
-      add(Rvh.HFENCE_GVMA).decode(OP -> EnvPluginOp.HFENCE_GVMA)
+      add(Rvh.HFENCE_GVMA).srcs(SRC1.RF, SRC2.RF).decode(OP -> EnvPluginOp.HFENCE_GVMA)
     }
 
     for (uop <- uopList; spec = layer(uop)) {
@@ -187,6 +187,11 @@ class EnvPlugin(layer : LaneLayer,
               commit := True
               trapPort.exception := False
               trapPort.code := TrapReason.HFENCE_GMA
+              trapPort.tval := srcp.SRC1.asBits.resized
+              trapPort.tval2 := srcp.SRC2.asBits.resized
+              trapPort.arg(0) := False
+              trapPort.arg(1) := Decode.UOP(Const.rs1Range) === 0
+              trapPort.arg(2) := Decode.UOP(Const.rs2Range) === 0
             }
             when(PrivilegeMode.isGuest(privilege)) {
               trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION

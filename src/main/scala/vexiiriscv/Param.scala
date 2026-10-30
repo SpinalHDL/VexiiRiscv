@@ -15,7 +15,7 @@ import vexiiriscv.execute.cfu.{CfuBusParameter, CfuPlugin, CfuPluginEncoding}
 import vexiiriscv.execute.fpu.{FpuAddSharedParam, FpuMulParam}
 import vexiiriscv.execute.lsu._
 import vexiiriscv.fetch.{FetchCachelessAxi4Plugin, FetchCachelessPlugin, FetchCachelessWishbonePlugin, FetchL1Axi4Plugin, FetchL1Plugin, FetchL1WishbonePlugin, PrefetcherNextLinePlugin}
-import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter, ShadowMmuPlugin, TranslatedDBusAccessPlugin}
+import vexiiriscv.memory.{MmuCtrlParameters, MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter, ShadowMmuPlugin, TranslatedDBusAccessPlugin}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
 import vexiiriscv.riscv.{FloatRegFile, IntRegFile}
@@ -108,6 +108,7 @@ class ParamSimple() {
   var hartCount = 1
   var disableMmu = false
   var asidWidth = 0
+  var vmidWidth = 0
   var physicalWidth = 32
   var resetVector = 0x80000000l
   var decoders = 1
@@ -610,6 +611,7 @@ class ParamSimple() {
     if (relaxedSrc) r += "rsrc"
     if (extension.withPerformanceCounters) r += s"pc$additionalPerformanceCounters"
     if (withMmu) r += s"asid$asidWidth"
+    if (withMmu && extension.withHypervisor) r += s"vmid$vmidWidth"
     if (withIterativeShift) r += "isft"
     if (extension.withDiv) r += s"d${divRadix}${divImpl}${if(divArea)"Area" else ""}"
     if (privParam.withImsic) r += s"if${privParam.imsicInterrupts}gf${privParam.guestExternalInterruptFiles}"
@@ -896,6 +898,8 @@ class ParamSimple() {
       .text("Enable the custom function unit interface.")
     opt[Int]("asid-width").action { (v,c) => asidWidth = v }
       .text("Set the ASID width in bits; default: 0.")
+    opt[Int]("vmid-width").action { (v,c) => vmidWidth = v }
+      .text("Set the VMID width in bits; default: 0.")
     opt[Int]("gshare-bytes").action { (v,c) => gshareBytes = v }
       .text("Set the GShare storage size in bytes; default: 4 KiB.")
     opt[Unit]("record-htinst").action { (v, c) => recordHtinst = true }
@@ -947,6 +951,15 @@ class ParamSimple() {
     val intWritebackAt = 2 + extension.withRvh.toInt //Alias for "trap at" as well
 
     plugins += new riscv.RiscvPlugin(xlen, hartCount, isa = extension.getIsaNameArray(includeIgnored = true).toSet)
+    if (extension.withSupervisor) plugins += new vexiiriscv.memory.MmuCtrlPlugin(
+      p = MmuCtrlParameters(
+        physicalWidth = physicalWidth,
+        asidWidth     = asidWidth,
+        vmidWidth     = vmidWidth,
+      ),
+      supportSatpMode = withMmu,
+      supportHgatpMode = extension.withRvh && withMmu,
+    )
     if (withMmu) plugins += new TranslatedDBusAccessPlugin(withPtwTlb = withImplicitPtwTlb)
     withMmu match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
@@ -962,7 +975,7 @@ class ParamSimple() {
       case true => plugins += new vexiiriscv.memory.ShadowMmuPlugin(
         spec = if (xlen == 32) MmuSpec.sv32 else MmuSpec.sv39,
         physicalWidth = physicalWidth,
-        vmidWidth = 0 /* TODO */
+        vmidWidth = vmidWidth,
       )
     }
 
