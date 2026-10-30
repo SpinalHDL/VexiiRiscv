@@ -70,11 +70,18 @@ class RegFilePlugin(var spec : RegfileSpec,
 
     if (!spec.x0AlwaysZero || id != 0) {
       val written = value & ((BigInt(1) << rfpp.dataWidth) - 1)
+      val regfile = logic.regfile.fpga
 
-      if (logic.regfile.fpga.asMem != null) {
-        logic.regfile.fpga.asMem.ram.setBigInt(id, written)
-      } else if (logic.regfile.fpga.asReg != null) {
-        logic.regfile.fpga.asReg.ram(id) #= written
+      if (regfile.asMem != null) {
+        regfile.asMem.ram.setBigInt(id, written)
+      } else if (regfile.asReg != null) {
+        regfile.asReg.ram(id) #= written
+      } else if (regfile.asAsyncDp != null) {
+        regfile.asAsyncDp.logic.ram.head.setBigInt(id, written)
+        regfile.asAsyncDp.logic.location.ram(id) #= 0
+      } else if (regfile.asSyncDp != null) {
+        regfile.asSyncDp.logic.ram.head.setBigInt(id, written)
+        regfile.asSyncDp.logic.location.ram(id) #= 0
       } else {
         assert(false, "Current register file backend does not support simulated register writes")
       }

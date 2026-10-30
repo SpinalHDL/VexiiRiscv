@@ -2,6 +2,7 @@ package vexiiriscv.regfile
 
 import spinal.core._
 import spinal.core.fiber._
+import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.eda.bench.{Bench, Rtl, XilinxStdTargets}
 import spinal.lib.misc.plugin.FiberPlugin
@@ -48,7 +49,7 @@ class RegFileMem(rfpp : RegFilePortParam,
   val infered = writesParameter.size == 1 || !dualPortRam
   val asMem = (infered && !regBasedRam) generate new Area {
     val ram = Mem.fill((1 << addressWidth))(Bits(dataWidth bits))
-    Verilator.public(ram)
+    ram.simPublic()
 
     val writes = for ((w, i) <- conv.writes.zipWithIndex) yield new Area {
       val port = ram.writePort()
@@ -75,7 +76,7 @@ class RegFileMem(rfpp : RegFilePortParam,
   val asReg = (infered && regBasedRam) generate new Area {
     assert(!syncRead)
     val ram = Vec.fill((1 << addressWidth))(Reg(Bits(dataWidth bits)))
-    Verilator.public(ram)
+    ram.simPublic()
 
     for(addr <- ram.indices){
       val oh = conv.writes.map(p => p.valid && p.address === addr)
@@ -92,17 +93,21 @@ class RegFileMem(rfpp : RegFilePortParam,
     }
   }
 
-  val asAsyncDp = (!infered && !syncRead) generate {
+  val asAsyncDp = (!infered && !syncRead) generate new Area {
     assert(!asyncReadBySyncReadRevertedClk)
     val logic = new RamAsyncMwMux(Bits(rfpp.dataWidth bits), 1 << rfpp.addressWidth, writesParameter.size, readsParameter.size)
     logic.io <> conv
     logic.location.ram.foreach(_.randBoot())
+    logic.location.ram.foreach(_.simPublic())
+    logic.addMemTags(Seq(SimPublic))
   }
 
-  val asSyncDp = (!infered && syncRead) generate {
+  val asSyncDp = (!infered && syncRead) generate new Area {
     assert(!asyncReadBySyncReadRevertedClk)
     val logic = new RamSyncMwMux(Bits(rfpp.dataWidth bits), 1 << rfpp.addressWidth, writesParameter.size, readsParameter.size)
     logic.location.ram.foreach(_.randBoot())
+    logic.location.ram.foreach(_.simPublic())
     logic.io <> conv
+    logic.addMemTags(Seq(SimPublic))
   }
 }
