@@ -549,7 +549,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       val trapSent = RegInit(False) setWhen (trapPort.valid) clearWhen (up.isCancel)
 
       trapPort.valid := False
-      trapPort.tval := Fetch.WORD_PC.asBits
+      trapPort.tval := Global.expendPc(Fetch.WORD_PC, Global.TVAL_WIDTH).asBits
       trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()

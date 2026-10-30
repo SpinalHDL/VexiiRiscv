@@ -203,7 +203,7 @@ class FetchCachelessPlugin(var wordWidth : Int,
 
       TRAP := False
       trapPort.valid := TRAP && !trapSent
-      trapPort.tval := Fetch.WORD_PC.asBits
+      trapPort.tval := Global.expendPc(Fetch.WORD_PC, Global.TVAL_WIDTH).asBits
       trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
       trapPort.hartId := Global.HART_ID
       trapPort.exception.assignDontCare()
@@ -241,6 +241,15 @@ class FetchCachelessPlugin(var wordWidth : Int,
         TRAP := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
+      }
+
+      when(Fetch.PC_FAULT) {
+        TRAP := True
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
+        when(!tpk.BYPASS_TRANSLATION){
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT
+        }
       }
 
       if(priv.implementHypervisor) when(!(tpk.PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD)) {
