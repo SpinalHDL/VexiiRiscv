@@ -73,7 +73,7 @@ class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin {
       spec.zeroExtends ++= fullwidths.map(uop => ExtendsSpec(uop, IntRegFile.width))
     }
 
-    val widths = specs.flatMap(spec => spec.extendSpecs.map(_.bitId)).toSeq.distinct.sorted
+    val widths = specs.flatMap(spec => spec.extendSpecs.map(_.bitId) :+ widthOf(spec.port.payload)).toSeq.distinct.sorted
     val widthsToId = widths.zipWithIndex.toMap
     val wiw = log2Up(widths.size)
 
@@ -102,7 +102,7 @@ class IntFormatPlugin(val lane : ExecuteLanePlugin) extends FiberPlugin {
       wb.payload := raw
 
       val extendSpecs = group.flatMap(_.extendSpecs)
-      val extendBitIds = extendSpecs.map(_.bitId).distinct.sorted
+      val extendBitIds = (extendSpecs.map(_.bitId) :+ widthOf(wb.payload)).distinct.sorted
 
       var from = extendBitIds.head
       val segments = for(to <- extendBitIds.tail) yield new Area { // For each independent section
