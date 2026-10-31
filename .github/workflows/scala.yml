@@ -4,7 +4,19 @@
 
 name: Scala CI
 
-on: [push, pull_request] #push, pull_request
+on:
+  push:
+    branches: ['**']
+    paths: &ci_paths
+      - 'src/**'
+      - 'build.sbt'
+      - 'build.mill'
+      - '.gitmodules'
+      - 'ext/**'
+      - '.github/**'
+
+  pull_request:
+    paths: *ci_paths
 
 permissions:
   contents: read
