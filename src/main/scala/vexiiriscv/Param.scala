@@ -573,7 +573,11 @@ class ParamSimple() {
       addISA("smaia")
       if(extension.withSupervisor) addISA("ssaia")
     }
-    if(!withMmu) removeISA("svade")
+    if(withMmu) {
+      addISA("svade", "svvptc")
+    } else {
+      removeISA("svade", "svvptc")
+    }
     extension.finialize(xlen)
     println(s"ISA extensions: ${extension.getIsaNameArray().mkString(", ")}")
 
