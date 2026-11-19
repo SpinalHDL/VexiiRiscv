@@ -136,7 +136,9 @@ class EnvPlugin(layer : LaneLayer,
             trapPort.arg(2 downto 0) := xretPriv.asBits
           }
           if(ps.p.withHypervisor) {
-            when(privilege === PrivilegeMode.VU || (privilege === PrivilegeMode.VS && retKoMapping(PrivilegeMode.VS))) {
+            val privKo = privilege === PrivilegeMode.VU || (privilege === PrivilegeMode.VS && retKoMapping(PrivilegeMode.VS))
+            val isMret = Decode.UOP(28, 2 bits).andR
+            when(privKo && !isMret) {
               trapPort.code := CSR.MCAUSE_ENUM.VIRTUAL_INSTRUCTION
             }
           }
