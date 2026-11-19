@@ -682,10 +682,10 @@ class PrivilegedPlugin(val p : PrivilegedParam, val hartIds : Seq[Int]) extends 
           cap.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUS)) // Status can have various side effect on the MMU and FPU
         }
 
-        val statush = new api.Csr(CSR.MSTATUSH) {
+        val statush = (XLEN.get == 32) generate new api.Csr(CSR.MSTATUSH) {
           import status._
 
-          if (p.withHypervisor && XLEN.get == 32) readWrite(6 -> gva, 7 -> mpv)
+          if (p.withHypervisor) readWrite(6 -> gva, 7 -> mpv)
 
           cap.trapNextOnWrite += CsrListFilter(List(CSR.MSTATUSH)) // Status can have various side effect on the MMU and FPU
         }
