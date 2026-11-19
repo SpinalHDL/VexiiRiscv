@@ -1001,13 +1001,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
                 csr.vs.status.sie := False
                 csr.vs.status.spie := csr.vs.status.sie
                 csr.vs.status.spp := csr.privilege(0, 1 bits).asUInt
-
-                csr.vs.cause.code := buffer.trap.code.mux(
-                  B(10) -> B(9),
-                  B(6)  -> B(5),
-                  B(2)  -> B(1),
-                  default -> buffer.trap.code
-                )
+                csr.vs.cause.code := buffer.trap.code
                 csr.vs.cause.interrupt := buffer.trap.interrupt
               }
             }
