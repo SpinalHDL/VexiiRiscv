@@ -691,10 +691,10 @@ class MmuPlugin(var spec : MmuSpec,
         val shadowReadError = load.rsp.error(1)
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
         val pageFault = !shadowReadError && !pteReadError && pteFault
-        val accessFault = pteReadError || (!pteFault && leafAccessFault)
+        val permissionFault = permCheck.rsp.page_fault
+        val accessFault = pteReadError || (!pteFault && !permissionFault && leafAccessFault)
         val guestFault = shadowReadError && !pteReadError
         val translationFault = pteFault || leafAccessFault
-        val permissionFault = permCheck.rsp.page_fault
 
         def doneLogic() : Unit = {
           val translatedAddress = load.levelToPhysicalAddress(levelId)
@@ -711,7 +711,7 @@ class MmuPlugin(var spec : MmuSpec,
 
           refillPorts.map(_.rsp).foreach { o =>
             o.bypass := False
-            o.pageFault := Mux(translationFault, pageFault, permissionFault)
+            o.pageFault := Mux(pteFault, pageFault, permissionFault)
             o.accessFault := accessFault
             o.guestFault := shadowReadError
             o.pf  := pageFault
