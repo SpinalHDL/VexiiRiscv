@@ -55,6 +55,14 @@ case class MmuLevel(virtualWidth : Int,
 }
 
 object MmuSpec{
+  def svbare(physicalWidth: Int) = MmuSpec(
+    levels        = List(),
+    entryBytes    = 0,
+    virtualWidth  = physicalWidth,
+    physicalWidth = physicalWidth,
+    satpMode      = 0,
+    pteReserved   = 0
+  )
   val sv32 = MmuSpec(
     levels     = List(
       MmuLevel(virtualWidth = 10, physicalWidth = 10, virtualOffset =  12, physicalOffset = 12, entryOffset =  10),
@@ -82,6 +90,7 @@ object MmuSpec{
 
 case class MmuTlbStorageEntryParam(
   asidWidth: Int,
+  vmidWidth: Int,
   checkUser: Boolean,
   checkGlobal: Boolean,
   checkGuest: Boolean
@@ -90,6 +99,7 @@ case class MmuTlbStorageEntryParam(
 case class MmuTlbStorageEntryQuery(
   address: UInt,
   asid: Bits,
+  vmid: Bits,
   guest: Bool
 )
 
@@ -107,6 +117,7 @@ class MmuTlbStorageEntry(
   val virtualAddress  = UInt(vw-log2Up(depth) bits)
   val physicalAddress = UInt(pw bits)
   val asid = Bits(p.asidWidth bits)
+  val vmid = Bits(p.vmidWidth bits)
   val allowRead, allowWrite, allowExecute = Bool()
   val allowUser = p.checkUser generate Bool()
   val guest = p.checkGuest generate Bool()
@@ -116,15 +127,19 @@ class MmuTlbStorageEntry(
   def hit(query : MmuTlbStorageEntryQuery): Bool = {
     val addressCheck = hit(query.address)
     val asidCheck = (p.asidWidth > 0).mux(asid === query.asid, True) || p.checkGlobal.mux(global, False)
+    val vmidMatch = (p.vmidWidth > 0).mux(vmid === query.vmid, True)
+    val vmidCheck = p.checkGuest.mux(!guest || vmidMatch, vmidMatch)
     val guestCheck = p.checkGuest.mux(guest === query.guest, True)
-    addressCheck && asidCheck && guestCheck
+    addressCheck && asidCheck && guestCheck && vmidCheck
   }
-  def needFlush(query : MmuTlbStorageEntryQuery, anyAsid : Bool, anyAddress : Bool) = {
+  def needFlush(query : MmuTlbStorageEntryQuery, anyAsid : Bool, anyVmid : Bool, anyAddress : Bool) = {
     val addressCheck = hit(query.address) || anyAddress
     val asidCheck = (p.asidWidth > 0).mux(asid === query.asid, True)
     val globalCheck = (asidCheck && p.checkGlobal.mux(!global, True)) || anyAsid
+    val vmidMatch = (p.vmidWidth > 0).mux(vmid === query.vmid, True) || anyVmid
+    val vmidCheck = p.checkGuest.mux(!guest || vmidMatch, vmidMatch)
     val guestCheck = p.checkGuest.mux(guest === query.guest, True)
-    addressCheck && globalCheck && guestCheck
+    addressCheck && globalCheck && guestCheck && vmidCheck
   }
   def physicalAddressFrom(address : UInt) = physicalAddress @@ address(0, spec.levels(levelId).physicalOffset bits)
 }
@@ -294,7 +309,7 @@ class MmuPlugin(var spec : MmuSpec,
   }
 
   override def getInvalidationPortParam = AddressTranslationInvalidationParam(
-    asidWidth       = asidWidth,
+    idWidth         = asidWidth,
     requestAddress  = true,
     requestGuest    = withGuestSfenceCheck
   )
@@ -309,15 +324,12 @@ class MmuPlugin(var spec : MmuSpec,
 
   val logic = during setup new Area{
     val priv = host[PrivilegedPlugin]
-    val csr = host[CsrAccessPlugin]
     val access = host[TranslatedDBusAccessService]
-    val ram = host[CsrRamService]
     val pcs = host.get[PerformanceCounterService]
+    val mcp = host[MmuCtrlPlugin]
 
-    val csrLock = retains(csr.csrLock, ram.csrLock)
     val accessLock = retains(access.accessRetainer)
     val buildBefore = retains(List(host[PipelineBuilderPlugin].elaborationLock) ++ pcs.map(_.elaborationLock))
-
 
     awaitBuild()
 
@@ -338,60 +350,22 @@ class MmuPlugin(var spec : MmuSpec,
     def physCap(range : Range) = (range.high min physicalWidth-1) downto range.low
 
     assert(HART_COUNT.get == 1)
-    val satp = new Area {
-      val (modeOffset, modeWidth, ppnWidth, asidOffset, asidWidthMax) = XLEN.get match {
-        case 32 => (31, 1, 20, 22, 9) //20 instead of 22 to avoid 34 physical bits
-        case 64 => (60, 4, 44, 44, 16)
-      }
-      assert(asidWidth <= asidWidthMax, "asidWidth is too big")
-      val mode = Reg(Bits(modeWidth bits)) init(0)
-      val asid = Reg(Bits(asidWidth bits)) init(0)
-      val ppn =  Reg(UInt(ppnWidth bits))  init(0)
-    }
-    val status = new Area{
-      val mxr  = RegInit(False)
-      val sum  = RegInit(False)
-    }
 
-    val vsatp = priv.implementHypervisor generate new Area {
-      val mode = Reg(Bits(satp.modeWidth bits)) init(0)
-      val asid = Reg(Bits(asidWidth bits)) init(0)
-      val ppn =  Reg(UInt(satp.ppnWidth bits))  init(0)
-    }
-    val vsstatus = priv.implementHypervisor generate new Area{
-      val mxr  = RegInit(False)
-      val sum  = RegInit(False)
-    }
+    assert(mcp.satpSpec == spec)
 
-    for(offset <- List(CSR.MSTATUS, CSR.SSTATUS)) csr.readWrite(offset, 19 -> status.mxr, 18 -> status.sum)
+    val satp = mcp.logic.satp
+    val status = mcp.logic.status
+    val vsatp = mcp.logic.vsatp
+    val vsstatus = mcp.logic.vsstatus
+    val hgatp = mcp.logic.hgatp
 
-    csr.readWrite(CSR.SATP, satp.modeOffset -> satp.mode, satp.asidOffset -> satp.asid, 0 -> satp.ppn)
-    val satpModeWrite = csr.bus.write.bits(satp.modeOffset, satp.modeWidth bits)
-    csr.writeCancel(CSR.SATP, satpModeWrite =/= 0 && satpModeWrite =/= spec.satpMode)
-
-    csr.allowCsr(CSR.SATP, !priv.logic.harts(0).m.status.tvm || priv.isMachine(0))
-    csr.trapNextOnWrite += CsrListFilter(List(CSR.SATP))
-
-    if (priv.implementHypervisor) {
-      csr.readWrite(CSR.VSSTATUS, 19 -> vsstatus.mxr, 18 -> vsstatus.sum)
-
-      csr.readWrite(CSR.VSATP, satp.modeOffset -> vsatp.mode, satp.asidOffset -> vsatp.asid, 0 -> vsatp.ppn)
-      val vsatpModeWrite = csr.bus.write.bits(satp.modeOffset, satp.modeWidth bits)
-      csr.writeCancel(CSR.VSATP, vsatpModeWrite =/= 0 && vsatpModeWrite =/= spec.satpMode)
-
-      csr.remapWhen(CSR.SATP, CSR.VSATP, PrivilegeMode.isGuest(priv.getPrivilege(0)))
-
-      csr.allowCsr(CSR.VSATP, !priv.logic.harts(0).h.status.vtvm || priv.getPrivilege(0) =/= PrivilegeMode.VS)
-      csr.trapNextOnWrite += CsrListFilter(List(CSR.VSATP))
-    }
-
-    csrLock.release()
     portsLock.await()
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
     // Implement the hardware for all the TLB storages
     val tlbGenerateParam = MmuTlbStorageEntryParam(
       asidWidth   = asidWidth,
+      vmidWidth   = mcp.p.vmidWidth,
       checkUser   = true,
       checkGlobal = withGlobalCheck,
       checkGuest  = priv.implementHypervisor
@@ -461,10 +435,12 @@ class MmuPlugin(var spec : MmuSpec,
         val readAddress = readStage(ps.req.PRE_ADDRESS)(sl.lineRange)
         val forceGuest = hitsStage(ps.req.FORCE_GUEST) || effectiveGuest
         val currentAsid = priv.implementHypervisor.mux(Mux(forceGuest, vsatp.asid, satp.asid), satp.asid)
+        val currentVmid = priv.implementHypervisor.mux(hgatp.vmid.andMask(forceGuest), B(0))
         for ((way, wayId) <- sl.ways.zipWithIndex) {
           val query = MmuTlbStorageEntryQuery(
             address = hitsStage(ps.req.PRE_ADDRESS),
             asid    = currentAsid,
+            vmid    = currentVmid,
             guest   = priv.implementHypervisor.mux(forceGuest, True)
           )
 
@@ -561,6 +537,7 @@ class MmuPlugin(var spec : MmuSpec,
       val permission = Reg(cloneOf(arbiter.io.output.permission))
       val isGlobal = Reg(Bool())
       val asid = Reg(Bits(asidWidth bits))
+      val vmid = Reg(B(0, mcp.p.vmidWidth bits))
 
       arbiter.io.output.ready := False
       IDLE whenIsActive {
@@ -582,6 +559,7 @@ class MmuPlugin(var spec : MmuSpec,
             Mux(arbiter.io.output.indirect, vsatp.asid, satp.asid),
             satp.asid
           )
+          if (priv.implementHypervisor) vmid := hgatp.vmid.andMask(arbiter.io.output.indirect)
           arbiter.io.output.ready := True
           goto(CMD(spec.levels.size - 1))
         }
@@ -686,7 +664,7 @@ class MmuPlugin(var spec : MmuSpec,
     }
 
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
-        val pteFault = (load.exception || load.levelException(levelId)) || (levelId == 0).mux(!load.leaf, False)
+        val pteFault = load.exception || (load.leaf && load.levelException(levelId)) || (levelId == 0).mux(!load.leaf, False)
         val pteReadError = load.rsp.error(0)
         val shadowReadError = load.rsp.error(1)
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
@@ -747,7 +725,7 @@ class MmuPlugin(var spec : MmuSpec,
             levelId match {
               case 0 => rspCheck
               case _ => {
-                when(load.exception) {
+                when(load.exception || leafAccessFault) {
                   goto(DONE(levelId))
                 } elsewhen(load.leaf) {
                   rspCheck
@@ -777,6 +755,7 @@ class MmuPlugin(var spec : MmuSpec,
             storageLevel.write.data.virtualAddress  := virtual(specLevel.virtualOffset + log2Up(storageLevel.slp.sets), widthOf(storageLevel.write.data.virtualAddress) bits)
             storageLevel.write.data.physicalAddress := (load.levelToPhysicalAddress(levelId) >> specLevel.virtualOffset).resized
             if (asidWidth > 0) storageLevel.write.data.asid := asid
+            if (mcp.p.vmidWidth > 0) storageLevel.write.data.vmid := vmid
             storageLevel.write.data.allowRead       := load.flags.R
             storageLevel.write.data.allowWrite      := load.flags.W && load.flags.D
             storageLevel.write.data.allowExecute    := load.flags.X
@@ -802,6 +781,7 @@ class MmuPlugin(var spec : MmuSpec,
       val counter = Reg(UInt(log2Up(depthMax) bits))
       val busy = RegInit(False)
       val asid = RegInit(B(0, asidWidth bits))
+      val vmid = RegInit(B(0, mcp.p.vmidWidth bits))
       val address = RegInit(U(0, MIXED_WIDTH bits))
       val guest = withGuestSfenceCheck generate RegInit(False)
       val force = RegInit(False)
@@ -811,6 +791,7 @@ class MmuPlugin(var spec : MmuSpec,
       val query = MmuTlbStorageEntryQuery(
         address = address,
         asid    = asid,
+        vmid    = vmid,
         guest   = withGuestSfenceCheck.mux(guest, False)
       )
 
@@ -819,10 +800,11 @@ class MmuPlugin(var spec : MmuSpec,
         counter := 0
         when (arbiter.io.output.valid) {
           busy := True
-          asid := arbiter.io.output.asid.resized
+          asid := arbiter.io.output.id.resized
           address := arbiter.io.output.address.resized
           anyAddress := arbiter.io.output.anyAddress || arbiter.io.output.force
-          if(asidWidth > 0) anyAsid := arbiter.io.output.anyAsid
+          if (priv.implementHypervisor) vmid := hgatp.vmid
+          if(asidWidth > 0) anyAsid := arbiter.io.output.anyId
           force := arbiter.io.output.force
           if (withGuestSfenceCheck) guest := arbiter.io.output.guest
         }
@@ -833,7 +815,7 @@ class MmuPlugin(var spec : MmuSpec,
           val invalidateReadAddress = Mux(anyAddress, counter.resized, address(sl.lineRange))
           val mask = B(sl.ways.map(way => {
             val entry = way.readAsync(invalidateReadAddress)
-            entry.needFlush(query, anyAsid, anyAddress) || force
+            entry.needFlush(query, anyAsid, False, anyAddress) || force
           }))
           sl.write.mask := mask
           sl.write.address := invalidateReadAddress
