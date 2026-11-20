@@ -60,7 +60,8 @@ jobs:
           path: |
             ~/.ivy2/cache
             ~/.sbt
-          key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt') }}
+            ~/.cache/coursier
+          key: ${{ runner.os }}-sbt-${{ matrix.scala_version }}-${{ hashFiles('**/*.sbt', '**/project/version.conf') }}
 
       - name: Compute tools cache key
         id: tools-key
