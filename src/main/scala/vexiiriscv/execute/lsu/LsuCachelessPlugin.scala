@@ -245,7 +245,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val pmpPort = ps.createPmpPort(
       nodes = List.tabulate(forkAt+1)(elp.execute(_).down),
       physicalAddress = stpk.TRANSLATED,
-      forceCheck = _ => False,
+      forceCheck = _(GUEST),
       read = e => e(LOAD) || (e(EXECUTE) && e(GUEST)),
       write = _(STORE),
       execute = e => e(EXECUTE) && e(GUEST),

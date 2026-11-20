@@ -633,7 +633,7 @@ class LsuPlugin(var layer : LaneLayer,
     val pmpPort = ps.createPmpPort(
       nodes = List.tabulate(ctrlAt+1)(elp.execute(_).down),
       physicalAddress = stpk.TRANSLATED,
-      forceCheck = _(FROM_ACCESS),
+      forceCheck = e => e(FROM_ACCESS) || e(l1.GUEST),
       read = e => e(l1.LOAD) || (e(l1.EXECUTE) && e(l1.GUEST)),
       write = _(l1.STORE),
       execute = e => e(l1.EXECUTE) && e(l1.GUEST),

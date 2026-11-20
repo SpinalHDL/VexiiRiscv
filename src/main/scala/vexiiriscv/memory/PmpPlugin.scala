@@ -198,6 +198,7 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
 
     val ports = for(ps <- portSpecs) yield new Composite(ps.rsp, "logic", false){
       import ps._
+      val instructionShouldHitPort = instructionShouldHit || ps.forceCheck(permStage)
       val dataShouldHitPort = dataShouldHit || ps.forceCheck(permStage)
       val torCmpAddress = torCmpStage(ps.physicalAddress) >> granularityWidth
       val TOR_SMALLER = new Array[Payload[Bool]](p.pmpSize)
@@ -213,13 +214,13 @@ class PmpPlugin(val p : PmpParam) extends FiberPlugin with PmpService{
         }
         val HIT_ANY = { import hitsStage._ ; insert(p.withNapot.mux(e.isNapot && napot.HIT, False) || p.withTor.mux(e.isTor && tor.HIT, False)) }
 
-        val instructionCheck = e.cfg.locked || instructionShouldHit
+        val instructionCheck = e.cfg.locked || instructionShouldHitPort
         val dataCheck = e.cfg.locked || dataShouldHitPort
         val normalRwx = (!ps.execute(permStage) || e.cfg.execute || !instructionCheck) &&
                         (((!ps.write(permStage) || e.cfg.write) && (!ps.read(permStage) || e.cfg.read)) || !dataCheck)
         val PERM_OK = permStage.insert(normalRwx)
       }
-      val NEED_HIT = permStage.insert(instructionShouldHit && ps.execute(permStage) || dataShouldHitPort && (ps.read(permStage) || ps.write(permStage)))
+      val NEED_HIT = permStage.insert(instructionShouldHitPort && ps.execute(permStage) || dataShouldHitPort && (ps.read(permStage) || ps.write(permStage)))
 
       val onCtrl = (p.pmpSize > 0) generate new Area{
         import ps.rspStage._
