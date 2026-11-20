@@ -94,6 +94,7 @@ class FpuFlagsWritebackPlugin(val lane : ExecuteLaneService, pipTo : Int) extend
     val flagsOr = flagsOrInputs.reduceBalancedTree(_ | _)
     cp.waitElaborationDone() //Ensure that CSR flags set is done last. This relax timings
     when(!lane.isFreezed()) {
+      fcp.api.gotDirty.setWhen(flagsOr.asBits.orR)
       fcp.api.flags.NV.setWhen(flagsOr.NV)
       fcp.api.flags.DZ.setWhen(flagsOr.DZ)
       fcp.api.flags.OF.setWhen(flagsOr.OF)

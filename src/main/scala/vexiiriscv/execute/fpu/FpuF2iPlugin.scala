@@ -46,6 +46,7 @@ class FpuF2iPlugin(val layer : LaneLayer,
       spec.addDecoding(SEL -> True)
       fup.unpack(uop, RS1)
       iwbp.addMicroOp(iwb, spec)
+      ffwbp.addUop(ffwb, spec, intWbAt)
       size match {
         case 32 => iwbp.signExtend(iwb, spec, 32)
         case 64 =>

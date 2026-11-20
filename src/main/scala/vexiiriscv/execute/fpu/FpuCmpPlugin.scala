@@ -57,6 +57,7 @@ class FpuCmpPlugin(val layer : LaneLayer,
     def add(uop: MicroOp, decodings: (Payload[_ <: BaseType], Any)*) = {
       val spec = layer.add(uop)
       spec.addDecoding(decodings)
+      ffwbp.addUop(ffwb, spec, cmpAt)
       uop.resources.foreach {
         case RfResource(_, rs: RfRead) => fup.unpack(uop, rs)
         case RfResource(rf, rs: RfWrite) if rf == FloatRegFile =>
