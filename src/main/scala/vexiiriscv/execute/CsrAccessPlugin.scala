@@ -11,7 +11,7 @@ import vexiiriscv.decode.Decode
 import vexiiriscv.decode.Decode.{INSTRUCTION_SLICE_COUNT, UOP, rfaKeys}
 import vexiiriscv.misc.{TrapReason, TrapService}
 import vexiiriscv.regfile.RegfileService
-import vexiiriscv.riscv.{CSR, Const, IMM, IntRegFile, RD, RS1, Riscv, Rvi}
+import vexiiriscv.riscv.{CSR, Const, IMM, IntRegFile, RD, RS1, Riscv, RiscvPlugin, Rvi}
 
 import scala.collection.mutable.ArrayBuffer
 import vexiiriscv.riscv.Riscv._
@@ -65,6 +65,8 @@ class CsrAccessPlugin(val layer : LaneLayer,
 
     elp.setDecodingDefault(SEL, False)
 
+    assert(host[RiscvPlugin].has("zicsr"), "The zicsr extension isn't part of the ISA configuration, " +
+      "while CsrAccessPlugin unconditionally implements the CSR instructions")
     val add = new ExecuteUnitElementSimple.Api(layer, null, SEL).add(_)
     add(Rvi.CSRRW).decode(CSR_IMM -> False, CSR_MASK -> False)
     add(Rvi.CSRRS).decode(CSR_IMM -> False, CSR_MASK -> True, CSR_CLEAR -> False)
