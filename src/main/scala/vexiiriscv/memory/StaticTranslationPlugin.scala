@@ -23,7 +23,7 @@ class StaticTranslationPlugin(var physicalWidth: Int, val translationLevel : Int
   override def getStorageIdWidth(): Int = 0
 
   override def getInvalidationPortParam = AddressTranslationInvalidationParam(
-    asidWidth       = 0,
+    idWidth         = 0,
     requestAddress  = false
   )
 

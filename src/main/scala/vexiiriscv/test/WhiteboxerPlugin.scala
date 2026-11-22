@@ -70,7 +70,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val hartId = wrap(c(Global.HART_ID))
       val decodeId = wrap(c(Decode.DOP_ID))
       val microOpId = wrap(c(Decode.UOP_ID))
-      val microOp = wrap(c(Decode.UOP))
+      val instruction = wrap(c(Decode.INSTRUCTION_RAW))
     }
 
     val dispatches = for ((eu, euid) <- host.list[ExecuteLaneService].zipWithIndex) yield new Area {
@@ -389,7 +389,7 @@ class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
       val hartId = self.hartId.simProxy()
       val decodeId = self.decodeId.simProxy()
       val microOpId = self.microOpId.simProxy()
-      val microOp = self.microOp.simProxy()
+      val instruction = self.instruction.simProxy()
     }
 
     class DispatchProxy(id: Int) {

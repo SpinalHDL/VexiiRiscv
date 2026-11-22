@@ -26,8 +26,8 @@ class ShadowMmuPlugin(var spec : MmuSpec,
   def getSignExtension(kind: AddressTranslationPortUsage, rawAddress: UInt) = False
 
   override def getInvalidationPortParam = AddressTranslationInvalidationParam(
-    asidWidth       = 0,
-    requestAddress  = false,
+    idWidth         = vmidWidth,
+    requestAddress  = true,
     requestGuest    = false,
   )
 
@@ -38,13 +38,10 @@ class ShadowMmuPlugin(var spec : MmuSpec,
 
   val logic = during setup new Area{
     val priv = host[PrivilegedPlugin]
-    val csr = host[CsrAccessPlugin]
     val access = host[TranslatedDBusAccessPlugin]
-    val ram = host[CsrRamService]
     val pcs = host.get[PerformanceCounterService]
-    val mmu = host[MmuPlugin]
+    val mcp = host[MmuCtrlPlugin]
 
-    val csrLock = retains(csr.csrLock, ram.csrLock)
     val accessLock = retains(access.accessRetainer)
     val buildBefore = retains(List(host[PipelineBuilderPlugin].elaborationLock) ++ pcs.map(_.elaborationLock))
 
@@ -57,43 +54,17 @@ class ShadowMmuPlugin(var spec : MmuSpec,
     def physCap(range : Range) = (range.high min physicalWidth-1) downto range.low
 
     assert(HART_COUNT.get == 1)
-    val hgatp = new Area {
-      val (modeOffset, modeWidth, ppnWidth, vmidOffset, vmidWidthMax) = XLEN.get match {
-        case 32 => (31, 1, 20, 22, 7) //20 instead of 22 to avoid 34 physical bits
-        case 64 => (60, 4, 44, 44, 14)
-      }
-      assert(vmidWidth <= vmidWidthMax, "vmidWidth is too big")
-      val mode = Reg(Bits(modeWidth bits)) init(0)
-      val vmid = Reg(Bits(vmidWidth bits)) init(0)
-      val ppn =  Reg(UInt(ppnWidth bits))  init(0)
-    }
 
-    csr.readWrite(CSR.HGATP, hgatp.vmidOffset -> hgatp.vmid, 0 -> hgatp.ppn)
-    csr.read(CSR.HGATP, hgatp.modeOffset -> hgatp.mode)
-    csr.allowHostCsr(CSR.HGATP, !priv.logic.harts(0).m.status.tvm || priv.isMachine(0))
+    assert(mcp.hgatpSpec == spec)
+    val hgatp = mcp.logic.hgatp
 
-    csr.onDecode(CSR.HGATP) {
-      when (csr.bus.decode.write) {
-        csr.bus.decode.doTrap(TrapReason.HFENCE_GMA)
-      }
-    }
-
-    csr.onWrite(CSR.HGATP, true) {
-      val hgatpModeWrite = csr.bus.write.bits(hgatp.modeOffset, hgatp.modeWidth bits)
-      when(hgatpModeWrite === 0) {
-        hgatp.mode := 0
-      } elsewhen (hgatpModeWrite === spec.satpMode) {
-        hgatp.mode := spec.satpMode
-      }
-    }
-
-    csrLock.release()
     portsLock.await()
 
     assert(storageSpecs.map(_.p.priority).distinct.size == storageSpecs.size, "MMU storages needs different priorities")
     // Implement the hardware for all the TLB storages
     val tlbGenerateParam = MmuTlbStorageEntryParam(
       asidWidth   = 0,
+      vmidWidth   = vmidWidth,
       checkUser   = false,
       checkGlobal = false,
       checkGuest  = false
@@ -118,7 +89,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
     }
 
     def readAllowed(read: Bool, execute: Bool, implicitAccess: Bool): Bool = {
-      read || (execute && mmu.logic.status.mxr && !implicitAccess)
+      read || (execute && mcp.logic.status.mxr && !implicitAccess)
     }
 
     // Implement the hardware of very MMU ports on their respective pipelines / storages
@@ -129,11 +100,13 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       val storage = storages.find(_.self == ps.ss).get
       val read = for (sl <- storage.sl) yield new Area {
         val readAddress = readStage(ps.req.PRE_ADDRESS)(sl.lineRange)
+        val currentVmid = hgatp.vmid
         for ((way, wayId) <- sl.ways.zipWithIndex) {
           /* The shadow MMU should not enable the "ASID" and "GUEST" field of TLB */
           val query = MmuTlbStorageEntryQuery(
             address = hitsStage(ps.req.PRE_ADDRESS),
             asid    = B(0),
+            vmid    = currentVmid,
             guest   = False
           )
 
@@ -203,6 +176,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
 
       val busy = !isActive(IDLE)
       val virtual = Reg(UInt(MIXED_WIDTH bits))
+      val vmid = Reg(Bits(vmidWidth bits))
 
       setEntry(IDLE)
 
@@ -224,6 +198,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
           load.address := (hgatp.ppn @@ spec.levels.last.vpn(arbiter.io.output.address) @@ U(0, log2Up(spec.entryBytes) bits)).resized
           isImplicitAccess := arbiter.io.output.indirect
           arbiter.io.output.ready := True
+          vmid := hgatp.vmid
 
           when(hgatp.mode === spec.satpMode) {
             goto(CMD(spec.levels.size - 1))
@@ -333,7 +308,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       }
 
       val fetch = for((level, levelId) <- spec.levels.zipWithIndex) yield new Area{
-        val pteFault = load.exception || load.levelException(levelId) || (levelId == 0).mux(!load.leaf, False)
+        val pteFault = load.exception || (load.leaf && load.levelException(levelId)) || (levelId == 0).mux(!load.leaf, False)
         val pteReadError = load.rsp.error.orR
         val leafAccessFault = load.levelToPhysicalAddress(levelId).drop(physicalWidth) =/= 0 //levelToPhysicalAddress is used to emit fault when the final translated address it outside the range of the physical addresses
         val pageFault = !pteReadError && pteFault
@@ -362,7 +337,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
             levelId match {
               case 0 => rspCheck
               case _ => {
-                when(load.exception) {
+                when(load.exception || leafAccessFault) {
                   goto(DONE(levelId))
                 } elsewhen(load.leaf) {
                   rspCheck
@@ -391,6 +366,7 @@ class ShadowMmuPlugin(var spec : MmuSpec,
             storageLevel.write.data.valid           := True
             storageLevel.write.data.virtualAddress  := virtual(specLevel.virtualOffset + log2Up(storageLevel.slp.sets), widthOf(storageLevel.write.data.virtualAddress) bits)
             storageLevel.write.data.physicalAddress := (load.levelToPhysicalAddress(levelId) >> specLevel.virtualOffset).resized
+            if (vmidWidth > 0) storageLevel.write.data.vmid := vmid
             storageLevel.write.data.allowRead       := load.flags.R
             storageLevel.write.data.allowWrite      := load.flags.W && load.flags.D
             storageLevel.write.data.allowExecute    := load.flags.X
@@ -433,23 +409,49 @@ class ShadowMmuPlugin(var spec : MmuSpec,
       val depthMax = storageSpecs.map(_.p.levels.map(_.sets).max).max
       val counter = Reg(UInt(log2Up(depthMax) bits))
       val busy = RegInit(False)
+      val vmid = RegInit(B(0, vmidWidth bits))
+      val address = RegInit(U(0, MIXED_WIDTH bits))
+      val force = RegInit(False)
+
+      val anyVmid = (vmidWidth > 0).mux(RegInit(False), True)
+      val anyAddress = RegInit(False)
+      val query = MmuTlbStorageEntryQuery(
+        address = address,
+        asid    = B(0),
+        vmid    = vmid,
+        guest   = False,
+      )
 
       arbiter.io.output.ready := False
       when(!busy){
         counter := 0
         when (arbiter.io.output.valid) {
           busy := True
+          vmid := arbiter.io.output.id.resized
+          address := arbiter.io.output.address.resized
+          anyAddress := arbiter.io.output.anyAddress || arbiter.io.output.force
+          if(vmidWidth > 0) anyVmid := arbiter.io.output.anyId
+          force := arbiter.io.output.force
         }
       } otherwise {
         assert(HART_COUNT.get == 1)
-        for (storage <- storages;
-             sl <- storage.sl) {
-          sl.write.mask := (default -> true)
-          sl.write.address := counter.resized
+        for (storage <- storages; sl <- storage.sl) {
+          val invalidateReadAddress = Mux(anyAddress, counter.resized, address(sl.lineRange))
+          val mask = B(sl.ways.map(way => {
+            val entry = way.readAsync(invalidateReadAddress)
+            entry.needFlush(query, False, anyVmid, anyAddress) || force
+          }))
+          sl.write.mask := mask
+          sl.write.address := invalidateReadAddress
           sl.write.data.valid := False
         }
-        counter := counter + 1
-        when(counter.andR){
+        when (anyAddress) {
+          counter := counter + 1
+          when(counter.andR){
+            busy := False
+            arbiter.io.output.ready := True
+          }
+        } otherwise {
           busy := False
           arbiter.io.output.ready := True
         }
