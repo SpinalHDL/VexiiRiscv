@@ -70,9 +70,9 @@ class StaticTranslationPlugin(var physicalWidth: Int, val translationLevel : Int
     if (!isShadowMmu) {
       PHYSICAL_WIDTH.set(physicalWidth)
       VIRTUAL_WIDTH.set(physicalWidth)
-      MIXED_WIDTH.set(physicalWidth)
-      PC_WIDTH.set(physicalWidth)
-      TVAL_WIDTH.set(physicalWidth)
+      MIXED_WIDTH.set(Riscv.XLEN.get min (physicalWidth + 1))
+      PC_WIDTH.set(MIXED_WIDTH)
+      TVAL_WIDTH.set(MIXED_WIDTH)
     }
 
     portsLock.await()

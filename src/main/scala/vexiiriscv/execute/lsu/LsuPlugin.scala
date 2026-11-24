@@ -473,7 +473,7 @@ class LsuPlugin(var layer : LaneLayer,
         val prefetchOp = Decode.UOP(24 downto 20)
         val port = ports.addRet(Stream(LsuL1Cmd()))
         port.valid := isValid && SEL
-        port.address := srcp.ADD_SUB.asUInt.resized
+        port.address := Global.toMixedAddress(srcp.ADD_SUB.asUInt)
         port.size := SIZE
         port.load := LOAD
         port.store := STORE
@@ -671,9 +671,9 @@ class LsuPlugin(var layer : LaneLayer,
       val IO_RSP = insert(io.rsp)
       IO_RSP.fault.setWhen(l1.ATOMIC || FROM_ACCESS)
       val IO = insert(CACHED_RSP.fault && !IO_RSP.fault && !FENCE && !FROM_PREFETCH)
-      val FROM_LSU_MSB_FAILED = insert(FROM_LSU && srcp.ADD_SUB.dropLow(Global.MIXED_WIDTH).asBools.map(_ =/= tpk.ADDRESS_EXTENSION).orR)
+      val FROM_LSU_MSB_FAILED = insert(FROM_LSU && Global.checkBadAddress(l1.MIXED_ADDRESS, tpk.ADDRESS_EXTENSION))
       MMU_PAGE_FAULT := tpk.PAGE_FAULT
-      MMU_FAILURE := MMU_PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD || FROM_LSU_MSB_FAILED
+      MMU_FAILURE := MMU_PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD
       GUEST_MMU_PAGE_FAULT := stpk.PAGE_FAULT
       GUEST_MMU_FAILURE := GUEST_MMU_PAGE_FAULT || stpk.ACCESS_FAULT || stpk.REFILL || stpk.HAZARD
     }
@@ -914,17 +914,6 @@ class LsuPlugin(var layer : LaneLayer,
           lsuTrap := True
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
-        }
-        when(onPma.FROM_LSU_MSB_FAILED) {
-          lsuTrap := True
-          trapPort.exception := True
-          trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-          trapPort.code(1) setWhen (STORE)
-          trapPort.code(3) setWhen (!tpk.BYPASS_TRANSLATION)
-          if (Global.TVAL_WIDTH.get > Global.VIRTUAL_WIDTH.get) {
-            // Only flip when the mark when it is in translation
-            trapPort.tval(Global.VIRTUAL_WIDTH.get) := !l1.MIXED_ADDRESS.msb
-          }
         }
         if(pp.implementHypervisor) when(!MMU_FAILURE) {
           when(stpk.PAGE_FAULT) {

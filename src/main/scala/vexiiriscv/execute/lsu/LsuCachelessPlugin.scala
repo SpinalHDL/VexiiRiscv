@@ -196,7 +196,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     }
 
     val onAddress = new addressCtrl.Area {
-      val RAW_ADDRESS = insert(srcp.ADD_SUB.asUInt)
+      val RAW_ADDRESS = insert(Global.toMixedAddress(srcp.ADD_SUB.asUInt))
       val request = AddressTranslationReq(
         PRE_ADDRESS    = RAW_ADDRESS,
         LOAD           = LOAD,
@@ -311,12 +311,8 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       }
       //TODO amo AQ/RL
 
-      // PC RESIZED
-      val tvalAddress = Global.expendPc(onAddress.RAW_ADDRESS.resize(Global.MIXED_WIDTH), Global.TVAL_WIDTH)
-      val badAddress = (Riscv.XLEN.get > Global.MIXED_WIDTH.get).mux(onAddress.RAW_ADDRESS.drop(Global.MIXED_WIDTH.get).asBools.map(_ =/= tpk.ADDRESS_EXTENSION).orR, False)
-      if (Global.TVAL_WIDTH.get > Global.VIRTUAL_WIDTH.get) when (badAddress) {
-        tvalAddress(Global.VIRTUAL_WIDTH.get) := !onAddress.RAW_ADDRESS(Global.VIRTUAL_WIDTH.get - 1)
-      }
+      val tvalAddress = onAddress.RAW_ADDRESS
+      val badAddress = Global.checkBadAddress(tvalAddress, tpk.ADDRESS_EXTENSION)
 
       val freezeIt = bus.cmd.isStall || doFence //TODO less combinatorial path
       elp.freezeWhen(freezeIt)
