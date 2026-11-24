@@ -39,20 +39,18 @@ class PcCalc(bp: BranchPlugin, at: Int) extends Area {
 
   val srcp = host.find[SrcPlugin](_.layer == layer)
   val imm = IMM(UOP)
-  val target_a = BRANCH_CTRL.mux(
-    default -> Global.expendPc(PC, Riscv.XLEN.get).asSInt,
-    BranchCtrlEnum.JALR -> ctrl(srcp.SRC1)
-  )
-
+  val target_a = Global.expendPc(PC, Riscv.XLEN.get).asSInt
   val target_b = BRANCH_CTRL.mux(
     default -> imm.b_sext,
-    BranchCtrlEnum.JAL -> imm.j_sext,
-    BranchCtrlEnum.JALR -> imm.i_sext
+    BranchCtrlEnum.JAL -> imm.j_sext
   )
 
   val slices = Decode.INSTRUCTION_SLICE_COUNT +^ 1
   val sliceShift = Fetch.SLICE_RANGE_LOW.get
   val pc_target = U(target_a + target_b)
+  if (bp.withJalr) when(BRANCH_CTRL === BranchCtrlEnum.JALR) {
+    pc_target := ctrl(srcp.ADD_SUB).asUInt
+  }
   val pc_true = pc_target.resize(PC_WIDTH)
   val PC_TRUE = insert(pc_true);
   PC_TRUE(0) := False //PC RESIZED
@@ -127,7 +125,7 @@ class BranchPlugin(val layer : LaneLayer,
     if(hp.nonEmpty) host[DispatchPlugin].addDispatchCtx(Prediction.BRANCH_HISTORY) // Provide the branch history to the execute pipeline for the branch plugins to use.
 
     add(Rvi.JAL ).decode(BRANCH_CTRL -> BranchCtrlEnum.JAL )
-    if(withJalr) add(Rvi.JALR).decode(BRANCH_CTRL -> BranchCtrlEnum.JALR).srcs(SRC1.RF)
+    if(withJalr) add(Rvi.JALR).decode(BRANCH_CTRL -> BranchCtrlEnum.JALR).srcs(SRC1.RF, SRC2.I, Op.ADD)
     add(Rvi.BEQ ).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF)
     add(Rvi.BNE ).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF)
     add(Rvi.BLT ).decode(BRANCH_CTRL -> BranchCtrlEnum.B   ).srcs(SRC1.RF, SRC2.RF, Op.LESS  )
