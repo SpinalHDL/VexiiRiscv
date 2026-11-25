@@ -35,6 +35,19 @@ object Global extends AreaRoot {
     pc.asSInt.resize(width bits).asUInt,
     pc.resize(width bits)
   )
+
+  // On overflow, keep an encoding that fails both the physical and virtual address checks.
+  def toMixedAddress(address: UInt): UInt = {
+    val width = MIXED_WIDTH.get
+    val result = address.resize(width)
+    if (width < riscv.Riscv.XLEN.get && address.getWidth > width) {
+      when(address.dropLow(width).asBools.map(_ =/= address(width - 1)).orR) {
+        result(width - 1 downto width - 2) := U"2'b10"
+      }
+    }
+    result
+  }
+
   def checkBadAddress(address: UInt, msb: Bool) = address.dropLow(VIRTUAL_WIDTH).asBools.map(_ =/= msb).orR
 
   // Pipelining keys

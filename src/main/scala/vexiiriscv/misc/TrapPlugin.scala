@@ -510,10 +510,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             refill.cmd.permission.write := pending.state.arg(0, 2 bits) === TrapArg.STORE
             refill.cmd.permission.execute := pending.state.arg(1)
             refill.cmd.storageEnable := True
-            refill.cmd.address := (TVAL_WIDTH.get > VIRTUAL_WIDTH.get).mux(
-              pending.state.tval.dropHigh(1).asUInt,
-              pending.state.tval.asUInt,
-            )
+            refill.cmd.address := pending.state.tval.asUInt
             refill.cmd.storageId := pending.state.arg(3, ats.getStorageIdWidth() bits).asUInt
             refill.rsp.ready := False
 
@@ -940,13 +937,7 @@ class TrapPlugin(val trapAt : Int, val recordHtinst : Boolean) extends FiberPlug
             }
           }
 
-          val readed = RegNextWhen(crsPorts.read.data, crsPorts.read.valid && crsPorts.read.ready)
-          if (PC_WIDTH.get > VIRTUAL_WIDTH.get) {
-            when (Global.checkBadAddress(crsPorts.read.data.asUInt, crsPorts.read.data(VIRTUAL_WIDTH - 1))) {
-              // Others bits will be dropped, so only change msb of the PC
-              readed(PC_WIDTH - 1) := !crsPorts.read.data(VIRTUAL_WIDTH - 1)
-            }
-          }
+          val readed = RegNextWhen(Global.toMixedAddress(crsPorts.read.data.asUInt).asBits, crsPorts.read.valid && crsPorts.read.ready)
 
           TRAP_TVEC.whenIsActive {
             crsPorts.read.valid := True

@@ -325,10 +325,10 @@ class MmuPlugin(var spec : MmuSpec,
 
     PHYSICAL_WIDTH.set(physicalWidth)
     VIRTUAL_WIDTH.set(spec.virtualWidth)
-    MIXED_WIDTH.set(VIRTUAL_WIDTH.get)
-    TVAL_WIDTH.set(XLEN.get min (MIXED_WIDTH.get + 1))
+    MIXED_WIDTH.set(XLEN.get min (VIRTUAL_WIDTH.get + 1))
+    TVAL_WIDTH.set(MIXED_WIDTH)
     PC_WIDTH.set(TVAL_WIDTH)
-    assert(VIRTUAL_WIDTH.get == XLEN.get || XLEN.get > VIRTUAL_WIDTH.get && VIRTUAL_WIDTH.get > physicalWidth)
+    assert(VIRTUAL_WIDTH.get == XLEN.get || XLEN.get > VIRTUAL_WIDTH.get && VIRTUAL_WIDTH.get >= physicalWidth)
     assert(PC_WIDTH.get <= (VIRTUAL_WIDTH.get + 1) && PC_WIDTH.get >= VIRTUAL_WIDTH.get)
 
     val accessBus = access.newDBusAccess(priv.implementHypervisor)
@@ -535,7 +535,7 @@ class MmuPlugin(var spec : MmuSpec,
         }
 
 
-        ADDRESS_EXTENSION := requireMmuLockup.mux(ps.req.PRE_ADDRESS(MIXED_WIDTH-1), False)
+        ADDRESS_EXTENSION := requireMmuLockup.mux(ps.req.PRE_ADDRESS(VIRTUAL_WIDTH-1), False)
         BYPASS_TRANSLATION := !requireMmuLockup
         WAYS_OH       := oh
         (WAYS_PHYSICAL, entries.map(_.physicalAddressFrom(ps.req.PRE_ADDRESS))).zipped.foreach(_ := _)
