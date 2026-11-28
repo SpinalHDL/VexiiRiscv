@@ -11,7 +11,7 @@ import spinal.core.sim.SimDataPimper
 import vexiiriscv.decode.{Decode, DecoderService}
 import vexiiriscv.fetch.FetchPipelinePlugin
 import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationReq, AddressTranslationService, DBusAccessService, PmaLoad, PmaLoadExecute, PmaLogic, PmaPort, PmaStore, PmpService}
-import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, PrivilegedPlugin, TrapArg, TrapReason, TrapService}
+import vexiiriscv.misc.{AddressToMask, LsuTriggerService, PerformanceCounterService, PrivilegedPlugin, Trap, TrapArg, TrapReason, TrapService}
 import vexiiriscv.riscv.{PrivilegeMode, Rvh}
 import vexiiriscv.riscv.Riscv.{FLEN, LSLEN, XLEN}
 import spinal.lib.misc.pipeline._
@@ -97,8 +97,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val shadowTranslationStorage = sats.newStorage(translationStorageParameter, PerformanceCounterService.DCACHE_TLB_CYCLES)
     atsStorageLock.release()
 
-    val trapPort = ts.newTrap(layer.lane.getExecuteAge(forkAt), Execute.LANE_AGE_WIDTH)
-    val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(forkAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
+    // Single trap/flush port at joinAt, as the bus error is only known there. Faults found in onFork are carried to it.
+    val trapPort = ts.newTrap(layer.lane.getExecuteAge(joinAt), Execute.LANE_AGE_WIDTH)
+    val flushPort = ss.newFlushPort(layer.lane.getExecuteAge(joinAt), laneAgeWidth = Execute.LANE_AGE_WIDTH, withUopId = true)
     val frontend = new AguFrontend(layer, host)
 
     val MMU_FAILURE = Payload(Bool())
@@ -119,7 +120,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         case None =>
       }
 
-      op.mayFlushUpTo(forkAt) // Page fault / trap
+      op.mayFlushUpTo(joinAt) // Page fault / trap / bus error
       withSpeculativeLoadFlush match {
         case true =>
         case false => op.dontFlushFrom(forkAt + 1)
@@ -134,7 +135,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
 
     for(store <- frontend.writingMem ++ amos) {
       val op = layer(store)
-      op.mayFlushUpTo(forkAt)
+      op.mayFlushUpTo(joinAt)
       op.addRsSpec(RS2, 0)
       op.dontFlushFrom(forkAt+1)
     }
@@ -321,116 +322,113 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val freezeIt = bus.cmd.isStall || doFence //TODO less combinatorial path
       elp.freezeWhen(freezeIt)
 
-      flushPort.valid := False
-      flushPort.hartId := Global.HART_ID
-      flushPort.uopId := Decode.UOP_ID
-      flushPort.laneAge := Execute.LANE_AGE
-      flushPort.self := False
-
       //TODO handle case were address isn't in the range of the virtual address ?
-      trapPort.valid :=  False
-      trapPort.hartId := Global.HART_ID
-      trapPort.laneAge := Execute.LANE_AGE
-      trapPort.tval := tvalAddress.asBits
-      trapPort.tval2 := tpk.TRANSLATED.asBits.dropLow(2).resized
-      trapPort.exception.assignDontCare()
-      trapPort.code.assignDontCare()
-      trapPort.arg.allowOverride() := 0
+      val trap = Trap(Execute.LANE_AGE_WIDTH, false)
+      trap.tval := tvalAddress.asBits
+      trap.tval2.assignDontCare() // driven in onJoin
+      trap.exception.assignDontCare()
+      trap.code.assignDontCare()
+      trap.arg.allowOverride() := 0
 
       if(withSpeculativeLoadFlush) when((LOAD || EXECUTE) && onPma.RSP.io && elp.atRiskOfFlush(forkAt)) {
         skip := True
-        trapPort.exception := False
-        trapPort.code := TrapReason.REDO
+        trap.exception := False
+        trap.code := TrapReason.REDO
       }
 
       when(tpk.ACCESS_FAULT || onPma.RSP.fault || pmpPort.ACCESS_FAULT) {
         skip := True
-        trapPort.exception := True
-        trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-        trapPort.code(1) setWhen (STORE)
+        trap.exception := True
+        trap.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+        trap.code(1) setWhen (STORE)
       }
 
       when(tpk.PAGE_FAULT) {
         skip := True
-        trapPort.exception := True
-        trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
-        trapPort.code(1) setWhen(STORE)
+        trap.exception := True
+        trap.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
+        trap.code(1) setWhen(STORE)
       }
 
       when(tpk.ACCESS_FAULT) {
         skip := True
-        trapPort.exception := True
-        trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-        trapPort.code(1) setWhen (STORE)
+        trap.exception := True
+        trap.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+        trap.code(1) setWhen (STORE)
       }
 
-      trapPort.arg(0, 2 bits) := (B(EXECUTE) ## B(STORE)).mux(
+      trap.arg(0, 2 bits) := (B(EXECUTE) ## B(STORE)).mux(
         0 -> B(TrapArg.LOAD, 2 bits),
         1 -> B(TrapArg.STORE, 2 bits),
         default -> B(TrapArg.FETCH_LSU, 2 bits)
       )
-      trapPort.arg(2) := GUEST
-      trapPort.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
-      if (pp.implementHypervisor) trapPort.arg(3 + ats.getStorageIdWidth(), sats.getStorageIdWidth() bits) := sats.getStorageId(shadowTranslationStorage)
+      trap.arg(2) := GUEST
+      trap.arg(3, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
+      if (pp.implementHypervisor) trap.arg(3 + ats.getStorageIdWidth(), sats.getStorageIdWidth() bits) := sats.getStorageId(shadowTranslationStorage)
 
       when(tpk.REFILL) {
         skip := True
-        trapPort.exception := False
-        trapPort.code := TrapReason.MMU_REFILL
+        trap.exception := False
+        trap.code := TrapReason.MMU_REFILL
       }
       when(tpk.HAZARD) {
         skip := True
-        trapPort.exception := False
-        trapPort.code := TrapReason.REDO
+        trap.exception := False
+        trap.code := TrapReason.REDO
       }
 
       if(pp.implementHypervisor) when(!MMU_FAILURE) {
         when(stpk.PAGE_FAULT) {
           skip := True
-          trapPort.exception := True
-          trapPort.code := CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT
-          trapPort.code(1) setWhen (STORE)
+          trap.exception := True
+          trap.code := CSR.MCAUSE_ENUM.LOAD_GUEST_PAGE_FAULT
+          trap.code(1) setWhen (STORE)
         }
 
         when(stpk.ACCESS_FAULT) {
           skip := True
-          trapPort.exception := True
-          trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
-          trapPort.code(1) setWhen (STORE)
+          trap.exception := True
+          trap.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+          trap.code(1) setWhen (STORE)
         }
 
         when(stpk.REFILL) {
           skip := True
-          trapPort.exception := False
-          trapPort.code := TrapReason.SMMU_REFILL
+          trap.exception := False
+          trap.code := TrapReason.SMMU_REFILL
         }
 
         when(stpk.HAZARD) {
           skip := True
-          trapPort.exception := False
-          trapPort.code := TrapReason.REDO
+          trap.exception := False
+          trap.code := TrapReason.REDO
         }
       }
 
       when(onAddress.MISS_ALIGNED) {
         skip := True
-        trapPort.exception := True
-        trapPort.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(onAddress.MISS_ALIGNED).resized
+        trap.exception := True
+        trap.code := STORE.mux[Bits](CSR.MCAUSE_ENUM.STORE_MISALIGNED, CSR.MCAUSE_ENUM.LOAD_MISALIGNED).andMask(onAddress.MISS_ALIGNED).resized
       }
 
       when(onTrigger.HIT && !badAddress) {
         skip := True
-        trapPort.exception := False
-        trapPort.code := TrapReason.DEBUG_TRIGGER
-        trapPort.tval := onTrigger.HITS.resized
+        trap.exception := False
+        trap.code := TrapReason.DEBUG_TRIGGER
+        trap.tval := onTrigger.HITS.resized
       }
 
       when(isValid && SEL && skip) {
-        trapPort.valid := True
-        flushPort.valid := True
         bypass(Global.TRAP) := True
         bypass(Global.COMMIT) := False
       }
+      val TRAP_IT = insert(isValid && SEL && skip)
+      val TRAP_DATA = insert(trap)
+
+      // Faults found here only reach the trap port in joinAt, so a younger access must not go out before then.
+      // It does not need to freeze, the older trap will flush it before it reaches joinAt.
+      val olderTrap = (forkAt + 1 until joinAt).map(elp.execute).map(e => e.isValid && e(TRAP_IT)).orR
+      when(olderTrap) { bus.cmd.valid := False }
 
       WITH_RSP := bus.cmd.valid || cmdSent
       val access = dbusAccesses.nonEmpty generate new Area {
@@ -493,6 +491,32 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       val SC_MISS = insert(if(withZalrsc) rspPayload.scMiss else False)
       val READ_DATA = insert(rspPayload.data)
       elp.freezeWhen(WITH_RSP && !rspValid)
+
+      // The bus error is only known here, so a younger access must not be emitted before this one has its response
+      // This only holds back the access in forkAt. With joinAt - forkAt > 1, one in between may already be on the bus
+      if(joinAt > forkAt) when(WITH_RSP && !rspValid) { bus.cmd.valid := False }
+
+      val busError = isValid && SEL && WITH_RSP && rspValid && rspPayload.error
+
+      trapPort.valid := (isValid && onFork.TRAP_IT) || busError
+      trapPort.hartId := Global.HART_ID
+      trapPort.laneAge := Execute.LANE_AGE
+      trapPort.payload.assignSomeByName(onFork.TRAP_DATA)
+      trapPort.tval2.allowOverride() := tpk.TRANSLATED.asBits.dropLow(2).resized
+      when(busError) {
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+        trapPort.code(1) setWhen (STORE)
+        bypass(Global.TRAP) := True
+        bypass(Global.COMMIT) := False
+      }
+
+      flushPort.valid := trapPort.valid
+      flushPort.hartId := Global.HART_ID
+      flushPort.uopId := Decode.UOP_ID
+      flushPort.laneAge := Execute.LANE_AGE
+      flushPort.self := False
+
       assert(!(isValid && isCancel && SEL && STORE && !up(Global.TRAP)), "LsuCachelessPlugin saw unexpected select && STORE && cancel request") //TODO add tpk.IO and along the way)) //TODO add tpk.IO and along the way
       val access = dbusAccesses.nonEmpty generate new Area {
         assert(dbusAccesses.size == 1)
